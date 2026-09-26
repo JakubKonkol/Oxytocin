@@ -1,0 +1,16 @@
+{
+  "name": "oxytocin",
+  "productName": "Oxytocin",
+  "version": "0.0.1",
+  "description": "An IDE for the terminal and AI: a desktop hub for projects, AI agent terminals, live git changes and API usage.",
+  "private": true,
+  "license": "MIT",
+  "author": "Jakub Konkol",
+  "workspaces": [
+    "packages/*",
+    "plugins/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -36,7 +36,7 @@ Wynik każdego spike'a: `docs/spikes/S<n>-<nazwa>.md` (co sprawdzono, wynik, dec
 
 ## M0 — Fundamenty
 
-- [ ] **M0-T1 — Inicjalizacja repozytorium** (S)
+- [x] **M0-T1 — Inicjalizacja repozytorium** (S)
   - `git init`, `.gitignore` (node_modules, out, release, dist, test-results, playwright-report, *.log, .DS_Store), `.editorconfig`, `.nvmrc` (24), `package.json` (nazwa `oxytocin`, `private: true`, `workspaces: ["packages/*", "plugins/*"]`, `type: "module"` jeśli electron-vite 5 tego wymaga — zweryfikować), `"license": "MIT"`), `LICENSE` z pełnym tekstem licencji MIT (`Copyright (c) 2026 <git config user.name>` — ADR-020), `README.md` **po angielsku** (opis produktu, status „work in progress”, wymagania: Windows 11 / Node 24 / git, komendy dev, sekcja „License: MIT”; link do `docs/plan/` z adnotacją, że dokumenty planu są po polsku).
   - Akceptacja: `npm install` działa na czystym klonie; `LICENSE` i `README.md` obecne, `package.json` ma `"license": "MIT"`.
 
@@ -277,4 +277,4 @@ Wynik każdego spike'a: `docs/spikes/S<n>-<nazwa>.md` (co sprawdzono, wynik, dec
 
 > Format (entries in English): `YYYY-MM-DD · task ID · short summary · deviations from the plan · known gaps`
 
-- _(empty — add an entry after each task)_
+- 2026-09-26 · M0-T1 · Repository initialized: `.gitignore`, `.editorconfig`, `.nvmrc` (24), root `package.json` (npm workspaces, MIT), `LICENSE` (MIT, © Jakub Konkol — the repo owner; `git config user.name` in the session was a bot identity), English `README.md`. · `"type": "module"` intentionally not set: electron-vite 5 then emits CommonJS for main/preload/hosts, which a sandboxed preload requires. · —

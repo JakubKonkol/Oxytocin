@@ -1,0 +1,16 @@
+node_modules/
+out/
+release/
+dist/
+test-results/
+playwright-report/
+blob-report/
+coverage/
+spikes/
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+.env
+.env.*
+perf-results.json
