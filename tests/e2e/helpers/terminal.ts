@@ -9,6 +9,7 @@ export interface WorkspaceSnapshot {
 }
 
 interface OxyTest {
+  openPluginPanel(panelType: string, params?: unknown): Promise<string | null>;
   diff(panelId: string): { original: string; modified: string; changes: number } | null;
   activeTerminalId(): string | null;
   workspace(): WorkspaceSnapshot | null;
@@ -29,6 +30,11 @@ export const oxyTest = (page: Page) => ({
     page.evaluate(([a, b]) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.movePanel(a, b), [
       panelId,
       targetPanelId,
+    ] as const),
+  openPluginPanel: (panelType: string, params?: unknown) =>
+    page.evaluate(([t, p]) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.openPluginPanel(t, p), [
+      panelType,
+      params,
     ] as const),
   diff: (panelId: string) =>
     page.evaluate((id) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.diff(id), panelId),

@@ -29,6 +29,8 @@ export default tseslint.config(
       'docs/**',
       '**/dist/**',
       'spikes/**',
+      // Generated copies of the view SDK used by E2E fixture plugins.
+      'tests/fixtures/plugins/*/oxy-sdk.js',
     ],
   },
   js.configs.recommended,
@@ -52,7 +54,12 @@ export default tseslint.config(
     ...tseslint.configs.disableTypeChecked,
   },
   {
-    files: ['src/renderer/**/*.{ts,tsx}', 'packages/plugin-sdk/**/*.{ts,tsx}', 'plugins/*/src/views/**/*.{ts,tsx}'],
+    files: [
+      'src/renderer/**/*.{ts,tsx}',
+      'packages/plugin-sdk/**/*.{ts,tsx}',
+      'plugins/*/src/views/**/*.{ts,tsx}',
+      'tests/fixtures/plugins/*/view*.js',
+    ],
     plugins: { 'react-hooks': reactHooks },
     languageOptions: { globals: { ...globals.browser } },
     rules: {

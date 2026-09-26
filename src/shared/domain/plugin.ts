@@ -180,3 +180,21 @@ export const ContributionsSchema = z.object({
   agents: z.array(PluginAgentRuleSchema.extend({ pluginId: z.string() })),
 });
 export type Contributions = z.infer<typeof ContributionsSchema>;
+
+export const ViewEnvelopeSchema = z.union([
+  z.object({ kind: z.literal('msg'), payload: z.unknown() }),
+  z.object({ kind: z.literal('req'), id: z.number(), method: z.string().min(1), payload: z.unknown() }),
+  z.object({ kind: z.literal('res'), id: z.number(), ok: z.literal(true), result: z.unknown() }),
+  z.object({ kind: z.literal('res'), id: z.number(), ok: z.literal(false), error: z.string() }),
+  z.object({ kind: z.literal('evt'), name: z.string(), payload: z.unknown() }),
+]);
+
+export const OpenViewRequestSchema = z.object({
+  viewId: z.string().regex(/^[\w.-]{1,120}$/),
+  pluginId: z.string(),
+  kind: z.enum(['view', 'panel']),
+  providerId: z.string(),
+  projectId: z.string().optional(),
+  params: z.unknown().optional(),
+  visible: z.boolean(),
+});

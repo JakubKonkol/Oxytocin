@@ -11,7 +11,9 @@ import type {
   HostPluginInfo,
   PluginHostEvents,
   PluginHostMethods,
+  OpenViewRequest,
   PluginLogEntry,
+  ViewEnvelope,
 } from '@shared/rpc/contracts/plugin-host';
 import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
@@ -66,7 +68,7 @@ export interface PluginCorePort {
   openExternal(url: string): Promise<void>;
   openInEditor(req: { path: string; line?: number; column?: number }): Promise<void>;
   /** Renderer-side effects (toasts, panels, core commands). */
-  toRenderer(event: 'toast' | 'openTerminalPanel' | 'runCommand', payload: unknown): void;
+  toRenderer(event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta', payload: unknown): void;
   osNotify(title: string, body: string): void;
 }
 
@@ -92,6 +94,9 @@ const CORE_COMMANDS = new Set([
 ]);
 
 const MAX_HANG_INCIDENTS = 2;
+/** docs/plan/07-plugin-engine.md §7.5 */
+const MAX_VIEW_MESSAGE_BYTES = 1024 * 1024;
+const MAX_VIEW_MESSAGES_PER_SECOND = 200;
 
 export function toTerminalMeta(t: TerminalInfo) {
   return {
@@ -155,6 +160,10 @@ export class PluginHostService implements Disposable {
   private readonly statusEmitter = new Emitter<StatusBarItemState[]>();
   readonly onDidChangeStatusBar = this.statusEmitter.event;
   readonly environments = new Map<string, EnvContribution>();
+  private readonly openViews = new Map<string, OpenViewRequest>();
+  /** Resolves when the host knows the view (messages sent earlier would be lost). */
+  private readonly viewReady = new Map<string, Promise<void>>();
+  private readonly viewRates = new Map<string, { windowStart: number; count: number }>();
   readonly envReady = new Set<string>();
   private readonly envEmitter = new Emitter<EnvContribution[]>();
   readonly onDidChangeEnvironment = this.envEmitter.event;
@@ -171,6 +180,8 @@ export class PluginHostService implements Disposable {
       }),
     );
     this.store.add(host.onEvent('plugin:busy', ({ id }) => (this.busy = id)));
+    this.store.add(host.onEvent('view:message', (e) => deps.core.toRenderer('viewMessage', e)));
+    this.store.add(host.onEvent('view:meta', (e) => deps.core.toRenderer('viewMeta', e)));
     this.store.add(
       host.onDidBecomeReady(({ restarted }) => {
         if (restarted) this.onHostRestarted();
@@ -220,6 +231,10 @@ export class PluginHostService implements Disposable {
         await this.deps.host.call('plugins:load', { plugins: infos, settings: this.lastSettings, env: this.deps.env });
         await this.activateByEvent('onStartup');
         if (this.deps.core.projects.activeId()) await this.activateByEvent('onProjectOpen');
+        // Views that stayed mounted (host restart, reload): resolve them again.
+        for (const view of [...this.openViews.values()]) {
+          if (infos.some((i) => i.id === view.pluginId)) await this.openInHost(view);
+        }
       } catch (e) {
         this.deps.logger.warn('Loading plugins failed', e);
       }
@@ -248,6 +263,80 @@ export class PluginHostService implements Disposable {
   async logs(id: string): Promise<PluginLogEntry[]> {
     if (this.deps.host.state !== 'running') return [];
     return await this.deps.host.call('plugins:logs', { id });
+  }
+
+  // ── views (docs/plan/07-plugin-engine.md §7.5) ──
+
+  private hasBackend(pluginId: string): boolean {
+    return !!this.deps.plugins.get(pluginId)?.manifest?.main;
+  }
+
+  private async openInHost(req: OpenViewRequest): Promise<void> {
+    if (!this.hasBackend(req.pluginId) || this.deps.host.state !== 'running') return;
+    await this.activateByEvent(`${req.kind === 'view' ? 'onView' : 'onPanel'}:${req.providerId}`);
+    try {
+      await this.deps.host.call('views:open', req);
+    } catch (e) {
+      this.deps.logger.warn(`Opening view ${req.providerId} failed`, e);
+    }
+  }
+
+  async viewOpened(req: OpenViewRequest): Promise<void> {
+    const plugin = this.deps.plugins.get(req.pluginId);
+    const m = plugin?.manifest;
+    const declared =
+      req.kind === 'view'
+        ? m?.contributes.views.some((v) => v.id === req.providerId)
+        : m?.contributes.panels.some((p) => p.type === req.providerId);
+    if (!plugin || !declared) throw new OxyError('NOT_FOUND', `Unknown view ${req.pluginId}/${req.providerId}`);
+    this.openViews.set(req.viewId, req);
+    const ready = this.openInHost(req);
+    this.viewReady.set(req.viewId, ready);
+    await ready;
+  }
+
+  async viewClosed(viewId: string): Promise<void> {
+    const req = this.openViews.get(viewId);
+    this.openViews.delete(viewId);
+    this.viewRates.delete(viewId);
+    this.viewReady.delete(viewId);
+    if (req && this.hasBackend(req.pluginId) && this.deps.host.state === 'running')
+      await this.deps.host.call('views:close', { viewId }).catch(() => undefined);
+  }
+
+  async viewVisibility(viewId: string, visible: boolean): Promise<void> {
+    const req = this.openViews.get(viewId);
+    if (!req) return;
+    req.visible = visible;
+    if (this.hasBackend(req.pluginId) && this.deps.host.state === 'running')
+      await this.deps.host.call('views:visibility', { viewId, visible }).catch(() => undefined);
+  }
+
+  /** View → backend; oversized or too frequent messages are rejected. */
+  async viewMessage(viewId: string, envelope: ViewEnvelope): Promise<void> {
+    const req = this.openViews.get(viewId);
+    if (!req) throw new OxyError('NOT_FOUND', `View ${viewId} is not open`);
+    if (JSON.stringify(envelope).length > MAX_VIEW_MESSAGE_BYTES)
+      throw new OxyError('INVALID', 'View messages are limited to 1 MB');
+    const now = Date.now();
+    const rate = this.viewRates.get(viewId) ?? { windowStart: now, count: 0 };
+    if (now - rate.windowStart >= 1000) {
+      rate.windowStart = now;
+      rate.count = 0;
+    }
+    rate.count++;
+    this.viewRates.set(viewId, rate);
+    if (rate.count > MAX_VIEW_MESSAGES_PER_SECOND) throw new OxyError('INVALID', 'Too many view messages (200/s)');
+    if (!this.hasBackend(req.pluginId)) {
+      if (envelope.kind === 'req')
+        this.deps.core.toRenderer('viewMessage', {
+          viewId,
+          envelope: { kind: 'res', id: envelope.id, ok: false, error: 'This plugin has no backend' },
+        });
+      return;
+    }
+    await this.viewReady.get(viewId);
+    await this.deps.host.call('views:message', { viewId, envelope });
   }
 
   // ── events forwarded to the host ──

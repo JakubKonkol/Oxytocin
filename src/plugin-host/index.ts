@@ -7,6 +7,7 @@ import type {
 } from '@shared/rpc/contracts/plugin-host';
 import type { PortRpc, RpcEvents } from '@shared/rpc/port-rpc';
 import { PluginRuntime } from './runtime';
+import { ViewHost } from './views';
 
 // Utility process entry: the Plugin Host (backends of all plugins, docs/plan/07-plugin-engine.md §6).
 const parentPort = process.parentPort;
@@ -27,12 +28,25 @@ const runtime = new PluginRuntime({
   log: (pluginId, level, message) => ref.rpc?.emit('log', { level, scope: `plg:${pluginId}`, message }),
 });
 
+const views = new ViewHost({
+  send: (viewId, envelope) => ref.rpc?.emit('view:message', { viewId, envelope }),
+  meta: (viewId, meta) => ref.rpc?.emit('view:meta', { viewId, ...meta }),
+  provider: (providerId) => runtime.providers.get(providerId),
+  onProvider: (listener) => runtime.onDidRegisterProvider(listener),
+  error: (pluginId, where, error) => runtime.logError(pluginId, `Error in ${where}`, error),
+});
+runtime.onDidDeactivate((id) => views.closeForPlugin(id));
+
 const impl: Impl<Omit<PluginHostMethods, 'ping' | 'shutdown'>> = {
   'plugins:load': ({ plugins, settings, env }) => runtime.load(plugins, settings, env),
   'plugins:activateByEvent': ({ event }) => runtime.activateByEvent(event),
   'plugins:deactivate': ({ id }) => runtime.deactivate(id),
   'commands:execute': ({ id, args }) => runtime.executeCommand(id, args),
   'plugins:logs': ({ id }) => runtime.logs(id),
+  'views:open': (req) => views.open(req),
+  'views:close': ({ viewId }) => views.close(viewId),
+  'views:visibility': ({ viewId, visible }) => views.setVisible(viewId, visible),
+  'views:message': ({ viewId, envelope }) => views.message(viewId, envelope),
 };
 
 const { rpc, log } = startHostRuntime<PluginHostEvents, PluginHostInboundEvents>({

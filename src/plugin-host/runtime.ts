@@ -3,6 +3,7 @@ import type { Disposable, Logger, PluginContext, PluginModule, ViewProvider } fr
 import { OxyError } from '@shared/errors';
 import type { HostApiEnv, HostPluginInfo, PluginLogEntry } from '@shared/rpc/contracts/plugin-host';
 import { toDisposable } from '@shared/utils/disposable';
+import { Emitter } from '@shared/utils/emitter';
 import { ApiEvents, type ApiEventName, createApi } from './api';
 import { createPluginStorage } from './storage';
 
@@ -39,6 +40,11 @@ export class PluginRuntime {
   private readonly commands = new Map<string, { pluginId: string; handler: (...args: unknown[]) => unknown }>();
   readonly providers = new Map<string, { pluginId: string; kind: 'view' | 'panel'; provider: ViewProvider }>();
   readonly events = new ApiEvents();
+  private readonly providerEmitter = new Emitter<string>();
+  /** A view/panel provider was registered (views waiting for it resolve now). */
+  readonly onDidRegisterProvider = this.providerEmitter.event;
+  private readonly deactivateEmitter = new Emitter<string>();
+  readonly onDidDeactivate = this.deactivateEmitter.event;
   private settingsSnapshot: Record<string, unknown> = {};
   private env: HostApiEnv = { appVersion: '0.0.0', platform: 'linux', locale: 'en-US', homeDir: '', userDataDir: '' };
   private generationCounter = 0;
@@ -228,6 +234,7 @@ export class PluginRuntime {
       }
     }
     this.disposeAll(plugin);
+    this.deactivateEmitter.fire(id);
     plugin.module = undefined;
     plugin.context = undefined;
     plugin.state = 'inactive';
@@ -244,6 +251,12 @@ export class PluginRuntime {
     await this.deactivate(id);
     plugin.state = 'failed';
     this.bridge.state(id, 'failed', error instanceof Error ? error.message : String(error));
+  }
+
+  /** Writes to a plugin's log (errors in view callbacks). */
+  logError(id: string, message: string, error: unknown): void {
+    const plugin = this.plugins.get(id);
+    if (plugin) this.logger(plugin).error(message, error);
   }
 
   /** Plugin whose folder appears in an error's stack (attributing uncaught errors). */
@@ -281,6 +294,7 @@ export class PluginRuntime {
     provider: ViewProvider,
   ): Disposable {
     this.providers.set(id, { pluginId: plugin.info.id, kind, provider });
+    this.providerEmitter.fire(id);
     const d = toDisposable(() => {
       if (this.providers.get(id)?.provider === provider) this.providers.delete(id);
     });

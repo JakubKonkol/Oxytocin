@@ -87,3 +87,57 @@ test('plugin backends run in the Plugin Host: commands, crash isolation and hang
     await app.close();
   }
 });
+
+interface ViewReport {
+  loadedAt: number;
+  parentOxy: string;
+  fetch: string;
+  init: { viewId: string; kind: string; params: unknown; hasTheme: boolean };
+  sum: number;
+  failError: string;
+  state: { counter: number };
+  messages: Record<string, unknown>[];
+}
+
+test('plugin views: handshake, messages, requests, isolation and moving without reload', async () => {
+  const userData = await userDataWithPlugins(['views']);
+  const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
+  try {
+    const t = (await import('./helpers/terminal')).oxyTest(win);
+    await (await import('./helpers/terminal')).waitForTerminal(win);
+    expect(await t.openPluginPanel('views.panel', { answer: 42 })).toBeNull();
+    const frame = () => win.frames().find((f) => f.url().startsWith('oxy-plugin://test.views/'));
+    await expect.poll(() => !!frame(), { timeout: 10_000 }).toBe(true);
+    const report = async () =>
+      JSON.parse((await frame()!.evaluate(() => document.body.dataset['report'])) ?? '{}') as Partial<ViewReport>;
+    await expect
+      .poll(async () => (await report()).messages?.length ?? 0, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(2);
+    const r = await report();
+    expect(r.parentOxy).not.toBe('object');
+    expect(r.fetch).toMatch(/^blocked/);
+    expect(r.init).toMatchObject({ kind: 'panel', params: { answer: 42 }, hasTheme: true });
+    expect(r.sum).toBe(5);
+    expect(r.failError).toMatch(/intentional failure/);
+    expect(r.state).toEqual({ counter: 1 });
+    expect(r.messages).toContainEqual(expect.objectContaining({ kind: 'panel', params: { answer: 42 } }));
+    expect(r.messages).toContainEqual(expect.objectContaining({ echo: { ping: 1 } }));
+    await expect(win.getByText('Backend title panel')).toBeVisible();
+
+    // Move the panel into a new group: the iframe keeps running (same load time) and still talks to the backend.
+    const loadedAt = r.loadedAt;
+    await win.keyboard.press('Alt+Shift+Equal');
+    await expect.poll(async () => (await t.workspace())?.groups).toBe(2);
+    const ws = (await t.workspace())!;
+    const plugin = ws.panels.find((p) => p.id.startsWith('plg-'))!;
+    const other = ws.panels.find((p) => p.group !== plugin.group)!;
+    expect(await t.movePanel(plugin.id, other.id)).toBe(true);
+    await frame()!.evaluate(() =>
+      (window as unknown as { oxyView: { postMessage(m: unknown): void } }).oxyView.postMessage({ ping: 2 }),
+    );
+    await expect.poll(async () => JSON.stringify((await report()).messages)).toContain('"ping":2');
+    expect((await report()).loadedAt).toBe(loadedAt);
+  } finally {
+    await app.close();
+  }
+});

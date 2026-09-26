@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
-import { ContributionsSchema, PluginDescriptorSchema } from '../domain/plugin';
+import {
+  ContributionsSchema,
+  OpenViewRequestSchema,
+  PluginDescriptorSchema,
+  ViewEnvelopeSchema,
+} from '../domain/plugin';
 import { FileDiffContentSchema, FileDiffRequestSchema, RepoStatusSchema } from '../domain/git';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
@@ -74,6 +79,10 @@ export const invokeContract = {
   },
   /** Fires an activation event (\`onView:<id>\`, \`onPanel:<type>\`…); returns the activated plugin ids. */
   'plugins:activate': { req: z.object({ event: z.string().min(1) }), res: z.array(z.string()) },
+  'plugins:viewOpened': { req: OpenViewRequestSchema, res: z.void() },
+  'plugins:viewClosed': { req: z.object({ viewId: z.string() }), res: z.void() },
+  'plugins:viewVisibility': { req: z.object({ viewId: z.string(), visible: z.boolean() }), res: z.void() },
+  'plugins:viewMessage': { req: z.object({ viewId: z.string(), envelope: ViewEnvelopeSchema }), res: z.void() },
   'agents:list': { req: z.null().optional(), res: z.array(AgentInfoWithTerminalSchema) },
   'fs:statMany': {
     req: z.object({ baseDirs: z.array(z.string()).max(4), paths: z.array(z.string().max(4096)).max(50) }),

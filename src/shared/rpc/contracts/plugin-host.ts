@@ -31,6 +31,26 @@ export interface PluginLogEntry {
   message: string;
 }
 
+/** Messages between a view (SDK) and its backend, routed renderer ⇄ main ⇄ host (docs/plan/07 §7.5). */
+export type ViewEnvelope =
+  | { kind: 'msg'; payload: unknown }
+  | { kind: 'req'; id: number; method: string; payload: unknown }
+  | { kind: 'res'; id: number; ok: true; result: unknown }
+  | { kind: 'res'; id: number; ok: false; error: string }
+  | { kind: 'evt'; name: string; payload: unknown };
+
+export interface OpenViewRequest {
+  /** Instance id of the view/panel. */
+  viewId: string;
+  pluginId: string;
+  kind: 'view' | 'panel';
+  /** `contributes.views[].id` or `contributes.panels[].type`. */
+  providerId: string;
+  projectId?: string;
+  params?: unknown;
+  visible: boolean;
+}
+
 export type PluginHostMethods = HostBaseMethods & {
   /** Sets the loaded plugins (removed ones are deactivated); settings snapshot for `oxy.settings`. */
   'plugins:load': (o: { plugins: HostPluginInfo[]; settings: Record<string, unknown>; env: HostApiEnv }) => void;
@@ -41,6 +61,12 @@ export type PluginHostMethods = HostBaseMethods & {
   'commands:execute': (o: { id: string; args: unknown[] }) => unknown;
   /** Last 500 log entries of a plugin. */
   'plugins:logs': (o: { id: string }) => PluginLogEntry[];
+  /** A view instance was mounted: resolves it with the plugin's provider. */
+  'views:open': (o: OpenViewRequest) => void;
+  'views:close': (o: { viewId: string }) => void;
+  'views:visibility': (o: { viewId: string; visible: boolean }) => void;
+  /** Message or request from a view to its backend. */
+  'views:message': (o: { viewId: string; envelope: ViewEnvelope }) => void;
 };
 
 /** Events the host sends to main. */
@@ -48,6 +74,14 @@ export type PluginHostEvents = HostBaseEvents & {
   'plugin:state': { id: string; state: 'active' | 'failed' | 'inactive'; error?: string };
   /** A call into plugin code started/finished (hang attribution). */
   'plugin:busy': { id: string | null };
+  /** Backend → view (messages, responses, events). */
+  'view:message': { viewId: string; envelope: ViewEnvelope };
+  /** Title or badge set by the backend (`PluginView.title/badge`). */
+  'view:meta': {
+    viewId: string;
+    title?: string;
+    badge?: { text: string; tone?: 'neutral' | 'warning' | 'danger' } | null;
+  };
 };
 
 /** Events main sends to the host (API events: projects, terminals, agents, git, settings). */

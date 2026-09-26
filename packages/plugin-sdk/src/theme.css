@@ -1,0 +1,94 @@
+/* Base styles for plugin views; the CSS variables come from the shell's design tokens (oxy:init.theme). */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-card, #151a20);
+  color: var(--text-primary, #e6e8eb);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--font-size-ui, 13px);
+  line-height: 1.45;
+}
+a {
+  color: var(--accent, #4f8cff);
+}
+code,
+pre,
+kbd {
+  font-family: var(--font-mono, monospace);
+}
+button {
+  font: inherit;
+  color: var(--text-primary, #e6e8eb);
+  background: var(--bg-elevated, #1c222b);
+  border: 1px solid var(--border-default, #2c333d);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover {
+  background: var(--bg-card-hover, #1a2028);
+}
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text-primary, #e6e8eb);
+  background: var(--bg-input, #0f1318);
+  border: 1px solid var(--border-default, #2c333d);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th,
+td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle, #232932);
+}
+th {
+  color: var(--text-muted, #6e7682);
+  font-weight: 500;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted, #6e7682) 35%, transparent);
+  border-radius: 8px;
+}
+.oxy-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-default, #2c333d);
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.oxy-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-input, #0f1318);
+  overflow: hidden;
+}
+.oxy-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent, #4f8cff);
+}
+.oxy-muted {
+  color: var(--text-muted, #6e7682);
+}

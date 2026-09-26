@@ -1,0 +1,36 @@
+{
+  "name": "oxytocin-test-views",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "oxytocin": {
+    "id": "test.views",
+    "displayName": "Views (test)",
+    "publisher": "oxytocin-tests",
+    "engine": "^0.1.0",
+    "main": "host.js",
+    "activationEvents": [
+      "onPanel:views.panel",
+      "onView:views.sidebar"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "type": "views.panel",
+          "title": "Test Panel",
+          "entry": "view.html"
+        }
+      ],
+      "views": [
+        {
+          "id": "views.sidebar",
+          "slot": "sidebar",
+          "title": "Test View",
+          "entry": "view.html",
+          "order": 500
+        }
+      ]
+    }
+  }
+}

@@ -18,7 +18,8 @@ import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import type { Platform } from '@shared/domain/terminal-profile';
 import { appPaths } from './app/paths';
-import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
+import { PLUGIN_SCHEME, registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
+import { createPluginProtocolHandler } from './app/plugin-protocol';
 import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
 import { resolveUserDataOverride } from './app/user-data';
 import { createMainWindow, isTrustedShellUrl } from './app/window-manager';
@@ -295,6 +296,8 @@ function bootstrap(): void {
         if (!wc) return;
         if (event === 'toast') sendEvent(wc, 'notifications:show', payload as never);
         else if (event === 'openTerminalPanel') sendEvent(wc, 'terminals:openPanel', payload as never);
+        else if (event === 'viewMessage') sendEvent(wc, 'plugins:viewMessage', payload as never);
+        else if (event === 'viewMeta') sendEvent(wc, 'plugins:viewMeta', payload as never);
         else sendEvent(wc, 'commands:run', payload as never);
       },
       osNotify: (title, body) => {
@@ -318,6 +321,16 @@ function bootstrap(): void {
 
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);
+  session.defaultSession.protocol.handle(
+    PLUGIN_SCHEME,
+    createPluginProtocolHandler({
+      pluginRoot: (id) => {
+        const p = plugins.get(id);
+        return p && (p.state === 'enabled' || p.state === 'active') ? p.path : null;
+      },
+      dev: !app.isPackaged,
+    }),
+  );
 
   registerInvokeHandlers(
     ipcMain,
@@ -395,6 +408,10 @@ function bootstrap(): void {
       'plugins:executeCommand': ({ id, args }) => pluginHost.executeCommand(id, args ?? []),
       'plugins:logs': ({ id }) => pluginHost.logs(id),
       'plugins:activate': ({ event }) => pluginHost.activateByEvent(event),
+      'plugins:viewOpened': (req) => pluginHost.viewOpened(req),
+      'plugins:viewClosed': ({ viewId }) => pluginHost.viewClosed(viewId),
+      'plugins:viewVisibility': ({ viewId, visible }) => pluginHost.viewVisibility(viewId, visible),
+      'plugins:viewMessage': ({ viewId, envelope }) => pluginHost.viewMessage(viewId, envelope),
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).

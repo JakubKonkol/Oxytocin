@@ -1,0 +1,27 @@
+{
+  "name": "@oxytocin/plugin-sdk",
+  "version": "0.1.0",
+  "description": "SDK for Oxytocin plugin views (iframes)",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./src/react.ts",
+      "default": "./dist/react.js"
+    },
+    "./theme.css": "./src/theme.css"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}

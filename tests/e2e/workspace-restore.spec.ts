@@ -78,7 +78,7 @@ test('an unknown panel type is restored as a placeholder', async () => {
 
   const second = await launchApp({ userData: first.userData });
   try {
-    await expect(second.win.getByTestId('missing-panel')).toContainText('Panel type "plugin" is unavailable');
+    await expect(second.win.getByTestId('missing-panel')).toContainText('Plugin "gone.plugin" is unavailable');
   } finally {
     await second.app.close();
   }

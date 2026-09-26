@@ -5,6 +5,8 @@ import { subscribeTerminals, useTerminalsStore } from './stores/terminals-store'
 import { useUiStore } from './stores/ui-store';
 import { subscribeProjects, useProjectsStore } from './stores/projects-store';
 import { subscribeChanges } from './stores/changes-store';
+import { subscribePlugins, usePluginsStore } from './stores/plugins-store';
+import { ViewContextMenuHost } from './features/plugins/view-context-menu';
 import { showNotification } from './features/attention/attention';
 import { revealTerminal } from './features/attention/reveal';
 import { openEditorInTerminal } from './features/layout/editor-terminal';
@@ -23,6 +25,7 @@ export function App() {
   useEffect(() => {
     subscribeSettings();
     subscribeChanges();
+    subscribePlugins();
     subscribeTerminals();
     subscribeProjects();
     ipc.on('notifications:show', showNotification);
@@ -36,6 +39,7 @@ export function App() {
       useAppStore.getState().load(),
       useTerminalsStore.getState().load(),
       useProjectsStore.getState().load(),
+      usePluginsStore.getState().load(),
     ])
       .then(() => setLoaded(true))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
@@ -50,6 +54,7 @@ export function App() {
       </div>
       <Toaster />
       <DialogHost />
+      <ViewContextMenuHost />
       <ProfilePicker />
     </TooltipProvider>
   );

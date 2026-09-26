@@ -1,6 +1,7 @@
 import { getActiveWorkspace } from '../features/layout/workspace-registry';
 import { getLastProjectSwitchMs } from './perf';
 import { diffRegistry } from '../features/diff/diff-registry';
+import { openPluginPanel } from '../features/plugins/plugin-panels';
 import { getActiveTerminalId } from '../features/terminals/terminal-actions';
 import { terminalRegistry, terminalText } from '../features/terminals/terminal-registry';
 
@@ -8,6 +9,12 @@ import { terminalRegistry, terminalText } from '../features/terminals/terminal-r
 export function installTestHooks(): void {
   (window as unknown as Record<string, unknown>)['__oxyTest'] = {
     terminalIds: () => [...terminalRegistry.keys()],
+    /** Opens a plugin panel (the UI entry points arrive with the slots, M5-T4). */
+    openPluginPanel: (panelType: string, params?: unknown) =>
+      openPluginPanel(panelType, params === undefined ? {} : { params }).then(
+        () => null,
+        (e: unknown) => (e instanceof Error ? e.message : String(e)),
+      ),
     /** Text of a diff panel's models and its number of changes (null while Monaco loads). */
     diff: (panelId: string) => {
       const handle = diffRegistry.get(panelId);

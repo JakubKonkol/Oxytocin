@@ -197,6 +197,20 @@ export class KeybindingResolver {
     return null;
   }
 
+  /** Chords with an available binding in a context (plugin views prevent their default, 07 §7.6). */
+  chords(context: KeyContext): string[] {
+    const out: string[] = [];
+    for (const [chord, list] of this.byChord) {
+      if (
+        list.some(
+          (b) => this.isAvailable(b.command) && (!b.when || b.when.includes(context)) && !b.notWhen?.includes(context),
+        )
+      )
+        out.push(chord);
+    }
+    return out;
+  }
+
   /** The display chord of the first binding for a command (tooltips, menus). */
   shortcutFor(command: string): string | undefined {
     for (const [chord, list] of this.byChord) {

@@ -1,4 +1,5 @@
 import { DiffPanelComponent } from '../diff/DiffPanel';
+import { PluginPanelComponent } from '../plugins/plugin-panels';
 import {
   type DockviewApi,
   DockviewReact,
@@ -34,7 +35,12 @@ function publishActivePanelTitle(api: DockviewApi | null): void {
 
 const oxyTheme: DockviewTheme = { name: 'oxytocin', className: 'dockview-theme-oxytocin', gap: 8, colorScheme: 'dark' };
 
-const components = { terminal: TerminalPanelComponent, diff: DiffPanelComponent, missing: MissingPanel };
+const components = {
+  terminal: TerminalPanelComponent,
+  diff: DiffPanelComponent,
+  plugin: PluginPanelComponent,
+  missing: MissingPanel,
+};
 
 const initializing = new Set<string>();
 

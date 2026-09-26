@@ -7,11 +7,14 @@ import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
 import type { TerminalPanelParams } from './panel-registry';
 import type { DiffPanelParams } from '../diff/diff-actions';
+import type { PluginPanelParams } from '../plugins/plugin-panels';
+import { viewStates } from '../plugins/view-bridge';
 import { addExistingTerminalPanel, addTerminalPanel, type PanelPosition } from './workspace-actions';
 import { useProjectsStore } from '../../stores/projects-store';
 import { changesUi, useChangesStore } from '../../stores/changes-store';
+import { usePluginsStore } from '../../stores/plugins-store';
 
-const KNOWN_COMPONENTS = new Set(['terminal', 'diff', 'missing']);
+const KNOWN_COMPONENTS = new Set(['terminal', 'diff', 'plugin', 'missing']);
 const SAVE_DEBOUNCE_MS = 1000;
 
 /** Builds the persisted state: dockview JSON + a descriptor per panel (enough to revive terminals). */
@@ -39,6 +42,18 @@ export function buildWorkspaceState(api: DockviewApi, projectId: string): Worksp
           ...(p.oldPath ? { oldPath: p.oldPath } : {}),
           pinned: !p.preview,
         };
+    } else if (panel.api.component === 'plugin') {
+      const p = panel.params as PluginPanelParams | undefined;
+      if (p) {
+        const state = viewStates.get(p.viewId);
+        panels[panel.id] = {
+          kind: 'plugin',
+          pluginId: p.pluginId,
+          panelType: p.panelType,
+          params: { viewId: p.viewId, params: p.params },
+          ...(state !== undefined ? { state } : {}),
+        };
+      }
     } else if (panel.api.component === 'missing') {
       const descriptor = (panel.params as { descriptor?: PanelDescriptor } | undefined)?.descriptor;
       if (descriptor) panels[panel.id] = descriptor;
@@ -154,6 +169,21 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
       useTerminalsStore.getState().upsert(info);
       used.add(info.id);
       panel.params = { ...panel.params, terminalId: info.id };
+    } else if (component === 'plugin') {
+      const available =
+        descriptor?.kind === 'plugin' &&
+        usePluginsStore
+          .getState()
+          .contributions.panels.some((p) => p.pluginId === descriptor.pluginId && p.type === descriptor.panelType);
+      if (!available) {
+        const pluginId = descriptor?.kind === 'plugin' ? descriptor.pluginId : 'unknown';
+        panel.contentComponent = 'missing';
+        panel.params = { reason: `Plugin "${pluginId}" is unavailable`, ...(descriptor ? { descriptor } : {}) };
+        continue;
+      }
+      // View state saved at quit comes back through oxy:init.state.
+      const viewId = (panel.params as Partial<PluginPanelParams> | undefined)?.viewId;
+      if (viewId && descriptor.state !== undefined) viewStates.set(viewId, descriptor.state);
     } else if (!KNOWN_COMPONENTS.has(component)) {
       panel.contentComponent = 'missing';
       panel.params = {

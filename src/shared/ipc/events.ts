@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
-import { ContributionsSchema, PluginDescriptorSchema } from '../domain/plugin';
+import { ContributionsSchema, PluginDescriptorSchema, ViewEnvelopeSchema } from '../domain/plugin';
 import { RepoStatusSchema } from '../domain/git';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { HostStatusSchema } from '../domain/app-info';
@@ -46,6 +46,16 @@ export const eventContract = {
   }),
   /** A core command requested by a plugin (oxytocin.*). */
   'commands:run': z.object({ id: z.string(), args: z.array(z.unknown()) }),
+  /** Backend → plugin view. */
+  'plugins:viewMessage': z.object({ viewId: z.string(), envelope: ViewEnvelopeSchema }),
+  'plugins:viewMeta': z.object({
+    viewId: z.string(),
+    title: z.string().optional(),
+    badge: z
+      .object({ text: z.string(), tone: z.enum(['neutral', 'warning', 'danger']).optional() })
+      .nullable()
+      .optional(),
+  }),
   /** Terminal editor preset: open a terminal panel running the editor command. */
   'editor:openInTerminal': z.object({ projectId: ProjectIdSchema.nullable(), cwd: z.string(), command: z.string() }),
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),

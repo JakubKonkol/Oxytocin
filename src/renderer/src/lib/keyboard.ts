@@ -17,6 +17,11 @@ export function dispatchKeybinding(e: KeyEventLike, context: KeyContext): boolea
   return true;
 }
 
+/** Chords the shell handles in plugin views (sent to the SDK in `oxy:init`). */
+export function reservedChords(): string[] {
+  return getResolver().chords('pluginViewFocus');
+}
+
 export function shortcutFor(command: string): string | undefined {
   return getResolver().shortcutFor(command);
 }

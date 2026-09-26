@@ -140,3 +140,37 @@ describe('PluginHostService', () => {
     expect(items).toEqual([]);
   });
 });
+
+describe('PluginHostService views', () => {
+  it('opens declared views only and limits message size and rate', async () => {
+    const s = setup();
+    const withView = descriptor('c.three', {
+      contributes: { panels: [{ type: 'c.panel', title: 'C', entry: 'v.html' }] },
+    });
+    (s.plugins as unknown as { get: (id: string) => PluginDescriptor | undefined }).get = (id) =>
+      id === 'c.three' ? withView : undefined;
+    await expect(
+      s.service.viewOpened({ viewId: 'v', pluginId: 'c.three', kind: 'panel', providerId: 'nope', visible: true }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await s.service.viewOpened({
+      viewId: 'v',
+      pluginId: 'c.three',
+      kind: 'panel',
+      providerId: 'c.panel',
+      visible: true,
+    });
+    expect(s.calls).toContainEqual({ method: 'plugins:activateByEvent', params: { event: 'onPanel:c.panel' } });
+    expect(s.calls.find((c) => c.method === 'views:open')).toBeTruthy();
+
+    await expect(
+      s.service.viewMessage('v', { kind: 'msg', payload: 'x'.repeat(1024 * 1024 + 10) }),
+    ).rejects.toMatchObject({ code: 'INVALID' });
+    const results = await Promise.allSettled(
+      Array.from({ length: 205 }, () => s.service.viewMessage('v', { kind: 'msg', payload: 1 })),
+    );
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(5);
+    await expect(s.service.viewMessage('unknown', { kind: 'msg', payload: 1 })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+});
