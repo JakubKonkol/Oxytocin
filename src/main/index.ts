@@ -34,6 +34,7 @@ import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
 import { TerminalService } from './services/terminals/terminal-service';
 import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
+import { GitService } from './services/git/git-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-registry';
 import { statMany } from './services/fs/stat-many';
@@ -176,6 +177,21 @@ function bootstrap(): void {
       app.setBadgeCount(count);
     }
   };
+
+  const git = new GitService({
+    host: hosts.workspace,
+    projects: {
+      list: () => projects.list(),
+      activeId: () => projects.activeProjectId,
+      onDidChange: projects.onDidChange,
+      onDidChangeActive: projects.onDidChangeActive,
+    },
+    settings: () => settings.get(),
+    onDidChangeSettings: settings.onDidChange,
+    isWindowFocused: () => mainWindow?.isFocused() ?? false,
+    logger: createLogger('git'),
+  });
+  void projectsReady.then(() => git.start());
 
   const editor = new EditorLauncher(createLogger('editor'), e2e);
 
@@ -329,7 +345,10 @@ function bootstrap(): void {
     },
     reveal,
   });
-  win.on('focus', () => notifications.onWindowFocus());
+  win.on('focus', () => {
+    notifications.onWindowFocus();
+    git.onWindowFocus();
+  });
   projects.onDidChange((list) => sendEvent(win.webContents, 'projects:changed', list));
   projects.onDidChangeActive((id) => sendEvent(win.webContents, 'projects:active', { id }));
 
@@ -460,6 +479,7 @@ function bootstrap(): void {
       terminals,
       agents,
       activity,
+      git,
       osNotifications,
       attentionCount: () => attentionCount,
       lastQuitPrompt: () => lastQuitPrompt,
