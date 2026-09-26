@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import tailwind from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
@@ -50,7 +51,7 @@ export default defineConfig({
   renderer: {
     root: resolve('src/renderer'),
     resolve: { alias: { ...alias, '@renderer': resolve('src/renderer/src') } },
-    plugins: [react(), cspMetaPlugin()],
+    plugins: [react(), tailwind(), cspMetaPlugin()],
     worker: { format: 'es' },
     build: {
       rollupOptions: { input: { index: resolve('src/renderer/index.html') } },

@@ -1,0 +1,69 @@
+@import 'dockview-react/dist/styles/dockview.css';
+
+/* Dockview theme mapped to tokens (used by the center Dockview and the sidebar Paneview). */
+.dockview-theme-oxytocin {
+  color-scheme: dark;
+  --dv-paneview-active-outline-color: transparent;
+  --dv-tabs-and-actions-container-font-size: var(--font-size-ui);
+  --dv-tabs-and-actions-container-height: 34px;
+  --dv-drag-over-background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  --dv-drag-over-border-color: var(--accent);
+  --dv-edge-dock-indicator-color: var(--accent);
+  --dv-tabs-container-scrollbar-color: var(--border-default);
+  --dv-icon-hover-background-color: var(--bg-card-hover);
+  --dv-floating-box-shadow: var(--shadow-elevated);
+  --dv-floating-border: 1px solid var(--border-default);
+  --dv-overlay-z-index: 999;
+  --dv-tab-font-size: inherit;
+  --dv-border-radius: var(--radius-card);
+  --dv-tab-margin: 0;
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--accent);
+  --dv-active-sash-transition-duration: 0.1s;
+  --dv-active-sash-transition-delay: 0.2s;
+  --dv-spacing-padding: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: var(--radius-control);
+  --dv-tab-close-icon-size: inherit;
+  --dv-floating-group-border: none;
+  --dv-drag-over-border: 1px solid var(--accent);
+  --dv-floating-group-dragging-opacity: 0.5;
+  --dv-floating-titlebar-height: 22px;
+  --dv-floating-titlebar-background-color: var(--bg-elevated);
+  --dv-floating-titlebar-border-bottom: var(--dv-floating-border);
+  --dv-group-view-background-color: var(--bg-card);
+  --dv-tabs-and-actions-container-background-color: var(--bg-card);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-card);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg-card);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-card);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg-card);
+  --dv-tab-divider-color: var(--border-subtle);
+  --dv-activegroup-visiblepanel-tab-color: var(--text-primary);
+  --dv-activegroup-hiddenpanel-tab-color: var(--text-muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text-secondary);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--text-muted);
+  --dv-separator-border: transparent;
+  --dv-paneview-header-border-color: transparent;
+  --dv-context-menu-background-color: var(--bg-elevated);
+  --dv-context-menu-color: var(--text-primary);
+}
+
+/* Sidebar Paneview: panes are separated by a gap; the card look lives in SectionHeader/SectionBody. */
+.oxy-sidebar .dv-pane-container .dv-view:not(:first-child) .dv-pane > .dv-pane-header {
+  border-top: none;
+}
+.oxy-sidebar .dv-pane {
+  padding-bottom: var(--gap-layout);
+  box-sizing: border-box;
+}
+.oxy-sidebar .dv-pane .dv-pane-body {
+  display: flex;
+  flex-direction: column;
+}
+.oxy-sidebar .dv-pane .dv-pane-body > * {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}

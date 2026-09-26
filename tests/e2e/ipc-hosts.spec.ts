@@ -19,7 +19,6 @@ test('the renderer receives app info over IPC', async () => {
     const versions = (info as { versions: { electron: string; node: string } }).versions;
     expect(versions.electron).toMatch(/^44\./);
     expect(versions.node).toMatch(/^24\./);
-    await expect(win.getByTestId('app-versions')).toContainText(`Electron ${versions.electron}`);
   } finally {
     await app.close();
   }

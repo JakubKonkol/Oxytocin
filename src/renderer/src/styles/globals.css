@@ -1,0 +1,102 @@
+@import 'tailwindcss';
+@import './tokens.css';
+@import './animations.css';
+@import './dockview.css';
+
+/* Tailwind utilities backed by tokens: bg-app, text-fg-muted, border-line, font-mono, rounded-card… */
+@theme inline {
+  --color-app: var(--bg-app);
+  --color-surface: var(--bg-surface);
+  --color-card: var(--bg-card);
+  --color-card-hover: var(--bg-card-hover);
+  --color-elevated: var(--bg-elevated);
+  --color-input: var(--bg-input);
+  --color-terminal: var(--bg-terminal);
+  --color-focus-tint: var(--bg-focus-tint);
+  --color-line-subtle: var(--border-subtle);
+  --color-line: var(--border-default);
+  --color-line-strong: var(--border-strong);
+  --color-line-focus: var(--border-focus);
+  --color-fg: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-muted: var(--text-muted);
+  --color-fg-inverse: var(--text-inverse);
+  --color-accent: var(--accent);
+  --color-accent-muted: var(--accent-muted);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-agent: var(--agent);
+  --color-git-added: var(--git-added);
+  --color-git-modified: var(--git-modified);
+  --color-git-deleted: var(--git-deleted);
+  --color-git-renamed: var(--git-renamed);
+  --color-git-untracked: var(--git-untracked);
+  --color-git-conflict: var(--git-conflict);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+  --radius-badge: var(--radius-badge);
+  --shadow-elevated: var(--shadow-elevated);
+  --text-ui: var(--font-size-ui);
+  --text-small: var(--font-size-small);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-ui);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--accent-muted);
+}
+
+/* Section labels: mono, uppercase, letter-spaced (prototype column headers). */
+.oxy-label {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.oxy-drag {
+  -webkit-app-region: drag;
+}
+
+.oxy-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

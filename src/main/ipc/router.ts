@@ -46,7 +46,8 @@ export function registerInvokeHandlers(
 ): () => void {
   const registered: string[] = [];
   for (const channel of INVOKE_CHANNELS) {
-    const handler = handlers[channel];
+    // The mapped type guarantees per-channel correctness; erase it for the generic dispatch below.
+    const handler = handlers[channel] as ((req: unknown, ctx: IpcContext) => unknown) | undefined;
     if (!handler) continue;
     registered.push(channel);
     ipc.handle(channel, async (event, raw) => {

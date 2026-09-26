@@ -1,0 +1,102 @@
+/* Status indicator animations (docs/plan/02-ui-ux.md §6). */
+@keyframes oxy-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes oxy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes oxy-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes oxy-flash {
+  0%,
+  50% {
+    opacity: 0.2;
+  }
+  25%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes oxy-row-pulse {
+  from {
+    background-color: var(--accent-muted);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+.oxy-dot {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  border-radius: 9999px;
+}
+
+.oxy-dot[data-state='idle'] {
+  border: 1.5px solid var(--text-muted);
+}
+.oxy-dot[data-state='running'] {
+  background: var(--success);
+}
+.oxy-dot[data-state='agent-working'] {
+  background: var(--agent);
+  animation: oxy-breathe 1.6s ease-in-out infinite;
+}
+.oxy-dot[data-state='agent-working']::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  border: 1.5px solid transparent;
+  border-top-color: var(--agent);
+  animation: oxy-spin 1s linear infinite;
+}
+.oxy-dot[data-state='attention'] {
+  background: var(--warning);
+}
+.oxy-dot[data-state='attention']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--warning);
+  animation: oxy-ring 1.2s ease-out infinite;
+}
+.oxy-dot[data-state='error'] {
+  background: var(--danger);
+  animation: oxy-flash 0.8s ease-in-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oxy-dot,
+  .oxy-dot::after {
+    animation: none !important;
+  }
+}
+:root[data-reduce-motion='true'] .oxy-dot,
+:root[data-reduce-motion='true'] .oxy-dot::after,
+:root[data-e2e='true'] .oxy-dot,
+:root[data-e2e='true'] .oxy-dot::after {
+  animation: none !important;
+}

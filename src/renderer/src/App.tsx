@@ -1,20 +1,28 @@
 import { useEffect, useState } from 'react';
-import type { AppInfo } from '@shared/domain/app-info';
-import { ipc } from './lib/ipc-client';
+import { useUiStore } from './stores/ui-store';
+import { AppLayout } from './shell/AppLayout';
+import { Toaster } from './ui/Toast';
+import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
-  const [info, setInfo] = useState<AppInfo | null>(null);
+  const loaded = useUiStore((s) => s.loaded);
+  const [error, setError] = useState<string | null>(null);
+
   useEffect(() => {
-    void ipc.invoke('app:getInfo').then(setInfo);
+    useUiStore
+      .getState()
+      .load()
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
+
+  if (error) return <div className="p-4 text-danger">Failed to start: {error}</div>;
+  if (!loaded) return null;
   return (
-    <main data-testid={info ? 'app-ready' : undefined}>
-      <h1>Oxytocin</h1>
-      {info && (
-        <p data-testid="app-versions">
-          Electron {info.versions.electron} · Node {info.versions.node}
-        </p>
-      )}
-    </main>
+    <TooltipProvider>
+      <div data-testid="app-ready" className="h-full">
+        <AppLayout />
+      </div>
+      <Toaster />
+    </TooltipProvider>
   );
 }

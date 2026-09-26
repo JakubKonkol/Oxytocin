@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, type BrowserWindow, ipcMain, session } from 'electron';
+import { app, type BrowserWindow, ipcMain, screen, session } from 'electron';
 import type { Platform } from '@shared/domain/terminal-profile';
 import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
 import { installPermissionHandlers } from './app/security';
@@ -9,6 +9,7 @@ import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
 import { createLogger, initLogging, logFilePath, setLogLevel } from './logging/log';
 import { SettingsService } from './services/settings/settings-service';
+import { resolveWindowBounds, UiStateService } from './services/ui-state/ui-state-service';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -43,6 +44,9 @@ function bootstrap(): void {
   setLogLevel(settings.loadSync()['diagnostics.logLevel']);
   settings.watch();
 
+  const uiState = new UiStateService(join(app.getPath('userData'), 'ui-state.json'), createLogger('ui-state'));
+  const initialUi = uiState.loadSync();
+
   const hosts = new Hosts(createLogger, () => ({ ...process.env }));
   hosts.startAll();
 
@@ -69,12 +73,18 @@ function bootstrap(): void {
       }),
       'app:getHostStatus': () => hosts.status(),
       'settings:get': () => settings.get(),
+      'ui:getState': () => uiState.get(),
+      'ui:patchState': (patch) => uiState.patch(patch),
     },
     { isTrustedUrl: isTrustedShellUrl, logger: createLogger('ipc') },
   );
 
-  mainWindow = createMainWindow();
+  mainWindow = createMainWindow({
+    bounds: resolveWindowBounds(initialUi.window, screen.getAllDisplays(), screen.getPrimaryDisplay()),
+    maximized: initialUi.window.maximized,
+  });
   const win = mainWindow;
+  uiState.trackWindow(win, () => screen.getDisplayMatching(win.getBounds()).id);
   win.on('closed', () => (mainWindow = null));
   settings.onDidChange((s) => {
     setLogLevel(s['diagnostics.logLevel']);
@@ -87,8 +97,7 @@ function bootstrap(): void {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
-    hosts
-      .stopAll()
+    Promise.all([uiState.flush(), hosts.stopAll()])
       .catch((e: unknown) => log.error('Failed to stop hosts', e))
       .finally(() => {
         settings.dispose();

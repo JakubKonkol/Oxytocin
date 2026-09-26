@@ -1,0 +1,86 @@
+/* Design tokens — the only place colors are defined (ADR-014). Theme "Oxytocin Dark". */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg-app: #0b0d10;
+  --bg-surface: #111418;
+  --bg-card: #151a20;
+  --bg-card-hover: #1a2028;
+  --bg-elevated: #1c222b;
+  --bg-input: #0f1318;
+  --bg-terminal: #0e1116;
+  --bg-focus-tint: #13213d;
+
+  /* Borders */
+  --border-subtle: #232932;
+  --border-default: #2c333d;
+  --border-strong: #3a4350;
+  --border-focus: #6cb6ff;
+
+  /* Text */
+  --text-primary: #e6e8eb;
+  --text-secondary: #a8b0bb;
+  --text-muted: #6e7682;
+  --text-inverse: #0b0d10;
+
+  /* Accents and states */
+  --accent: #4f8cff;
+  --accent-muted: #1d3566;
+  --success: #22c55e;
+  --warning: #f5a524;
+  --danger: #ef4444;
+  --info: #38bdf8;
+  --agent: #a78bfa;
+
+  /* Git */
+  --git-added: #3fb950;
+  --git-modified: #d29922;
+  --git-deleted: #f85149;
+  --git-renamed: #a371f7;
+  --git-untracked: #56d364;
+  --git-conflict: #ff7b72;
+
+  /* Terminal ANSI palette */
+  --ansi-black: #1b1f24;
+  --ansi-red: #ff6b6b;
+  --ansi-green: #3fd97f;
+  --ansi-yellow: #f5c542;
+  --ansi-blue: #5aa2ff;
+  --ansi-magenta: #c38bff;
+  --ansi-cyan: #3ad0e0;
+  --ansi-white: #d7dce2;
+  --ansi-bright-black: #5c6370;
+  --ansi-bright-red: #ff8787;
+  --ansi-bright-green: #6ee7a0;
+  --ansi-bright-yellow: #ffd866;
+  --ansi-bright-blue: #82b8ff;
+  --ansi-bright-magenta: #d6a8ff;
+  --ansi-bright-cyan: #67e8f9;
+  --ansi-bright-white: #f5f7fa;
+  --terminal-foreground: #e6e8eb;
+  --terminal-cursor: #6cb6ff;
+  --terminal-selection: rgb(38 79 120 / 0.6);
+
+  /* Typography */
+  --font-ui: 'Inter Variable', 'Inter', system-ui, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+  --font-size-ui: 13px;
+  --font-size-small: 11px;
+
+  /* Shapes */
+  --radius-card: 10px;
+  --radius-control: 6px;
+  --radius-badge: 4px;
+  --gap-layout: 8px;
+  --shadow-elevated: 0 8px 24px rgb(0 0 0 / 0.45);
+
+  /* Sizes */
+  --titlebar-height: 36px;
+  --statusbar-height: 24px;
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-normal: 200ms;
+}

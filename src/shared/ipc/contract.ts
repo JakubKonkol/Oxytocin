@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsSchema } from '../domain/settings';
+import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
 import type { InvokeChannel } from './channels';
 
 interface InvokeSpec {
@@ -13,6 +14,8 @@ export const invokeContract = {
   'app:getInfo': { req: z.null().optional(), res: AppInfoSchema },
   'app:getHostStatus': { req: z.null().optional(), res: z.array(HostStatusSchema) },
   'settings:get': { req: z.null().optional(), res: SettingsSchema },
+  'ui:getState': { req: z.null().optional(), res: UiStateSchema },
+  'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;
 
 export type InvokeReq<C extends InvokeChannel> = z.input<(typeof invokeContract)[C]['req']>;

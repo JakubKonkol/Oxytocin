@@ -22,19 +22,32 @@ export function isTrustedShellUrl(url: string): boolean {
   }
 }
 
-export function createMainWindow(): BrowserWindow {
+export interface MainWindowOptions {
+  bounds: { x?: number; y?: number; width: number; height: number };
+  maximized: boolean;
+}
+
+/** Title bar overlay colors (tokens --bg-app / --text-secondary); updated with the theme in M7. */
+export const TITLE_BAR_OVERLAY = { color: WINDOW_BACKGROUND, symbolColor: '#a8b0bb', height: 36 };
+
+export function createMainWindow(opts: MainWindowOptions): BrowserWindow {
+  const isMac = process.platform === 'darwin';
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    ...opts.bounds,
     minWidth: 900,
     minHeight: 560,
     show: false,
     title: 'Oxytocin',
     backgroundColor: WINDOW_BACKGROUND,
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? {} : { titleBarOverlay: TITLE_BAR_OVERLAY }),
     webPreferences: secureWebPreferences(appPaths.preload),
   });
   hardenWebContents(win.webContents, isTrustedShellUrl);
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    if (opts.maximized) win.maximize();
+    win.show();
+  });
   const dev = devRendererUrl();
   void win.loadURL(dev ?? `${APP_ORIGIN}/index.html`);
   return win;
