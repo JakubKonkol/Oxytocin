@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, parse, sep } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { migrateProjectsFile, type ProjectFs, ProjectService } from './project-service';
 
@@ -31,7 +31,7 @@ const make = (over: Partial<ConstructorParameters<typeof ProjectService>[0]> = {
   new ProjectService({
     file: join(dir, 'projects.json'),
     fs: realFs,
-    platform: 'linux',
+    platform: process.platform,
     homeDir: join(dir, 'home'),
     logger,
     newId: () => `p${++ids}`,
@@ -42,7 +42,7 @@ describe('ProjectService', () => {
   it('adds a folder, names it after the folder and activates it', async () => {
     const svc = make();
     await svc.load();
-    const result = await svc.add(join(dir, 'home', 'api') + '/');
+    const result = await svc.add(join(dir, 'home', 'api') + sep);
     expect(result.existed).toBe(false);
     expect(result.project).toMatchObject({ name: 'api', rootPath: join(dir, 'home', 'api'), pinned: false });
     expect(svc.activeProjectId).toBe(result.project.id);
@@ -82,7 +82,7 @@ describe('ProjectService', () => {
   it('rejects missing folders, drive roots and the home folder', async () => {
     const svc = make();
     await expect(svc.add(join(dir, 'nope'))).rejects.toMatchObject({ code: 'INVALID' });
-    await expect(svc.add('/')).rejects.toThrow('not a whole drive');
+    await expect(svc.add(parse(dir).root)).rejects.toThrow('not a whole drive');
     await expect(svc.add(join(dir, 'home'))).rejects.toThrow('home folder');
   });
 
