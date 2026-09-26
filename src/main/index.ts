@@ -1,15 +1,36 @@
-import { join } from 'node:path';
-import { app, BrowserWindow, utilityProcess } from 'electron';
+import { app, type BrowserWindow, session, utilityProcess } from 'electron';
+import { appPaths } from './app/paths';
+import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
+import { installPermissionHandlers } from './app/security';
+import { resolveUserDataOverride } from './app/user-data';
+import { createMainWindow } from './app/window-manager';
 
-const HOSTS = [
-  { entry: 'ptyHost.js', serviceName: 'Oxytocin PTY Host' },
-  { entry: 'workspaceHost.js', serviceName: 'Oxytocin Workspace Host' },
-  { entry: 'pluginHost.js', serviceName: 'Oxytocin Plugin Host' },
-] as const;
+const userDataOverride = resolveUserDataOverride(process.argv, process.env);
+if (userDataOverride) app.setPath('userData', userDataOverride);
+
+// The single-instance lock is scoped to the userData directory, so isolated profiles can run side by side.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+
+registerPrivilegedSchemes();
+
+let mainWindow: BrowserWindow | null = null;
+
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
 
 function startHosts(): void {
-  for (const host of HOSTS) {
-    const child = utilityProcess.fork(join(__dirname, host.entry), [], {
+  const hosts = [
+    { name: 'ptyHost', serviceName: 'Oxytocin PTY Host' },
+    { name: 'workspaceHost', serviceName: 'Oxytocin Workspace Host' },
+    { name: 'pluginHost', serviceName: 'Oxytocin Plugin Host' },
+  ] as const;
+  for (const host of hosts) {
+    const child = utilityProcess.fork(appPaths.hostEntry(host.name), [], {
       serviceName: host.serviceName,
       stdio: 'pipe',
     });
@@ -18,34 +39,12 @@ function startHosts(): void {
   }
 }
 
-function createWindow(): void {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 560,
-    show: false,
-    title: 'Oxytocin',
-    backgroundColor: '#0b0d10',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
-  });
-  win.once('ready-to-show', () => win.show());
-  const devUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (!app.isPackaged && devUrl) {
-    void win.loadURL(devUrl);
-  } else {
-    void win.loadFile(join(__dirname, '../renderer/index.html'));
-  }
-}
-
 void app.whenReady().then(() => {
+  installPermissionHandlers(session.defaultSession);
+  registerAppProtocol(session.defaultSession);
   startHosts();
-  createWindow();
+  mainWindow = createMainWindow();
+  mainWindow.on('closed', () => (mainWindow = null));
 });
 
 app.on('window-all-closed', () => app.quit());
