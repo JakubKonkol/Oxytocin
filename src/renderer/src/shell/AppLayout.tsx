@@ -8,6 +8,8 @@ import { WorkspaceArea } from '../features/projects/WorkspaceArea';
 import { Sidebar } from './Sidebar';
 import { SidebarResizer } from './SidebarResizer';
 import { StatusBar } from './StatusBar';
+import { useAttentionBadge, useWaitingCount } from '../features/attention/attention-badge';
+import { ActivityStatusItems, NotificationsToggle } from '../features/attention/StatusItems';
 import { TitleBar } from './TitleBar';
 
 /** "<project> — <active panel> — Oxytocin" (docs/plan/05-layout-center.md §8). */
@@ -18,8 +20,10 @@ function useWindowTitle(): string {
     panel?.terminalId ? s.terminals[panel.terminalId]?.title : undefined,
   );
   const panelTitle = terminalTitle ?? panel?.title;
+  const waiting = useWaitingCount();
+  useAttentionBadge(waiting);
   const parts = [project?.name, project ? panelTitle : undefined, 'Oxytocin'].filter(Boolean);
-  const title = parts.join(' — ');
+  const title = `${waiting > 0 ? `(${waiting}) ` : ''}${parts.join(' — ')}`;
   useEffect(() => {
     document.title = title;
   }, [title]);
@@ -56,7 +60,7 @@ export function AppLayout() {
           <WorkspaceArea />
         </main>
       </div>
-      <StatusBar left={<span>No project</span>} />
+      <StatusBar left={<ActivityStatusItems />} right={<NotificationsToggle />} />
     </div>
   );
 }

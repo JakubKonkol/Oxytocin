@@ -10,6 +10,7 @@ import { registerTerminalCommands } from './features/terminals/terminal-actions'
 import { installGlobalKeybindings } from './lib/keyboard';
 import { registerLayoutCommands } from './features/layout/layout-commands';
 import { registerProjectCommands } from './features/projects/project-actions';
+import { registerAttentionCommands } from './features/attention/attention';
 import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
@@ -22,6 +23,7 @@ ptyChannel();
 registerTerminalCommands();
 registerLayoutCommands();
 registerProjectCommands();
+registerAttentionCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 

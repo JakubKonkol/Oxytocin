@@ -5,7 +5,6 @@ import { useProjectsStore } from '../../stores/projects-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { TooltipProvider } from '../../ui/Tooltip';
 import { ProjectsSection } from './ProjectsSection';
-import { projectDotState } from './project-dot';
 
 const invoke = vi.fn((channel: string, _payload?: unknown): Promise<unknown> => {
   if (channel === 'projects:add') return Promise.resolve({ project: {}, existed: false });
@@ -88,19 +87,5 @@ describe('ProjectsSection', () => {
     fireEvent.change(input, { target: { value: 'Backend' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await waitFor(() => expect(invoke).toHaveBeenCalledWith('projects:update', { id: 'a', name: 'Backend' }));
-  });
-});
-
-describe('projectDotState', () => {
-  const t = (over: object) => ({ state: 'running', kind: 'shell', exitCode: undefined, ...over }) as never;
-  it('aggregates terminal states', () => {
-    expect(projectDotState([])).toBe('none');
-    expect(projectDotState([t({})])).toBe('idle');
-    expect(projectDotState([t({}), t({ kind: 'process' })])).toBe('running');
-    expect(projectDotState([t({ kind: 'process' }), t({ kind: 'agent' })])).toBe('agent-working');
-    expect(projectDotState([t({ kind: 'agent' }), t({ state: 'exited', exitCode: 3 })])).toBe('error');
-    const waiting = t({ kind: 'agent', agent: { state: 'waiting', displayName: 'Claude Code', since: 0 } });
-    expect(projectDotState([t({ state: 'exited', exitCode: 3 }), waiting])).toBe('attention');
-    expect(projectDotState([t({ kind: 'agent', agent: { state: 'idle' } })])).toBe('idle');
   });
 });

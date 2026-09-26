@@ -45,7 +45,7 @@ export interface AgentTerminalsPort {
 export interface AgentServiceDeps {
   ptyHost: Pick<UtilityHost<PtyHostMethods, PtyHostEvents>, 'onEvent'>;
   terminals: AgentTerminalsPort;
-  registry?: Pick<ClaudeRegistry, 'get' | 'onDidChange' | 'hasClaudeAgents'>;
+  registry?: Pick<ClaudeRegistry, 'get' | 'onDidChange' | 'hasClaudeAgents' | 'rescan'>;
   rules?: () => readonly AgentRule[];
   logger: Logger;
   now?: () => number;
@@ -197,6 +197,8 @@ export class AgentService implements Disposable {
         t.hasPreciseSource = false;
         t.workedAt = undefined;
         this.deps.logger.info(`Terminal ${t.id}: ${c.rule.displayName} detected (pid ${c.proc.pid})`);
+        // Its registry entry may already exist (written at start-up): pick it up now.
+        if (c.rule.id === 'claude-code') void this.deps.registry?.rescan();
       }
       this.updateRegistryFlag();
       this.applyRegistryTo(t);

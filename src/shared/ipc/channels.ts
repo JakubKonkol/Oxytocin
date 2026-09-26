@@ -30,6 +30,9 @@ export const INVOKE_CHANNELS = [
   'clipboard:writeText',
   'terminals:clearBell',
   'agents:list',
+  'projects:getActivity',
+  'terminals:markSeen',
+  'window:setAttention',
   'fs:statMany',
   'editor:open',
   'workspace:load',
@@ -45,6 +48,8 @@ export const EVENT_CHANNELS = [
   'projects:changed',
   'projects:active',
   'notifications:show',
+  'projects:activity',
+  'terminals:reveal',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

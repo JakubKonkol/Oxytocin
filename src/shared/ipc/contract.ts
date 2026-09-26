@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
@@ -45,6 +46,16 @@ export const invokeContract = {
   'clipboard:read': { req: z.null().optional(), res: z.object({ text: z.string(), hasImage: z.boolean() }) },
   'clipboard:writeText': { req: z.object({ text: z.string().max(10_000_000) }), res: z.void() },
   'terminals:clearBell': { req: z.object({ id: TerminalIdSchema }), res: z.void() },
+  'projects:getActivity': { req: z.null().optional(), res: z.array(ProjectRuntimeStatusSchema) },
+  'terminals:markSeen': { req: z.object({ id: TerminalIdSchema }), res: z.void() },
+  /** Waiting-agent count for the taskbar overlay (Windows, pre-rendered PNG data URL) / dock badge. */
+  'window:setAttention': {
+    req: z.object({
+      count: z.number().int().min(0),
+      overlay: z.string().startsWith('data:image/png;base64,').max(200_000).optional(),
+    }),
+    res: z.void(),
+  },
   'agents:list': { req: z.null().optional(), res: z.array(AgentInfoWithTerminalSchema) },
   'fs:statMany': {
     req: z.object({ baseDirs: z.array(z.string()).max(4), paths: z.array(z.string().max(4096)).max(50) }),

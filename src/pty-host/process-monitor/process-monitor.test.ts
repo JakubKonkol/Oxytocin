@@ -70,6 +70,25 @@ describe('ProcessMonitor', () => {
     expect(updates[1]).toMatchObject({ foreground: { pid: 11, name: 'npm' } });
     monitor.stop();
   });
+
+  it('samples soon after a nudge while idle', async () => {
+    vi.useFakeTimers();
+    let rows = [row(10, 1, 'bash')];
+    const updates: unknown[] = [];
+    const monitor = new ProcessMonitor({
+      source: { list: () => Promise.resolve(rows) },
+      terminals: () => [{ id: 't1', pid: 10, lastOutputAt: 0 }],
+      onChange: (u) => updates.push(u),
+      logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    });
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(250); // first sample; next one in 5 s (idle)
+    rows = [row(10, 1, 'bash'), row(11, 10, 'node')];
+    monitor.nudge(300);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(updates).toHaveLength(2);
+    monitor.stop();
+  });
 });
 
 describe('descendantPids', () => {

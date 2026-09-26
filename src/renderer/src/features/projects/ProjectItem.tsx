@@ -8,10 +8,11 @@ import { executeCommand } from '../../lib/commands';
 import { ipc } from '../../lib/ipc-client';
 import { currentPlatform } from '../../lib/platform';
 import { Badge } from '../../ui/Badge';
-import { StatusDot, STATUS_DOT_LABELS } from '../../ui/StatusDot';
+import { PROJECT_ACTIVITY_LABELS } from '@shared/domain/activity';
+import { StatusDot } from '../../ui/StatusDot';
+import { useProjectsStore } from '../../stores/projects-store';
 import { activateProject, removeProject, renameProject } from './project-actions';
 import { ProjectAvatar } from './ProjectAvatar';
-import { projectDotState } from './project-dot';
 
 export const PROJECT_DRAG_TYPE = 'application/x-oxytocin-project';
 
@@ -30,11 +31,19 @@ const menuItem =
 export function ProjectItem({ project, active, terminals, onDragStart, onDropOn }: ProjectItemProps) {
   const [renaming, setRenaming] = useState(false);
   const [dropHint, setDropHint] = useState<'before' | 'after' | null>(null);
-  const dot = projectDotState(terminals);
+  const status = useProjectsStore((s) => s.activity[project.id]);
+  const dot = status?.activity ?? 'none';
+  const waiting = status?.agents.waiting ?? 0;
   const reveal = currentPlatform() === 'darwin' ? 'Reveal in Finder' : 'Reveal in Explorer';
   const tooltip = [
     project.rootPath,
-    project.missing ? 'Folder not found' : STATUS_DOT_LABELS[dot],
+    project.missing
+      ? 'Folder not found'
+      : dot === 'attention'
+        ? `${waiting} agent${waiting === 1 ? ' is' : 's are'} waiting for you`
+        : dot === 'error' && status?.unseenError
+          ? `Process exited with code ${status.unseenError.exitCode}`
+          : PROJECT_ACTIVITY_LABELS[dot],
     `${terminals.length} terminal${terminals.length === 1 ? '' : 's'}`,
   ].join(' · ');
 

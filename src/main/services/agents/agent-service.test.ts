@@ -46,7 +46,12 @@ function setup(initial: Partial<TerminalInfo> = {}) {
   };
   const regEntries = new Map<number, RegistryEntry>();
   const regChanged = new Emitter<void>();
-  const registry = { get: (pid: number) => regEntries.get(pid), onDidChange: regChanged.event, hasClaudeAgents: false };
+  const registry = {
+    get: (pid: number) => regEntries.get(pid),
+    onDidChange: regChanged.event,
+    hasClaudeAgents: false,
+    rescan: () => Promise.resolve(),
+  };
   const service = new AgentService({ ptyHost, terminals, registry, logger: silentLogger, now: () => now, tickMs: 0 });
   const info: TerminalInfo = {
     id: 't1',
@@ -150,6 +155,20 @@ describe('AgentService', () => {
     s.regChanged.fire();
     expect(s.info().agent?.state).toBe('idle');
     expect(s.info().agent?.waitingFor).toBeUndefined();
+  });
+
+  it('REPRO bell then registry waiting', () => {
+    const s = setup();
+    s.regEntries.set(200, { pid: 200, status: 'idle' });
+    s.emit('terminal:process', { id: 't1', descendants: [s.claude] });
+    s.regEntries.set(200, { pid: 200, status: 'busy' });
+    s.regChanged.fire();
+    s.emit('terminal:progress', { id: 't1', state: 3 });
+    s.advance(200);
+    s.emit('terminal:bell', { id: 't1' });
+    s.regEntries.set(200, { pid: 200, status: 'waiting', waitingFor: 'permission' });
+    s.regChanged.fire();
+    expect(s.info().agent?.state).toBe('waiting');
   });
 
   it('lower-priority sources cannot override a higher one for 10 s', () => {

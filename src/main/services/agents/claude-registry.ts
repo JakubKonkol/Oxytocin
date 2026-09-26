@@ -116,18 +116,16 @@ export class ClaudeRegistry implements Disposable {
 
   start(): void {
     void this.rescan();
-    // Full rescan every 15 s (lost watch events); the CLI fallback polls every 5 s while it is in use.
+    // Until the directory can be watched (it appears when Claude Code first runs) it is checked every second;
+    // afterwards a full rescan every 15 s covers lost watch events. The CLI fallback polls every 5 s.
     const rescanMs = this.o.rescanMs ?? 15_000;
     let last = Date.now();
-    this.rescanTimer = setInterval(
-      () => {
-        if (this.usingCli || Date.now() - last >= rescanMs) {
-          last = Date.now();
-          void this.rescan();
-        }
-      },
-      Math.min(5000, rescanMs),
-    );
+    this.rescanTimer = setInterval(() => {
+      const interval = this.usingCli ? 5000 : this.watcher ? rescanMs : 1000;
+      if (Date.now() - last < interval) return;
+      last = Date.now();
+      void this.rescan();
+    }, 1000);
     this.tryWatch();
   }
 

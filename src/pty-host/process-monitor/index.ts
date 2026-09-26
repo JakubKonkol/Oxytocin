@@ -59,6 +59,8 @@ export interface ProcessMonitorOptions {
  */
 export class ProcessMonitor {
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private nextAt = 0;
+  private running = false;
   private readonly hashes = new Map<string, string>();
   private backoff = 1;
   private stopped = false;
@@ -78,7 +80,14 @@ export class ProcessMonitor {
   private schedule(ms: number): void {
     if (this.stopped) return;
     if (this.timer) clearTimeout(this.timer);
+    this.nextAt = this.now() + ms;
     this.timer = setTimeout(() => void this.tick(), ms);
+  }
+
+  /** Samples within `withinMs` unless a sample is already due sooner (user pressed Enter, output resumed). */
+  nudge(withinMs: number): void {
+    if (this.stopped || this.running) return;
+    if (this.nextAt - this.now() > withinMs) this.schedule(withinMs);
   }
 
   /** Runs a sampling cycle now (e.g. right after a terminal was created). */
@@ -87,6 +96,15 @@ export class ProcessMonitor {
   }
 
   async tick(): Promise<void> {
+    this.running = true;
+    try {
+      await this.sample();
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async sample(): Promise<void> {
     const terminals = this.o.terminals();
     if (terminals.length === 0) {
       this.hashes.clear();

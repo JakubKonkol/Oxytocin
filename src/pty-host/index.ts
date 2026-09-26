@@ -14,11 +14,16 @@ const parentPort = process.parentPort;
 const ref: { emit?: (name: string, payload: unknown) => void } = {};
 const logRef: { log?: Logger } = {};
 
-const monitorRef: { poke?: () => void } = {};
+const monitorRef: { poke?: () => void; nudge?: (withinMs: number) => void } = {};
 const manager = new TerminalManager({
   spawnPty: spawn,
   onSpawned: () => monitorRef.poke?.(),
-  emit: (name, payload) => ref.emit?.(name, payload),
+  emit: (name, payload) => {
+    // A command usually starts with Enter; output resuming after a quiet period also hints at new processes.
+    if (name === 'terminal:userInput') monitorRef.nudge?.(300);
+    else if (name === 'terminal:activity') monitorRef.nudge?.(1000);
+    ref.emit?.(name, payload);
+  },
   logger: {
     error: (m, ...a) => logRef.log?.error(m, ...a),
     warn: (m, ...a) => logRef.log?.warn(m, ...a),
@@ -58,6 +63,7 @@ const monitor = new ProcessMonitor({
   logger: log,
 });
 monitorRef.poke = () => monitor.poke();
+monitorRef.nudge = (ms) => monitor.nudge(ms);
 monitor.start();
 
 /** Electron's MessagePortMain as a RendererPort. */

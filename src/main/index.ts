@@ -8,6 +8,8 @@ import {
   dialog,
   ipcMain,
   MessageChannelMain,
+  nativeImage,
+  Notification,
   screen,
   session,
   shell,
@@ -30,6 +32,8 @@ import { ProfileService } from './services/terminals/profiles';
 import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
 import { TerminalService } from './services/terminals/terminal-service';
 import { AgentService } from './services/agents/agent-service';
+import { ActivityService } from './services/activity/activity-service';
+import { NotificationService } from './services/notifications/notification-service';
 import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-registry';
 import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
@@ -155,6 +159,23 @@ function bootstrap(): void {
     claudeRegistry.start();
   });
 
+  const activity = new ActivityService(terminals, () => projects.list().map((p) => p.id));
+  const osNotifications: { title: string; body: string; click: () => void }[] = [];
+  let attentionCount = 0;
+  const applyAttention = ({ count, overlay }: { count: number; overlay?: string | undefined }) => {
+    attentionCount = count;
+    if (process.platform === 'win32') {
+      mainWindow?.setOverlayIcon(
+        count > 0 && overlay ? nativeImage.createFromDataURL(overlay) : null,
+        count > 0 ? `${count} waiting` : '',
+      );
+    } else if (process.platform === 'darwin') {
+      app.dock?.setBadge(count > 0 ? String(count) : '');
+    } else {
+      app.setBadgeCount(count);
+    }
+  };
+
   const editor = new EditorLauncher(createLogger('editor'), e2e);
 
   installPermissionHandlers(session.defaultSession);
@@ -220,6 +241,9 @@ function bootstrap(): void {
       'terminals:list': (req) => terminals.list(req?.projectId),
       'terminals:profiles': () => profiles.list(),
       'agents:list': () => agents.list(),
+      'projects:getActivity': () => activity.list(),
+      'terminals:markSeen': ({ id }) => activity.markSeen(id),
+      'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
       'clipboard:read': async () => {
         const text = await clipboard.readText();
@@ -259,6 +283,52 @@ function bootstrap(): void {
   hosts.onDidChangeStatus((status) => sendEvent(win.webContents, 'hosts:status', status));
   terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
   agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));
+  activity.onDidChange((list) => sendEvent(win.webContents, 'projects:activity', list));
+
+  // Attention system (docs/plan/02-ui-ux.md §9).
+  const liveNotifications = new Set<Notification>();
+  const reveal = (target: { projectId: string; terminalId: string }) => {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    void projects
+      .setActive(target.projectId)
+      .catch(() => undefined)
+      .then(() => sendEvent(win.webContents, 'terminals:reveal', target));
+  };
+  const notifications = new NotificationService({
+    terminals,
+    settings: () => settings.get(),
+    projectName: (id) => projects.get(id)?.name,
+    toast: (payload) => sendEvent(win.webContents, 'notifications:show', payload),
+    window: {
+      isFocused: () => {
+        const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyWindowFocused'] : undefined;
+        return typeof scripted === 'boolean' ? scripted : win.isFocused();
+      },
+      flash: (on) => {
+        if (!win.isDestroyed()) win.flashFrame(on);
+      },
+    },
+    osNotify: ({ title, body, onClick }) => {
+      if (e2e) {
+        osNotifications.push({ title, body, click: onClick });
+        return;
+      }
+      if (!Notification.isSupported()) return;
+      const n = new Notification({ title, body, icon: appPaths.windowIcon() });
+      liveNotifications.add(n);
+      n.on('click', () => {
+        liveNotifications.delete(n);
+        onClick();
+      });
+      n.on('close', () => liveNotifications.delete(n));
+      n.show();
+    },
+    reveal,
+  });
+  win.on('focus', () => notifications.onWindowFocus());
   projects.onDidChange((list) => sendEvent(win.webContents, 'projects:changed', list));
   projects.onDidChangeActive((id) => sendEvent(win.webContents, 'projects:active', { id }));
 
@@ -386,6 +456,9 @@ function bootstrap(): void {
       hosts,
       terminals,
       agents,
+      activity,
+      osNotifications,
+      attentionCount: () => attentionCount,
       editor,
       workspaceState,
       projects,

@@ -4,7 +4,8 @@ import { subscribeSettings, useSettingsStore } from './stores/settings-store';
 import { subscribeTerminals, useTerminalsStore } from './stores/terminals-store';
 import { useUiStore } from './stores/ui-store';
 import { subscribeProjects, useProjectsStore } from './stores/projects-store';
-import { notify } from './ui/Toast';
+import { showNotification } from './features/attention/attention';
+import { revealTerminal } from './features/attention/reveal';
 import { ipc } from './lib/ipc-client';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
@@ -20,7 +21,8 @@ export function App() {
     subscribeSettings();
     subscribeTerminals();
     subscribeProjects();
-    ipc.on('notifications:show', (n) => notify(n.kind, n.message, n.description ? { description: n.description } : {}));
+    ipc.on('notifications:show', showNotification);
+    ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
     Promise.all([
       useUiStore.getState().load(),
       useSettingsStore.getState().load(),
