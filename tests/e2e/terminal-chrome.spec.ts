@@ -32,7 +32,7 @@ test('OSC title and BEL update the header', async () => {
         "process.stdout.write(String.fromCharCode(27) + ']0;Custom ' + 'Title' + String.fromCharCode(7) + String.fromCharCode(7)); setInterval(() => {}, 1000)",
       ),
     );
-    await expect(win.getByTestId('terminal-title')).toHaveText('Custom Title');
+    await expect(win.getByTestId('tab-title')).toHaveText('Custom Title');
     await expect(win.getByTestId('terminal-bell')).toBeVisible();
     await win.keyboard.press('Control+C');
   } finally {
@@ -46,7 +46,7 @@ test('an exit with a non-zero code shows the exit bar and Restart starts a new s
     const id = await waitForTerminal(win);
     await run(win, 'exit 3');
     await expect(win.getByTestId('terminal-exit-bar')).toContainText('Process exited with code 3');
-    await expect(win.getByTestId('terminal-header')).toContainText('EXITED (3)');
+    await expect(win.locator('[data-testid^="tab-"]').first()).toContainText('EXITED (3)');
     await win.getByRole('button', { name: 'Restart' }).click();
     await expect(win.getByTestId('terminal-exit-bar')).toHaveCount(0);
     const newId = await waitForTerminal(win);

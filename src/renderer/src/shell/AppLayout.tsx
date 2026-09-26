@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { registerCommand } from '../lib/commands';
 import { useUiStore } from '../stores/ui-store';
-import { DefaultTerminalArea } from '../features/terminals/DefaultTerminalArea';
+import { ProjectWorkspace } from '../features/layout/ProjectWorkspace';
+import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { Sidebar } from './Sidebar';
 import { SidebarResizer } from './SidebarResizer';
 import { StatusBar } from './StatusBar';
@@ -33,7 +34,7 @@ export function AppLayout() {
           </>
         )}
         <main data-testid="center" className="min-w-0 flex-1 pb-0">
-          <DefaultTerminalArea />
+          <ProjectWorkspace projectId={DEFAULT_PROJECT_ID} active />
         </main>
       </div>
       <StatusBar left={<span>No project</span>} />

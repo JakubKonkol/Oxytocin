@@ -67,3 +67,60 @@
   flex-direction: column;
   min-height: 0;
 }
+
+/* Center area: every group is a card; the active group gets the focus border (prototype). */
+.oxy-dockview {
+  --dv-background-color: var(--bg-app);
+}
+.oxy-dockview .dv-groupview {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.oxy-dockview .dv-groupview.dv-active-group {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-focus) 35%, transparent);
+}
+.oxy-dockview .dv-groupview .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.oxy-dockview .dv-groupview.dv-active-group .dv-tabs-and-actions-container {
+  background: var(--bg-focus-tint);
+}
+.oxy-dockview .dv-tab {
+  padding: 0;
+}
+.oxy-dockview .dv-tab.dv-active-tab {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.oxy-dockview .dv-tabs-container.dv-single-tab.dv-full-width-single-tab .dv-tab.dv-active-tab {
+  box-shadow: none;
+}
+.oxy-dockview .dv-groupview .dv-content-container {
+  background: var(--bg-terminal);
+}
+/* Dashed separators between groups; solid accent while hovering or dragging. */
+.oxy-dockview .dv-sash {
+  position: relative;
+}
+.oxy-dockview .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash::after {
+  content: '';
+  position: absolute;
+  inset: 50% 8px auto 8px;
+  border-top: 1px dashed var(--border-default);
+}
+.oxy-dockview .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash::after {
+  content: '';
+  position: absolute;
+  inset: 8px auto 8px 50%;
+  border-left: 1px dashed var(--border-default);
+}
+.oxy-dockview .dv-sash:hover::after,
+.oxy-dockview .dv-sash:active::after {
+  border-style: solid !important;
+  border-color: var(--accent) !important;
+}
+body.oxy-dragging iframe {
+  pointer-events: none;
+}

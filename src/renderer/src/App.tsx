@@ -9,7 +9,7 @@ import { DialogHost } from './ui/DialogHost';
 import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
-  const loaded = useUiStore((s) => s.loaded);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,7 +20,9 @@ export function App() {
       useSettingsStore.getState().load(),
       useAppStore.getState().load(),
       useTerminalsStore.getState().load(),
-    ]).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    ])
+      .then(() => setLoaded(true))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   if (error) return <div className="p-4 text-danger">Failed to start: {error}</div>;

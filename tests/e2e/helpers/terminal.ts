@@ -32,9 +32,9 @@ export const oxyTest = (page: Page) => ({
     ] as const),
 });
 
-/** Waits for the first terminal of the default area and its shell prompt; returns its id. */
-export async function waitForTerminal(page: Page): Promise<string> {
-  const panel = page.getByTestId('terminal-panel');
+/** Waits for the n-th terminal panel (default: the first) and its shell prompt; returns its id. */
+export async function waitForTerminal(page: Page, index = 0): Promise<string> {
+  const panel = page.locator('[data-terminal-id]').nth(index);
   await expect(panel).toBeVisible({ timeout: 15_000 });
   const id = (await panel.getAttribute('data-terminal-id'))!;
   await expect.poll(() => oxyTest(page).text(id), { timeout: 15_000 }).not.toBe('');
