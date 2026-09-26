@@ -180,7 +180,8 @@ describe('PTY Host terminal sessions', () => {
     expect(paused).toBeGreaterThan(0);
   }, 60_000);
 
-  it('kills the whole process tree', async () => {
+  // Child discovery uses `ps`; Windows uses `taskkill /T` (covered by the E2E quit tests).
+  it.skipIf(process.platform === 'win32')('kills the whole process tree', async () => {
     setup(300);
     const o = opts([
       '-e',

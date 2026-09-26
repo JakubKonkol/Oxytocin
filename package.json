@@ -88,6 +88,7 @@
     "e2e": "electron-vite build && playwright test",
     "check": "npm run typecheck && npm run lint && npm test && npm run licenses:check",
     "licenses:check": "license-checker-rseidelsohn --production --excludePrivatePackages --summary --onlyAllow \"MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1;MPL-2.0;CC0-1.0;BlueOak-1.0.0;Python-2.0\"",
-    "licenses:notices": "tsx scripts/generate-notices.ts"
+    "licenses:notices": "tsx scripts/generate-notices.ts",
+    "postinstall": "node scripts/postinstall.mjs"
   }
 }

@@ -1,4 +1,4 @@
-import { basename } from 'node:path';
+import { posix } from 'node:path';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { type DetectDeps, envValue, which } from './deps';
 
@@ -15,7 +15,7 @@ export async function detectPosixProfiles(deps: DetectDeps): Promise<TerminalPro
   const profiles: TerminalProfile[] = [];
   const seen = new Set<string>();
   const add = (file: string) => {
-    const name = basename(file);
+    const name = posix.basename(file);
     if (seen.has(name)) return;
     seen.add(name);
     profiles.push({ id: name, name, kind: 'shell', file, args: ['-l'], icon: 'terminal', source: 'detected' });
@@ -24,7 +24,7 @@ export async function detectPosixProfiles(deps: DetectDeps): Promise<TerminalPro
   if (loginShell && (await deps.isFile(loginShell))) add(loginShell);
   const etcShells = parseEtcShells((await deps.readText('/etc/shells')) ?? '');
   for (const shell of KNOWN_SHELLS) {
-    const fromEtc = etcShells.find((s) => basename(s) === shell);
+    const fromEtc = etcShells.find((s) => posix.basename(s) === shell);
     const file = fromEtc && (await deps.isFile(fromEtc)) ? fromEtc : await which(shell, deps);
     if (file) add(file);
   }

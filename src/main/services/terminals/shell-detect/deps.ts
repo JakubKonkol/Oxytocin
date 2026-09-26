@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { access, constants, readFile, stat } from 'node:fs/promises';
-import { delimiter, isAbsolute, join } from 'node:path';
+import { posix, win32 } from 'node:path';
 
 /** I/O used by profile detection — injectable so detection logic is unit-testable. */
 export interface DetectDeps {
@@ -57,8 +57,8 @@ function envGet(env: DetectDeps['env'], name: string, caseInsensitive: boolean):
 /** Finds an executable on PATH (honours PATHEXT on Windows). */
 export async function which(name: string, deps: DetectDeps): Promise<string | null> {
   const win = deps.platform === 'win32';
-  const sep = win ? ';' : delimiter === ';' ? ':' : delimiter;
-  if (isAbsolute(name)) return (await deps.isFile(name)) ? name : null;
+  const sep = win ? ';' : ':';
+  if ((win ? win32 : posix).isAbsolute(name)) return (await deps.isFile(name)) ? name : null;
   const dirs = (envGet(deps.env, 'PATH', win) ?? '').split(sep).filter(Boolean);
   const exts = win
     ? /\.[a-z0-9]+$/i.test(name)
@@ -67,7 +67,9 @@ export async function which(name: string, deps: DetectDeps): Promise<string | nu
     : [''];
   for (const dir of dirs) {
     for (const ext of exts) {
-      const candidate = win ? `${dir.replace(/[\\/]+$/, '')}\\${name}${ext.toLowerCase()}` : join(dir, name + ext);
+      const candidate = win
+        ? `${dir.replace(/[\\/]+$/, '')}\\${name}${ext.toLowerCase()}`
+        : posix.join(dir, name + ext);
       if (await deps.isFile(candidate)) return candidate;
     }
   }
