@@ -28,6 +28,16 @@ import snapshot from './pricing/snapshot.json';
 import { PricingService, type PricingCache, type PricingServiceDeps } from './pricing/pricing-service';
 import type { PricingTable } from './pricing/types';
 import { DEFAULT_SETTINGS, type UsageSettings } from './settings';
+import {
+  type BudgetAlert,
+  type BudgetInput,
+  checkBudgetAlerts,
+  deleteBudget,
+  evaluateBudget,
+  listBudgets,
+  saveBudget,
+} from './analytics/budgets';
+import { sidebarModel, statusModel, type ViewContext } from './analytics/view-model';
 import { type Database, getMeta, openDatabase, schemaVersion, setMeta, transaction } from './store/db';
 import { EventWriter, type IngestContext, recomputeCosts } from './store/events';
 
@@ -58,6 +68,7 @@ export interface AgentRef {
   since: number;
   sessionId?: string;
   cwd?: string;
+  state?: string;
 }
 
 /** Codex/Gemini sessions are linked to a terminal when they start within this window of the agent (§6). */
@@ -126,6 +137,7 @@ export class UsageEngine {
   private readonly progressListeners = new Set<(source: UsageSource, done: number, total: number) => void>();
   private readonly linkListeners = new Set<(link: { terminalId: string; sessionId: string; agent: string }) => void>();
   private agents: AgentRef[] = [];
+  activeProjectId: string | null = null;
   private readonly linkedTerminals = new Set<string>();
   private otlp: OtlpServer | undefined;
   private readonly otlpTracker = new CumulativeTracker();
@@ -555,6 +567,59 @@ export class UsageEngine {
   stopCollectors(): void {
     for (const c of this.collectors.values()) c.stop();
     this.collectors.clear();
+  }
+
+  viewContext(): ViewContext {
+    return {
+      now: this.now(),
+      activeProjectId: this.activeProjectId,
+      agents: this.agents,
+      billing: this.settings.billing,
+      weekStartsOn: this.settings.weekStartsOn,
+      claudeBlockLimit: this.settings.claudeBlockLimit,
+      projectName: (id) => this.attribution.name(id),
+    };
+  }
+
+  sidebar() {
+    return sidebarModel(this.db, this.viewContext());
+  }
+
+  status() {
+    return statusModel(this.db, this.viewContext());
+  }
+
+  budgets() {
+    const now = this.now();
+    return listBudgets(this.db).map((b) => evaluateBudget(this.db, b, now, this.settings.weekStartsOn));
+  }
+
+  saveBudget(input: BudgetInput) {
+    const b = saveBudget(this.db, input, this.now());
+    this.emitChanged(1);
+    return b;
+  }
+
+  deleteBudget(id: string): void {
+    deleteBudget(this.db, id);
+    this.emitChanged(1);
+  }
+
+  /** Budget thresholds crossed for the first time in their period (§13) → notifications. */
+  checkBudgets(): BudgetAlert[] {
+    const now = this.now();
+    const statuses = listBudgets(this.db)
+      .filter((b) => b.enabled)
+      .map((b) => evaluateBudget(this.db, b, now, this.settings.weekStartsOn));
+    return checkBudgetAlerts(this.db, statuses, now);
+  }
+
+  /** Deletes events older than `usage.retentionDays` (§11); returns the number removed. */
+  applyRetention(): number {
+    const cutoff = this.now() - this.settings.retentionDays * DAY_MS;
+    const removed = Number(this.db.prepare('DELETE FROM usage_events WHERE ts < ?').run(cutoff).changes);
+    this.db.prepare('DELETE FROM sessions WHERE last_event_at < ?').run(cutoff);
+    return removed;
   }
 
   close(): void {

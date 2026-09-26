@@ -3,10 +3,12 @@ import { parentPort, workerData } from 'node:worker_threads';
 import { detectUserOtelConfig, type EngineOptions, UsageEngine } from '../engine';
 import type { ProjectRef } from '../attribution';
 import type { AgentRef } from '../engine';
+import type { BudgetInput } from '../analytics/budgets';
 import type { CollectorSettings, UsageSettings } from '../settings';
 import { serveWorker } from '../worker-rpc';
 
 const PRICING_CHECK_MS = 60 * 60 * 1000;
+const RETENTION_MS = 24 * 60 * 60 * 1000;
 const CHANGE_THROTTLE_MS = 1000;
 
 if (!parentPort) throw new Error('ingest-worker must run in a worker thread');
@@ -31,6 +33,14 @@ const emit = serveWorker(parentPort, {
   'pricing.refresh': async () => (await ready).maybeRefreshPricing(true),
   setProjects: async (projects: ProjectRef[]) => (await ready).setProjects(projects),
   setAgents: async (list: AgentRef[]) => (await ready).setAgents(list),
+  setActiveProject: async (id: string | null) => {
+    (await ready).activeProjectId = id;
+  },
+  'view.sidebar': async () => (await ready).sidebar(),
+  'view.status': async () => (await ready).status(),
+  'budgets.list': async () => (await ready).budgets(),
+  'budgets.save': async (input: BudgetInput) => (await ready).saveBudget(input),
+  'budgets.delete': async ({ id }: { id: string }) => (await ready).deleteBudget(id),
   /** Live telemetry (§9): starts/stops the receiver; reports a user OpenTelemetry configuration for Claude Code. */
   'otlp.configure': async ({ enabled }: { enabled: boolean }) => {
     const endpoint = await (await ready).configureOtlp(enabled);
@@ -65,10 +75,13 @@ const ready = UsageEngine.create({
     setTimeout(() => {
       pending = false;
       emit('changed', null);
+      for (const alert of e.checkBudgets()) emit('budgetAlert', alert);
     }, CHANGE_THROTTLE_MS);
   });
   e.onProgress((source, done, total) => emit('progress', { source, done, total }));
   e.onSessionLinked((link) => emit('sessionLinked', link));
   setInterval(() => void e.maybeRefreshPricing(), PRICING_CHECK_MS).unref();
+  e.applyRetention();
+  setInterval(() => e.applyRetention(), RETENTION_MS).unref();
   return e;
 });

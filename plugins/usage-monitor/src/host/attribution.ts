@@ -4,6 +4,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 export interface ProjectRef {
   id: string;
   rootPath: string;
+  name?: string;
 }
 
 /** `cwd` → Oxytocin project by the longest matching root (docs/plan/08-usage-monitor.md §6). */
@@ -23,6 +24,10 @@ export class ProjectAttribution {
     this.hashes = new Map();
     for (const p of next) for (const h of projectHashes(p.rootPath)) if (!this.hashes.has(h)) this.hashes.set(h, p.id);
     return true;
+  }
+
+  name(id: string | null | undefined): string | undefined {
+    return id ? this.projects.find((p) => p.id === id)?.name : undefined;
   }
 
   /** Gemini CLI sessions: sha256 of the project root. */

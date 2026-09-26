@@ -11,10 +11,25 @@ function settingsReader(ctx: PluginContext) {
 
 function readSettings(ctx: PluginContext): UsageSettings {
   const get = settingsReader(ctx);
+  const block = get<{ metric?: unknown; amount?: unknown } | null>('usage.limits.claudeBlock', null);
   return {
     costMode: get('usage.costMode', DEFAULT_SETTINGS.costMode),
     pricingAutoUpdate: get('usage.pricing.autoUpdate', DEFAULT_SETTINGS.pricingAutoUpdate),
     pricingOverrides: get('usage.pricing.overrides', DEFAULT_SETTINGS.pricingOverrides),
+    billing: {
+      'claude-code': get('usage.billing.claudeCode', 'api'),
+      codex: get('usage.billing.codex', 'api'),
+      'gemini-cli': get('usage.billing.gemini', 'api'),
+    },
+    weekStartsOn: get('usage.weekStartsOn', DEFAULT_SETTINGS.weekStartsOn),
+    claudeBlockLimit:
+      block &&
+      (block.metric === 'usd' || block.metric === 'tokens') &&
+      typeof block.amount === 'number' &&
+      block.amount > 0
+        ? { metric: block.metric, amount: block.amount }
+        : null,
+    retentionDays: get('usage.retentionDays', DEFAULT_SETTINGS.retentionDays),
   };
 }
 
@@ -46,6 +61,7 @@ const agentRefs = (agents: AgentSnapshot[]) =>
     since: a.since,
     ...(a.sessionId ? { sessionId: a.sessionId } : {}),
     ...(a.cwd ? { cwd: a.cwd } : {}),
+    state: a.state,
   }));
 
 /** Usage Monitor backend (docs/plan/08-usage-monitor.md §2): runs the ingest worker and feeds it core state. */
@@ -61,6 +77,17 @@ export async function activate(ctx: PluginContext): Promise<void> {
   });
   client.onEvent((event, payload) => {
     if (event === 'log') ctx.log.warn((payload as { message: string }).message);
+    if (event === 'budgetAlert') {
+      const a = payload as { name: string; threshold: number; spent: number; amount: number; metric: 'usd' | 'tokens' };
+      const fmt = (v: number) =>
+        a.metric === 'usd' ? `$${v.toFixed(2)}` : `${Math.round(v).toLocaleString('en-US')} tokens`;
+      void oxy.ui.showNotification({
+        level: a.threshold >= 1 ? 'warning' : 'info',
+        message: `Budget "${a.name}": ${Math.round(a.threshold * 100)}% reached`,
+        detail: `${fmt(a.spent)} of ${fmt(a.amount)}`,
+        os: true,
+      });
+    }
     // A Codex/Gemini session file was matched to the agent in a terminal: tell the core (§6).
     if (event === 'sessionLinked') {
       const link = payload as { terminalId: string; sessionId: string };
@@ -79,9 +106,10 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const pushProjects = async () =>
     client.request(
       'setProjects',
-      (await oxy.projects.list()).map((p) => ({ id: p.id, rootPath: p.rootPath })),
+      (await oxy.projects.list()).map((p) => ({ id: p.id, rootPath: p.rootPath, name: p.name })),
     );
   await pushProjects();
+  await client.request('setActiveProject', (await oxy.projects.getActive())?.id ?? null);
   await client.request('setAgents', agentRefs(await oxy.agents.list()));
   let collectorKey = JSON.stringify(readCollectorSettings(ctx));
   await client.request('startCollectors', readCollectorSettings(ctx));
@@ -102,6 +130,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
 
   ctx.subscriptions.push(
     oxy.projects.onDidChange(() => void pushProjects()),
+    oxy.projects.onDidChangeActive((p) => void client.request('setActiveProject', p?.id ?? null)),
     oxy.agents.onDidChange((agents) => void client.request('setAgents', agentRefs(agents))),
     oxy.settings.onDidChange('usage.', () => {
       void client.request('setSettings', readSettings(ctx));
