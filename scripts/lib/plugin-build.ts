@@ -55,6 +55,16 @@ export async function writeChecksums(pluginDir: string): Promise<Record<string, 
   return sums;
 }
 
+/** Whether sources (package.json, src/**) changed since the last build (its checksum file). */
+export async function isStale(pluginDir: string): Promise<boolean> {
+  const built = await stat(join(pluginDir, CHECKSUM_FILE)).catch(() => null);
+  if (!built) return true;
+  const sources = [join(pluginDir, 'package.json')];
+  if (await exists(join(pluginDir, 'src'))) sources.push(...(await listFiles(join(pluginDir, 'src'))));
+  for (const file of sources) if ((await stat(file)).mtimeMs > built.mtimeMs) return true;
+  return false;
+}
+
 export async function buildPlugin(pluginDir: string): Promise<void> {
   const dist = join(pluginDir, 'dist');
   await rm(dist, { recursive: true, force: true });

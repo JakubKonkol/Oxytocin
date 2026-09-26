@@ -24,6 +24,9 @@ interface ViewInstance {
   disposed: Emitter<void>;
   handlers: Map<string, (params: unknown) => unknown>;
   pending: Disposable | undefined;
+  /** Settles when the provider's `resolve()` finished (or failed / never came): messages wait for it. */
+  resolved: Promise<void>;
+  markResolved: () => void;
 }
 
 /** View instances in the Plugin Host (`PluginView` objects handed to providers, docs/plan/07 §6.4). */
@@ -40,6 +43,8 @@ export class ViewHost {
     const handlers = new Map<string, (params: unknown) => unknown>();
     let title: string | undefined;
     let badge: PluginView['badge'];
+    let markResolved!: () => void;
+    const resolved = new Promise<void>((r) => (markResolved = r));
     const instance: ViewInstance = {
       req,
       visible: req.visible,
@@ -48,6 +53,8 @@ export class ViewHost {
       disposed,
       handlers,
       pending: undefined,
+      resolved,
+      markResolved,
       view: undefined as unknown as PluginView,
     };
     const guard =
@@ -108,8 +115,12 @@ export class ViewHost {
       void Promise.resolve()
         .then(() => found.provider.resolve(instance.view))
         .then(
-          () => this.bridge.send(instance.req.viewId, { kind: 'evt', name: 'resolved', payload: null }),
+          () => {
+            instance.markResolved();
+            this.bridge.send(instance.req.viewId, { kind: 'evt', name: 'resolved', payload: null });
+          },
           (e: unknown) => {
+            instance.markResolved();
             this.bridge.error(instance.req.pluginId, 'resolve()', e);
             this.bridge.send(instance.req.viewId, {
               kind: 'evt',
@@ -124,6 +135,7 @@ export class ViewHost {
     const timer = setTimeout(() => {
       instance.pending?.dispose();
       instance.pending = undefined;
+      instance.markResolved();
       this.bridge.send(instance.req.viewId, {
         kind: 'evt',
         name: 'error',
@@ -148,6 +160,7 @@ export class ViewHost {
     if (!instance) return;
     this.views.delete(viewId);
     instance.pending?.dispose();
+    instance.markResolved();
     instance.disposed.fire();
     instance.messages.dispose();
     instance.visibility.dispose();
@@ -169,6 +182,9 @@ export class ViewHost {
   async message(viewId: string, envelope: ViewEnvelope): Promise<void> {
     const instance = this.views.get(viewId);
     if (!instance) return;
+    // Requests sent right after the view loaded must not beat an async `resolve()` registering its handlers.
+    await instance.resolved;
+    if (this.views.get(viewId) !== instance) return;
     if (envelope.kind === 'msg') {
       instance.messages.fire(envelope.payload);
       return;

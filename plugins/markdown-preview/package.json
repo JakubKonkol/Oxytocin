@@ -1,0 +1,53 @@
+{
+  "name": "@oxytocin/markdown-preview",
+  "version": "0.1.0",
+  "description": "Live preview of Markdown files (plans, reports, READMEs) next to the terminal",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "oxytocin": {
+    "id": "oxytocin.markdown-preview",
+    "displayName": "Markdown Preview",
+    "description": "Live preview of Markdown files next to the terminal.",
+    "publisher": "oxytocin",
+    "engine": "^0.1.0",
+    "main": "dist/host.js",
+    "activationEvents": [
+      "onPanel:markdown.preview",
+      "onCommand:markdown.openPreview"
+    ],
+    "permissions": [
+      "projects.read",
+      "fs.read-project"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "type": "markdown.preview",
+          "title": "Preview",
+          "entry": "dist/views/preview.html",
+          "singleton": false
+        }
+      ],
+      "commands": [
+        {
+          "id": "markdown.openPreview",
+          "title": "Markdown: Open Preview"
+        }
+      ],
+      "fileOpeners": [
+        {
+          "id": "markdown.preview",
+          "extensions": [
+            ".md",
+            ".markdown",
+            ".mdx"
+          ],
+          "panelType": "markdown.preview",
+          "title": "Open Preview",
+          "default": false
+        }
+      ]
+    }
+  }
+}

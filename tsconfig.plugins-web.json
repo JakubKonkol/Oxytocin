@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo/plugins-web.tsbuildinfo",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client", "@testing-library/jest-dom/vitest"]
+  },
+  "include": ["plugins/*/src/views/**/*"]
+}

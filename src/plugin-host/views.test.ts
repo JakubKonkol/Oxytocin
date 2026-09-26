@@ -68,6 +68,26 @@ describe('ViewHost', () => {
     expect(await view!.postMessage('late')).toBe(false);
   });
 
+  it('holds requests until an async resolve() has registered its handlers', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const s = setup({
+      x: {
+        async resolve(v) {
+          await gate;
+          v.onRequest('load', () => 'content');
+        },
+      },
+    });
+    s.host.open(s.req);
+    const answered = s.host.message('v1', { kind: 'req', id: 7, method: 'load', payload: null });
+    await flush();
+    expect(s.sent.some((x) => x.envelope.kind === 'res')).toBe(false);
+    release();
+    await answered;
+    expect(s.sent.map((x) => x.envelope)).toContainEqual({ kind: 'res', id: 7, ok: true, result: 'content' });
+  });
+
   it('waits for a provider registered later and reports a missing one after 10 s', async () => {
     vi.useFakeTimers();
     const resolved = vi.fn();

@@ -42,8 +42,11 @@ test('plugins are discovered with states and contributions', async () => {
     await win.evaluate(() => window.oxy.invoke('plugins:setEnabled', { id: 'test.echo', enabled: false }));
     const after = (await win.evaluate(() => window.oxy.invoke('plugins:list'))) as Descriptor[];
     expect(after.find((p) => p.id === 'test.echo')?.state).toBe('disabled');
+    // Only built-in plugins contribute commands now.
     expect(
-      ((await win.evaluate(() => window.oxy.invoke('plugins:contributions'))) as { commands: unknown[] }).commands,
+      (
+        (await win.evaluate(() => window.oxy.invoke('plugins:contributions'))) as { commands: { pluginId: string }[] }
+      ).commands.filter((c) => c.pluginId === 'test.echo'),
     ).toEqual([]);
   } finally {
     await app.close();

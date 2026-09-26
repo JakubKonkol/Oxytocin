@@ -8,6 +8,7 @@ import { workspaceFor } from '../attention/reveal';
 import { newPanelId } from '../layout/panel-registry';
 import { getWorkspaceApi } from '../layout/workspace-registry';
 import { useWorkspaceVisible } from '../layout/workspace-visibility';
+import { usePluginViewMeta } from './view-meta-store';
 import { PluginFrame } from './PluginFrame';
 import { viewStates } from './view-bridge';
 
@@ -78,6 +79,8 @@ export function PluginPanelComponent(props: IDockviewPanelProps<PluginPanelParam
     s.contributions.panels.find((p) => p.type === panelType && p.pluginId === pluginId),
   );
   const workspaceVisible = useWorkspaceVisible();
+  const setMeta = usePluginViewMeta((s) => s.set);
+  useEffect(() => () => usePluginViewMeta.getState().set(props.api.id, { badge: null }), [props.api.id]);
   const [panelVisible, setPanelVisible] = useState(props.api.isVisible);
   useEffect(() => {
     const d = props.api.onDidVisibilityChange((e) => setPanelVisible(e.isVisible));
@@ -101,6 +104,7 @@ export function PluginPanelComponent(props: IDockviewPanelProps<PluginPanelParam
         title={props.api.title ?? contribution.title}
         visible={workspaceVisible && panelVisible}
         onTitle={(title) => props.api.setTitle(title)}
+        onBadge={(badge) => setMeta(props.api.id, { badge })}
         onStateChange={() => props.api.updateParameters({ ...props.params })}
       />
     </div>

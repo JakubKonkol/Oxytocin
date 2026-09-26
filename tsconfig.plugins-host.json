@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo/plugins-host.tsbuildinfo",
+    "lib": ["ES2024"],
+    "types": ["node"]
+  },
+  "include": ["plugins/*/src/host/**/*"]
+}

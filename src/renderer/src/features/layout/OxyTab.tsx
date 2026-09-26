@@ -1,6 +1,6 @@
 import type { IDockviewPanelHeaderProps } from 'dockview-react';
 import { RotateCw, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { cn } from '../../lib/cn';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { StatusDot } from '../../ui/StatusDot';
@@ -13,6 +13,8 @@ import { ipc } from '../../lib/ipc-client';
 import { useChangesStore } from '../../stores/changes-store';
 import { type DiffPanelParams, pinDiff } from '../diff/diff-actions';
 import { STATUS_LETTERS, STATUS_TEXT_CLASS } from '../changes/tree-model';
+import { usePluginViewMeta } from '../plugins/view-meta-store';
+import { Badge } from '../../ui/Badge';
 
 function useIsActive(props: IDockviewPanelHeaderProps): boolean {
   const [active, setActive] = useState(props.api.isActive);
@@ -21,6 +23,19 @@ function useIsActive(props: IDockviewPanelHeaderProps): boolean {
     return () => d.dispose();
   }, [props.api]);
   return active;
+}
+
+/** Panel title that follows `api.setTitle` (dockview does not re-render custom tabs on title changes). */
+function usePanelTitle(props: IDockviewPanelHeaderProps): string | undefined {
+  const { api } = props;
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const d = api.onDidTitleChange(onChange);
+      return () => d.dispose();
+    },
+    [api],
+  );
+  return useSyncExternalStore(subscribe, () => api.title);
 }
 
 function RenameInput({ initial, onDone }: { initial: string; onDone: (value: string | null) => void }) {
@@ -126,6 +141,22 @@ function DiffTabContent({ props }: { props: IDockviewPanelHeaderProps<DiffPanelP
   );
 }
 
+/** Plugin panel: title set by the view/backend and its badge (e.g. "changed"). */
+function PluginTabContent({ props }: { props: IDockviewPanelHeaderProps }) {
+  const badge = usePluginViewMeta((s) => s.meta[props.api.id]?.badge);
+  const title = usePanelTitle(props);
+  return (
+    <>
+      <span className="min-w-0 truncate">{title}</span>
+      {badge && (
+        <Badge variant={badge.tone ?? 'neutral'} testId="tab-plugin-badge">
+          {badge.text}
+        </Badge>
+      )}
+    </>
+  );
+}
+
 /** Tab / card header of a center panel: status dot, title, kind badge, bell and close. */
 export function OxyTab(props: IDockviewPanelHeaderProps) {
   const active = useIsActive(props);
@@ -149,6 +180,8 @@ export function OxyTab(props: IDockviewPanelHeaderProps) {
         <TerminalTabContent props={props as IDockviewPanelHeaderProps<TerminalPanelParams>} />
       ) : props.api.component === 'diff' ? (
         <DiffTabContent props={props as IDockviewPanelHeaderProps<DiffPanelParams>} />
+      ) : props.api.component === 'plugin' ? (
+        <PluginTabContent props={props} />
       ) : (
         <span className="min-w-0 truncate">{props.api.title}</span>
       )}
