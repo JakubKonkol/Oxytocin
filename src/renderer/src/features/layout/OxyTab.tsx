@@ -8,6 +8,8 @@ import { BellIndicator, TerminalKindBadge } from '../terminals/TerminalBadges';
 import { terminalDotLabel, terminalDotState } from '../terminals/terminal-status';
 import type { TerminalPanelParams } from './panel-registry';
 import { requestClosePanel } from './workspace-actions';
+import { useRenameStore } from './rename-store';
+import { ipc } from '../../lib/ipc-client';
 
 function useIsActive(props: IDockviewPanelHeaderProps): boolean {
   const [active, setActive] = useState(props.api.isActive);
@@ -18,8 +20,32 @@ function useIsActive(props: IDockviewPanelHeaderProps): boolean {
   return active;
 }
 
+function RenameInput({ initial, onDone }: { initial: string; onDone: (value: string | null) => void }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <input
+      // Rename starts on an explicit double-click, so taking focus is expected.
+      autoFocus
+      aria-label="Terminal name"
+      data-testid="tab-rename-input"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') onDone(value);
+        if (e.key === 'Escape') onDone(null);
+      }}
+      onBlur={() => onDone(value)}
+      onFocus={(e) => e.currentTarget.select()}
+      className="h-5 min-w-0 flex-1 rounded-badge border border-line-focus bg-input px-1 text-ui text-fg outline-none"
+    />
+  );
+}
+
 function TerminalTabContent({ props }: { props: IDockviewPanelHeaderProps<TerminalPanelParams> }) {
   const info = useTerminalsStore((s) => s.terminals[props.params.terminalId]);
+  const renaming = useRenameStore((s) => s.panelId === props.api.id);
   const title = info?.title ?? props.api.title ?? 'Terminal';
   useEffect(() => {
     if (props.api.title !== title) props.api.setTitle(title);
@@ -27,9 +53,26 @@ function TerminalTabContent({ props }: { props: IDockviewPanelHeaderProps<Termin
   return (
     <>
       {info && <StatusDot state={terminalDotState(info)} title={terminalDotLabel(info)} size={7} />}
-      <span data-testid="tab-title" className="min-w-0 truncate">
-        {title}
-      </span>
+      {renaming ? (
+        <RenameInput
+          initial={info?.userTitle ?? title}
+          onDone={(value) => {
+            useRenameStore.getState().stop();
+            if (value !== null) void ipc.invoke('terminals:rename', { id: props.params.terminalId, title: value });
+          }}
+        />
+      ) : (
+        <span
+          data-testid="tab-title"
+          className="min-w-0 truncate"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            useRenameStore.getState().start(props.api.id);
+          }}
+        >
+          {title}
+        </span>
+      )}
       {info && <TerminalKindBadge info={info} />}
       {info && <BellIndicator info={info} />}
     </>

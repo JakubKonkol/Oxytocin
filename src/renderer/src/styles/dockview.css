@@ -94,7 +94,7 @@
 .oxy-dockview .dv-tab.dv-active-tab {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
-.oxy-dockview .dv-tabs-container.dv-single-tab.dv-full-width-single-tab .dv-tab.dv-active-tab {
+.oxy-dockview .dv-tabs-and-actions-container.dv-full-width-single-tab .dv-tab.dv-active-tab {
   box-shadow: none;
 }
 .oxy-dockview .dv-groupview .dv-content-container {

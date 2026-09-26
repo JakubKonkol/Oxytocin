@@ -8,6 +8,7 @@ import { installTestHooks } from './lib/test-hooks';
 import { ptyChannel } from './features/terminals/pty-channel';
 import { registerTerminalCommands } from './features/terminals/terminal-actions';
 import { installGlobalKeybindings } from './lib/keyboard';
+import { registerLayoutCommands } from './features/layout/layout-commands';
 
 if (window.oxy.e2e) {
   document.documentElement.dataset['e2e'] = 'true';
@@ -17,6 +18,7 @@ document.documentElement.dataset['theme'] = 'dark';
 // Listen for the PTY MessagePort before main sends it (did-finish-load).
 ptyChannel();
 registerTerminalCommands();
+registerLayoutCommands();
 installGlobalKeybindings();
 
 const root = document.getElementById('root');

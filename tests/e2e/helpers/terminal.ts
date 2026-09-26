@@ -1,6 +1,17 @@
 import { expect, type Page } from '@playwright/test';
 
+export interface WorkspaceSnapshot {
+  groups: number;
+  maximized: boolean;
+  activeGroup: { id: string; width: number; height: number } | null;
+  activePanelId: string | null;
+  panels: { id: string; group: string; terminalId: string | null }[];
+}
+
 interface OxyTest {
+  activeTerminalId(): string | null;
+  workspace(): WorkspaceSnapshot | null;
+  movePanel(panelId: string, targetPanelId: string): boolean;
   terminalIds(): string[];
   getTerminalText(id: string): string | null;
   getTerminalSize(id: string): { cols: number; rows: number } | null;
@@ -10,6 +21,14 @@ interface OxyTest {
 }
 
 export const oxyTest = (page: Page) => ({
+  activeTerminalId: () =>
+    page.evaluate(() => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.activeTerminalId()),
+  workspace: () => page.evaluate(() => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.workspace()),
+  movePanel: (panelId: string, targetPanelId: string) =>
+    page.evaluate(([a, b]) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.movePanel(a, b), [
+      panelId,
+      targetPanelId,
+    ] as const),
   terminalIds: () => page.evaluate(() => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.terminalIds()),
   text: (id: string) =>
     page.evaluate((i) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.getTerminalText(i) ?? '', id),

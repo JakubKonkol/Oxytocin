@@ -56,8 +56,10 @@ describe('KeybindingResolver', () => {
 
   it('never steals plain Ctrl+letter from terminals', () => {
     expect(winResolver.resolve(ev('KeyB', { ctrl: true }), 'terminalFocus')).toBeNull();
-    expect(winResolver.resolve(ev('ArrowLeft', { alt: true }), 'terminalFocus')).toBeNull();
+    expect(winResolver.resolve(ev('KeyR', { ctrl: true }), 'terminalFocus')).toBeNull();
     expect(winResolver.resolve(ev('ArrowLeft', { alt: true }), 'global')?.command).toBe('panel.focusLeft');
+    // Explicit exception from the plan: Alt+arrows move focus between panels even from a terminal.
+    expect(winResolver.resolve(ev('ArrowLeft', { alt: true }), 'terminalFocus')?.command).toBe('panel.focusLeft');
   });
 
   it('honours when/notWhen', () => {

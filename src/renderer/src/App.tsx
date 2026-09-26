@@ -6,6 +6,7 @@ import { useUiStore } from './stores/ui-store';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
 import { DialogHost } from './ui/DialogHost';
+import { ProfilePicker } from './features/layout/ProfilePicker';
 import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
@@ -34,6 +35,7 @@ export function App() {
       </div>
       <Toaster />
       <DialogHost />
+      <ProfilePicker />
     </TooltipProvider>
   );
 }

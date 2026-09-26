@@ -14,6 +14,8 @@ export interface Keybinding {
   when?: KeyContext[];
   /** Contexts where the binding never applies. */
   notWhen?: KeyContext[];
+  /** Also intercept in terminals although the chord is not in the terminal-safe set. */
+  allowInTerminal?: boolean;
 }
 
 /** Default keymap (docs/plan/02-ui-ux.md §7). Bindings for unregistered commands are ignored. */
@@ -25,10 +27,10 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { key: 'Alt+Shift+=', mac: 'Cmd+D', command: 'terminal.splitRight' },
   { key: 'Alt+Shift+-', mac: 'Cmd+Shift+D', command: 'terminal.splitDown' },
   { key: 'Ctrl+Shift+W', mac: 'Cmd+W', command: 'panel.close' },
-  { key: 'Alt+Left', mac: 'Alt+Cmd+Left', command: 'panel.focusLeft' },
-  { key: 'Alt+Right', mac: 'Alt+Cmd+Right', command: 'panel.focusRight' },
-  { key: 'Alt+Up', mac: 'Alt+Cmd+Up', command: 'panel.focusUp' },
-  { key: 'Alt+Down', mac: 'Alt+Cmd+Down', command: 'panel.focusDown' },
+  { key: 'Alt+Left', mac: 'Alt+Cmd+Left', command: 'panel.focusLeft', allowInTerminal: true },
+  { key: 'Alt+Right', mac: 'Alt+Cmd+Right', command: 'panel.focusRight', allowInTerminal: true },
+  { key: 'Alt+Up', mac: 'Alt+Cmd+Up', command: 'panel.focusUp', allowInTerminal: true },
+  { key: 'Alt+Down', mac: 'Alt+Cmd+Down', command: 'panel.focusDown', allowInTerminal: true },
   { key: 'Alt+Shift+Left', mac: 'Ctrl+Cmd+Left', command: 'panel.resizeLeft' },
   { key: 'Alt+Shift+Right', mac: 'Ctrl+Cmd+Right', command: 'panel.resizeRight' },
   { key: 'Alt+Shift+Up', mac: 'Ctrl+Cmd+Up', command: 'panel.resizeUp' },
@@ -178,12 +180,13 @@ export class KeybindingResolver {
   resolve(e: KeyEventLike, context: KeyContext): Keybinding | null {
     const chord = chordFromEvent(e);
     if (!chord) return null;
-    if (context === 'terminalFocus' && !isAllowedInTerminal(chord)) return null;
+    const terminalSafe = isAllowedInTerminal(chord);
     const candidates = this.byChord.get(chord) ?? [];
     // Later bindings (user overrides in M7) win.
     for (let i = candidates.length - 1; i >= 0; i--) {
       const b = candidates[i]!;
       if (!this.isAvailable(b.command)) continue;
+      if (context === 'terminalFocus' && !terminalSafe && !b.allowInTerminal) continue;
       if (b.when && !b.when.includes(context)) continue;
       if (b.notWhen?.includes(context)) continue;
       if (context === 'inputFocus' && !b.when?.includes('inputFocus') && !/ctrl|cmd|alt/.test(chord)) continue;

@@ -1,9 +1,40 @@
+import { getActiveWorkspace } from '../features/layout/workspace-registry';
+import { getActiveTerminalId } from '../features/terminals/terminal-actions';
 import { terminalRegistry, terminalText } from '../features/terminals/terminal-registry';
 
 /** E2E-only hooks (installed only when OXYTOCIN_E2E=1) — read terminal buffers without scraping the DOM. */
 export function installTestHooks(): void {
   (window as unknown as Record<string, unknown>)['__oxyTest'] = {
     terminalIds: () => [...terminalRegistry.keys()],
+    activeTerminalId: () => getActiveTerminalId(),
+    /** Moves a panel into another group (the operation a tab drop performs). */
+    movePanel: (panelId: string, targetPanelId: string) => {
+      const api = getActiveWorkspace()?.api;
+      const panel = api?.getPanel(panelId);
+      const target = api?.getPanel(targetPanelId);
+      if (!panel || !target) return false;
+      panel.api.moveTo({ group: target.group, position: 'center' });
+      return true;
+    },
+    /** Snapshot of the active dockview workspace. */
+    workspace: () => {
+      const ws = getActiveWorkspace();
+      if (!ws) return null;
+      const api = ws.api;
+      return {
+        groups: api.groups.length,
+        maximized: api.hasMaximizedGroup(),
+        activeGroup: api.activeGroup
+          ? { id: api.activeGroup.id, width: api.activeGroup.width, height: api.activeGroup.height }
+          : null,
+        activePanelId: api.activePanel?.id ?? null,
+        panels: api.panels.map((p) => ({
+          id: p.id,
+          group: p.group.id,
+          terminalId: (p.params as { terminalId?: string } | undefined)?.terminalId ?? null,
+        })),
+      };
+    },
     getTerminalText: (id: string) => {
       const entry = terminalRegistry.get(id);
       return entry ? terminalText(entry.term) : null;
