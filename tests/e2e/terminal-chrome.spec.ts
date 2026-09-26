@@ -49,8 +49,11 @@ test('an exit with a non-zero code shows the exit bar and Restart starts a new s
     await expect(win.locator('[data-testid^="tab-"]').first()).toContainText('EXITED (3)');
     await win.getByRole('button', { name: 'Restart' }).click();
     await expect(win.getByTestId('terminal-exit-bar')).toHaveCount(0);
+    await expect.poll(() => win.locator('[data-terminal-id]').first().getAttribute('data-terminal-id')).not.toBe(id);
     const newId = await waitForTerminal(win);
     expect(newId).not.toBe(id);
+    // The previous output stays above a separator.
+    await expect.poll(() => oxyTest(win).text(newId)).toContain('── Restarted ──');
   } finally {
     await app.close();
   }
