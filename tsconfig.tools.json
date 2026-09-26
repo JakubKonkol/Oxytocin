@@ -3,9 +3,22 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo/tools.tsbuildinfo",
     "lib": ["ES2024", "DOM"],
-    "types": ["node"],
-    "paths": { "@shared/*": ["./src/shared/*"] }
+    "types": ["node", "electron"],
+    "paths": {
+      "@shared/*": ["./src/shared/*"]
+    }
   },
-  "include": ["tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "playwright.config.ts"],
+  "include": [
+    "tests/**/*.ts",
+    "scripts/**/*.ts",
+    "vitest.config.ts",
+    "playwright.config.ts",
+    "src/shared/**/*",
+    "src/main/**/*",
+    "src/pty-host/**/*",
+    "src/workspace-host/**/*",
+    "src/plugin-host/**/*",
+    "src/preload/**/*"
+  ],
   "exclude": ["tests/fixtures/**"]
 }

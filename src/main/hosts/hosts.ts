@@ -3,11 +3,18 @@ import type { PluginHostEvents, PluginHostMethods } from '@shared/rpc/contracts/
 import type { PtyHostEvents, PtyHostMethods } from '@shared/rpc/contracts/pty-host';
 import type { WorkspaceHostEvents, WorkspaceHostMethods } from '@shared/rpc/contracts/workspace-host';
 import type { HostStatus } from '@shared/domain/app-info';
+import type { HostBaseEvents, HostBaseMethods } from '@shared/rpc/contracts/host-base';
 import type { Logger } from '@shared/logging/logger';
 import { Emitter } from '@shared/utils/emitter';
 import { appPaths } from '../app/paths';
 import { writeForwardedLog } from '../logging/log';
 import { type HostProcess, UtilityHost } from './utility-host';
+
+/** The lifecycle surface shared by all hosts regardless of their RPC contract. */
+export type SupervisedHost = Pick<
+  UtilityHost<HostBaseMethods, HostBaseEvents>,
+  'status' | 'start' | 'stop' | 'kill' | 'name'
+>;
 
 type HostEntry = 'ptyHost' | 'workspaceHost' | 'pluginHost';
 
@@ -30,7 +37,7 @@ export class Hosts {
   readonly onDidChangeStatus = this.statusEmitter.event;
 
   constructor(createLogger: (scope: string) => Logger, env: () => NodeJS.ProcessEnv) {
-    const make = <M extends PtyHostMethods, E extends PtyHostEvents>(
+    const make = <M extends HostBaseMethods, E extends HostBaseEvents>(
       entry: HostEntry,
       serviceName: string,
       scope: string,
@@ -45,12 +52,12 @@ export class Hosts {
       host.onDidChangeState(() => this.statusEmitter.fire(this.status()));
       return host;
     };
-    this.pty = make('ptyHost', 'Oxytocin PTY Host', 'pty');
-    this.workspace = make('workspaceHost', 'Oxytocin Workspace Host', 'ws');
-    this.plugin = make('pluginHost', 'Oxytocin Plugin Host', 'plg');
+    this.pty = make<PtyHostMethods, PtyHostEvents>('ptyHost', 'Oxytocin PTY Host', 'pty');
+    this.workspace = make<WorkspaceHostMethods, WorkspaceHostEvents>('workspaceHost', 'Oxytocin Workspace Host', 'ws');
+    this.plugin = make<PluginHostMethods, PluginHostEvents>('pluginHost', 'Oxytocin Plugin Host', 'plg');
   }
 
-  all(): UtilityHost<PtyHostMethods, PtyHostEvents>[] {
+  all(): SupervisedHost[] {
     return [this.pty, this.workspace, this.plugin];
   }
 
