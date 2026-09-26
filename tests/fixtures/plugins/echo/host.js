@@ -18,6 +18,7 @@ export function activate(ctx) {
       return ctx.storage.get('last');
     }),
     oxy.commands.register('test.echo.deactivations', () => deactivated),
+    oxy.commands.register('echo.setEnv', (value) => oxy.terminals.environment.replace('OXY_ECHO', String(value))),
   );
   const item = oxy.ui.statusBarItem('echo.status');
   item.text = '$(pulse) echo';

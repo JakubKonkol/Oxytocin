@@ -60,6 +60,8 @@ export class ProfileService {
     private readonly deps: DetectDeps,
     private readonly getSettings: () => Settings,
     private readonly now: () => number = Date.now,
+    /** Profiles contributed by plugins (`contributes.terminalProfiles`). */
+    private readonly pluginProfiles: () => TerminalProfile[] = () => [],
   ) {}
 
   private async detect(): Promise<TerminalProfile[]> {
@@ -85,6 +87,7 @@ export class ProfileService {
     const hidden = new Set(settings['terminal.hiddenProfiles']);
     const byId = new Map<string, TerminalProfile>();
     for (const p of await this.detect()) byId.set(p.id, p);
+    for (const p of this.pluginProfiles()) if (!byId.has(p.id)) byId.set(p.id, p);
     for (const p of settings['terminal.profiles']) {
       if (p.platform && !p.platform.includes(this.deps.platform as 'win32' | 'darwin' | 'linux')) continue;
       byId.set(p.id, { ...byId.get(p.id), ...p });

@@ -5,6 +5,7 @@ import {
   ContributionsSchema,
   OpenViewRequestSchema,
   PluginDescriptorSchema,
+  StatusBarItemStateSchema,
   ViewEnvelopeSchema,
 } from '../domain/plugin';
 import { FileDiffContentSchema, FileDiffRequestSchema, RepoStatusSchema } from '../domain/git';
@@ -80,6 +81,7 @@ export const invokeContract = {
   /** Fires an activation event (\`onView:<id>\`, \`onPanel:<type>\`…); returns the activated plugin ids. */
   'plugins:activate': { req: z.object({ event: z.string().min(1) }), res: z.array(z.string()) },
   'plugins:viewOpened': { req: OpenViewRequestSchema, res: z.void() },
+  'plugins:statusBar': { req: z.null().optional(), res: z.array(StatusBarItemStateSchema) },
   'plugins:viewClosed': { req: z.object({ viewId: z.string() }), res: z.void() },
   'plugins:viewVisibility': { req: z.object({ viewId: z.string(), visible: z.boolean() }), res: z.void() },
   'plugins:viewMessage': { req: z.object({ viewId: z.string(), envelope: ViewEnvelopeSchema }), res: z.void() },

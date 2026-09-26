@@ -26,6 +26,7 @@ import { SectionBody } from '../../ui/Section';
 import { SplitBar } from '../../ui/SplitBar';
 import { absolutePath, copyText, openInEditor, refreshChanges, revealInFolder } from './change-actions';
 import { openDiff, openDiffInNewGroup } from '../diff/diff-actions';
+import { fileOpenersFor, openWithOpener } from '../plugins/plugin-commands';
 import {
   allDirPaths,
   buildTree,
@@ -168,6 +169,16 @@ function FileContextMenu({ project, node, children }: { project: Project; node: 
           <ContextMenu.Item className={menuItem} onSelect={() => openDiffInNewGroup(project.id, node.file)}>
             Open diff in new group
           </ContextMenu.Item>
+          {!deleted &&
+            fileOpenersFor(node.path).map((opener) => (
+              <ContextMenu.Item
+                key={`${opener.pluginId}:${opener.id}`}
+                className={menuItem}
+                onSelect={() => void openWithOpener(opener, project.id, absolutePath(project, node.path))}
+              >
+                {opener.title}
+              </ContextMenu.Item>
+            ))}
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
           <ContextMenu.Item
             className={menuItem}

@@ -198,3 +198,22 @@ export const OpenViewRequestSchema = z.object({
   params: z.unknown().optional(),
   visible: z.boolean(),
 });
+
+export const StatusBarItemStateSchema = z.object({
+  pluginId: z.string(),
+  id: z.string(),
+  text: z.string(),
+  tooltip: z.string().optional(),
+  color: z.enum(['default', 'success', 'warning', 'danger', 'accent']).optional(),
+  command: z.union([z.string(), z.object({ id: z.string(), args: z.array(z.unknown()).optional() })]).optional(),
+  visible: z.boolean(),
+});
+export type StatusBarItemState = z.infer<typeof StatusBarItemStateSchema>;
+
+export const OpenPanelRequestSchema = z.object({
+  panelType: z.string(),
+  projectId: z.string().optional(),
+  params: z.unknown().optional(),
+  title: z.string().optional(),
+  placement: z.enum(['active-group', 'right', 'below']).optional(),
+});

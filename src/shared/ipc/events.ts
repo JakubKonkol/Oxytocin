@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
-import { ContributionsSchema, PluginDescriptorSchema, ViewEnvelopeSchema } from '../domain/plugin';
+import {
+  ContributionsSchema,
+  OpenPanelRequestSchema,
+  PluginDescriptorSchema,
+  StatusBarItemStateSchema,
+  ViewEnvelopeSchema,
+} from '../domain/plugin';
 import { RepoStatusSchema } from '../domain/git';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { HostStatusSchema } from '../domain/app-info';
@@ -48,6 +54,9 @@ export const eventContract = {
   'commands:run': z.object({ id: z.string(), args: z.array(z.unknown()) }),
   /** Backend → plugin view. */
   'plugins:viewMessage': z.object({ viewId: z.string(), envelope: ViewEnvelopeSchema }),
+  'plugins:statusBar': z.array(StatusBarItemStateSchema),
+  /** \`oxy.ui.openPanel\` from a plugin backend. */
+  'plugins:openPanel': OpenPanelRequestSchema,
   'plugins:viewMeta': z.object({
     viewId: z.string(),
     title: z.string().optional(),

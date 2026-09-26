@@ -18,6 +18,8 @@ import type {
 import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import type { UtilityHost } from '../../hosts/utility-host';
+import { collectContributions } from './discovery';
+import { configDefaults, validateConfigValue } from './contributions';
 import type { PluginService } from './plugin-service';
 
 export interface StatusBarItemState {
@@ -68,7 +70,10 @@ export interface PluginCorePort {
   openExternal(url: string): Promise<void>;
   openInEditor(req: { path: string; line?: number; column?: number }): Promise<void>;
   /** Renderer-side effects (toasts, panels, core commands). */
-  toRenderer(event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta', payload: unknown): void;
+  toRenderer(
+    event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta' | 'openPanel',
+    payload: unknown,
+  ): void;
   osNotify(title: string, body: string): void;
 }
 
@@ -94,6 +99,8 @@ const CORE_COMMANDS = new Set([
 ]);
 
 const MAX_HANG_INCIDENTS = 2;
+/** New terminals wait at most this long after start-up for plugin environments (07 §8.7). */
+const ENV_BARRIER_MS = 2000;
 /** docs/plan/07-plugin-engine.md §7.5 */
 const MAX_VIEW_MESSAGE_BYTES = 1024 * 1024;
 const MAX_VIEW_MESSAGES_PER_SECOND = 200;
@@ -166,6 +173,8 @@ export class PluginHostService implements Disposable {
   private readonly viewRates = new Map<string, { windowStart: number; count: number }>();
   readonly envReady = new Set<string>();
   private readonly envEmitter = new Emitter<EnvContribution[]>();
+  private readonly startedAt = Date.now();
+  private barrierWaiters: (() => void)[] = [];
   readonly onDidChangeEnvironment = this.envEmitter.event;
 
   constructor(private readonly deps: PluginHostServiceDeps) {
@@ -177,6 +186,7 @@ export class PluginHostService implements Disposable {
       host.onEvent('plugin:state', ({ id, state, error }) => {
         if (state === 'inactive') this.clearPluginUi(id);
         deps.plugins.setRuntimeState(id, state, error);
+        this.checkBarrier();
       }),
     );
     this.store.add(host.onEvent('plugin:busy', ({ id }) => (this.busy = id)));
@@ -226,7 +236,7 @@ export class PluginHostService implements Disposable {
       const key = JSON.stringify(infos);
       if (key === this.loaded) return;
       this.loaded = key;
-      this.lastSettings = { ...this.deps.core.settings() };
+      this.lastSettings = this.settingsWithDefaults(this.deps.core.settings());
       try {
         await this.deps.host.call('plugins:load', { plugins: infos, settings: this.lastSettings, env: this.deps.env });
         await this.activateByEvent('onStartup');
@@ -263,6 +273,36 @@ export class PluginHostService implements Disposable {
   async logs(id: string): Promise<PluginLogEntry[]> {
     if (this.deps.host.state !== 'running') return [];
     return await this.deps.host.call('plugins:logs', { id });
+  }
+
+  // ── start-up barrier for terminal environments (07 §8.7) ──
+
+  private barrierOpen(): boolean {
+    if (Date.now() - this.startedAt >= ENV_BARRIER_MS) return true;
+    const waiting = this.deps.plugins.enabled().filter((p) => {
+      const m = p.manifest;
+      if (!m?.permissions.includes('terminals.env')) return false;
+      if (!m.activationEvents.some((e) => e === 'onStartup' || e === '*')) return false;
+      return !this.envReady.has(p.id) && p.state !== 'active' && p.state !== 'failed';
+    });
+    return waiting.length === 0;
+  }
+
+  private checkBarrier(): void {
+    if (this.barrierWaiters.length === 0 || !this.barrierOpen()) return;
+    for (const resolve of this.barrierWaiters.splice(0)) resolve();
+  }
+
+  /**
+   * Resolves when every enabled `onStartup` plugin with `terminals.env` has declared its environment ready
+   * (or finished activating) — at most 2 s after start-up.
+   */
+  envBarrier(): Promise<void> {
+    if (this.barrierOpen()) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.barrierWaiters.push(resolve);
+      setTimeout(() => this.checkBarrier(), Math.max(0, ENV_BARRIER_MS - (Date.now() - this.startedAt)) + 5);
+    });
   }
 
   // ── views (docs/plan/07-plugin-engine.md §7.5) ──
@@ -383,8 +423,13 @@ export class PluginHostService implements Disposable {
     this.emitApi('git.status', this.statusLite(status));
   }
 
+  /** Settings as plugins see them: contributed defaults under the user's values. */
+  private settingsWithDefaults(settings: Settings): Record<string, unknown> {
+    return { ...configDefaults(collectContributions(this.deps.plugins.enabled())), ...settings };
+  }
+
   notifySettings(settings: Settings): void {
-    const next = { ...settings } as Record<string, unknown>;
+    const next = this.settingsWithDefaults(settings);
     const keys = [...new Set([...Object.keys(next), ...Object.keys(this.lastSettings)])].filter(
       (k) => JSON.stringify(next[k]) !== JSON.stringify(this.lastSettings[k]),
     );
@@ -523,7 +568,7 @@ export class PluginHostService implements Disposable {
       case 'terminals.environmentReady':
         this.permission(plugin, 'terminals.env');
         this.envReady.add(pluginId);
-        this.envEmitter.fire([...this.environments.values()]);
+        this.checkBarrier();
         return undefined;
       case 'agents.list':
         this.permission(plugin, 'agents.read');
@@ -582,13 +627,28 @@ export class PluginHostService implements Disposable {
         this.statusEmitter.fire([...this.statusBarItems.values()]);
         return undefined;
       }
-      case 'ui.openPanel':
-        throw new OxyError('UNAVAILABLE', 'Plugin panels are not available yet');
+      case 'ui.openPanel': {
+        const panelType = String(p['panelType']);
+        if (!plugin.manifest.contributes.panels.some((x) => x.type === panelType))
+          throw new OxyError('INVALID', `Panel type ${panelType} is not declared by ${pluginId}`);
+        core.toRenderer('openPanel', {
+          panelType,
+          ...(typeof p['projectId'] === 'string' ? { projectId: p['projectId'] } : {}),
+          ...(p['params'] !== undefined ? { params: p['params'] } : {}),
+          ...(typeof p['title'] === 'string' ? { title: p['title'] } : {}),
+          ...(typeof p['placement'] === 'string' ? { placement: p['placement'] } : {}),
+        });
+        return undefined;
+      }
       case 'settings.update': {
         const key = String(p['key']);
         const prefix = plugin.manifest.contributes.configuration?.prefix;
         if (!prefix || !key.startsWith(`${prefix}.`))
           throw new OxyError('PERMISSION', `Plugin ${pluginId} can only change its own settings`);
+        const prop = plugin.manifest.contributes.configuration?.properties[key];
+        if (!prop) throw new OxyError('INVALID', `Setting ${key} is not declared in contributes.configuration`);
+        const problem = validateConfigValue(key, prop, p['value']);
+        if (problem) throw new OxyError('INVALID', problem);
         await core.updateSettings({ [key]: p['value'] });
         return undefined;
       }

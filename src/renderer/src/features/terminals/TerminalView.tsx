@@ -1,4 +1,5 @@
 import '@xterm/xterm/css/xterm.css';
+import { fileOpenersFor, openWithOpener } from '../plugins/plugin-commands';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { SearchAddon } from '@xterm/addon-search';
 import type { Terminal } from '@xterm/xterm';
@@ -150,7 +151,13 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
         const info = useTerminalsStore.getState().terminals[terminalId];
         return info ? [info.cwd] : [];
       },
-      (target) => void ipc.invoke('editor:open', target),
+      (target) => {
+        // A plugin opener marked `default` for the extension wins over the editor (e.g. Markdown Preview).
+        const opener = fileOpenersFor(target.path).find((o) => o.default);
+        const projectId = useTerminalsStore.getState().terminals[terminalId]?.projectId;
+        if (opener && projectId) void openWithOpener(opener, projectId, target.path);
+        else void ipc.invoke('editor:open', target);
+      },
     );
 
     const onFocus = () => {

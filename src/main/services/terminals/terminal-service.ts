@@ -35,6 +35,8 @@ export interface TerminalServiceDeps {
   readScrollback?: (projectId: string, panelId: string) => Promise<string | null>;
   /** Environment contributions from plugins (M5); applied after project env. */
   pluginEnv?: (ctx: { projectId: string; profileId: string }) => EnvLayer[];
+  /** Awaited before spawning (plugin environments at start-up, max 2 s). */
+  beforeSpawn?: () => Promise<void>;
   appVersion: string;
   dev: boolean;
   platform: NodeJS.Platform;
@@ -122,6 +124,7 @@ export class TerminalService implements Disposable {
     const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
     if (!(await isDirectory(cwd))) throw new OxyError('NOT_FOUND', `Folder not found: ${cwd}`);
     const launch = await this.deps.profiles.resolveLaunch(req.profileId, cwd);
+    await this.deps.beforeSpawn?.();
     const settings = this.deps.settings();
     const id = `t-${randomUUID().slice(0, 12)}`;
     const env = composeEnv({
@@ -241,6 +244,12 @@ export class TerminalService implements Disposable {
     if (JSON.stringify(next) === JSON.stringify(current)) return;
     this.terminals.set(id, next);
     this.updatedEmitter.fire(next);
+  }
+
+  /** Marks a running terminal whose environment contributions changed after it started (⟳ on its tab). */
+  markEnvStale(id: string): void {
+    const info = this.terminals.get(id);
+    if (info && info.state === 'running' && !info.envStale) this.patch(id, { envStale: true });
   }
 
   /** Clears the bell indicator (the user looked at the terminal). */

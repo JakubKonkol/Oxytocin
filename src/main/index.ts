@@ -34,11 +34,15 @@ import { ProfileService } from './services/terminals/profiles';
 import { nodeDetectDeps, which } from './services/terminals/shell-detect/deps';
 import { spawn as spawnProcess } from 'node:child_process';
 import { TerminalService } from './services/terminals/terminal-service';
+import type { EnvLayer } from './services/terminals/env-composer';
 import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
 import { GitService } from './services/git/git-service';
 import { PluginService } from './services/plugins/plugin-service';
-import { PluginHostService } from './services/plugins/plugin-host-service';
+import { type EnvContribution, PluginHostService } from './services/plugins/plugin-host-service';
+import { affectedBy, pluginEnvLayers } from './services/plugins/plugin-env';
+import { compilePluginAgentRules, pluginTerminalProfiles } from './services/plugins/contributions';
+import { DEFAULT_AGENT_RULES } from './services/agents/rules';
 import { NotificationService } from './services/notifications/notification-service';
 import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-registry';
 import { statMany } from './services/fs/stat-many';
@@ -97,6 +101,9 @@ function bootstrap(): void {
   const profiles = new ProfileService(
     nodeDetectDeps(() => shellEnv),
     () => settings.get(),
+    Date.now,
+    // Plugins are discovered later in bootstrap; profiles are only listed afterwards.
+    () => pluginTerminalProfiles(plugins.contributions()),
   );
   const projects = new ProjectService({
     file: join(app.getPath('userData'), 'projects.json'),
@@ -122,7 +129,7 @@ function bootstrap(): void {
     createLogger('workspace'),
   );
 
-  const terminals = new TerminalService({
+  const terminals: TerminalService = new TerminalService({
     ptyHost: hosts.pty,
     profiles,
     settings: () => settings.get(),
@@ -141,6 +148,8 @@ function bootstrap(): void {
       const saved = await workspaceState.readScrollback(projectId, panelId);
       return saved ? restoredScrollbackData(saved.data, saved.savedAt) : null;
     },
+    pluginEnv: (ctx): EnvLayer[] => pluginEnvLayers([...pluginHost.environments.values()], ctx, process.platform),
+    beforeSpawn: (): Promise<void> => pluginHost.envBarrier(),
     appVersion: app.getVersion(),
     dev: !app.isPackaged,
     platform: process.platform,
@@ -156,6 +165,7 @@ function bootstrap(): void {
   const agents = new AgentService({
     ptyHost: hosts.pty,
     terminals,
+    rules: () => [...DEFAULT_AGENT_RULES, ...compilePluginAgentRules(plugins.contributions())],
     registry: claudeRegistry,
     logger: createLogger('agents'),
   });
@@ -262,7 +272,7 @@ function bootstrap(): void {
     dryRun: e2e,
   });
 
-  const pluginHost = new PluginHostService({
+  const pluginHost: PluginHostService = new PluginHostService({
     host: hosts.plugin,
     plugins,
     env: {
@@ -298,6 +308,7 @@ function bootstrap(): void {
         else if (event === 'openTerminalPanel') sendEvent(wc, 'terminals:openPanel', payload as never);
         else if (event === 'viewMessage') sendEvent(wc, 'plugins:viewMessage', payload as never);
         else if (event === 'viewMeta') sendEvent(wc, 'plugins:viewMeta', payload as never);
+        else if (event === 'openPanel') sendEvent(wc, 'plugins:openPanel', payload as never);
         else sendEvent(wc, 'commands:run', payload as never);
       },
       osNotify: (title, body) => {
@@ -311,6 +322,18 @@ function bootstrap(): void {
     logger: createLogger('plugins'),
   });
   void pluginsReady.then(() => pluginHost.reload());
+  // Environment contributions changed: running terminals in scope are out of date (⟳).
+  let previousEnv = new Map<string, EnvContribution>();
+  pluginHost.onDidChangeEnvironment((list) => {
+    const next = new Map(list.map((c) => [c.pluginId, c]));
+    const changed = [...new Set([...previousEnv.keys(), ...next.keys()])].filter(
+      (id) => JSON.stringify(previousEnv.get(id)) !== JSON.stringify(next.get(id)),
+    );
+    for (const t of terminals.list()) {
+      if (changed.some((id) => affectedBy(previousEnv.get(id), next.get(id), t))) terminals.markEnvStale(t.id);
+    }
+    previousEnv = next;
+  });
   projects.onDidChange((list) => pluginHost.notifyProjects(list));
   projects.onDidChangeActive((id) => pluginHost.notifyActiveProject(id));
   terminals.onDidUpdate((info) => pluginHost.notifyTerminal(info));
@@ -409,6 +432,7 @@ function bootstrap(): void {
       'plugins:logs': ({ id }) => pluginHost.logs(id),
       'plugins:activate': ({ event }) => pluginHost.activateByEvent(event),
       'plugins:viewOpened': (req) => pluginHost.viewOpened(req),
+      'plugins:statusBar': () => [...pluginHost.statusBarItems.values()],
       'plugins:viewClosed': ({ viewId }) => pluginHost.viewClosed(viewId),
       'plugins:viewVisibility': ({ viewId, visible }) => pluginHost.viewVisibility(viewId, visible),
       'plugins:viewMessage': ({ viewId, envelope }) => pluginHost.viewMessage(viewId, envelope),
@@ -455,6 +479,7 @@ function bootstrap(): void {
   agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));
   activity.onDidChange((list) => sendEvent(win.webContents, 'projects:activity', list));
   git.onDidChangeStatus((status) => sendEvent(win.webContents, 'git:status', status));
+  pluginHost.onDidChangeStatusBar((items) => sendEvent(win.webContents, 'plugins:statusBar', items));
   let lastContributions = '';
   plugins.onDidChange((list) => {
     sendEvent(win.webContents, 'plugins:changed', list);

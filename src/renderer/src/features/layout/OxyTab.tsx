@@ -1,5 +1,5 @@
 import type { IDockviewPanelHeaderProps } from 'dockview-react';
-import { X } from 'lucide-react';
+import { RotateCw, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useTerminalsStore } from '../../stores/terminals-store';
@@ -7,7 +7,7 @@ import { StatusDot } from '../../ui/StatusDot';
 import { BellIndicator, TerminalKindBadge } from '../terminals/TerminalBadges';
 import { terminalDotLabel, terminalDotState } from '../terminals/terminal-status';
 import type { TerminalPanelParams } from './panel-registry';
-import { requestClosePanel } from './workspace-actions';
+import { requestClosePanel, restartTerminalPanel } from './workspace-actions';
 import { useRenameStore } from './rename-store';
 import { ipc } from '../../lib/ipc-client';
 import { useChangesStore } from '../../stores/changes-store';
@@ -80,6 +80,22 @@ function TerminalTabContent({ props }: { props: IDockviewPanelHeaderProps<Termin
       )}
       {info && <TerminalKindBadge info={info} />}
       {info && <BellIndicator info={info} />}
+      {info?.envStale && info.state === 'running' && (
+        <button
+          type="button"
+          data-testid="tab-env-stale"
+          aria-label="Environment out of date — restart the terminal to apply plugin changes"
+          title="Environment out of date — restart the terminal to apply plugin changes"
+          className="flex size-4 flex-none items-center justify-center rounded-badge text-warning hover:bg-card-hover"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void restartTerminalPanel(props.containerApi, props.api.id);
+          }}
+        >
+          <RotateCw size={11} />
+        </button>
+      )}
     </>
   );
 }

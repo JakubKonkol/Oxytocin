@@ -27,7 +27,7 @@ const echo = info('echo', {
   id: 'test.echo',
   permissions: ['projects.read', 'terminals.read-metadata', 'terminals.create', 'terminals.env'],
   activationEvents: ['onStartup'],
-  commands: ['echo.hello', 'echo.projects', 'echo.terminals', 'echo.git', 'echo.store'],
+  commands: ['echo.hello', 'echo.projects', 'echo.terminals', 'echo.git', 'echo.store', 'echo.setEnv'],
   statusBarItems: ['echo.status'],
   configurationPrefix: 'echo',
 });

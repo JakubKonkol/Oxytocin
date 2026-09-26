@@ -106,7 +106,8 @@ test('plugin views: handshake, messages, requests, isolation and moving without 
     const t = (await import('./helpers/terminal')).oxyTest(win);
     await (await import('./helpers/terminal')).waitForTerminal(win);
     expect(await t.openPluginPanel('views.panel', { answer: 42 })).toBeNull();
-    const frame = () => win.frames().find((f) => f.url().startsWith('oxy-plugin://test.views/'));
+    const frame = () =>
+      win.frames().find((f) => f.url().startsWith('oxy-plugin://test.views/') && f.url().includes('viewId=pv-'));
     await expect.poll(() => !!frame(), { timeout: 10_000 }).toBe(true);
     const report = async () =>
       JSON.parse((await frame()!.evaluate(() => document.body.dataset['report'])) ?? '{}') as Partial<ViewReport>;
@@ -137,6 +138,45 @@ test('plugin views: handshake, messages, requests, isolation and moving without 
     );
     await expect.poll(async () => JSON.stringify((await report()).messages)).toContain('"ping":2');
     expect((await report()).loadedAt).toBe(loadedAt);
+  } finally {
+    await app.close();
+  }
+});
+
+test('slots: status bar items, terminal environment with ⟳ on change, and sidebar views', async () => {
+  const userData = await userDataWithPlugins(['echo', 'views']);
+  const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
+  try {
+    const { oxyTest, run, nodeCmd, waitForTerminal } = await import('./helpers/terminal');
+    const id = await waitForTerminal(win);
+    // Status bar item set by the echo backend ($(pulse) renders as an icon).
+    await expect(win.getByTestId('status-item-echo.status')).toHaveText('echo', { timeout: 10_000 });
+
+    // The terminal was created after the start-up barrier: it has the plugin's variable.
+    await run(win, nodeCmd("console.log('ENV=' + process.env.OXY_ECHO)"));
+    await expect.poll(() => oxyTest(win).text(id)).toContain('ENV=from-echo');
+    await expect(win.getByTestId('tab-env-stale')).toHaveCount(0);
+
+    // Changing the collection marks the running terminal as out of date…
+    await invoke(win, 'plugins:executeCommand', { id: 'echo.setEnv', args: ['changed'] });
+    await expect(win.getByTestId('tab-env-stale')).toBeVisible();
+    // …and ⟳ restarts it with the new environment.
+    await win.getByTestId('tab-env-stale').click();
+    await expect.poll(async () => (await oxyTest(win).workspace())?.panels[0]?.terminalId).not.toBe(id);
+    const restarted = (await oxyTest(win).workspace())!.panels[0]!.terminalId!;
+    await expect.poll(() => oxyTest(win).text(restarted)).not.toBe('');
+    await win.getByTestId(`terminal-view-${restarted}`).click();
+    await run(win, nodeCmd("console.log('ENV2=' + process.env.OXY_ECHO)"));
+    await expect.poll(() => oxyTest(win).text(restarted)).toContain('ENV2=changed');
+
+    // Sidebar view of the views plugin, below CHANGES (order 500).
+    const header = win.getByTestId('section-header-plugin:test.views:views.sidebar');
+    await expect(header).toContainText('TEST VIEW');
+    const frame = () => win.frames().find((f) => f.url().includes('viewId=sv-test.views-views.sidebar'));
+    await expect.poll(() => !!frame(), { timeout: 10_000 }).toBe(true);
+    await expect
+      .poll(async () => (await frame()!.evaluate(() => document.body.dataset['report'])) ?? '', { timeout: 10_000 })
+      .toContain('"kind":"view"');
   } finally {
     await app.close();
   }

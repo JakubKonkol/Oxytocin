@@ -11,6 +11,9 @@ import { addProjectViaDialog } from '../features/projects/project-actions';
 import { useProjectsStore } from '../stores/projects-store';
 import { EmptyState } from '../ui/EmptyState';
 import { useUiStore } from '../stores/ui-store';
+import { usePluginsStore } from '../stores/plugins-store';
+import { type PluginPaneParams, PluginSidebarView, sidebarViewInstanceId } from '../features/plugins/PluginSidebarView';
+import { usePluginViewMeta } from '../features/plugins/view-meta-store';
 
 export const SIDEBAR_HEADER_SIZE = 30;
 
@@ -18,14 +21,17 @@ interface SectionDefinition {
   id: string;
   title: string;
   size: number;
+  order: number;
 }
 
-/** Core sidebar sections; plugin panes are appended in M5. */
+/** Core sidebar sections; plugin views are inserted by their `order` (docs/plan/07-plugin-engine.md §8.1). */
 const CORE_SECTIONS: SectionDefinition[] = [
-  { id: 'projects', title: 'PROJECTS', size: 200 },
-  { id: 'changes', title: 'CHANGES', size: 380 },
-  { id: 'usage', title: 'USAGE', size: 160 },
+  { id: 'projects', title: 'PROJECTS', size: 200, order: 0 },
+  { id: 'changes', title: 'CHANGES', size: 380, order: 100 },
+  { id: 'usage', title: 'USAGE', size: 160, order: 300 },
 ];
+
+const pluginPaneId = (pluginId: string, viewId: string) => `plugin:${pluginId}:${viewId}`;
 
 function ProjectsHeaderActions() {
   return (
@@ -43,18 +49,27 @@ function ProjectsCount() {
   return count > 0 ? <>{count}</> : null;
 }
 
+function PluginPaneBadge({ instanceId }: { instanceId: string }) {
+  const badge = usePluginViewMeta((s) => s.meta[instanceId]?.badge);
+  if (!badge) return null;
+  return <>{badge.text}</>;
+}
+
 function PaneHeader(props: IPaneviewPanelProps) {
   const [expanded, setExpanded] = useState(props.api.isExpanded);
   useEffect(() => {
     const d = props.api.onDidExpansionChange((e) => setExpanded(e.isExpanded));
     return () => d.dispose();
   }, [props.api]);
+  const plugin = props.params as Partial<PluginPaneParams> | undefined;
   const extras =
-    props.api.id === 'projects'
-      ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> }
-      : props.api.id === 'changes'
-        ? { actions: <ChangesHeaderActions />, count: <ChangesCount /> }
-        : {};
+    plugin?.pluginId && plugin.viewId
+      ? { count: <PluginPaneBadge instanceId={sidebarViewInstanceId(plugin.pluginId, plugin.viewId)} /> }
+      : props.api.id === 'projects'
+        ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> }
+        : props.api.id === 'changes'
+          ? { actions: <ChangesHeaderActions />, count: <ChangesCount /> }
+          : {};
   return (
     <SectionHeader
       testId={`section-header-${props.api.id}`}
@@ -75,6 +90,7 @@ function PlaceholderBody({ text }: { text: string }) {
 }
 
 const components = {
+  'plugin-view': PluginSidebarView,
   projects: () => <ProjectsSection />,
   changes: () => <ChangesSection />,
   usage: () => <PlaceholderBody text="No usage data yet" />,
@@ -91,10 +107,48 @@ function readPaneviewState(api: PaneviewApi): PaneviewState {
 }
 
 /** Left column: a Paneview of collapsible, resizable, reorderable section cards. */
+/** Adds/removes plugin view panes when contributions change; saved order first, then `order`. */
+function usePluginPanes(api: PaneviewApi | null, saved: PaneviewState): void {
+  const views = usePluginsStore((s) => s.contributions.views);
+  useEffect(() => {
+    if (!api) return;
+    const wanted = new Map(views.map((v) => [pluginPaneId(v.pluginId, v.id), v]));
+    for (const panel of [...api.panels]) {
+      if (panel.id.startsWith('plugin:') && !wanted.has(panel.id)) api.removePanel(panel);
+    }
+    const orderOf = (id: string): number => {
+      const savedIndex = saved.order.indexOf(id);
+      if (savedIndex >= 0) return savedIndex - 10_000;
+      return CORE_SECTIONS.find((s) => s.id === id)?.order ?? wanted.get(id)?.order ?? 1000;
+    };
+    for (const [id, view] of wanted) {
+      if (api.getPanel(id) || saved.hidden.includes(id)) continue;
+      const rank = orderOf(id);
+      const index = api.panels.filter((p) => orderOf(p.id) <= rank).length;
+      api.addPanel<PluginPaneParams>({
+        id,
+        component: 'plugin-view',
+        headerComponent: 'section',
+        title: view.title.toUpperCase(),
+        params: { pluginId: view.pluginId, viewId: view.id },
+        isExpanded: !saved.collapsed.includes(id),
+        size: saved.sizes[id] ?? view.initialHeight ?? 180,
+        headerSize: SIDEBAR_HEADER_SIZE,
+        minimumBodySize: view.minHeight ?? 80,
+        index,
+      });
+    }
+  }, [api, views, saved]);
+}
+
 export function Sidebar() {
   const saved = useUiStore((s) => s.state.paneview);
   const setPaneview = useUiStore((s) => s.setPaneview);
   const savedRef = useRef(saved);
+  const [api, setApi] = useState<PaneviewApi | null>(null);
+  // Layout restored at start-up (later changes are written by the paneview itself).
+  const [initialLayout] = useState(saved);
+  usePluginPanes(api, initialLayout);
 
   const onReady = (event: PaneviewReadyEvent) => {
     const state = savedRef.current;
@@ -125,6 +179,7 @@ export function Sidebar() {
         requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="changes-tree"]')?.focus());
       },
     });
+    setApi(event.api);
     let timer: ReturnType<typeof setTimeout> | undefined;
     event.api.onDidLayoutChange(() => {
       if (timer) clearTimeout(timer);

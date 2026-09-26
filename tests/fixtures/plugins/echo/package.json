@@ -32,6 +32,10 @@
         {
           "id": "echo.store",
           "title": "Echo: Store"
+        },
+        {
+          "id": "echo.setEnv",
+          "title": "Echo: Set Environment"
         }
       ],
       "statusBarItems": [
