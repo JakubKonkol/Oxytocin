@@ -9,6 +9,14 @@ export const INVOKE_CHANNELS = [
   'settings:update',
   'ui:getState',
   'ui:patchState',
+  'projects:list',
+  'projects:getActive',
+  'projects:add',
+  'projects:remove',
+  'projects:update',
+  'projects:reorder',
+  'projects:setActive',
+  'projects:pickFolder',
   'terminals:create',
   'terminals:kill',
   'terminals:restart',
@@ -26,7 +34,15 @@ export const INVOKE_CHANNELS = [
   'workspace:save',
 ] as const;
 
-export const EVENT_CHANNELS = ['settings:changed', 'hosts:status', 'terminals:updated', 'terminals:removed'] as const;
+export const EVENT_CHANNELS = [
+  'settings:changed',
+  'hosts:status',
+  'terminals:updated',
+  'terminals:removed',
+  'projects:changed',
+  'projects:active',
+  'notifications:show',
+] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];
 export type EventChannel = (typeof EVENT_CHANNELS)[number];

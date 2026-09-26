@@ -1,4 +1,5 @@
 import { homedir, release } from 'node:os';
+import { realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   app,
@@ -29,6 +30,8 @@ import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
 import { TerminalService } from './services/terminals/terminal-service';
 import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
+import { ProjectService } from './services/projects/project-service';
+import { projectPathsFromArgv } from './app/argv';
 import { restoredScrollbackData, WorkspaceStateService } from './services/workspace-state/workspace-state-service';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
@@ -45,10 +48,12 @@ registerPrivilegedSchemes();
 
 let mainWindow: BrowserWindow | null = null;
 
-app.on('second-instance', () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.focus();
+// Folders passed to a second instance (or found in argv before the app is ready) are added as projects.
+let pendingSecondInstance: { argv: string[]; cwd: string }[] = [];
+let handleSecondInstance: ((argv: string[], cwd: string) => void) | null = null;
+app.on('second-instance', (_event, argv, workingDirectory) => {
+  if (handleSecondInstance) handleSecondInstance(argv, workingDirectory);
+  else pendingSecondInstance.push({ argv, cwd: workingDirectory });
 });
 
 function bootstrap(): void {
@@ -80,6 +85,25 @@ function bootstrap(): void {
     nodeDetectDeps(() => shellEnv),
     () => settings.get(),
   );
+  const projects = new ProjectService({
+    file: join(app.getPath('userData'), 'projects.json'),
+    fs: {
+      realpath: (p) => realpath(p),
+      isDirectory: async (p) => {
+        try {
+          return (await stat(p)).isDirectory();
+        } catch {
+          return false;
+        }
+      },
+    },
+    platform: process.platform,
+    homeDir: homedir(),
+    ...(process.env['SystemRoot'] ? { systemRoot: process.env['SystemRoot'] } : {}),
+    logger: createLogger('projects'),
+  });
+  const projectsReady = projects.load();
+
   const workspaceState = new WorkspaceStateService(
     join(app.getPath('userData'), 'workspaces'),
     createLogger('workspace'),
@@ -89,8 +113,15 @@ function bootstrap(): void {
     ptyHost: hosts.pty,
     profiles,
     settings: () => settings.get(),
-    // Until projects exist (M3), terminals live in a default project rooted at the home directory.
-    resolveProject: (projectId) => (projectId === DEFAULT_PROJECT_ID ? { rootPath: homedir() } : null),
+    resolveProject: (projectId) => {
+      const project = projects.get(projectId);
+      if (project)
+        return project.settings.env
+          ? { rootPath: project.rootPath, env: project.settings.env }
+          : { rootPath: project.rootPath };
+      // Pseudo-project used before any project is added (the default workspace).
+      return projectId === DEFAULT_PROJECT_ID ? { rootPath: homedir() } : null;
+    },
     baseEnv: () => shellEnvReady,
     readScrollback: async (projectId, panelId) => {
       if (!settings.get()['terminal.restoreScrollback']) return null;
@@ -130,6 +161,32 @@ function bootstrap(): void {
       'app:getHostStatus': () => hosts.status(),
       'settings:get': () => settings.get(),
       'settings:update': (patch) => settings.update(patch),
+      'projects:list': async () => {
+        await projectsReady;
+        return projects.list();
+      },
+      'projects:getActive': async () => {
+        await projectsReady;
+        return { id: projects.activeProjectId };
+      },
+      'projects:add': ({ path }) => projects.add(path),
+      'projects:remove': async ({ id, killTerminals }) => {
+        if (killTerminals) await Promise.all(terminals.list(id).map((t) => terminals.close(t.id)));
+        projects.remove(id);
+        await workspaceState.delete(id);
+      },
+      'projects:update': (patch) => projects.update(patch),
+      'projects:reorder': ({ ids }) => projects.reorder(ids),
+      'projects:setActive': ({ id }) => projects.setActive(id),
+      'projects:pickFolder': async () => {
+        const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyPickFolderAnswer'] : undefined;
+        if (typeof scripted === 'string' || scripted === null) return scripted;
+        const result = await dialog.showOpenDialog(win, {
+          title: 'Add project',
+          properties: ['openDirectory', 'createDirectory'],
+        });
+        return result.canceled ? null : (result.filePaths[0] ?? null);
+      },
       'workspace:load': ({ projectId }) => workspaceState.load(projectId),
       'workspace:save': (state) => workspaceState.save(state),
       'ui:getState': () => uiState.get(),
@@ -172,6 +229,33 @@ function bootstrap(): void {
   });
   hosts.onDidChangeStatus((status) => sendEvent(win.webContents, 'hosts:status', status));
   terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
+  projects.onDidChange((list) => sendEvent(win.webContents, 'projects:changed', list));
+  projects.onDidChangeActive((id) => sendEvent(win.webContents, 'projects:active', { id }));
+
+  const addFromArgv = async (argv: readonly string[], cwd: string) => {
+    await projectsReady;
+    for (const path of projectPathsFromArgv(argv, { isPackaged: app.isPackaged, cwd })) {
+      try {
+        const result = await projects.add(path);
+        if (result.warning) sendEvent(win.webContents, 'notifications:show', { kind: 'info', message: result.warning });
+      } catch (e) {
+        log.warn(`Could not add ${path} from the command line`, e);
+        sendEvent(win.webContents, 'notifications:show', {
+          kind: 'error',
+          message: `Could not add ${path}`,
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  };
+  handleSecondInstance = (argv, cwd) => {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    void addFromArgv(argv, cwd);
+  };
+  for (const pending of pendingSecondInstance) handleSecondInstance(pending.argv, pending.cwd);
+  pendingSecondInstance = [];
+  void addFromArgv(process.argv, process.cwd());
   terminals.onDidRemove((id) => sendEvent(win.webContents, 'terminals:removed', { id }));
 
   // Terminal I/O flows renderer ⇄ PTY Host over a direct MessagePort; re-created after renderer reloads
@@ -251,7 +335,7 @@ function bootstrap(): void {
             3000,
           ).catch((e: unknown) => log.warn('Failed to persist scrollback', e));
         }
-        await Promise.all([uiState.flush(), hosts.stopAll()]);
+        await Promise.all([uiState.flush(), projects.flush(), hosts.stopAll()]);
       } catch (e) {
         log.error('Error during quit', e);
       } finally {
@@ -271,6 +355,7 @@ function bootstrap(): void {
       terminals,
       editor,
       workspaceState,
+      projects,
       logFile: () => logFilePath(),
     };
   }

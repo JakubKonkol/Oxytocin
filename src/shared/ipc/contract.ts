@@ -5,6 +5,7 @@ import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/works
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { TerminalProfileSchema } from '../domain/terminal-profile';
+import { AddProjectResultSchema, ProjectPatchSchema, ProjectSchema } from '../domain/project';
 import type { InvokeChannel } from './channels';
 
 interface InvokeSpec {
@@ -23,6 +24,14 @@ export const invokeContract = {
   'workspace:save': { req: WorkspaceStateSchema, res: z.void() },
   'ui:getState': { req: z.null().optional(), res: UiStateSchema },
   'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
+  'projects:list': { req: z.null().optional(), res: z.array(ProjectSchema) },
+  'projects:getActive': { req: z.null().optional(), res: z.object({ id: ProjectIdSchema.nullable() }) },
+  'projects:add': { req: z.object({ path: z.string().min(1) }), res: AddProjectResultSchema },
+  'projects:remove': { req: z.object({ id: ProjectIdSchema, killTerminals: z.boolean() }), res: z.void() },
+  'projects:update': { req: ProjectPatchSchema, res: ProjectSchema },
+  'projects:reorder': { req: z.object({ ids: z.array(ProjectIdSchema) }), res: z.void() },
+  'projects:setActive': { req: z.object({ id: ProjectIdSchema.nullable() }), res: z.void() },
+  'projects:pickFolder': { req: z.null().optional(), res: z.string().nullable() },
   'terminals:create': { req: CreateTerminalRequestSchema, res: TerminalInfoSchema },
   'terminals:kill': { req: z.object({ id: TerminalIdSchema, force: z.boolean().optional() }), res: z.void() },
   'terminals:restart': { req: z.object({ id: TerminalIdSchema }), res: TerminalInfoSchema },
