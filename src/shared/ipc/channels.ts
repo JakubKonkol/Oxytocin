@@ -33,6 +33,8 @@ export const INVOKE_CHANNELS = [
   'projects:getActivity',
   'terminals:markSeen',
   'window:setAttention',
+  'git:getStatus',
+  'git:refresh',
   'fs:statMany',
   'editor:open',
   'workspace:load',
@@ -50,6 +52,8 @@ export const EVENT_CHANNELS = [
   'notifications:show',
   'projects:activity',
   'terminals:reveal',
+  'git:status',
+  'git:fileTouched',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

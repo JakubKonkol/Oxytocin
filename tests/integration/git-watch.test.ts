@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import watcher from '@parcel/watcher';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { RepoInfo } from '../../src/shared/domain/git';
+import type { RepoInfo, RepoStatus } from '../../src/shared/domain/git';
 import { discoverRepo } from '../../src/workspace-host/git/discover';
 import { RepoRegistry } from '../../src/workspace-host/git/repo-registry';
 import type { RefreshReason } from '../../src/workspace-host/git/refresh-scheduler';
@@ -65,7 +65,13 @@ describe('RepoRegistry with a real watcher', () => {
       logger: silentLogger,
     });
     try {
-      await registry.watch({ projectId: 'p', rootPath: dir, gitPath: 'git', ignoredFolders: ['node_modules'] });
+      await registry.watch({
+        projectId: 'p',
+        rootPath: dir,
+        gitPath: 'git',
+        ignoredFolders: ['node_modules'],
+        maxFiles: 5000,
+      });
       await expect.poll(() => refreshes.length).toBe(1);
       expect(repos.at(-1)).toMatchObject({ state: 'ok', hasHead: true });
       // Let the native subscription settle.
@@ -91,6 +97,38 @@ describe('RepoRegistry with a real watcher', () => {
       git(dir, 'add', 'b.txt');
       git(dir, 'commit', '-qm', 'b');
       await expect.poll(() => refreshes.at(-1)?.reasons.includes('gitdir')).toBe(true);
+    } finally {
+      await registry.dispose();
+    }
+  });
+});
+
+describe('RepoRegistry status emission', () => {
+  it('emits a new status after a write and only when it changed', async () => {
+    git(dir, 'init', '-q');
+    await writeFile(join(dir, 'a.txt'), 'a\n');
+    git(dir, 'add', '.');
+    git(dir, 'commit', '-qm', 'init');
+    const statuses: RepoStatus[] = [];
+    const registry = new RepoRegistry({
+      subscribe: (d, cb, o) => watcher.subscribe(d, cb, o),
+      emitRepo: () => undefined,
+      emitTouched: () => undefined,
+      emitStatus: (s) => statuses.push(s),
+      logger: silentLogger,
+    });
+    try {
+      await registry.watch({ projectId: 'p', rootPath: dir, gitPath: 'git', ignoredFolders: [], maxFiles: 5000 });
+      await expect.poll(() => statuses.length).toBe(1);
+      expect(statuses[0]).toMatchObject({ state: 'ok', files: [] });
+      await new Promise((r) => setTimeout(r, 300));
+      await writeFile(join(dir, 'a.txt'), 'a\nb\n');
+      await expect.poll(() => statuses.at(-1)?.files.map((f) => `${f.status}:${f.path}`)).toEqual(['modified:a.txt']);
+      const count = statuses.length;
+      registry.request('p', 'manual');
+      await new Promise((r) => setTimeout(r, 500));
+      expect(statuses.length).toBe(count);
+      expect(registry.get('p')?.status?.files[0]?.touchedAt).toBeGreaterThan(0);
     } finally {
       await registry.dispose();
     }

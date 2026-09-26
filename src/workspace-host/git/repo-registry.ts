@@ -1,7 +1,8 @@
-import type { RepoInfo } from '@shared/domain/git';
+import type { RepoInfo, RepoStatus } from '@shared/domain/git';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
 import type { RefreshReason, WatchRepoRequest } from '@shared/rpc/contracts/workspace-host';
+import { computeStatus } from './compute-status';
 import { discoverRepo } from './discover';
 import { RefreshQueue, RefreshScheduler } from './refresh-scheduler';
 import { RepoWatcher, type SubscribeFn } from './repo-watcher';
@@ -13,13 +14,18 @@ export interface RepoEntry {
   commonDir?: string;
   watcher?: RepoWatcher;
   scheduler: RefreshScheduler;
+  /** Project-relative path → last write (kept 60 s). */
+  touched: Map<string, number>;
+  status?: RepoStatus;
+  statusKey?: string;
 }
 
 export interface RepoRegistryDeps {
   subscribe: SubscribeFn;
   emitRepo: (info: RepoInfo) => void;
   emitTouched: (e: { projectId: string; paths: string[]; at: number }) => void;
-  /** Status computation for a discovered repository (M4-T2). */
+  emitStatus?: (status: RepoStatus) => void;
+  /** Replaces the status computation (tests). */
   onRefresh?: (entry: RepoEntry, reasons: ReadonlySet<RefreshReason>) => Promise<void>;
   logger: Logger;
 }
@@ -44,6 +50,7 @@ export class RepoRegistry {
     const entry: RepoEntry = {
       req,
       info: { projectId: req.projectId, state: 'not-a-repo', hasHead: false, pathspec: null },
+      touched: new Map(),
       scheduler: new RefreshScheduler({
         key: req.projectId,
         queue: this.queue,
@@ -112,7 +119,11 @@ export class RepoRegistry {
       ignoredFolders: entry.req.ignoredFolders,
       subscribe: this.deps.subscribe,
       onRefresh: (reason) => entry.scheduler.request(reason),
-      onTouched: (paths) => this.deps.emitTouched({ projectId: entry.req.projectId, paths, at: Date.now() }),
+      onTouched: (paths) => {
+        const at = Date.now();
+        for (const p of paths) entry.touched.set(p, at);
+        this.deps.emitTouched({ projectId: entry.req.projectId, paths, at });
+      },
       logger: this.deps.logger,
     });
     entry.watcher = watcher;
@@ -129,7 +140,57 @@ export class RepoRegistry {
     if (reasons.has('initial') || reasons.has('gitdir') || reasons.has('manual') || entry.info.state !== 'ok') {
       await this.rediscover(entry);
     }
-    if (entry.info.state === 'ok') await this.deps.onRefresh?.(entry, reasons);
+    if (this.deps.onRefresh) {
+      if (entry.info.state === 'ok') await this.deps.onRefresh(entry, reasons);
+      return;
+    }
+    await this.computeAndEmit(entry);
+  }
+
+  private async computeAndEmit(entry: RepoEntry): Promise<void> {
+    const info = entry.info;
+    const cutoff = Date.now() - 60_000;
+    for (const [path, at] of entry.touched) if (at < cutoff) entry.touched.delete(path);
+    let status: RepoStatus;
+    if (info.state === 'ok' && info.toplevel) {
+      try {
+        status = await computeStatus({
+          projectId: info.projectId,
+          gitPath: entry.req.gitPath,
+          toplevel: info.toplevel,
+          pathspec: info.pathspec,
+          hasHead: info.hasHead,
+          maxFiles: entry.req.maxFiles,
+          touched: entry.touched,
+          ...(entry.status?.headCommit ? { previousHeadCommit: entry.status.headCommit } : {}),
+        });
+      } catch (e) {
+        status = this.emptyStatus(info, 'error', e instanceof Error ? e.message : String(e));
+      }
+    } else {
+      status = this.emptyStatus(info, info.state, info.error);
+    }
+    if (this.entries.get(info.projectId) !== entry) return;
+    entry.status = status;
+    const { computedAt: _c, durationMs: _d, ...stable } = status;
+    const key = JSON.stringify(stable);
+    if (key === entry.statusKey) return;
+    entry.statusKey = key;
+    this.deps.emitStatus?.(status);
+  }
+
+  private emptyStatus(info: RepoInfo, state: RepoStatus['state'], error?: string): RepoStatus {
+    return {
+      projectId: info.projectId,
+      state,
+      ...(error ? { error } : {}),
+      ...(info.toplevel ? { toplevel: info.toplevel } : {}),
+      hasHead: info.hasHead,
+      files: [],
+      totals: { files: 0, additions: 0, deletions: 0 },
+      computedAt: Date.now(),
+      durationMs: 0,
+    };
   }
 
   async dispose(): Promise<void> {

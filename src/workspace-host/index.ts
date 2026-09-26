@@ -21,6 +21,7 @@ const registry = new RepoRegistry({
   subscribe: (dir, onEvents, opts) => watcher.subscribe(dir, onEvents, opts),
   emitRepo: (info) => ref.emit?.('git:repo', info),
   emitTouched: (e) => ref.emit?.('git:fileTouched', e),
+  emitStatus: (status) => ref.emit?.('git:status', status),
   logger,
 });
 
@@ -43,6 +44,7 @@ const impl: Impl<Omit<WorkspaceHostMethods, 'ping' | 'shutdown'>> = {
   'git:unwatch': ({ projectId }) => registry.unwatch(projectId),
   'git:setActive': ({ projectId }) => registry.setActive(projectId),
   'git:refresh': ({ projectId, reason }) => registry.request(projectId, reason),
+  'git:getStatus': ({ projectId }) => registry.get(projectId)?.status ?? null,
 };
 
 const { rpc, log } = startHostRuntime<WorkspaceHostEvents>({

@@ -1,4 +1,4 @@
-import type { GitInstallation, RepoInfo } from '@shared/domain/git';
+import type { GitInstallation, RepoInfo, RepoStatus } from '@shared/domain/git';
 import type { Project } from '@shared/domain/project';
 import type { Settings } from '@shared/domain/settings';
 import type { Logger } from '@shared/logging/logger';
@@ -29,6 +29,9 @@ export class GitService implements Disposable {
   private readonly store = new DisposableStore();
   private readonly watched = new Map<string, string>();
   private readonly repos = new Map<string, RepoInfo>();
+  private readonly statuses = new Map<string, RepoStatus>();
+  private readonly statusEmitter = new Emitter<RepoStatus>();
+  readonly onDidChangeStatus = this.statusEmitter.event;
   private installation: GitInstallation | null | undefined;
   private periodic: ReturnType<typeof setInterval> | undefined;
   private readonly repoEmitter = new Emitter<RepoInfo>();
@@ -44,6 +47,13 @@ export class GitService implements Disposable {
       }),
     );
     this.store.add(deps.host.onEvent('git:fileTouched', (e) => this.touchedEmitter.fire(e)));
+    this.store.add(
+      deps.host.onEvent('git:status', (status) => {
+        if (!this.watched.has(status.projectId)) return;
+        this.statuses.set(status.projectId, status);
+        this.statusEmitter.fire(status);
+      }),
+    );
     this.store.add(deps.projects.onDidChange(() => void this.sync()));
     this.store.add(
       deps.projects.onDidChangeActive((id) => {
@@ -81,6 +91,26 @@ export class GitService implements Disposable {
 
   repo(projectId: string): RepoInfo | undefined {
     return this.repos.get(projectId);
+  }
+
+  /** Latest status of a project (null when not watched or not computed yet). */
+  status(projectId: string): RepoStatus | null {
+    const cached = this.statuses.get(projectId);
+    if (cached) return cached;
+    const info = this.repos.get(projectId);
+    // Git missing: the host never computes anything for the project.
+    if (info?.state === 'git-missing') {
+      return {
+        projectId,
+        state: 'git-missing',
+        hasHead: false,
+        files: [],
+        totals: { files: 0, additions: 0, deletions: 0 },
+        computedAt: Date.now(),
+        durationMs: 0,
+      };
+    }
+    return null;
   }
 
   private gitPath(): string {
@@ -141,6 +171,8 @@ export class GitService implements Disposable {
         if (this.repos.get(p.id)?.state !== 'git-missing') {
           this.repos.set(p.id, info);
           this.repoEmitter.fire(info);
+          const status = this.status(p.id);
+          if (status) this.statusEmitter.fire(status);
         }
         continue;
       }
@@ -149,6 +181,7 @@ export class GitService implements Disposable {
         rootPath: p.rootPath,
         gitPath: git.path,
         ignoredFolders: [...s['git.ignoredFolders'], ...(p.settings.git?.ignoredFolders ?? [])],
+        maxFiles: s['git.maxFiles'],
       };
       const key = JSON.stringify(req);
       if (this.watched.get(p.id) === key) continue;
@@ -159,6 +192,7 @@ export class GitService implements Disposable {
       if (keep.has(id)) continue;
       this.watched.delete(id);
       this.repos.delete(id);
+      this.statuses.delete(id);
       await this.call('git:unwatch', { projectId: id });
     }
     await this.call('git:setActive', { projectId: this.deps.projects.activeId() });
@@ -190,5 +224,6 @@ export class GitService implements Disposable {
     this.store.dispose();
     this.repoEmitter.dispose();
     this.touchedEmitter.dispose();
+    this.statusEmitter.dispose();
   }
 }

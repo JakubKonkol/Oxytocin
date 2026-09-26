@@ -259,6 +259,8 @@ function bootstrap(): void {
       'terminals:profiles': () => profiles.list(),
       'agents:list': () => agents.list(),
       'projects:getActivity': () => activity.list(),
+      'git:getStatus': ({ projectId }) => git.status(projectId),
+      'git:refresh': ({ projectId }) => git.refresh(projectId, 'manual'),
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
@@ -301,6 +303,8 @@ function bootstrap(): void {
   terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
   agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));
   activity.onDidChange((list) => sendEvent(win.webContents, 'projects:activity', list));
+  git.onDidChangeStatus((status) => sendEvent(win.webContents, 'git:status', status));
+  git.onDidTouchFiles((e) => sendEvent(win.webContents, 'git:fileTouched', e));
 
   // Attention system (docs/plan/02-ui-ux.md §9).
   const liveNotifications = new Set<Notification>();

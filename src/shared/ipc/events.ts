@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
+import { RepoStatusSchema } from '../domain/git';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { HostStatusSchema } from '../domain/app-info';
 import { SettingsSchema } from '../domain/settings';
@@ -33,6 +34,8 @@ export const eventContract = {
   'projects:activity': z.array(ProjectRuntimeStatusSchema),
   /** Focus a terminal (e.g. an OS notification was clicked): activate its project and panel. */
   'terminals:reveal': z.object({ projectId: ProjectIdSchema, terminalId: TerminalIdSchema }),
+  'git:status': RepoStatusSchema,
+  'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

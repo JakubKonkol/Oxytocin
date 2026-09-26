@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
+import { RepoStatusSchema } from '../domain/git';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
@@ -56,6 +57,8 @@ export const invokeContract = {
     }),
     res: z.void(),
   },
+  'git:getStatus': { req: z.object({ projectId: ProjectIdSchema }), res: RepoStatusSchema.nullable() },
+  'git:refresh': { req: z.object({ projectId: ProjectIdSchema }), res: z.void() },
   'agents:list': { req: z.null().optional(), res: z.array(AgentInfoWithTerminalSchema) },
   'fs:statMany': {
     req: z.object({ baseDirs: z.array(z.string()).max(4), paths: z.array(z.string().max(4096)).max(50) }),
