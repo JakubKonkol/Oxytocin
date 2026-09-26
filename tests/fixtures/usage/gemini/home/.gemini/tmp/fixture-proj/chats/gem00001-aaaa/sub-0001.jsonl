@@ -1,0 +1,2 @@
+{"sessionId":"sub-0001","projectHash":"e57b4eee500b527cf096077b97f387c1ce24a03b684e4df6e07e49e6c92b390b","startTime":"2026-09-26T20:00:30.000Z","lastUpdated":"2026-09-26T20:00:30.000Z","kind":"subagent"}
+{"id":"m-g3","timestamp":"2026-09-26T20:00:40.000Z","type":"gemini","content":"","model":"gemini-2.5-flash","tokens":{"input":3000,"output":100,"cached":0,"thoughts":50,"tool":0,"total":3150},"thoughts":[]}

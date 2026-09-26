@@ -1,0 +1,7 @@
+{"sessionId":"gem00001-aaaa","projectHash":"e57b4eee500b527cf096077b97f387c1ce24a03b684e4df6e07e49e6c92b390b","startTime":"2026-09-26T20:00:00.000Z","lastUpdated":"2026-09-26T20:00:00.000Z","kind":"main"}
+{"id":"m-u1","timestamp":"2026-09-26T20:00:01.000Z","type":"user","content":""}
+{"id":"m-g1","timestamp":"2026-09-26T20:00:05.000Z","type":"gemini","content":"","model":"gemini-2.5-pro","tokens":null,"thoughts":[]}
+{"id":"m-g1","timestamp":"2026-09-26T20:00:05.000Z","type":"gemini","content":"","model":"gemini-2.5-pro","tokens":{"input":12000,"output":600,"cached":5000,"thoughts":400,"tool":100,"total":13100},"thoughts":[]}
+{"$set":{"lastUpdated":"2026-09-26T20:00:06.000Z"}}
+{"id":"m-u2","timestamp":"2026-09-26T20:01:00.000Z","type":"user","content":""}
+{"id":"m-g2","timestamp":"2026-09-26T20:01:10.000Z","type":"gemini","content":"","model":"gemini-2.5-flash","tokens":{"input":20000,"output":900,"cached":15000,"thoughts":0,"tool":0,"total":20900},"thoughts":[]}
