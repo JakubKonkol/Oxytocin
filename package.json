@@ -76,7 +76,8 @@
     "esbuild@0.28.2": true,
     "node-pty@1.1.0": true,
     "@parcel/watcher@2.6.0": true,
-    "electron-winstaller": false
+    "electron-winstaller": false,
+    "electron": true
   },
   "main": "out/main/index.js",
   "scripts": {
