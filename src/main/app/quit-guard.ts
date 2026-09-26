@@ -1,4 +1,5 @@
 import type { TerminalInfo } from '@shared/domain/terminal';
+import { displayCommandLine } from '@shared/utils/command-line';
 
 export interface QuitPrompt {
   message: string;
@@ -15,7 +16,7 @@ function shorten(text: string, max = 48): string {
 export function runningLabel(t: TerminalInfo): string {
   if (t.agent) return t.agent.displayName;
   if (t.kind === 'agent') return t.profileName;
-  return shorten(t.foreground?.commandLine || t.foreground?.name || t.title);
+  return shorten(displayCommandLine(t.foreground?.commandLine || t.foreground?.name || t.title));
 }
 
 /** Terminals whose process would be killed by quitting (a child process or an agent is running). */

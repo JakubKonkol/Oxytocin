@@ -53,37 +53,40 @@ const isAlive = (pid: number) => {
 
 test('the quit dialog lists running processes and quitting leaves no orphans', async () => {
   const { app, win } = await launchApp();
-  const id = await waitForTerminal(win);
-  await run(win, nodeCmd('setInterval(() => {}, 1000)'));
-  await expect(win.getByTestId('terminal-kind-badge')).toHaveText('PROCESS', { timeout: 10_000 });
-  const list = (await win.evaluate(() => window.oxy.invoke('terminals:list', {}))) as {
-    id: string;
-    pid: number;
-    foreground?: { pid: number };
-  }[];
-  const info = list.find((t) => t.id === id)!;
-  const pids = [info.pid, info.foreground!.pid];
+  const setAnswer = (answer: 'quit' | 'cancel') =>
+    app.evaluate((_e, a) => {
+      (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] = a;
+    }, answer);
+  let pids: number[] = [];
+  try {
+    const id = await waitForTerminal(win);
+    await run(win, nodeCmd('setInterval(() => {}, 1000)'));
+    await expect(win.getByTestId('terminal-kind-badge')).toHaveText('PROCESS', { timeout: 10_000 });
+    const list = (await win.evaluate(() => window.oxy.invoke('terminals:list', {}))) as {
+      id: string;
+      pid: number;
+      foreground?: { pid: number };
+    }[];
+    const info = list.find((t) => t.id === id)!;
+    pids = [info.pid, info.foreground!.pid];
 
-  await app.evaluate(() => {
-    (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] = 'cancel';
-  });
-  await app.evaluate(({ app: electronApp }) => electronApp.quit());
-  await win.waitForTimeout(500);
-  expect(app.windows()).toHaveLength(1);
-  const prompt = await app.evaluate(() =>
-    ((globalThis as Record<string, unknown>)['__oxyMain'] as { lastQuitPrompt: () => unknown }).lastQuitPrompt(),
-  );
-  expect(prompt).toMatchObject({
-    message: expect.stringMatching(
-      /^1 terminal has a running process \(node .* in ‘oxy-e2e-project-.+’\)\. Quit anyway\?$/,
-    ),
-    detail: expect.stringContaining('These processes will be stopped.'),
-  });
-  expect(pids.every(isAlive)).toBe(true);
-
-  await app.evaluate(() => {
-    (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] = 'quit';
-  });
-  await app.close();
+    await setAnswer('cancel');
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await win.waitForTimeout(500);
+    expect(app.windows()).toHaveLength(1);
+    const prompt = await app.evaluate(() =>
+      ((globalThis as Record<string, unknown>)['__oxyMain'] as { lastQuitPrompt: () => unknown }).lastQuitPrompt(),
+    );
+    expect(prompt).toMatchObject({
+      message: expect.stringMatching(
+        /^1 terminal has a running process \(node -e .* in ‘oxy-e2e-project-.+’\)\. Quit anyway\?$/,
+      ),
+      detail: expect.stringContaining('These processes will be stopped.'),
+    });
+    expect(pids.every(isAlive)).toBe(true);
+  } finally {
+    await setAnswer('quit');
+    await app.close();
+  }
   await expect.poll(() => pids.filter(isAlive), { timeout: 10_000 }).toEqual([]);
 });
