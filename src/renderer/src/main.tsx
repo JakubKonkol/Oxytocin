@@ -9,6 +9,7 @@ import { ptyChannel } from './features/terminals/pty-channel';
 import { registerTerminalCommands } from './features/terminals/terminal-actions';
 import { installGlobalKeybindings } from './lib/keyboard';
 import { registerLayoutCommands } from './features/layout/layout-commands';
+import { registerProjectCommands } from './features/projects/project-actions';
 import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
@@ -20,6 +21,7 @@ document.documentElement.dataset['theme'] = 'dark';
 ptyChannel();
 registerTerminalCommands();
 registerLayoutCommands();
+registerProjectCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 

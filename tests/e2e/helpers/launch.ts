@@ -5,6 +5,11 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 
 export interface LaunchOptions {
   userData?: string;
+  /**
+   * Folder passed on the command line as a project. Defaults to a fresh temporary folder on first launches
+   * (a new userData dir); `null` starts without one (welcome screen). Restarts (explicit userData) pass none.
+   */
+  project?: string | null;
   env?: Record<string, string>;
   args?: string[];
 }
@@ -13,6 +18,7 @@ export interface LaunchedApp {
   app: ElectronApplication;
   win: Page;
   userData: string;
+  project: string | null;
 }
 
 export const repoRoot = resolve(__dirname, '../../..');
@@ -20,10 +26,22 @@ export const repoRoot = resolve(__dirname, '../../..');
 /** Launches the built app (out/) with an isolated userData directory. */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const userData = opts.userData ?? (await mkdtemp(join(tmpdir(), 'oxy-e2e-')));
+  const project =
+    opts.project !== undefined
+      ? opts.project
+      : opts.userData
+        ? null
+        : await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
   // Chromium's OS-level sandbox is unavailable in Linux containers/CI runners (root, AppArmor userns).
   const platformArgs = process.platform === 'linux' ? ['--no-sandbox'] : [];
   const app = await electron.launch({
-    args: [join(repoRoot, 'out/main/index.js'), ...platformArgs, `--user-data-dir=${userData}`, ...(opts.args ?? [])],
+    args: [
+      join(repoRoot, 'out/main/index.js'),
+      ...platformArgs,
+      `--user-data-dir=${userData}`,
+      ...(project ? [project] : []),
+      ...(opts.args ?? []),
+    ],
     cwd: repoRoot,
     env: {
       ...(process.env as Record<string, string>),
@@ -33,5 +51,5 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   });
   const win = await app.firstWindow();
   await win.waitForLoadState('domcontentloaded');
-  return { app, win, userData };
+  return { app, win, userData, project };
 }

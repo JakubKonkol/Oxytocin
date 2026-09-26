@@ -207,6 +207,10 @@ function bootstrap(): void {
       'terminals:clearBell': ({ id }) => terminals.clearBell(id),
       'fs:statMany': ({ baseDirs, paths }) => statMany(baseDirs, paths),
       'editor:open': (req) => editor.open(req),
+      'shell:revealInFolder': ({ path }) => {
+        if (e2e) return;
+        shell.showItemInFolder(path);
+      },
       'shell:openExternal': async ({ url }) => {
         if (!isSafeExternalUrl(url))
           throw new OxyError('PERMISSION', 'Only http, https and mailto links can be opened');

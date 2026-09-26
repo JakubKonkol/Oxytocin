@@ -52,6 +52,7 @@ export const invokeContract = {
     req: z.object({ path: z.string().min(1), line: z.number().int().optional(), column: z.number().int().optional() }),
     res: z.void(),
   },
+  'shell:revealInFolder': { req: z.object({ path: z.string().min(1) }), res: z.void() },
   'shell:openExternal': { req: z.object({ url: z.string().url() }), res: z.void() },
   'terminals:profiles': { req: z.null().optional(), res: z.array(TerminalProfileSchema) },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;

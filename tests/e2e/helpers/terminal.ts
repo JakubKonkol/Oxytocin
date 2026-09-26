@@ -68,3 +68,10 @@ export async function run(page: Page, command: string): Promise<void> {
 
 /** A `node -e` command line that works in bash, zsh, pwsh and cmd (no shell-specific quoting inside). */
 export const nodeCmd = (script: string) => `node -e "${script}"`;
+
+/** Id of the active project. */
+export async function activeProjectId(page: Page): Promise<string> {
+  const { id } = (await page.evaluate(() => window.oxy.invoke('projects:getActive'))) as { id: string | null };
+  if (!id) throw new Error('No active project');
+  return id;
+}

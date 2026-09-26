@@ -3,6 +3,9 @@ import { useAppStore } from './stores/app-store';
 import { subscribeSettings, useSettingsStore } from './stores/settings-store';
 import { subscribeTerminals, useTerminalsStore } from './stores/terminals-store';
 import { useUiStore } from './stores/ui-store';
+import { subscribeProjects, useProjectsStore } from './stores/projects-store';
+import { notify } from './ui/Toast';
+import { ipc } from './lib/ipc-client';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
 import { DialogHost } from './ui/DialogHost';
@@ -16,11 +19,14 @@ export function App() {
   useEffect(() => {
     subscribeSettings();
     subscribeTerminals();
+    subscribeProjects();
+    ipc.on('notifications:show', (n) => notify(n.kind, n.message, n.description ? { description: n.description } : {}));
     Promise.all([
       useUiStore.getState().load(),
       useSettingsStore.getState().load(),
       useAppStore.getState().load(),
       useTerminalsStore.getState().load(),
+      useProjectsStore.getState().load(),
     ])
       .then(() => setLoaded(true))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));

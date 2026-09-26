@@ -22,7 +22,8 @@ test('quitting with a running agent asks for confirmation', async () => {
       ],
     }),
   );
-  const { app, win } = await launchApp({ userData });
+  const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
+  const { app, win } = await launchApp({ userData, project });
   try {
     await waitForTerminal(win);
     await win.evaluate(() => window.oxy.invoke('terminals:create', { projectId: 'default', profileId: 'agent:fake' }));

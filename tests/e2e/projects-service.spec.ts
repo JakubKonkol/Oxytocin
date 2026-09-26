@@ -8,7 +8,7 @@ test('a folder passed on the command line is added and activated', async () => {
   const base = await mkdtemp(join(tmpdir(), 'oxy-proj-'));
   const folder = join(base, 'my-api');
   await mkdir(folder);
-  const { app, win } = await launchApp({ args: [folder] });
+  const { app, win } = await launchApp({ project: folder });
   try {
     await expect
       .poll(async () =>

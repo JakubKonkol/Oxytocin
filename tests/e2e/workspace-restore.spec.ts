@@ -2,12 +2,12 @@ import { readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { activeProjectId, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 test('layout, titles and scrollback survive an app restart', async () => {
   const first = await launchApp();
   const { userData } = first;
-  const captured = { panelIds: [] as string[] };
+  const captured = { panelIds: [] as string[], projectId: '' };
   try {
     const t = oxyTest(first.win);
     const id = await waitForTerminal(first.win);
@@ -21,10 +21,11 @@ test('layout, titles and scrollback survive an app restart', async () => {
     await first.win.keyboard.press('Enter');
     await expect(first.win.getByTestId(`tab-${second.id}`)).toContainText('Logs');
     captured.panelIds = (await t.workspace())!.panels.map((p) => p.id).sort();
+    captured.projectId = await activeProjectId(first.win);
   } finally {
     await first.app.close();
   }
-  expect(await readdir(join(userData, 'workspaces', 'default', 'scrollback'))).toHaveLength(2);
+  expect(await readdir(join(userData, 'workspaces', captured.projectId, 'scrollback'))).toHaveLength(2);
 
   const second = await launchApp({ userData });
   try {
@@ -45,8 +46,9 @@ test('layout, titles and scrollback survive an app restart', async () => {
 test('a corrupt layout file falls back to the default layout with a warning', async () => {
   const first = await launchApp();
   await waitForTerminal(first.win);
+  const projectId = await activeProjectId(first.win);
   await first.app.close();
-  await writeFile(join(first.userData, 'workspaces', 'default.json'), '{ not json');
+  await writeFile(join(first.userData, 'workspaces', `${projectId}.json`), '{ not json');
 
   const second = await launchApp({ userData: first.userData });
   try {
@@ -61,8 +63,9 @@ test('a corrupt layout file falls back to the default layout with a warning', as
 test('an unknown panel type is restored as a placeholder', async () => {
   const first = await launchApp();
   await waitForTerminal(first.win);
+  const projectId = await activeProjectId(first.win);
   await first.app.close();
-  const file = join(first.userData, 'workspaces', 'default.json');
+  const file = join(first.userData, 'workspaces', `${projectId}.json`);
   const state = JSON.parse(await (await import('node:fs/promises')).readFile(file, 'utf8')) as {
     dockview: { panels: Record<string, { contentComponent: string; params?: unknown }> };
     panels: Record<string, unknown>;

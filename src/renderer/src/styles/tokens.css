@@ -42,6 +42,18 @@
   --git-untracked: #56d364;
   --git-conflict: #ff7b72;
 
+  /* Project avatar palette (Project.color = index) */
+  --project-0: #4f8cff;
+  --project-1: #22c55e;
+  --project-2: #f5a524;
+  --project-3: #ef4444;
+  --project-4: #a78bfa;
+  --project-5: #38bdf8;
+  --project-6: #f472b6;
+  --project-7: #14b8a6;
+  --project-8: #eab308;
+  --project-9: #fb923c;
+
   /* Terminal ANSI palette */
   --ansi-black: #1b1f24;
   --ansi-red: #ff6b6b;

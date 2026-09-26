@@ -25,6 +25,7 @@ export const INVOKE_CHANNELS = [
   'terminals:list',
   'terminals:profiles',
   'shell:openExternal',
+  'shell:revealInFolder',
   'clipboard:read',
   'clipboard:writeText',
   'terminals:clearBell',
