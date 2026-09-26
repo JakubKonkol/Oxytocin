@@ -1,8 +1,9 @@
-import type { RepoInfo, RepoStatus } from '@shared/domain/git';
+import type { FileDiffContent, RepoInfo, RepoStatus } from '@shared/domain/git';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
 import type { RefreshReason, WatchRepoRequest } from '@shared/rpc/contracts/workspace-host';
 import { computeStatus } from './compute-status';
+import { getFileDiff } from './file-diff';
 import { discoverRepo } from './discover';
 import { RefreshQueue, RefreshScheduler } from './refresh-scheduler';
 import { RepoWatcher, type SubscribeFn } from './repo-watcher';
@@ -204,6 +205,31 @@ export class RepoRegistry {
       computedAt: Date.now(),
       durationMs: 0,
     };
+  }
+
+  async fileDiff(req: {
+    projectId: string;
+    path: string;
+    oldPath?: string;
+    maxBytes: number;
+  }): Promise<FileDiffContent> {
+    const entry = this.entries.get(req.projectId);
+    if (!entry) throw new OxyError('NOT_FOUND', `Project ${req.projectId} is not watched`);
+    const info = entry.info;
+    if (info.state !== 'ok' || !info.toplevel) throw new OxyError('NOT_A_REPO', 'Not a git repository');
+    const known = entry.status?.files.find((f) => f.path === req.path);
+    const oldPath = req.oldPath ?? known?.oldPath;
+    return getFileDiff({
+      gitPath: entry.req.gitPath,
+      toplevel: info.toplevel,
+      pathspec: info.pathspec,
+      hasHead: info.hasHead,
+      path: req.path,
+      ...(oldPath ? { oldPath } : {}),
+      // A file that is no longer changed still shows HEAD vs disk (identical sides).
+      status: known?.status ?? 'modified',
+      maxBytes: req.maxBytes,
+    });
   }
 
   async dispose(): Promise<void> {

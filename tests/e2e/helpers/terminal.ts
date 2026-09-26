@@ -9,6 +9,7 @@ export interface WorkspaceSnapshot {
 }
 
 interface OxyTest {
+  diff(panelId: string): { original: string; modified: string; changes: number } | null;
   activeTerminalId(): string | null;
   workspace(): WorkspaceSnapshot | null;
   movePanel(panelId: string, targetPanelId: string): boolean;
@@ -29,6 +30,8 @@ export const oxyTest = (page: Page) => ({
       panelId,
       targetPanelId,
     ] as const),
+  diff: (panelId: string) =>
+    page.evaluate((id) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.diff(id), panelId),
   terminalIds: () => page.evaluate(() => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.terminalIds()),
   text: (id: string) =>
     page.evaluate((i) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.getTerminalText(i) ?? '', id),

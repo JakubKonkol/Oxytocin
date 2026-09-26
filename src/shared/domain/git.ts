@@ -75,3 +75,28 @@ export const RepoStatusSchema = z.object({
   durationMs: z.number(),
 });
 export type RepoStatus = z.infer<typeof RepoStatusSchema>;
+
+/** docs/plan/06-git-changes.md §5 */
+export const FileDiffContentSchema = z.object({
+  path: z.string(),
+  oldPath: z.string().optional(),
+  status: ChangeStatusSchema,
+  /** HEAD version (null for added/untracked files or without HEAD). */
+  original: z.string().nullable(),
+  /** Version on disk (null for deleted files). */
+  modified: z.string().nullable(),
+  languageId: z.string(),
+  binary: z.boolean().optional(),
+  tooLarge: z.object({ sizeBytes: z.number() }).optional(),
+  eol: z.enum(['crlf', 'lf', 'mixed']).optional(),
+  /** Sizes for binaries / too large files. */
+  sizes: z.object({ original: z.number().nullable(), modified: z.number().nullable() }).optional(),
+});
+export type FileDiffContent = z.infer<typeof FileDiffContentSchema>;
+
+export const FileDiffRequestSchema = z.object({
+  projectId: z.string(),
+  path: z.string().min(1),
+  oldPath: z.string().optional(),
+});
+export type FileDiffRequest = z.infer<typeof FileDiffRequestSchema>;

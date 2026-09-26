@@ -1,4 +1,5 @@
-import type { GitInstallation, RepoInfo, RepoStatus } from '@shared/domain/git';
+import type { FileDiffContent, FileDiffRequest, GitInstallation, RepoInfo, RepoStatus } from '@shared/domain/git';
+import { OxyError } from '@shared/errors';
 import type { Project } from '@shared/domain/project';
 import type { Settings } from '@shared/domain/settings';
 import type { Logger } from '@shared/logging/logger';
@@ -196,6 +197,12 @@ export class GitService implements Disposable {
       await this.call('git:unwatch', { projectId: id });
     }
     await this.call('git:setActive', { projectId: this.deps.projects.activeId() });
+  }
+
+  async fileDiff(req: FileDiffRequest): Promise<FileDiffContent> {
+    if (!this.watched.has(req.projectId)) throw new OxyError('NOT_FOUND', 'The project is not watched by git');
+    const maxBytes = Math.round(this.deps.settings()['git.diff.maxFileSizeMb'] * 1024 * 1024);
+    return await this.deps.host.call('git:getFileDiff', { ...req, maxBytes });
   }
 
   refresh(projectId: string, reason: RefreshReason): void {

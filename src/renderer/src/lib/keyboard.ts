@@ -24,6 +24,8 @@ export function shortcutFor(command: string): string | undefined {
 function contextOf(target: EventTarget | null): KeyContext | 'terminal' {
   const el = target instanceof Element ? target : null;
   if (el?.closest('.xterm')) return 'terminal';
+  // Monaco's hidden textarea lives inside the diff panel: treat it as the diff, not as a text input.
+  if (el?.closest('[data-keycontext="diff"] .monaco-editor')) return 'diffFocus';
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable))
     return 'inputFocus';
   if (el?.closest('[data-keycontext="changes"]')) return 'changesFocus';

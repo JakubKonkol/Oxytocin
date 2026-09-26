@@ -261,6 +261,7 @@ function bootstrap(): void {
       'projects:getActivity': () => activity.list(),
       'git:getStatus': ({ projectId }) => git.status(projectId),
       'git:refresh': ({ projectId }) => git.refresh(projectId, 'manual'),
+      'git:getFileDiff': (req) => git.fileDiff(req),
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).

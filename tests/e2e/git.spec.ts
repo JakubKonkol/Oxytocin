@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { activeProjectId, nodeCmd, run, waitForTerminal } from './helpers/terminal';
+import { activeProjectId, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 const IDENTITY = ['-c', 'user.name=t', '-c', 'user.email=t@e', '-c', 'commit.gpgsign=false'];
 const git = (cwd: string, ...args: string[]) => execFileSync('git', [...IDENTITY, ...args], { cwd, stdio: 'pipe' });
@@ -12,6 +12,8 @@ const git = (cwd: string, ...args: string[]) => execFileSync('git', [...IDENTITY
 export async function makeRepo(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'oxy-e2e-repo-'));
   git(dir, 'init', '-q', '-b', 'main');
+  // Byte-exact files on every platform (Windows runners default to core.autocrlf=true).
+  git(dir, 'config', 'core.autocrlf', 'false');
   await writeFile(join(dir, 'tracked.txt'), 'one\n');
   git(dir, 'add', '.');
   git(dir, 'commit', '-qm', 'init');
@@ -70,6 +72,63 @@ test('the CHANGES section shows new, modified and committed files live', async (
     await run(win, 'git -c user.name=t -c user.email=t@e -c commit.gpgsign=false commit -qm done');
     await expect(section.getByText('No changes since HEAD ✓')).toBeVisible({ timeout: 5_000 });
     await expect(section.getByText(/Last commit .*: done/)).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+test('clicking a change opens its diff (preview tab), live updates and pins on double-click', async () => {
+  const repo = await makeRepo();
+  await writeFile(join(repo, 'crlf.txt'), 'a\r\nb\r\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '-qm', 'crlf');
+  const { app, win } = await launchApp({ project: repo });
+  const errors: string[] = [];
+  win.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  try {
+    await waitForTerminal(win);
+    const t = oxyTest(win);
+    await writeFile(join(repo, 'tracked.txt'), 'one\ntwo\n');
+    await writeFile(join(repo, 'crlf.txt'), 'a\r\nB\r\n');
+    const section = win.getByTestId('changes-section');
+    const row = (path: string) => section.locator(`[data-testid="changes-row"][data-path="${path}"]`);
+    await row('tracked.txt').click();
+
+    const panel = win.locator('[data-testid="diff-panel"][data-path="tracked.txt"]');
+    await expect(panel).toBeVisible();
+    const panelId = () => t.workspace().then((ws) => ws?.panels.find((p) => p.id.startsWith('diff-'))?.id ?? '');
+    await expect.poll(async () => (await t.diff(await panelId()))?.modified, { timeout: 15_000 }).toBe('one\ntwo\n');
+    expect((await t.diff(await panelId()))?.original).toBe('one\n');
+    await expect.poll(async () => (await t.diff(await panelId()))?.changes).toBe(1);
+    await expect(win.getByTestId('tab-title').filter({ hasText: 'tracked.txt' })).toHaveAttribute(
+      'data-preview',
+      'true',
+    );
+
+    // The preview tab is reused for the next file; CRLF files show only the real change.
+    await row('crlf.txt').click();
+    await expect(win.locator('[data-testid="diff-panel"][data-path="crlf.txt"]')).toBeVisible();
+    await expect.poll(async () => (await t.diff(await panelId()))?.modified).toBe('a\r\nB\r\n');
+    expect((await t.diff(await panelId()))?.original).toBe('a\r\nb\r\n');
+    await expect.poll(async () => (await t.diff(await panelId()))?.changes).toBe(1);
+    expect((await t.workspace())?.panels.filter((p) => p.id.startsWith('diff-'))).toHaveLength(1);
+
+    // Live update while open.
+    await writeFile(join(repo, 'crlf.txt'), 'a\r\nB\r\nc\r\n');
+    await expect
+      .poll(async () => (await t.diff(await panelId()))?.modified, { timeout: 5_000 })
+      .toBe('a\r\nB\r\nc\r\n');
+    await expect(win.getByTestId('diff-updated')).toBeVisible();
+
+    // Double-click pins; the next click opens a second (preview) panel.
+    await row('crlf.txt').dblclick();
+    await expect(win.getByTestId('tab-title').filter({ hasText: 'crlf.txt' })).toHaveAttribute('data-preview', 'false');
+    await row('tracked.txt').click();
+    await expect.poll(async () => (await t.workspace())?.panels.filter((p) => p.id.startsWith('diff-')).length).toBe(2);
+
+    expect(errors.filter((e) => /Content Security Policy|worker/i.test(e))).toEqual([]);
   } finally {
     await app.close();
   }

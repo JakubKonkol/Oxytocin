@@ -50,6 +50,17 @@ export const STATUS_LETTERS: Record<ChangeStatus, string> = {
   typechange: 'T',
 };
 
+/** Tailwind text colour per status. */
+export const STATUS_TEXT_CLASS: Record<ChangeStatus, string> = {
+  added: 'text-git-added',
+  modified: 'text-git-modified',
+  deleted: 'text-git-deleted',
+  renamed: 'text-git-renamed',
+  untracked: 'text-git-untracked',
+  conflicted: 'text-git-conflict',
+  typechange: 'text-git-modified',
+};
+
 export const STATUS_LABELS: Record<ChangeStatus, string> = {
   added: 'Added',
   modified: 'Modified',

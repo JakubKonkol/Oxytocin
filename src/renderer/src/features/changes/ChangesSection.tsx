@@ -25,6 +25,7 @@ import { IconButton } from '../../ui/IconButton';
 import { SectionBody } from '../../ui/Section';
 import { SplitBar } from '../../ui/SplitBar';
 import { absolutePath, copyText, openInEditor, refreshChanges, revealInFolder } from './change-actions';
+import { openDiff, openDiffInNewGroup } from '../diff/diff-actions';
 import {
   allDirPaths,
   buildTree,
@@ -35,20 +36,11 @@ import {
   type Row,
   STATUS_LABELS,
   STATUS_LETTERS,
+  STATUS_TEXT_CLASS,
 } from './tree-model';
 
 const ROW_HEIGHT = 24;
 const DEFAULT_EXPAND_LIMIT = 50;
-
-const STATUS_TEXT: Record<ChangeStatus, string> = {
-  added: 'text-git-added',
-  modified: 'text-git-modified',
-  deleted: 'text-git-deleted',
-  renamed: 'text-git-renamed',
-  untracked: 'text-git-untracked',
-  conflicted: 'text-git-conflict',
-  typechange: 'text-git-modified',
-};
 
 const STATUS_BG: Record<ChangeStatus, string> = {
   added: 'bg-git-added',
@@ -167,6 +159,13 @@ function FileContextMenu({ project, node, children }: { project: Project; node: 
           data-testid="changes-context-menu"
           className="z-50 min-w-48 rounded-control border border-line bg-elevated p-1 shadow-lg"
         >
+          <ContextMenu.Item className={menuItem} onSelect={() => openDiff(project.id, node.file, { pinned: true })}>
+            Open diff
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => openDiffInNewGroup(project.id, node.file)}>
+            Open diff in new group
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
           <ContextMenu.Item
             className={menuItem}
             disabled={deleted}
@@ -198,6 +197,7 @@ function RowView({
   now,
   liveTouches,
   onClick,
+  onDoubleClick,
 }: {
   row: Row;
   mode: 'tree' | 'list';
@@ -206,6 +206,7 @@ function RowView({
   now: number;
   liveTouches: Record<string, number>;
   onClick: () => void;
+  onDoubleClick?: () => void;
 }) {
   const node = row.node;
   const indent = { paddingLeft: mode === 'tree' ? 4 + row.depth * 12 : 6 };
@@ -256,6 +257,7 @@ function RowView({
       data-kind="file"
       data-status={f.status}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       style={indent}
       title={f.oldPath ? `${f.path}\nfrom: ${f.oldPath}` : f.path}
       className={cn(
@@ -287,7 +289,7 @@ function RowView({
       <span
         aria-label={STATUS_LABELS[f.status]}
         data-testid="changes-status-letter"
-        className={cn('w-3 flex-none text-center font-mono text-small font-semibold', STATUS_TEXT[f.status])}
+        className={cn('w-3 flex-none text-center font-mono text-small font-semibold', STATUS_TEXT_CLASS[f.status])}
       >
         {STATUS_LETTERS[f.status]}
       </span>
@@ -367,8 +369,16 @@ function ChangesTree({ project, status }: { project: Project; status: RepoStatus
         break;
       case 'Enter':
         if (row?.node.kind === 'dir') setExpanded(row.node.path, !isExpanded(row.node.path));
-        else if (row && (e.ctrlKey || e.metaKey) && row.node.file.status !== 'deleted')
-          void openInEditor(project, row.node.path);
+        else if (row && (e.ctrlKey || e.metaKey)) {
+          if (row.node.file.status !== 'deleted') void openInEditor(project, row.node.path);
+        } else if (row) openDiff(projectId, row.node.file);
+        break;
+      case ' ':
+        // Preview without moving the focus out of the tree.
+        if (row?.node.kind === 'file') {
+          openDiff(projectId, row.node.file);
+          requestAnimationFrame(() => scrollRef.current?.focus());
+        }
         break;
       case '/':
         setUi(projectId, { filterOpen: true });
@@ -458,6 +468,10 @@ function ChangesTree({ project, status }: { project: Project; status: RepoStatus
                   onClick={() => {
                     setUi(projectId, { selected: row.node.path });
                     if (row.node.kind === 'dir') setExpanded(row.node.path, !isExpanded(row.node.path));
+                    else openDiff(projectId, row.node.file);
+                  }}
+                  onDoubleClick={() => {
+                    if (row.node.kind === 'file') openDiff(projectId, row.node.file, { pinned: true });
                   }}
                 />
               );

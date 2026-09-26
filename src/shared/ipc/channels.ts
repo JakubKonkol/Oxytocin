@@ -35,6 +35,7 @@ export const INVOKE_CHANNELS = [
   'window:setAttention',
   'git:getStatus',
   'git:refresh',
+  'git:getFileDiff',
   'fs:statMany',
   'editor:open',
   'workspace:load',

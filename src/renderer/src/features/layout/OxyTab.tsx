@@ -10,6 +10,9 @@ import type { TerminalPanelParams } from './panel-registry';
 import { requestClosePanel } from './workspace-actions';
 import { useRenameStore } from './rename-store';
 import { ipc } from '../../lib/ipc-client';
+import { useChangesStore } from '../../stores/changes-store';
+import { type DiffPanelParams, pinDiff } from '../diff/diff-actions';
+import { STATUS_LETTERS, STATUS_TEXT_CLASS } from '../changes/tree-model';
 
 function useIsActive(props: IDockviewPanelHeaderProps): boolean {
   const [active, setActive] = useState(props.api.isActive);
@@ -81,6 +84,32 @@ function TerminalTabContent({ props }: { props: IDockviewPanelHeaderProps<Termin
   );
 }
 
+function DiffTabContent({ props }: { props: IDockviewPanelHeaderProps<DiffPanelParams> }) {
+  const { projectId, path, preview } = props.params;
+  const status = useChangesStore((s) => s.status[projectId]?.files.find((f) => f.path === path)?.status);
+  return (
+    <>
+      <span
+        data-testid="tab-title"
+        data-preview={preview}
+        title={preview ? `${path} (preview — double-click to keep open)` : path}
+        className={cn('min-w-0 truncate', preview && 'italic')}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          pinDiff(props.containerApi, props.api.id);
+        }}
+      >
+        {props.api.title ?? path}
+      </span>
+      {status && (
+        <span className={cn('flex-none font-mono text-small font-semibold', STATUS_TEXT_CLASS[status])}>
+          {STATUS_LETTERS[status]}
+        </span>
+      )}
+    </>
+  );
+}
+
 /** Tab / card header of a center panel: status dot, title, kind badge, bell and close. */
 export function OxyTab(props: IDockviewPanelHeaderProps) {
   const active = useIsActive(props);
@@ -102,6 +131,8 @@ export function OxyTab(props: IDockviewPanelHeaderProps) {
     >
       {isTerminal ? (
         <TerminalTabContent props={props as IDockviewPanelHeaderProps<TerminalPanelParams>} />
+      ) : props.api.component === 'diff' ? (
+        <DiffTabContent props={props as IDockviewPanelHeaderProps<DiffPanelParams>} />
       ) : (
         <span className="min-w-0 truncate">{props.api.title}</span>
       )}

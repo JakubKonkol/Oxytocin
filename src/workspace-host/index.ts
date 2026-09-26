@@ -45,6 +45,7 @@ const impl: Impl<Omit<WorkspaceHostMethods, 'ping' | 'shutdown'>> = {
   'git:setActive': ({ projectId }) => registry.setActive(projectId),
   'git:refresh': ({ projectId, reason }) => registry.request(projectId, reason),
   'git:getStatus': ({ projectId }) => registry.get(projectId)?.status ?? null,
+  'git:getFileDiff': (req) => registry.fileDiff(req),
 };
 
 const { rpc, log } = startHostRuntime<WorkspaceHostEvents>({

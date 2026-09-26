@@ -1,4 +1,4 @@
-import type { GitInstallation, RepoInfo, RepoStatus } from '../../domain/git';
+import type { FileDiffContent, GitInstallation, RepoInfo, RepoStatus } from '../../domain/git';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
 
 export type RefreshReason = 'fs' | 'gitdir' | 'manual' | 'focus' | 'periodic' | 'initial';
@@ -23,6 +23,8 @@ export type WorkspaceHostMethods = HostBaseMethods & {
   'git:refresh': (o: { projectId: string; reason: RefreshReason }) => void;
   /** Latest computed status (null before the first refresh). */
   'git:getStatus': (o: { projectId: string }) => RepoStatus | null;
+  /** HEAD and working-tree content of a changed file. */
+  'git:getFileDiff': (o: { projectId: string; path: string; oldPath?: string; maxBytes: number }) => FileDiffContent;
 };
 
 export type WorkspaceHostEvents = HostBaseEvents & {

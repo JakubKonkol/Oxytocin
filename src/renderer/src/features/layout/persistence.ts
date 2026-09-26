@@ -6,11 +6,12 @@ import { getSettings } from '../../stores/settings-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
 import type { TerminalPanelParams } from './panel-registry';
+import type { DiffPanelParams } from '../diff/diff-actions';
 import { addExistingTerminalPanel, addTerminalPanel, type PanelPosition } from './workspace-actions';
 import { useProjectsStore } from '../../stores/projects-store';
 import { changesUi, useChangesStore } from '../../stores/changes-store';
 
-const KNOWN_COMPONENTS = new Set(['terminal', 'missing']);
+const KNOWN_COMPONENTS = new Set(['terminal', 'diff', 'missing']);
 const SAVE_DEBOUNCE_MS = 1000;
 
 /** Builds the persisted state: dockview JSON + a descriptor per panel (enough to revive terminals). */
@@ -29,6 +30,15 @@ export function buildWorkspaceState(api: DockviewApi, projectId: string): Worksp
         cwd: info.cwd,
         ...(info.userTitle ? { userTitle: info.userTitle } : {}),
       };
+    } else if (panel.api.component === 'diff') {
+      const p = panel.params as DiffPanelParams | undefined;
+      if (p)
+        panels[panel.id] = {
+          kind: 'diff',
+          path: p.path,
+          ...(p.oldPath ? { oldPath: p.oldPath } : {}),
+          pinned: !p.preview,
+        };
     } else if (panel.api.component === 'missing') {
       const descriptor = (panel.params as { descriptor?: PanelDescriptor } | undefined)?.descriptor;
       if (descriptor) panels[panel.id] = descriptor;

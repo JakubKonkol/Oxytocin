@@ -1,5 +1,6 @@
 import { getActiveWorkspace } from '../features/layout/workspace-registry';
 import { getLastProjectSwitchMs } from './perf';
+import { diffRegistry } from '../features/diff/diff-registry';
 import { getActiveTerminalId } from '../features/terminals/terminal-actions';
 import { terminalRegistry, terminalText } from '../features/terminals/terminal-registry';
 
@@ -7,6 +8,11 @@ import { terminalRegistry, terminalText } from '../features/terminals/terminal-r
 export function installTestHooks(): void {
   (window as unknown as Record<string, unknown>)['__oxyTest'] = {
     terminalIds: () => [...terminalRegistry.keys()],
+    /** Text of a diff panel's models and its number of changes (null while Monaco loads). */
+    diff: (panelId: string) => {
+      const handle = diffRegistry.get(panelId);
+      return handle ? { ...handle.text(), changes: handle.changeCount() } : null;
+    },
     lastSwitchMs: () => getLastProjectSwitchMs(),
     activeTerminalId: () => getActiveTerminalId(),
     /** Moves a panel into another group (the operation a tab drop performs). */
