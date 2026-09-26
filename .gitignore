@@ -6,7 +6,7 @@ test-results/
 playwright-report/
 blob-report/
 coverage/
-spikes/
+/spikes/
 *.log
 *.tsbuildinfo
 .DS_Store
