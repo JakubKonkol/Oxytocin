@@ -5,7 +5,7 @@
  * - `oxytocin-checksums.json` with SHA-256 of every shipped file (verified for packaged builds).
  */
 import { createHash } from 'node:crypto';
-import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { build as esbuild } from 'esbuild';
@@ -65,7 +65,10 @@ export async function isStale(pluginDir: string): Promise<boolean> {
   return false;
 }
 
-export async function buildPlugin(pluginDir: string): Promise<void> {
+export async function buildPlugin(dir: string): Promise<void> {
+  // Canonical path: Vite derives HTML entry names from paths relative to its root, which breaks when the root
+  // goes through a symlink (macOS /var → /private/var) or a Windows 8.3 short name.
+  const pluginDir = await realpath(dir);
   const dist = join(pluginDir, 'dist');
   await rm(dist, { recursive: true, force: true });
   let hostEntry: string | undefined;

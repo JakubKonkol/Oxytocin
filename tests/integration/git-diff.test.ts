@@ -27,6 +27,8 @@ const input = (over: Partial<FileDiffInput>): FileDiffInput => ({
 beforeEach(async () => {
   dir = await realpath(await mkdtemp(join(tmpdir(), 'oxy-diff-')));
   git('init', '-q', '-b', 'main');
+  // Byte-exact checkouts regardless of the machine's settings (Windows runners default to core.autocrlf=true).
+  git('config', 'core.autocrlf', 'false');
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });

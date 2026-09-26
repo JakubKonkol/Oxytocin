@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -8,14 +8,19 @@ import { buildPlugin, CHECKSUM_FILE } from '../../scripts/lib/plugin-build';
 const fixture = resolve(__dirname, '../fixtures/plugin-src/sample');
 let dir: string;
 
+let temp: string;
+
 beforeAll(async () => {
-  dir = join(await mkdtemp(join(tmpdir(), 'oxy-plugin-build-')), 'sample');
-  await cp(fixture, dir, { recursive: true });
+  temp = await mkdtemp(join(tmpdir(), 'oxy-plugin-build-'));
+  await cp(fixture, join(temp, 'real/sample'), { recursive: true });
+  // Built through a symlinked folder, like macOS' /var → /private/var temp paths.
+  await symlink(join(temp, 'real'), join(temp, 'link'), 'junction');
+  dir = join(temp, 'link/sample');
   await buildPlugin(dir);
 }, 60_000);
 
 afterAll(async () => {
-  await rm(resolve(dir, '..'), { recursive: true, force: true });
+  await rm(temp, { recursive: true, force: true });
 });
 
 describe('buildPlugin', () => {
