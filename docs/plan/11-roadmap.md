@@ -40,7 +40,7 @@ Wynik każdego spike'a: `docs/spikes/S<n>-<nazwa>.md` (co sprawdzono, wynik, dec
   - `git init`, `.gitignore` (node_modules, out, release, dist, test-results, playwright-report, *.log, .DS_Store), `.editorconfig`, `.nvmrc` (24), `package.json` (nazwa `oxytocin`, `private: true`, `workspaces: ["packages/*", "plugins/*"]`, `type: "module"` jeśli electron-vite 5 tego wymaga — zweryfikować), `"license": "MIT"`), `LICENSE` z pełnym tekstem licencji MIT (`Copyright (c) 2026 <git config user.name>` — ADR-020), `README.md` **po angielsku** (opis produktu, status „work in progress”, wymagania: Windows 11 / Node 24 / git, komendy dev, sekcja „License: MIT”; link do `docs/plan/` z adnotacją, że dokumenty planu są po polsku).
   - Akceptacja: `npm install` działa na czystym klonie; `LICENSE` i `README.md` obecne, `package.json` ma `"license": "MIT"`.
 
-- [ ] **M0-T2 — Szkielet Electron + electron-vite** (M) · zależy: M0-T1
+- [x] **M0-T2 — Szkielet Electron + electron-vite** (M) · zależy: M0-T1
   - electron `~44.4.5`, electron-vite `~5.0.0`, vite `~7.3`, react/react-dom `~19.3`, @vitejs/plugin-react `~5.2`, typescript `~6.0.3`; `electron.vite.config.ts` z wejściami `index`, `ptyHost`, `workspaceHost`, `pluginHost` (stuby logujące start), preload, renderer (React „Hello”); tsconfigi (`tsconfig.node.json`, `tsconfig.web.json`, jawne `types`).
   - Skrypty: `dev`, `build`, `preview`, `typecheck`.
   - Akceptacja: `npm run dev` otwiera okno z HMR; `npm run build` tworzy `out/`; `npm run typecheck` zielony.
@@ -278,3 +278,4 @@ Wynik każdego spike'a: `docs/spikes/S<n>-<nazwa>.md` (co sprawdzono, wynik, dec
 > Format (entries in English): `YYYY-MM-DD · task ID · short summary · deviations from the plan · known gaps`
 
 - 2026-09-26 · M0-T1 · Repository initialized: `.gitignore`, `.editorconfig`, `.nvmrc` (24), root `package.json` (npm workspaces, MIT), `LICENSE` (MIT, © Jakub Konkol — the repo owner; `git config user.name` in the session was a bot identity), English `README.md`. · `"type": "module"` intentionally not set: electron-vite 5 then emits CommonJS for main/preload/hosts, which a sandboxed preload requires. · —
+- 2026-09-26 · M0-T2 · Electron 44.4.5 + electron-vite 5.0.0 + Vite 7.3 + React 19.3 + TS 6.0.3 skeleton; main forks three stub utility processes (`ptyHost`, `workspaceHost`, `pluginHost` as extra `rollupOptions.input` entries); `tsconfig.base.json` shared by node/web configs with explicit `types`. · `build.externalizeDeps` (default on) used instead of the deprecated `externalizeDepsPlugin`. npm 11 blocks install scripts by default, so `allowScripts` in `package.json` whitelists the packages that need them. · Running as root (containers) requires `--no-sandbox`.
