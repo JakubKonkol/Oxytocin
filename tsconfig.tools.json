@@ -20,7 +20,8 @@
     "src/plugin-host/**/*",
     "src/preload/**/*",
     "packages/*/index.d.ts",
-    "packages/*/src/**/*"
+    "packages/*/src/**/*",
+    "plugins/*/src/host/**/*"
   ],
   "exclude": ["tests/fixtures/**"]
 }

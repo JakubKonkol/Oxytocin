@@ -1,5 +1,5 @@
 {
- "_comment": "Reference values for the Usage Monitor fixtures (docs/plan/08-usage-monitor.md \u00a718), computed independently by the M6-T1 spike script. Costs are added with the pricing snapshot (M6-T2).",
+ "_comment": "Reference values for the Usage Monitor fixtures (docs/plan/08-usage-monitor.md \u00a718), computed independently by the M6-T1/T2 spike scripts. costUsdCalculated uses the pricing snapshot and usage.costMode = calculate; costUsdAuto prefers costs reported by the source.",
  "sources": {
   "claude-jsonl": {
    "events": 27,
@@ -77,7 +77,9 @@
       "reasoning": 288
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.1527664,
+     "costUsdAuto": 0.1527664
     },
     {
      "id": "claude:msg_011CfSUeCvkSqGH1hhASh13T:req_011CfSUeCNkxVkJB2w1FGAUz",
@@ -94,7 +96,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.2173698,
+     "costUsdAuto": 0.2173698
     },
     {
      "id": "claude:msg_011CfSUeQ6xBZXihod9x9CZe:req_011CfSUePbSGpcT8vysUQRPM",
@@ -111,7 +115,9 @@
       "reasoning": 42
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.1318804,
+     "costUsdAuto": 0.1318804
     },
     {
      "id": "claude:msg_011CfSUefLVWK5h4RMDh7kMU:req_011CfSUeeriC3EsTtePkRsTc",
@@ -128,7 +134,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.03761,
+     "costUsdAuto": 0.03761
     },
     {
      "id": "claude:msg_011CfSUenJgYZReLizjXuS2v:req_011CfSUemovhMtdMc7snRHcq",
@@ -145,7 +153,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.1611096,
+     "costUsdAuto": 0.1611096
     },
     {
      "id": "claude:msg_011CfSUeumeDh1V7h9wKA9Fr:req_011CfSUeuK7HzBoxLF4A2r6a",
@@ -162,7 +172,9 @@
       "reasoning": 93
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.210428,
+     "costUsdAuto": 0.210428
     },
     {
      "id": "claude:msg_011CfSUfGTMcMcfTEUrYn772:req_011CfSUfFxahqtn2WQaf7hAE",
@@ -179,7 +191,9 @@
       "reasoning": 368
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.1094558,
+     "costUsdAuto": 0.1094558
     },
     {
      "id": "claude:msg_011CfSUfj8U5wZdR2wVuUXLM:req_011CfSUfigBJT2LDgBqLsLVj",
@@ -196,7 +210,9 @@
       "reasoning": 86
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0549394,
+     "costUsdAuto": 0.0549394
     },
     {
      "id": "claude:msg_011CfSUgmMgbheSMzvqeY2Bw:req_011CfSUgkrvpyDtQ1kGcSkyD",
@@ -213,7 +229,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0349778,
+     "costUsdAuto": 0.0349778
     },
     {
      "id": "claude:msg_011CfSUh5hkpERfJRE6ike4T:req_011CfSUh5DjAAvzPsjCdofyz",
@@ -230,7 +248,9 @@
       "reasoning": 171
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0357446,
+     "costUsdAuto": 0.0357446
     },
     {
      "id": "claude:msg_011CfSUhPzqXLjE6jE8Tkss6:req_011CfSUhPUaV4xv9sXaAQM1z",
@@ -247,7 +267,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0343388,
+     "costUsdAuto": 0.0343388
     },
     {
      "id": "claude:msg_011CfSUhv3rXHUEg2RT16N1d:req_011CfSUhuZb5sqKB4FBUHu5L",
@@ -264,7 +286,9 @@
       "reasoning": 58
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0344764,
+     "costUsdAuto": 0.0344764
     },
     {
      "id": "claude:msg_011CfSUiB1m7Bu8QRky1n6Un:req_011CfSUiATXcq1mc4NSbrF8o",
@@ -281,7 +305,9 @@
       "reasoning": 62
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0328224,
+     "costUsdAuto": 0.0328224
     },
     {
      "id": "claude:msg_011CfSUiQWNPQui8iWvQBMbg:req_011CfSUiPwe1av4XqgUJS2iU",
@@ -298,7 +324,9 @@
       "reasoning": 52
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.1231982,
+     "costUsdAuto": 0.1231982
     },
     {
      "id": "claude:msg_011CfSUic68pmBW1K5eUPswk:req_011CfSUibasRvYvhdDH6Z8hw",
@@ -315,7 +343,9 @@
       "reasoning": 636
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0912486,
+     "costUsdAuto": 0.0912486
     },
     {
      "id": "claude:msg_011CfSUjHjc7juwijjAi5LMa:req_011CfSUjH9tcZFKC2CDTypWo",
@@ -332,7 +362,9 @@
       "reasoning": 79
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0724966,
+     "costUsdAuto": 0.0724966
     },
     {
      "id": "claude:msg_011CfSUkVEhD1BHG8sYykJxB:req_011CfSUkUcj6xpwAb5YPz8Ro",
@@ -349,7 +381,9 @@
       "reasoning": 157
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0580338,
+     "costUsdAuto": 0.0580338
     },
     {
      "id": "claude:msg_011CfSUm7taKf14HCYjWEk9A:req_011CfSUm7M6FMJvkPo9DdDmr",
@@ -366,7 +400,9 @@
       "reasoning": 29
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0419156,
+     "costUsdAuto": 0.0419156
     },
     {
      "id": "claude:msg_011CfSUnAxA7fLtjgvhPZM3P:req_011CfSUnAUt8mKSMChi31ogE",
@@ -383,7 +419,9 @@
       "reasoning": 130
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0460688,
+     "costUsdAuto": 0.0460688
     },
     {
      "id": "claude:msg_011CfSUnUTrYPW66B38p8unM:req_011CfSUnTwcSgjvGwtH8qPX7",
@@ -400,7 +438,9 @@
       "reasoning": 71
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0415304,
+     "costUsdAuto": 0.0415304
     },
     {
      "id": "claude:msg_E1:req_E1",
@@ -417,7 +457,9 @@
       "reasoning": 120
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.01652,
+     "costUsdAuto": 0.01652
     },
     {
      "id": "claude:msg_E2:req_E2",
@@ -434,7 +476,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": 0.0234
+     "reportedCostUsd": 0.0234,
+     "costUsdCalculated": 0.00855,
+     "costUsdAuto": 0.0234
     },
     {
      "id": "claude:msg_E3:req_E3",
@@ -451,7 +495,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.00155,
+     "costUsdAuto": 0.00155
     },
     {
      "id": "claude:msg_E4:req_E4",
@@ -468,7 +514,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": null,
+     "costUsdAuto": null
     },
     {
      "id": "claude:msg_E5:req_E5",
@@ -485,7 +533,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 2,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.104016,
+     "costUsdAuto": 0.104016
     },
     {
      "id": "claude:msg_E7:req_E7",
@@ -502,7 +552,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.000355,
+     "costUsdAuto": 0.000355
     },
     {
      "id": "claude:uuid:u-noid-1",
@@ -519,8 +571,15 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.000404,
+     "costUsdAuto": 0.000404
     }
+   ],
+   "costUsdCalculated": 1.8538064,
+   "costUsdAuto": 1.8686564,
+   "unknownModels": [
+    "claude-mystery-9"
    ]
   },
   "codex-rollout": {
@@ -575,7 +634,9 @@
       "reasoning": 300
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0224,
+     "costUsdAuto": 0.0224
     },
     {
      "id": "codex:codex-s1:27000",
@@ -592,7 +653,9 @@
       "reasoning": 400
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.03045,
+     "costUsdAuto": 0.03045
     },
     {
      "id": "codex:codex-s1:3200",
@@ -609,7 +672,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.00575,
+     "costUsdAuto": 0.00575
     },
     {
      "id": "codex:codex-s2:1100",
@@ -626,8 +691,15 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": null,
+     "costUsdAuto": null
     }
+   ],
+   "costUsdCalculated": 0.0586,
+   "costUsdAuto": 0.0586,
+   "unknownModels": [
+    "unknown"
    ]
   },
   "gemini-chat": {
@@ -674,7 +746,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.00175,
+     "costUsdAuto": 0.00175
     },
     {
      "id": "gemini:gem00001-aaaa:m-g1",
@@ -691,7 +765,9 @@
       "reasoning": 400
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0195,
+     "costUsdAuto": 0.0195
     },
     {
      "id": "gemini:gem00001-aaaa:m-g2",
@@ -708,7 +784,9 @@
       "reasoning": 0
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.0042,
+     "costUsdAuto": 0.0042
     },
     {
      "id": "gemini:sub-0001:m-g3",
@@ -725,9 +803,15 @@
       "reasoning": 50
      },
      "webSearchRequests": 0,
-     "reportedCostUsd": null
+     "reportedCostUsd": null,
+     "costUsdCalculated": 0.001275,
+     "costUsdAuto": 0.001275
     }
-   ]
+   ],
+   "costUsdCalculated": 0.026725,
+   "costUsdAuto": 0.026725,
+   "unknownModels": []
   }
- }
+ },
+ "pricingVersion": "2026-09-26-a32be757"
 }

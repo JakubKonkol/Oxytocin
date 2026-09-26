@@ -78,10 +78,18 @@ export async function buildPlugin(dir: string): Promise<void> {
       break;
     }
   }
-  if (hostEntry) {
+  // Worker threads of the backend: src/host/workers/*.ts → dist/workers/*.js (next to host.js).
+  const workersDir = join(pluginDir, 'src/host/workers');
+  const workers = (await exists(workersDir))
+    ? (await readdir(workersDir)).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+    : [];
+  if (hostEntry || workers.length > 0) {
+    const entryPoints: Record<string, string> = {};
+    if (hostEntry) entryPoints['host'] = hostEntry;
+    for (const w of workers) entryPoints[`workers/${w.replace(/\.ts$/, '')}`] = join(workersDir, w);
     await esbuild({
-      entryPoints: [hostEntry],
-      outfile: join(dist, 'host.js'),
+      entryPoints,
+      outdir: dist,
       bundle: true,
       format: 'esm',
       platform: 'node',

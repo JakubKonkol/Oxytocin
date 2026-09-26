@@ -1,0 +1,151 @@
+{
+  "name": "@oxytocin/usage-monitor",
+  "version": "0.1.0",
+  "description": "Token usage and cost of AI coding agents (Claude Code, Codex CLI, Gemini CLI)",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "oxytocin": {
+    "id": "oxytocin.usage-monitor",
+    "displayName": "Usage Monitor",
+    "description": "Token usage and cost of Claude Code, Codex CLI and Gemini CLI.",
+    "publisher": "oxytocin",
+    "engine": "^0.1.0",
+    "main": "dist/host.js",
+    "activationEvents": [],
+    "permissions": [
+      "projects.read",
+      "agents.read",
+      "agents.annotate",
+      "terminals.read-metadata",
+      "terminals.env",
+      "fs.read-home",
+      "net.listen-local",
+      "net.fetch",
+      "notifications.os"
+    ],
+    "contributes": {
+      "configuration": {
+        "prefix": "usage",
+        "properties": {
+          "usage.sources.claudeCode": {
+            "type": "boolean",
+            "default": true,
+            "description": "Read Claude Code logs"
+          },
+          "usage.sources.claudeCode.extraDirs": {
+            "type": "array",
+            "default": [],
+            "description": "Additional Claude configuration folders"
+          },
+          "usage.sources.codex": {
+            "type": "boolean",
+            "default": true,
+            "description": "Read Codex CLI rollouts"
+          },
+          "usage.sources.gemini": {
+            "type": "boolean",
+            "default": true,
+            "description": "Read Gemini CLI chats"
+          },
+          "usage.liveTelemetry.claudeCode": {
+            "type": "boolean",
+            "default": false,
+            "description": "Live telemetry (OpenTelemetry) for Claude Code"
+          },
+          "usage.liveTelemetry.gemini": {
+            "type": "boolean",
+            "default": false,
+            "description": "Live telemetry (OpenTelemetry) for Gemini CLI"
+          },
+          "usage.liveTelemetry.scope": {
+            "type": "string",
+            "enum": [
+              "agentProfiles",
+              "allTerminals"
+            ],
+            "default": "agentProfiles",
+            "description": "Terminals that receive the telemetry variables"
+          },
+          "usage.costMode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "calculate",
+              "reported"
+            ],
+            "default": "auto",
+            "description": "Use the cost reported by the agent, calculate it from tokens, or only reported costs"
+          },
+          "usage.billing.claudeCode": {
+            "type": "string",
+            "enum": [
+              "api",
+              "subscription"
+            ],
+            "default": "api"
+          },
+          "usage.billing.codex": {
+            "type": "string",
+            "enum": [
+              "api",
+              "subscription"
+            ],
+            "default": "api"
+          },
+          "usage.billing.gemini": {
+            "type": "string",
+            "enum": [
+              "api",
+              "subscription"
+            ],
+            "default": "api"
+          },
+          "usage.pricing.autoUpdate": {
+            "type": "boolean",
+            "default": true,
+            "description": "Refresh prices daily"
+          },
+          "usage.pricing.overrides": {
+            "type": "object",
+            "default": {},
+            "description": "Prices per model in USD per 1M tokens"
+          },
+          "usage.limits.claudeBlock": {
+            "type": "object",
+            "default": {},
+            "description": "Own limit of a Claude 5-hour block: { metric: 'tokens' | 'usd', amount }"
+          },
+          "usage.backfillDays": {
+            "type": "integer",
+            "default": 30,
+            "minimum": 0,
+            "maximum": 400
+          },
+          "usage.retentionDays": {
+            "type": "integer",
+            "default": 400,
+            "minimum": 1
+          },
+          "usage.statusBar": {
+            "type": "string",
+            "enum": [
+              "today",
+              "activeSession",
+              "off"
+            ],
+            "default": "today"
+          },
+          "usage.weekStartsOn": {
+            "type": "string",
+            "enum": [
+              "monday",
+              "sunday"
+            ],
+            "default": "monday"
+          }
+        }
+      }
+    }
+  }
+}
