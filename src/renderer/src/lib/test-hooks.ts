@@ -12,6 +12,23 @@ export function installTestHooks(): void {
       const term = terminalRegistry.get(id)?.term;
       return term ? { cols: term.cols, rows: term.rows } : null;
     },
+    /** Client coordinates of the centre of the first cell of `text` (for mouse interactions). */
+    textPosition: (id: string, text: string) => {
+      const term = terminalRegistry.get(id)?.term;
+      const screen = term?.element?.querySelector('.xterm-screen');
+      if (!term || !screen) return null;
+      const rect = screen.getBoundingClientRect();
+      const buffer = term.buffer.active;
+      for (let y = 0; y < buffer.length; y++) {
+        const x = buffer.getLine(y)?.translateToString(true).indexOf(text) ?? -1;
+        if (x >= 0) {
+          const cw = rect.width / term.cols;
+          const ch = rect.height / term.rows;
+          return { x: rect.left + (x + 0.5) * cw, y: rect.top + (y - buffer.viewportY + 0.5) * ch };
+        }
+      }
+      return null;
+    },
     /** Selects the first occurrence of `text` in the buffer. */
     selectText: (id: string, text: string) => {
       const term = terminalRegistry.get(id)?.term;

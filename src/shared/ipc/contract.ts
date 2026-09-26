@@ -29,6 +29,15 @@ export const invokeContract = {
   },
   'clipboard:read': { req: z.null().optional(), res: z.object({ text: z.string(), hasImage: z.boolean() }) },
   'clipboard:writeText': { req: z.object({ text: z.string().max(10_000_000) }), res: z.void() },
+  'terminals:clearBell': { req: z.object({ id: TerminalIdSchema }), res: z.void() },
+  'fs:statMany': {
+    req: z.object({ baseDirs: z.array(z.string()).max(4), paths: z.array(z.string().max(4096)).max(50) }),
+    res: z.array(z.object({ path: z.string(), resolved: z.string().nullable(), isFile: z.boolean() })),
+  },
+  'editor:open': {
+    req: z.object({ path: z.string().min(1), line: z.number().int().optional(), column: z.number().int().optional() }),
+    res: z.void(),
+  },
   'shell:openExternal': { req: z.object({ url: z.string().url() }), res: z.void() },
   'terminals:profiles': { req: z.null().optional(), res: z.array(TerminalProfileSchema) },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;

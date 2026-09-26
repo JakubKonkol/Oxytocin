@@ -18,6 +18,9 @@ export const INVOKE_CHANNELS = [
   'shell:openExternal',
   'clipboard:read',
   'clipboard:writeText',
+  'terminals:clearBell',
+  'fs:statMany',
+  'editor:open',
 ] as const;
 
 export const EVENT_CHANNELS = ['settings:changed', 'hosts:status', 'terminals:updated', 'terminals:removed'] as const;

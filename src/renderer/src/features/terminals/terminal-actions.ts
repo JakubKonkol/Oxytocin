@@ -76,6 +76,11 @@ export function registerTerminalCommands(): void {
     run: () => active()?.entry.term.clear(),
   });
   registerCommand({
+    id: 'terminal.find',
+    title: 'Terminal: Find',
+    run: () => active()?.entry.openFind?.(),
+  });
+  registerCommand({
     id: 'terminal.selectAll',
     title: 'Terminal: Select All',
     run: () => active()?.entry.term.selectAll(),

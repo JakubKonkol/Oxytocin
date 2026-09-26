@@ -5,6 +5,7 @@ interface OxyTest {
   getTerminalText(id: string): string | null;
   getTerminalSize(id: string): { cols: number; rows: number } | null;
   selectText(id: string, text: string): boolean;
+  textPosition(id: string, text: string): { x: number; y: number } | null;
   getTextColor(id: string, text: string): { fg: number; palette: boolean; rgb: boolean; default: boolean } | null;
 }
 
@@ -14,6 +15,11 @@ export const oxyTest = (page: Page) => ({
     page.evaluate((i) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.getTerminalText(i) ?? '', id),
   size: (id: string) =>
     page.evaluate((i) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.getTerminalSize(i), id),
+  position: (id: string, text: string) =>
+    page.evaluate(([i, t]) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.textPosition(i, t), [
+      id,
+      text,
+    ] as const),
   select: (id: string, text: string) =>
     page.evaluate(([i, t]) => (window as unknown as { __oxyTest: OxyTest }).__oxyTest.selectText(i, t), [
       id,

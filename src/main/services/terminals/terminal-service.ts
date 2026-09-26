@@ -56,6 +56,7 @@ export class TerminalService implements Disposable {
     this.store.add(pty.onEvent('terminal:exit', (e) => this.patch(e.id, { state: 'exited', exitCode: e.exitCode })));
     this.store.add(pty.onEvent('terminal:title', (e) => this.patch(e.id, { oscTitle: e.title })));
     this.store.add(pty.onEvent('terminal:bell', (e) => this.patch(e.id, { bell: true })));
+    this.store.add(pty.onEvent('terminal:cwd', (e) => this.patch(e.id, { cwd: e.cwd })));
     this.store.add(
       pty.onEvent('terminal:progress', (e) =>
         this.patch(e.id, { progress: e.value === undefined ? { state: e.state } : { state: e.state, value: e.value } }),

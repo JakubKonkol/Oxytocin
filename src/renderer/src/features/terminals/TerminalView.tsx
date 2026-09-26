@@ -1,6 +1,13 @@
 import '@xterm/xterm/css/xterm.css';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
-import { useEffect, useRef } from 'react';
+import { SearchAddon } from '@xterm/addon-search';
+import type { Terminal } from '@xterm/xterm';
+import { ContextMenu } from 'radix-ui';
+import { useEffect, useRef, useState } from 'react';
+import { formatShortcut } from '../../ui/Kbd';
+import { shortcutFor } from '../../lib/keyboard';
+import { registerFileLinkProvider } from './link-provider';
+import { TerminalSearch } from './TerminalSearch';
 import { ipc } from '../../lib/ipc-client';
 import { currentPlatform } from '../../lib/platform';
 import { useAppInfo } from '../../stores/app-store';
@@ -18,16 +25,21 @@ export interface TerminalViewProps {
   terminalId: string;
   /** Focus the terminal when mounted / when it becomes active. */
   autoFocus?: boolean;
+  onRestart?: () => void;
+  onClose?: () => void;
 }
 
 /**
  * A view onto a PTY Host terminal. The buffer lives in the PTY Host; this component can be destroyed and
  * re-created at any time (snapshot + stream), so it never owns terminal state.
  */
-export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProps) {
+export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const settings = useSettingsStore((s) => s.settings);
   const appInfo = useAppInfo();
+  const [search, setSearch] = useState<SearchAddon | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const termRef = useRef<{ term: Terminal; sendRaw: (d: string) => void } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -38,6 +50,10 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
     });
     term.open(container);
     enableWebgl();
+    const searchAddon = new SearchAddon({ highlightLimit: 1000 });
+    term.loadAddon(searchAddon);
+    // The addon is created with the imperative terminal; the find widget renders from state.
+    setSearch(searchAddon);
 
     const measure = (): { cols: number; rows: number } | null => {
       if (container.clientWidth === 0 || container.clientHeight === 0) return null; // hidden
@@ -124,7 +140,20 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
     container.addEventListener('dragover', onDragOver);
     container.addEventListener('drop', onDrop);
 
-    const onFocus = () => setActiveTerminal(terminalId);
+    const linkSub = registerFileLinkProvider(
+      term,
+      () => {
+        const info = useTerminalsStore.getState().terminals[terminalId];
+        return info ? [info.cwd] : [];
+      },
+      (target) => void ipc.invoke('editor:open', target),
+    );
+
+    const onFocus = () => {
+      setActiveTerminal(terminalId);
+      if (useTerminalsStore.getState().terminals[terminalId]?.bell)
+        void ipc.invoke('terminals:clearBell', { id: terminalId });
+    };
     term.textarea?.addEventListener('focus', onFocus);
 
     const fitNow = () => {
@@ -144,7 +173,8 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
     });
     observer.observe(container);
 
-    terminalRegistry.set(terminalId, { term, focus: () => term.focus(), sendRaw });
+    termRef.current = { term, sendRaw };
+    terminalRegistry.set(terminalId, { term, focus: () => term.focus(), sendRaw, openFind: () => setFindOpen(true) });
     if (autoFocus) term.focus();
 
     return () => {
@@ -154,6 +184,9 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
       inputSub.dispose();
       binarySub.dispose();
       selectionSub.dispose();
+      linkSub.dispose();
+      termRef.current = null;
+      setSearch(null);
       container.removeEventListener('contextmenu', onContextMenu);
       container.removeEventListener('dragover', onDragOver);
       container.removeEventListener('drop', onDrop);
@@ -168,13 +201,72 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalId, settings === null, appInfo === null]);
 
+  const run = (fn: (t: { term: Terminal; sendRaw: (d: string) => void }) => unknown) => {
+    const t = termRef.current;
+    if (t) void fn(t);
+  };
+  const shortcut = (command: string) => {
+    const chord = shortcutFor(command);
+    return chord ? formatShortcut(chord) : undefined;
+  };
+  const menuDisabled = settings?.['terminal.rightClickBehavior'] === 'copyPaste';
+  const item =
+    'flex h-7 cursor-default items-center justify-between gap-6 rounded-badge px-2 text-ui text-fg outline-none data-[disabled]:text-fg-muted data-[highlighted]:bg-accent-muted';
+
   return (
-    <div
-      data-testid={`terminal-view-${terminalId}`}
-      className="h-full w-full overflow-hidden bg-terminal"
-      style={{ padding: '4px 0 0 8px' }}
-    >
-      <div ref={containerRef} className="h-full w-full" />
-    </div>
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild disabled={menuDisabled}>
+        <div
+          data-testid={`terminal-view-${terminalId}`}
+          className="relative h-full w-full overflow-hidden bg-terminal"
+          style={{ padding: '4px 0 0 8px' }}
+        >
+          <div ref={containerRef} className="h-full w-full" />
+          {findOpen && search && (
+            <TerminalSearch
+              search={search}
+              onClose={() => {
+                setFindOpen(false);
+                termRef.current?.term.focus();
+              }}
+            />
+          )}
+        </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          data-testid="terminal-context-menu"
+          className="z-50 min-w-48 rounded-control border border-line bg-elevated p-1 shadow-elevated"
+        >
+          <ContextMenu.Item className={item} onSelect={() => run(({ term }) => copySelection(term))}>
+            Copy <span className="text-small text-fg-muted">{shortcut('terminal.copy')}</span>
+          </ContextMenu.Item>
+          <ContextMenu.Item className={item} onSelect={() => run(({ term, sendRaw }) => pasteClipboard(term, sendRaw))}>
+            Paste <span className="text-small text-fg-muted">{shortcut('terminal.paste')}</span>
+          </ContextMenu.Item>
+          <ContextMenu.Item className={item} onSelect={() => run(({ term }) => term.selectAll())}>
+            Select all
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <ContextMenu.Item className={item} onSelect={() => setFindOpen(true)}>
+            Find… <span className="text-small text-fg-muted">{shortcut('terminal.find')}</span>
+          </ContextMenu.Item>
+          <ContextMenu.Item className={item} onSelect={() => run(({ term }) => term.clear())}>
+            Clear <span className="text-small text-fg-muted">{shortcut('terminal.clear')}</span>
+          </ContextMenu.Item>
+          {(onRestart || onClose) && <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />}
+          {onRestart && (
+            <ContextMenu.Item className={item} onSelect={onRestart}>
+              Restart
+            </ContextMenu.Item>
+          )}
+          {onClose && (
+            <ContextMenu.Item className={item} onSelect={onClose}>
+              Close
+            </ContextMenu.Item>
+          )}
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }

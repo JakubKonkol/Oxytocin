@@ -100,3 +100,12 @@
 :root[data-e2e='true'] .oxy-dot::after {
   animation: none !important;
 }
+
+@keyframes oxy-indeterminate {
+  from {
+    left: -33%;
+  }
+  to {
+    left: 100%;
+  }
+}

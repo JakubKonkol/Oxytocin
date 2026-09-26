@@ -17,6 +17,8 @@ import { resolveShellEnv } from './services/shell-env/resolve-shell-env';
 import { ProfileService } from './services/terminals/profiles';
 import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
 import { TerminalService } from './services/terminals/terminal-service';
+import { statMany } from './services/fs/stat-many';
+import { EditorLauncher } from './services/editor/editor-launcher';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -80,6 +82,8 @@ function bootstrap(): void {
     logger: createLogger('terminals'),
   });
 
+  const editor = new EditorLauncher(createLogger('editor'), e2e);
+
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);
 
@@ -119,6 +123,9 @@ function bootstrap(): void {
         return { text, hasImage: text === '' && (await clipboard.has('image/png')) };
       },
       'clipboard:writeText': ({ text }) => clipboard.writeText(text),
+      'terminals:clearBell': ({ id }) => terminals.clearBell(id),
+      'fs:statMany': ({ baseDirs, paths }) => statMany(baseDirs, paths),
+      'editor:open': (req) => editor.open(req),
       'shell:openExternal': async ({ url }) => {
         if (!isSafeExternalUrl(url))
           throw new OxyError('PERMISSION', 'Only http, https and mailto links can be opened');
@@ -174,6 +181,7 @@ function bootstrap(): void {
     (globalThis as Record<string, unknown>)['__oxyMain'] = {
       hosts,
       terminals,
+      editor,
       logFile: () => logFilePath(),
     };
   }
