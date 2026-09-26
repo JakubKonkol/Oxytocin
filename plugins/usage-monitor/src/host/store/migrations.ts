@@ -87,4 +87,14 @@ CREATE TABLE budget_alerts (
 );
 `,
   },
+  {
+    version: 2,
+    name: 'gemini-project-hash',
+    sql: `
+ALTER TABLE usage_events ADD COLUMN project_hash TEXT;
+ALTER TABLE sessions ADD COLUMN project_hash TEXT;
+ALTER TABLE sessions ADD COLUMN started_at INTEGER;
+CREATE INDEX ix_events_project_hash ON usage_events(project_hash);
+`,
+  },
 ];

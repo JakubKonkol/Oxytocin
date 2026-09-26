@@ -9,7 +9,7 @@ export interface IngestContext {
   costMode: CostMode;
   pricingVersion: string;
   lookup: (rawModel: string) => ResolvedPrice | undefined;
-  projectFor: (cwd: string | undefined) => string | null;
+  projectFor: (cwd: string | undefined, projectHash?: string) => string | null;
   terminalFor: (sessionId: string | undefined) => string | null;
 }
 
@@ -41,10 +41,10 @@ export class EventWriter {
       `INSERT INTO usage_events (id, ts, agent, provider, model, raw_model, session_id, project_id, cwd, terminal_id,
          is_subagent, input_tokens, output_tokens, cache_read_tokens, cache_write_5m_tokens, cache_write_1h_tokens,
          reasoning_tokens, web_search_requests, speed, service_tier, inference_geo, reported_cost_usd, cost_usd,
-         cost_source, pricing_version, source)
+         cost_source, pricing_version, source, project_hash)
        VALUES (:id, :ts, :agent, :provider, :model, :raw_model, :session_id, :project_id, :cwd, :terminal_id,
          :is_subagent, :input, :output, :cache_read, :cache_5m, :cache_1h, :reasoning, :web, :speed, :tier, :geo,
-         :reported, :cost, :cost_source, :pricing_version, :source)
+         :reported, :cost, :cost_source, :pricing_version, :source, :project_hash)
        ON CONFLICT(id) DO UPDATE SET
          ts = max(ts, excluded.ts), model = excluded.model, raw_model = excluded.raw_model,
          project_id = excluded.project_id, terminal_id = coalesce(usage_events.terminal_id, excluded.terminal_id),
@@ -58,9 +58,12 @@ export class EventWriter {
     );
     this.upsertSession = db.prepare(
       `INSERT INTO sessions (session_id, agent, project_id, cwd, terminal_id, primary_source, first_event_at,
-         last_event_at, last_model)
-       VALUES (:session_id, :agent, :project_id, :cwd, :terminal_id, :source, :ts, :ts, :model)
+         last_event_at, last_model, project_hash, started_at)
+       VALUES (:session_id, :agent, :project_id, :cwd, :terminal_id, :source, :ts, :ts, :model, :project_hash,
+         :started_at)
        ON CONFLICT(session_id) DO UPDATE SET
+         project_hash = coalesce(excluded.project_hash, sessions.project_hash),
+         started_at = coalesce(sessions.started_at, excluded.started_at),
          project_id = coalesce(excluded.project_id, sessions.project_id),
          cwd = coalesce(excluded.cwd, sessions.cwd),
          terminal_id = coalesce(sessions.terminal_id, excluded.terminal_id),
@@ -105,7 +108,7 @@ export class EventWriter {
     const resolved = ctx.lookup(r.rawModel);
     const extras = { ...r.extras, webSearchRequests: web };
     const cost = resolveCost(ctx.costMode, { tokens, extras, price: resolved?.price, reportedUsd: reported });
-    const projectId = ctx.projectFor(r.cwd);
+    const projectId = ctx.projectFor(r.cwd, r.projectHash);
     const terminalId = prev?.terminal_id ?? ctx.terminalFor(r.sessionId);
     const model = displayModel(r.rawModel);
     this.upsertEvent.run({
@@ -135,6 +138,7 @@ export class EventWriter {
       cost_source: cost.costSource,
       pricing_version: resolved ? ctx.pricingVersion : null,
       source: r.source,
+      project_hash: r.projectHash ?? null,
     });
     if (r.sessionId)
       this.upsertSession.run({
@@ -146,6 +150,8 @@ export class EventWriter {
         source: r.source,
         ts: r.ts,
         model,
+        project_hash: r.projectHash ?? null,
+        started_at: r.sessionStartedAt ?? null,
       });
     return true;
   }

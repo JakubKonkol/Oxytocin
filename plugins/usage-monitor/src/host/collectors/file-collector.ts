@@ -1,7 +1,7 @@
 import { type FSWatcher, watch } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { UsageRecord, UsageSource } from '../model';
+import { type CollectedItem, isLimit, type UsageSource } from '../model';
 import { type Cursor, fileInfo, needsRead, tailFile } from './tail';
 
 export const MAX_FILE_BYTES = 1024 * 1024 * 1024;
@@ -18,9 +18,9 @@ export interface FileSourceSpec {
   /** Fast path before decoding a line. */
   accept: (line: Buffer) => boolean;
   /** Parses one line; `state` is the per-file collector state kept in the cursor (JSON). */
-  parse: (line: string, path: string, state: Record<string, unknown>) => UsageRecord[];
+  parse: (line: string, path: string, state: Record<string, unknown>) => CollectedItem[];
   /** Files rewritten as a whole (e.g. legacy Gemini `.json`): parsed completely whenever they change. */
-  parseWhole?: (text: string, path: string) => UsageRecord[];
+  parseWhole?: (text: string, path: string) => CollectedItem[];
   isWhole?: (path: string) => boolean;
   /** Picks one of several copies of the same file (e.g. Codex sessions/ vs archived_sessions/). */
   dedupeKey?: (path: string) => string | null;
@@ -29,7 +29,7 @@ export interface FileSourceSpec {
 export interface FileCollectorDeps {
   getCursor: (path: string) => Cursor | undefined;
   /** Writes the records and the new cursor in one transaction. */
-  commit: (records: UsageRecord[], cursor: Cursor) => void;
+  commit: (items: CollectedItem[], cursor: Cursor) => void;
   readText: (path: string) => Promise<string>;
   now: () => number;
   backfillDays: () => number;
@@ -195,7 +195,7 @@ export class FileCollector {
       return;
     }
     if (this.spec.isWhole?.(path) && this.spec.parseWhole) {
-      let records: UsageRecord[] = [];
+      let records: CollectedItem[] = [];
       try {
         records = this.spec.parseWhole(await this.deps.readText(path), path);
       } catch {
@@ -213,7 +213,7 @@ export class FileCollector {
     }
     for await (const batch of tailFile(path, cursor, this.spec.accept, info)) {
       if (batch.reset) state = {};
-      const records: UsageRecord[] = [];
+      const records: CollectedItem[] = [];
       for (const line of batch.lines) {
         try {
           records.push(...this.spec.parse(line.toString('utf8'), path, state));
@@ -226,8 +226,10 @@ export class FileCollector {
     }
   }
 
-  private note(records: UsageRecord[]): void {
-    for (const r of records)
+  private note(items: CollectedItem[]): void {
+    for (const r of items) {
+      if (isLimit(r)) continue;
       if (!this.stats.lastEventAt || r.ts > this.stats.lastEventAt) this.stats.lastEventAt = r.ts;
+    }
   }
 }

@@ -28,8 +28,15 @@ function readCollectorSettings(ctx: PluginContext): CollectorSettings {
   };
 }
 
-const sessionsOf = (agents: AgentSnapshot[]) =>
-  agents.filter((a) => a.sessionId).map((a) => ({ sessionId: a.sessionId!, terminalId: a.terminalId }));
+const agentRefs = (agents: AgentSnapshot[]) =>
+  agents.map((a) => ({
+    terminalId: a.terminalId,
+    agentId: a.agentId,
+    projectId: a.projectId,
+    since: a.since,
+    ...(a.sessionId ? { sessionId: a.sessionId } : {}),
+    ...(a.cwd ? { cwd: a.cwd } : {}),
+  }));
 
 /** Usage Monitor backend (docs/plan/08-usage-monitor.md §2): runs the ingest worker and feeds it core state. */
 export async function activate(ctx: PluginContext): Promise<void> {
@@ -44,6 +51,11 @@ export async function activate(ctx: PluginContext): Promise<void> {
   });
   client.onEvent((event, payload) => {
     if (event === 'log') ctx.log.warn((payload as { message: string }).message);
+    // A Codex/Gemini session file was matched to the agent in a terminal: tell the core (§6).
+    if (event === 'sessionLinked') {
+      const link = payload as { terminalId: string; sessionId: string };
+      oxy.agents.reportSession(link.terminalId, { sessionId: link.sessionId, source: 'usage-monitor' });
+    }
   });
   ctx.subscriptions.push({
     dispose: () => {
@@ -60,13 +72,13 @@ export async function activate(ctx: PluginContext): Promise<void> {
       (await oxy.projects.list()).map((p) => ({ id: p.id, rootPath: p.rootPath })),
     );
   await pushProjects();
-  await client.request('setAgentSessions', sessionsOf(await oxy.agents.list()));
+  await client.request('setAgents', agentRefs(await oxy.agents.list()));
   let collectorKey = JSON.stringify(readCollectorSettings(ctx));
   await client.request('startCollectors', readCollectorSettings(ctx));
 
   ctx.subscriptions.push(
     oxy.projects.onDidChange(() => void pushProjects()),
-    oxy.agents.onDidChange((agents) => void client.request('setAgentSessions', sessionsOf(agents))),
+    oxy.agents.onDidChange((agents) => void client.request('setAgents', agentRefs(agents))),
     oxy.settings.onDidChange('usage.', () => {
       void client.request('setSettings', readSettings(ctx));
       const next = readCollectorSettings(ctx);

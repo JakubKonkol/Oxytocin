@@ -34,7 +34,7 @@ describe('UsageEngine', () => {
       fetch,
       now: () => Date.parse('2030-01-01'),
     });
-    expect(engine.schemaVersion).toBe(1);
+    expect(engine.schemaVersion).toBe(2);
     const snapshotVersion = engine.pricing.version;
     expect(getMeta(engine.db, 'pricing_version')).toBe(snapshotVersion);
 

@@ -2,7 +2,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { type EngineOptions, UsageEngine } from '../engine';
 import type { ProjectRef } from '../attribution';
-import type { AgentSessionRef } from '../engine';
+import type { AgentRef } from '../engine';
 import type { CollectorSettings, UsageSettings } from '../settings';
 import { serveWorker } from '../worker-rpc';
 
@@ -30,7 +30,7 @@ const emit = serveWorker(parentPort, {
   },
   'pricing.refresh': async () => (await ready).maybeRefreshPricing(true),
   setProjects: async (projects: ProjectRef[]) => (await ready).setProjects(projects),
-  setAgentSessions: async (list: AgentSessionRef[]) => (await ready).setAgentSessions(list),
+  setAgents: async (list: AgentRef[]) => (await ready).setAgents(list),
   startCollectors: async (options: CollectorSettings) => {
     const e = await ready;
     e.stopCollectors();
@@ -63,6 +63,7 @@ const ready = UsageEngine.create({
     }, CHANGE_THROTTLE_MS);
   });
   e.onProgress((source, done, total) => emit('progress', { source, done, total }));
+  e.onSessionLinked((link) => emit('sessionLinked', link));
   setInterval(() => void e.maybeRefreshPricing(), PRICING_CHECK_MS).unref();
   return e;
 });

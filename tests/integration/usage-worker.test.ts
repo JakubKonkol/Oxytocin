@@ -28,7 +28,7 @@ afterAll(async () => {
 
 describe('bundled ingest worker', () => {
   it('opens the SQLite database in a worker thread and serves pricing', async () => {
-    expect(await client.request('init')).toEqual({ schemaVersion: 1 });
+    expect(await client.request('init')).toEqual({ schemaVersion: 2 });
     await client.request('setSettings', { pricingAutoUpdate: false });
     const pricing = await client.request<{ source: string; models: { model: string }[] }>('pricing.list');
     expect(pricing.source).toBe('snapshot');

@@ -2,9 +2,23 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ProjectAttribution, type ProjectRef } from './attribution';
 import { acceptClaudeLine, claudeProjectDirs, parseClaudeLine } from './collectors/claude-jsonl';
+import {
+  acceptCodexLine,
+  codexDedupeKey,
+  codexRoots,
+  isCodexRollout,
+  parseCodexLine,
+} from './collectors/codex-rollout';
+import {
+  acceptGeminiLine,
+  geminiRoots,
+  isGeminiChat,
+  parseGeminiDocument,
+  parseGeminiLine,
+} from './collectors/gemini-chats';
 import { FileCollector } from './collectors/file-collector';
 import { CursorStore } from './collectors/tail';
-import type { UsageRecord, UsageSource } from './model';
+import { type AgentLimitRecord, type CollectedItem, isLimit, type UsageSource } from './model';
 import snapshot from './pricing/snapshot.json';
 import { PricingService, type PricingCache, type PricingServiceDeps } from './pricing/pricing-service';
 import type { PricingTable } from './pricing/types';
@@ -31,6 +45,21 @@ export interface AgentSessionRef {
   terminalId: string;
 }
 
+/** An agent running in an Oxytocin terminal (from `oxy.agents`). */
+export interface AgentRef {
+  terminalId: string;
+  agentId: string;
+  projectId: string;
+  since: number;
+  sessionId?: string;
+  cwd?: string;
+}
+
+/** Codex/Gemini sessions are linked to a terminal when they start within this window of the agent (§6). */
+const CORRELATION_BEFORE_MS = 5_000;
+const CORRELATION_AFTER_MS = 60_000;
+const CORRELATED_AGENTS = ['codex', 'gemini-cli'];
+
 const PRICING_CACHE = 'pricing-cache.json';
 const RECOMPUTE_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,6 +81,9 @@ export class UsageEngine {
   private readonly terminals = new Map<string, string>();
   private readonly changeListeners = new Set<(count: number) => void>();
   private readonly progressListeners = new Set<(source: UsageSource, done: number, total: number) => void>();
+  private readonly linkListeners = new Set<(link: { terminalId: string; sessionId: string; agent: string }) => void>();
+  private agents: AgentRef[] = [];
+  private readonly linkedTerminals = new Set<string>();
 
   private constructor(private readonly opts: EngineOptions) {
     this.now = opts.now ?? Date.now;
@@ -107,7 +139,7 @@ export class UsageEngine {
       costMode: this.settings.costMode,
       pricingVersion: this.pricing.version,
       lookup: (model) => this.pricing.lookup(model),
-      projectFor: (cwd) => this.attribution.projectFor(cwd),
+      projectFor: (cwd, hash) => this.attribution.projectFor(cwd) ?? this.attribution.projectForHash(hash),
       terminalFor: (sessionId) => (sessionId ? (this.terminals.get(sessionId) ?? null) : null),
     };
   }
@@ -139,15 +171,92 @@ export class UsageEngine {
   }
 
   /** Writes collector output + cursor atomically. */
-  ingest(records: UsageRecord[], cursor?: Parameters<CursorStore['set']>[0]): number {
+  ingest(items: CollectedItem[], cursor?: Parameters<CursorStore['set']>[0]): number {
     const ctx = this.context();
     let changed = 0;
+    let correlate = false;
     transaction(this.db, () => {
-      for (const r of records) if (this.writer.write(r, ctx)) changed++;
+      for (const item of items) {
+        if (isLimit(item)) {
+          if (this.writeLimit(item)) changed++;
+          continue;
+        }
+        if (this.writer.write(item, ctx)) {
+          changed++;
+          if (CORRELATED_AGENTS.includes(item.agent)) correlate = true;
+        }
+      }
       if (cursor) this.cursors.set(cursor);
     });
+    if (correlate) this.correlate();
     if (changed > 0) this.emitChanged(changed);
     return changed;
+  }
+
+  private writeLimit(l: AgentLimitRecord): boolean {
+    const result = this.db
+      .prepare(
+        `INSERT INTO agent_limits (agent, window, used_percent, window_minutes, resets_at, observed_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(agent, window) DO UPDATE SET used_percent = excluded.used_percent,
+           window_minutes = excluded.window_minutes, resets_at = excluded.resets_at, observed_at = excluded.observed_at
+         WHERE excluded.observed_at > agent_limits.observed_at`,
+      )
+      .run(l.agent, l.window, l.usedPercent, l.windowMinutes, l.resetsAt, l.observedAt);
+    return Number(result.changes) > 0;
+  }
+
+  onSessionLinked(listener: (link: { terminalId: string; sessionId: string; agent: string }) => void): () => void {
+    this.linkListeners.add(listener);
+    return () => this.linkListeners.delete(listener);
+  }
+
+  /** Agents in Oxytocin terminals: session ids known to the core + correlation of Codex/Gemini sessions. */
+  setAgents(list: AgentRef[]): void {
+    this.agents = list;
+    this.setAgentSessions(
+      list.filter((a) => a.sessionId).map((a) => ({ sessionId: a.sessionId!, terminalId: a.terminalId })),
+    );
+    this.correlate();
+  }
+
+  /**
+   * Links a new Codex/Gemini session to the terminal whose agent of the same kind started within 60 s in the same
+   * project (§6); ambiguous matches (two candidates either way) stay unlinked.
+   */
+  private correlate(): void {
+    const pending = this.agents.filter(
+      (a) => CORRELATED_AGENTS.includes(a.agentId) && !a.sessionId && !this.linkedTerminals.has(a.terminalId),
+    );
+    if (pending.length === 0) return;
+    const since = Math.min(...pending.map((a) => a.since)) - CORRELATION_BEFORE_MS;
+    const sessions = this.db
+      .prepare(
+        `SELECT session_id AS sessionId, agent, cwd, project_id AS projectId, started_at AS startedAt FROM sessions
+          WHERE terminal_id IS NULL AND agent IN ('codex', 'gemini-cli') AND started_at >= ?`,
+      )
+      .all(since) as unknown as {
+      sessionId: string;
+      agent: string;
+      cwd: string | null;
+      projectId: string | null;
+      startedAt: number;
+    }[];
+    const matches = (a: AgentRef, s: (typeof sessions)[number]) =>
+      s.agent === a.agentId &&
+      s.startedAt >= a.since - CORRELATION_BEFORE_MS &&
+      s.startedAt <= a.since + CORRELATION_AFTER_MS &&
+      (s.projectId === a.projectId || (!!a.cwd && !!s.cwd && a.cwd === s.cwd));
+    for (const agent of pending) {
+      const candidates = sessions.filter((s) => matches(agent, s));
+      if (candidates.length !== 1) continue;
+      const session = candidates[0]!;
+      if (pending.filter((a) => matches(a, session)).length !== 1) continue;
+      this.linkedTerminals.add(agent.terminalId);
+      this.setAgentSessions([{ sessionId: session.sessionId, terminalId: agent.terminalId }], true);
+      for (const l of [...this.linkListeners])
+        l({ terminalId: agent.terminalId, sessionId: session.sessionId, agent: agent.agentId });
+    }
   }
 
   private emitChanged(count: number): void {
@@ -160,20 +269,30 @@ export class UsageEngine {
     const cwds = this.db.prepare('SELECT DISTINCT cwd FROM usage_events WHERE cwd IS NOT NULL').all() as {
       cwd: string;
     }[];
+    const hashes = this.db
+      .prepare('SELECT DISTINCT project_hash AS hash FROM usage_events WHERE cwd IS NULL AND project_hash IS NOT NULL')
+      .all() as { hash: string }[];
     const events = this.db.prepare('UPDATE usage_events SET project_id = ? WHERE cwd = ?');
     const sessions = this.db.prepare('UPDATE sessions SET project_id = ? WHERE cwd = ?');
+    const hashEvents = this.db.prepare('UPDATE usage_events SET project_id = ? WHERE cwd IS NULL AND project_hash = ?');
+    const hashSessions = this.db.prepare('UPDATE sessions SET project_id = ? WHERE cwd IS NULL AND project_hash = ?');
     transaction(this.db, () => {
       for (const { cwd } of cwds) {
         const id = this.attribution.projectFor(cwd);
         events.run(id, cwd);
         sessions.run(id, cwd);
       }
+      for (const { hash } of hashes) {
+        const id = this.attribution.projectForHash(hash);
+        hashEvents.run(id, hash);
+        hashSessions.run(id, hash);
+      }
     });
     this.emitChanged(1);
   }
 
   /** Agent sessions running in Oxytocin terminals (from `oxy.agents`): link sessions and recent events. */
-  setAgentSessions(list: AgentSessionRef[]): void {
+  setAgentSessions(list: AgentSessionRef[], wholeSession = false): void {
     const setSession = this.db.prepare('UPDATE sessions SET terminal_id = ? WHERE session_id = ?');
     const setEvents = this.db.prepare(
       'UPDATE usage_events SET terminal_id = ? WHERE session_id = ? AND terminal_id IS NULL AND ts >= ?',
@@ -184,7 +303,7 @@ export class UsageEngine {
         if (this.terminals.get(sessionId) === terminalId) continue;
         this.terminals.set(sessionId, terminalId);
         setSession.run(terminalId, sessionId);
-        setEvents.run(terminalId, sessionId, this.now() - DAY_MS);
+        setEvents.run(terminalId, sessionId, wholeSession ? 0 : this.now() - DAY_MS);
         changed = true;
       }
     });
@@ -192,12 +311,18 @@ export class UsageEngine {
   }
 
   /** Starts the enabled collectors (initial scan/backfill runs in the background). */
-  startCollectors(options: { claudeCode?: boolean; claudeExtraDirs?: string[]; backfillDays?: number }): Promise<void> {
+  startCollectors(options: {
+    claudeCode?: boolean;
+    claudeExtraDirs?: string[];
+    codex?: boolean;
+    gemini?: boolean;
+    backfillDays?: number;
+  }): Promise<void> {
     const env = this.opts.env ?? process.env;
     const deps = {
       getCursor: (path: string) => this.cursors.get(path),
-      commit: (records: UsageRecord[], cursor: Parameters<CursorStore['set']>[0]) => {
-        this.ingest(records, cursor);
+      commit: (items: CollectedItem[], cursor: Parameters<CursorStore['set']>[0]) => {
+        this.ingest(items, cursor);
       },
       readText: (path: string) => readFile(path, 'utf8'),
       now: this.now,
@@ -223,6 +348,37 @@ export class UsageEngine {
         deps,
       );
       this.collectors.set('claude-jsonl', collector);
+      started.push(collector.start());
+    }
+    if (options.codex !== false && !this.collectors.has('codex-rollout')) {
+      const collector = new FileCollector(
+        {
+          source: 'codex-rollout',
+          roots: () => codexRoots(env, this.opts.home),
+          match: isCodexRollout,
+          accept: acceptCodexLine,
+          parse: (line, path, state) => parseCodexLine(line, state, path),
+          dedupeKey: codexDedupeKey,
+        },
+        deps,
+      );
+      this.collectors.set('codex-rollout', collector);
+      started.push(collector.start());
+    }
+    if (options.gemini !== false && !this.collectors.has('gemini-chat')) {
+      const collector = new FileCollector(
+        {
+          source: 'gemini-chat',
+          roots: () => geminiRoots(env, this.opts.home),
+          match: isGeminiChat,
+          accept: acceptGeminiLine,
+          parse: (line, path, state) => parseGeminiLine(line, state, path),
+          isWhole: (path) => path.endsWith('.json'),
+          parseWhole: (text, path) => parseGeminiDocument(text, path),
+        },
+        deps,
+      );
+      this.collectors.set('gemini-chat', collector);
       started.push(collector.start());
     }
     return Promise.all(started).then(() => undefined);
