@@ -176,7 +176,9 @@ export class AgentService implements Disposable {
   private classify(t: Tracked): void {
     const c = classifyTerminal(t.descendants, this.rules());
     const foreground =
-      c.kind === 'shell' ? undefined : { name: c.foreground.name, commandLine: c.foreground.commandLine };
+      c.kind === 'shell'
+        ? undefined
+        : { pid: c.foreground.pid, name: c.foreground.name, commandLine: c.foreground.commandLine };
     if (c.kind === 'agent') {
       t.startingUntil = undefined;
       const prev = t.agent;

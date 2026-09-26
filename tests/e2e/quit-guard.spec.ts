@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { oxyTest, waitForTerminal } from './helpers/terminal';
+import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 test('quitting with a running agent asks for confirmation', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
@@ -40,4 +40,50 @@ test('quitting with a running agent asks for confirmation', async () => {
   } finally {
     await app.close();
   }
+});
+
+const isAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test('the quit dialog lists running processes and quitting leaves no orphans', async () => {
+  const { app, win } = await launchApp();
+  const id = await waitForTerminal(win);
+  await run(win, nodeCmd('setInterval(() => {}, 1000)'));
+  await expect(win.getByTestId('terminal-kind-badge')).toHaveText('PROCESS', { timeout: 10_000 });
+  const list = (await win.evaluate(() => window.oxy.invoke('terminals:list', {}))) as {
+    id: string;
+    pid: number;
+    foreground?: { pid: number };
+  }[];
+  const info = list.find((t) => t.id === id)!;
+  const pids = [info.pid, info.foreground!.pid];
+
+  await app.evaluate(() => {
+    (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] = 'cancel';
+  });
+  await app.evaluate(({ app: electronApp }) => electronApp.quit());
+  await win.waitForTimeout(500);
+  expect(app.windows()).toHaveLength(1);
+  const prompt = await app.evaluate(() =>
+    ((globalThis as Record<string, unknown>)['__oxyMain'] as { lastQuitPrompt: () => unknown }).lastQuitPrompt(),
+  );
+  expect(prompt).toMatchObject({
+    message: expect.stringMatching(
+      /^1 terminal has a running process \(node .* in ‘oxy-e2e-project-.+’\)\. Quit anyway\?$/,
+    ),
+    detail: expect.stringContaining('These processes will be stopped.'),
+  });
+  expect(pids.every(isAlive)).toBe(true);
+
+  await app.evaluate(() => {
+    (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] = 'quit';
+  });
+  await app.close();
+  await expect.poll(() => pids.filter(isAlive), { timeout: 10_000 }).toEqual([]);
 });

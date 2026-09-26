@@ -22,6 +22,7 @@ import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols'
 import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
 import { resolveUserDataOverride } from './app/user-data';
 import { createMainWindow, isTrustedShellUrl } from './app/window-manager';
+import { busyTerminals, describeQuit } from './app/quit-guard';
 import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
 import { createLogger, initLogging, logFilePath, setLogLevel } from './logging/log';
@@ -373,20 +374,22 @@ function bootstrap(): void {
 
   // Quit sequence (docs/plan/01-architecture.md §7): QuitGuard → flush layouts → scrollback snapshots → hosts.
   let quitting = false;
+  let lastQuitPrompt: { message: string; detail: string } | null = null;
   let quitInProgress = false;
   const quitGuard = async (): Promise<boolean> => {
     if (!settings.get()['terminal.confirmOnQuit']) return true;
-    const busy = terminals.list().filter((t) => t.state === 'running' && t.kind !== 'shell');
+    const busy = busyTerminals(terminals.list());
     if (busy.length === 0) return true;
-    const names = busy.slice(0, 3).map((t) => t.title);
-    const message = `${busy.length} ${busy.length === 1 ? 'terminal has a running process' : 'terminals have running processes'} (${names.join(', ')}${busy.length > 3 ? '…' : ''}). Quit anyway?`;
+    const { message, detail } = describeQuit(busy, (id) => projects.get(id)?.name);
     if (e2e) {
+      lastQuitPrompt = { message, detail };
       // Tests answer through a global; a native dialog would block Playwright's app.close().
       return (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] !== 'cancel';
     }
     const { response, checkboxChecked } = await dialog.showMessageBox(win, {
       type: 'warning',
       message,
+      detail,
       buttons: ['Quit', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
@@ -459,6 +462,7 @@ function bootstrap(): void {
       activity,
       osNotifications,
       attentionCount: () => attentionCount,
+      lastQuitPrompt: () => lastQuitPrompt,
       editor,
       workspaceState,
       projects,
