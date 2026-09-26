@@ -5,6 +5,8 @@ export const AppInfoSchema = z.object({
   version: z.string(),
   platform: z.string(),
   arch: z.string(),
+  /** Windows build number (e.g. 22631) for xterm's ConPTY heuristics; 0 elsewhere. */
+  osBuild: z.number(),
   isPackaged: z.boolean(),
   versions: z.object({ electron: z.string(), chrome: z.string(), node: z.string(), v8: z.string() }),
   userDataDir: z.string(),

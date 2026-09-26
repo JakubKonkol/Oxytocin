@@ -1,10 +1,11 @@
-import { homedir } from 'node:os';
+import { homedir, release } from 'node:os';
 import { join } from 'node:path';
-import { app, type BrowserWindow, ipcMain, MessageChannelMain, screen, session } from 'electron';
+import { app, type BrowserWindow, ipcMain, MessageChannelMain, screen, session, shell } from 'electron';
 import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
+import { OxyError } from '@shared/errors';
 import type { Platform } from '@shared/domain/terminal-profile';
 import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
-import { installPermissionHandlers } from './app/security';
+import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
 import { resolveUserDataOverride } from './app/user-data';
 import { createMainWindow, isTrustedShellUrl } from './app/window-manager';
 import { Hosts } from './hosts/hosts';
@@ -90,6 +91,7 @@ function bootstrap(): void {
         version: app.getVersion(),
         platform: process.platform,
         arch: process.arch,
+        osBuild: process.platform === 'win32' ? Number(release().split('.')[2] ?? 0) : 0,
         isPackaged: app.isPackaged,
         versions: {
           electron: process.versions.electron,
@@ -111,6 +113,11 @@ function bootstrap(): void {
       'terminals:dispose': (req) => terminals.close(req.id),
       'terminals:list': (req) => terminals.list(req?.projectId),
       'terminals:profiles': () => profiles.list(),
+      'shell:openExternal': async ({ url }) => {
+        if (!isSafeExternalUrl(url))
+          throw new OxyError('PERMISSION', 'Only http, https and mailto links can be opened');
+        await shell.openExternal(url);
+      },
     },
     { isTrustedUrl: isTrustedShellUrl, logger: createLogger('ipc') },
   );

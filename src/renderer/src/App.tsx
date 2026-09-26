@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useAppStore } from './stores/app-store';
+import { subscribeSettings, useSettingsStore } from './stores/settings-store';
+import { subscribeTerminals, useTerminalsStore } from './stores/terminals-store';
 import { useUiStore } from './stores/ui-store';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
@@ -9,10 +12,14 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    useUiStore
-      .getState()
-      .load()
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    subscribeSettings();
+    subscribeTerminals();
+    Promise.all([
+      useUiStore.getState().load(),
+      useSettingsStore.getState().load(),
+      useAppStore.getState().load(),
+      useTerminalsStore.getState().load(),
+    ]).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
   if (error) return <div className="p-4 text-danger">Failed to start: {error}</div>;

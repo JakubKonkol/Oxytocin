@@ -15,6 +15,7 @@ export const INVOKE_CHANNELS = [
   'terminals:dispose',
   'terminals:list',
   'terminals:profiles',
+  'shell:openExternal',
 ] as const;
 
 export const EVENT_CHANNELS = ['settings:changed', 'hosts:status', 'terminals:updated', 'terminals:removed'] as const;

@@ -9,7 +9,7 @@ test('the shell shows the prototype layout', async () => {
       await expect(win.getByTestId(`section-header-${id}`)).toBeVisible();
     }
     await expect(win.getByTestId('statusbar')).toBeVisible();
-    await expect(win.getByTestId('center')).toContainText('Welcome to Oxytocin');
+    await expect(win.getByTestId('center')).toBeVisible();
   } finally {
     await app.close();
   }

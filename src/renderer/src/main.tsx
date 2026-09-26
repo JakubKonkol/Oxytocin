@@ -4,9 +4,16 @@ import './styles/globals.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { installTestHooks } from './lib/test-hooks';
+import { ptyChannel } from './features/terminals/pty-channel';
 
-if (window.oxy.e2e) document.documentElement.dataset['e2e'] = 'true';
+if (window.oxy.e2e) {
+  document.documentElement.dataset['e2e'] = 'true';
+  installTestHooks();
+}
 document.documentElement.dataset['theme'] = 'dark';
+// Listen for the PTY MessagePort before main sends it (did-finish-load).
+ptyChannel();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');
