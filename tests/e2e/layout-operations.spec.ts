@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { interrupt, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 test('split right and down create independent terminals', async () => {
   const { app, win } = await launchApp();
@@ -54,7 +54,7 @@ test('moving a panel into another group keeps its buffer and process', async () 
     await win.getByTestId(`tab-${firstPanel.id}`).click();
     await expect.poll(() => t.text(first)).toContain('keep-me');
     await win.getByTestId(`terminal-view-${first}`).click();
-    await win.keyboard.press('Control+C');
+    await interrupt(win, first);
     await run(win, nodeCmd("console.log('still-' + 'alive')"));
     await expect.poll(() => t.text(first)).toContain('still-alive');
   } finally {

@@ -5,12 +5,46 @@ import { Badge } from '../../ui/Badge';
 /** Kind badge: AI AGENT / PROCESS / SHELL, or EXITED (code) for a non-zero exit. */
 export function TerminalKindBadge({ info }: { info: TerminalInfo }) {
   if (info.state === 'exited' && (info.exitCode ?? 0) !== 0) {
-    return <Badge variant="danger">{`EXITED (${info.exitCode})`}</Badge>;
+    return <Badge variant="danger" testId="terminal-kind-badge">{`EXITED (${info.exitCode})`}</Badge>;
   }
-  if (info.state === 'failed') return <Badge variant="danger">DISCONNECTED</Badge>;
-  if (info.kind === 'agent') return <Badge variant="agent">AI AGENT</Badge>;
-  if (info.kind === 'process') return <Badge variant="process">PROCESS</Badge>;
-  return <Badge variant="shell">SHELL</Badge>;
+  if (info.state === 'failed')
+    return (
+      <Badge variant="danger" testId="terminal-kind-badge">
+        DISCONNECTED
+      </Badge>
+    );
+  if (info.kind === 'agent') {
+    const state = info.agent?.state;
+    if (state === 'waiting') {
+      return (
+        <Badge variant="warning" testId="terminal-kind-badge" dataState={state}>
+          WAITING
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="agent" testId="terminal-kind-badge" dataState={state ?? 'starting'}>
+        {state === 'working' && (
+          <span
+            aria-hidden
+            className="mr-1 size-1.5 animate-[oxy-breathe_1.6s_ease-in-out_infinite] rounded-full bg-agent"
+          />
+        )}
+        AI AGENT
+      </Badge>
+    );
+  }
+  if (info.kind === 'process')
+    return (
+      <Badge variant="process" testId="terminal-kind-badge" title={info.foreground?.commandLine}>
+        PROCESS
+      </Badge>
+    );
+  return (
+    <Badge variant="shell" testId="terminal-kind-badge">
+      SHELL
+    </Badge>
+  );
 }
 
 export function BellIndicator({ info }: { info: TerminalInfo }) {

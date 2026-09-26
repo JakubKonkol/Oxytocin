@@ -99,5 +99,8 @@ describe('projectDotState', () => {
     expect(projectDotState([t({}), t({ kind: 'process' })])).toBe('running');
     expect(projectDotState([t({ kind: 'process' }), t({ kind: 'agent' })])).toBe('agent-working');
     expect(projectDotState([t({ kind: 'agent' }), t({ state: 'exited', exitCode: 3 })])).toBe('error');
+    const waiting = t({ kind: 'agent', agent: { state: 'waiting', displayName: 'Claude Code', since: 0 } });
+    expect(projectDotState([t({ state: 'exited', exitCode: 3 }), waiting])).toBe('attention');
+    expect(projectDotState([t({ kind: 'agent', agent: { state: 'idle' } })])).toBe('idle');
   });
 });

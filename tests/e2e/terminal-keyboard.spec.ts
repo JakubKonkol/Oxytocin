@@ -1,6 +1,6 @@
 import { expect, test, type ElectronApplication } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { interrupt, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 const readClipboard = (app: ElectronApplication) => app.evaluate(({ clipboard }) => clipboard.readText());
 const writeClipboard = (app: ElectronApplication, text: string) =>
@@ -13,7 +13,7 @@ test('Ctrl+C interrupts a running process and copies a selection', async () => {
     const t = oxyTest(win);
     await run(win, nodeCmd("console.log('long-' + 'running'); setInterval(() => {}, 1000)"));
     await expect.poll(() => t.text(id)).toContain('long-running');
-    await win.keyboard.press('Control+C');
+    await interrupt(win, id);
     await run(win, nodeCmd("console.log('after-' + 'interrupt')"));
     await expect.poll(() => t.text(id)).toContain('after-interrupt');
 

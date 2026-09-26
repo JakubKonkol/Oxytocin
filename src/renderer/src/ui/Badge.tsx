@@ -18,15 +18,21 @@ export function Badge({
   children,
   className,
   title,
+  testId,
+  dataState,
 }: {
   variant?: BadgeVariant;
   children: ReactNode;
   className?: string;
   title?: string;
+  testId?: string;
+  dataState?: string;
 }) {
   return (
     <span
       title={title}
+      data-testid={testId}
+      data-state={dataState}
       className={cn(
         'inline-flex h-4 flex-none items-center rounded-badge border px-1.5 font-mono text-[10px] leading-none tracking-[0.06em] uppercase',
         VARIANTS[variant],

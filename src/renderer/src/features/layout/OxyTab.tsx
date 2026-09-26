@@ -52,7 +52,9 @@ function TerminalTabContent({ props }: { props: IDockviewPanelHeaderProps<Termin
   }, [props.api, title]);
   return (
     <>
-      {info && <StatusDot state={terminalDotState(info)} title={terminalDotLabel(info)} size={7} />}
+      {info && (
+        <StatusDot state={terminalDotState(info)} title={terminalDotLabel(info)} size={7} testId="tab-status-dot" />
+      )}
       {renaming ? (
         <RenameInput
           initial={info?.userTitle ?? title}

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentInfoWithTerminalSchema } from '../domain/agent';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
@@ -44,6 +45,7 @@ export const invokeContract = {
   'clipboard:read': { req: z.null().optional(), res: z.object({ text: z.string(), hasImage: z.boolean() }) },
   'clipboard:writeText': { req: z.object({ text: z.string().max(10_000_000) }), res: z.void() },
   'terminals:clearBell': { req: z.object({ id: TerminalIdSchema }), res: z.void() },
+  'agents:list': { req: z.null().optional(), res: z.array(AgentInfoWithTerminalSchema) },
   'fs:statMany': {
     req: z.object({ baseDirs: z.array(z.string()).max(4), paths: z.array(z.string().max(4096)).max(50) }),
     res: z.array(z.object({ path: z.string(), resolved: z.string().nullable(), isFile: z.boolean() })),

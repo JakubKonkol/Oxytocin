@@ -31,6 +31,8 @@ export type PtyHostEvents = HostBaseEvents & {
   'terminal:cwd': { id: TerminalId; cwd: string };
   'terminal:activity': { id: TerminalId; lastOutputAt: number };
   'terminal:process': { id: TerminalId; descendants: ProcInfo[]; foreground?: ProcInfo };
+  /** The user submitted input (Enter) — used to move an agent out of "waiting". Throttled to 1/s. */
+  'terminal:userInput': { id: TerminalId };
 };
 
 /** Events main sends to the PTY Host. */

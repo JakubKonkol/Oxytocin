@@ -96,6 +96,7 @@ export interface TerminalManagerDeps {
   logger: Logger;
   platform?: NodeJS.Platform;
   killTimeoutMs?: number;
+  onSpawned?: () => void;
 }
 
 /** Registry of terminal sessions and renderer connections inside the PTY Host. */
@@ -133,6 +134,7 @@ export class TerminalManager {
     }
     this.sessions.set(opts.id, session);
     this.deps.logger.info(`Spawned terminal ${opts.id} (pid ${session.pid}): ${opts.file} ${opts.args.join(' ')}`);
+    this.deps.onSpawned?.();
     return { pid: session.pid };
   }
 
@@ -154,6 +156,13 @@ export class TerminalManager {
     this.sessions.delete(id);
     for (const c of this.connections.values()) c.forget(id);
     session.dispose();
+  }
+
+  /** Alive terminals for the process monitor. */
+  monitored(): { id: string; pid: number; lastOutputAt: number }[] {
+    return [...this.sessions.values()]
+      .filter((s) => s.alive)
+      .map((s) => ({ id: s.id, pid: s.pid, lastOutputAt: s.lastOutput }));
   }
 
   list(): PtyTerminalListEntry[] {

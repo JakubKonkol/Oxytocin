@@ -44,6 +44,7 @@ export class TerminalSession {
   private titleTimer: ReturnType<typeof setTimeout> | undefined;
   private pendingTitle: string | undefined;
   private lastBellAt = 0;
+  private lastInputEmit = 0;
   private killTimer: ReturnType<typeof setTimeout> | undefined;
   private initialCommand: string | undefined;
   private initialCommandTimer: ReturnType<typeof setTimeout> | undefined;
@@ -209,7 +210,19 @@ export class TerminalSession {
   }
 
   write(data: string): void {
-    if (this._alive) this.pty.write(data);
+    if (!this._alive) return;
+    this.pty.write(data);
+    if (data.includes('\r')) {
+      const now = Date.now();
+      if (now - this.lastInputEmit >= 1000) {
+        this.lastInputEmit = now;
+        this.deps.emit('terminal:userInput', { id: this.id });
+      }
+    }
+  }
+
+  get lastOutput(): number {
+    return this.lastOutputAt;
   }
 
   resize(cols: number, rows: number): void {

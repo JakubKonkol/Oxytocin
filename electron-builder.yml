@@ -12,6 +12,7 @@ asar: true
 asarUnpack:
   - '**/node_modules/node-pty/**'
   - '**/node_modules/@parcel/watcher*/**'
+  - '**/node_modules/ps-list/vendor/**'
 extraResources:
   - { from: resources/icons, to: icons }
   - { from: LICENSE, to: LICENSE }

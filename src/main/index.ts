@@ -29,6 +29,8 @@ import { resolveShellEnv } from './services/shell-env/resolve-shell-env';
 import { ProfileService } from './services/terminals/profiles';
 import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
 import { TerminalService } from './services/terminals/terminal-service';
+import { AgentService } from './services/agents/agent-service';
+import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-registry';
 import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
@@ -135,6 +137,24 @@ function bootstrap(): void {
     logger: createLogger('terminals'),
   });
 
+  // Claude Code session registry (docs/plan/04-terminals.md §9.3); CLAUDE_CONFIG_DIR may come from the login shell.
+  const claudeRegistry = new ClaudeRegistry({
+    dir: join(process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'), 'sessions'),
+    logger: createLogger('agents'),
+    cliFallback: claudeAgentsCli(),
+  });
+  const agents = new AgentService({
+    ptyHost: hosts.pty,
+    terminals,
+    registry: claudeRegistry,
+    logger: createLogger('agents'),
+  });
+  void shellEnvReady.then((env) => {
+    const configDir = env['CLAUDE_CONFIG_DIR'];
+    if (configDir && configDir !== process.env['CLAUDE_CONFIG_DIR']) claudeRegistry.setDir(join(configDir, 'sessions'));
+    claudeRegistry.start();
+  });
+
   const editor = new EditorLauncher(createLogger('editor'), e2e);
 
   installPermissionHandlers(session.defaultSession);
@@ -199,6 +219,7 @@ function bootstrap(): void {
       'terminals:dispose': (req) => terminals.close(req.id),
       'terminals:list': (req) => terminals.list(req?.projectId),
       'terminals:profiles': () => profiles.list(),
+      'agents:list': () => agents.list(),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
       'clipboard:read': async () => {
         const text = await clipboard.readText();
@@ -237,6 +258,7 @@ function bootstrap(): void {
   });
   hosts.onDidChangeStatus((status) => sendEvent(win.webContents, 'hosts:status', status));
   terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
+  agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));
   projects.onDidChange((list) => sendEvent(win.webContents, 'projects:changed', list));
   projects.onDidChangeActive((id) => sendEvent(win.webContents, 'projects:active', { id }));
 
@@ -288,8 +310,10 @@ function bootstrap(): void {
     if (busy.length === 0) return true;
     const names = busy.slice(0, 3).map((t) => t.title);
     const message = `${busy.length} ${busy.length === 1 ? 'terminal has a running process' : 'terminals have running processes'} (${names.join(', ')}${busy.length > 3 ? '…' : ''}). Quit anyway?`;
-    const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] : undefined;
-    if (scripted === 'quit' || scripted === 'cancel') return scripted === 'quit';
+    if (e2e) {
+      // Tests answer through a global; a native dialog would block Playwright's app.close().
+      return (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] !== 'cancel';
+    }
     const { response, checkboxChecked } = await dialog.showMessageBox(win, {
       type: 'warning',
       message,
@@ -361,6 +385,7 @@ function bootstrap(): void {
     (globalThis as Record<string, unknown>)['__oxyMain'] = {
       hosts,
       terminals,
+      agents,
       editor,
       workspaceState,
       projects,

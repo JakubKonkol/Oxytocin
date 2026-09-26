@@ -6,6 +6,7 @@ import { SpawnOptionsSchema } from '@shared/domain/terminal';
 import { toDisposable } from '@shared/utils/disposable';
 import type { Logger } from '@shared/logging/logger';
 import { type RendererPort, TerminalManager } from './terminal-manager';
+import { ProcessMonitor } from './process-monitor';
 
 // Utility process entry: the PTY Host (node-pty + headless mirrors).
 const parentPort = process.parentPort;
@@ -13,8 +14,10 @@ const parentPort = process.parentPort;
 const ref: { emit?: (name: string, payload: unknown) => void } = {};
 const logRef: { log?: Logger } = {};
 
+const monitorRef: { poke?: () => void } = {};
 const manager = new TerminalManager({
   spawnPty: spawn,
+  onSpawned: () => monitorRef.poke?.(),
   emit: (name, payload) => ref.emit?.(name, payload),
   logger: {
     error: (m, ...a) => logRef.log?.error(m, ...a),
@@ -39,12 +42,23 @@ const { rpc, log } = startHostRuntime<PtyHostEvents, PtyHostInboundEvents>({
     setScrollback: (o: { scrollback: number }) => manager.setScrollback(o.scrollback),
     getText: (o: { id: string }) => manager.getText(o.id),
   },
-  onShutdown: () => manager.shutdown(),
+  onShutdown: () => {
+    monitor.stop();
+    return manager.shutdown();
+  },
   exit: (code) => process.exit(code),
 });
 
 ref.emit = (name, payload) => rpc.emit(name as keyof PtyHostEvents, payload as never);
 logRef.log = log;
+
+const monitor = new ProcessMonitor({
+  terminals: () => manager.monitored(),
+  onChange: (update) => rpc.emit('terminal:process', update),
+  logger: log,
+});
+monitorRef.poke = () => monitor.poke();
+monitor.start();
 
 /** Electron's MessagePortMain as a RendererPort. */
 function toRendererPort(

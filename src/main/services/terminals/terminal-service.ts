@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import type { Settings } from '@shared/domain/settings';
-import type { CreateTerminalRequest, TerminalInfo } from '@shared/domain/terminal';
+import type { AgentInfo } from '@shared/domain/agent';
+import type { CreateTerminalRequest, TerminalInfo, TerminalKind } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import type { PtyHostEvents, PtyHostMethods } from '@shared/rpc/contracts/pty-host';
 import type { Logger } from '@shared/logging/logger';
@@ -11,6 +12,13 @@ import type { UtilityHost } from '../../hosts/utility-host';
 import { composeEnv, type EnvLayer } from './env-composer';
 import { withSeparator } from './scrollback-format';
 import type { ProfileService } from './profiles';
+
+/** Runtime classification from the AgentService; `undefined` removes a field. */
+export interface TerminalRuntimePatch {
+  kind?: TerminalKind;
+  foreground?: TerminalInfo['foreground'] | undefined;
+  agent?: AgentInfo | undefined;
+}
 
 export interface ProjectContext {
   rootPath: string;
@@ -214,6 +222,23 @@ export class TerminalService implements Disposable {
     const current = this.terminals.get(id)!;
     const { userTitle: _old, ...rest } = current;
     const next = this.withTitle(trimmed ? { ...rest, userTitle: trimmed } : rest);
+    this.terminals.set(id, next);
+    this.updatedEmitter.fire(next);
+  }
+
+  /** Applies the AgentService's classification; fires an update only when something changed. */
+  applyRuntime(id: string, patch: TerminalRuntimePatch): void {
+    const current = this.terminals.get(id);
+    if (!current) return;
+    const next: TerminalInfo = { ...current };
+    if (patch.kind) next.kind = patch.kind;
+    for (const key of ['foreground', 'agent'] as const) {
+      if (!(key in patch)) continue;
+      const value = patch[key];
+      if (value === undefined) delete next[key];
+      else (next as Record<string, unknown>)[key] = value;
+    }
+    if (JSON.stringify(next) === JSON.stringify(current)) return;
     this.terminals.set(id, next);
     this.updatedEmitter.fire(next);
   }

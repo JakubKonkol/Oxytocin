@@ -66,6 +66,24 @@ export async function run(page: Page, command: string): Promise<void> {
   await page.keyboard.press('Enter');
 }
 
+const PROMPT_END = /[>$#%]\s*$/;
+
+/**
+ * Presses Ctrl+C and waits for the shell's next prompt: PowerShell (PSReadLine) drops keys typed before it
+ * redraws the prompt after an interrupt.
+ */
+export async function interrupt(page: Page, id: string): Promise<void> {
+  const before = await oxyTest(page).text(id);
+  await page.keyboard.press('Control+C');
+  await expect
+    .poll(async () => {
+      const text = (await oxyTest(page).text(id)).trimEnd();
+      return text !== before.trimEnd() && PROMPT_END.test(text);
+    })
+    .toBe(true);
+  await page.waitForTimeout(300);
+}
+
 /** A `node -e` command line that works in bash, zsh, pwsh and cmd (no shell-specific quoting inside). */
 export const nodeCmd = (script: string) => `node -e "${script}"`;
 

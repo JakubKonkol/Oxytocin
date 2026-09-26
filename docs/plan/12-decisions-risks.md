@@ -100,7 +100,7 @@ Format ADR: **Kontekst → Decyzja → Alternatywy → Konsekwencje**. Status: `
 - **Konsekwencje:** Zakaz literałów kolorów poza `tokens.css`.
 
 ## ADR-015 — Stan agentów: rejestr sesji Claude Code + sygnały terminala
-- **Status:** Do weryfikacji (S5).
+- **Status:** Przyjęta (S5 częściowo — [docs/spikes/S5-claude-registry.md](../spikes/S5-claude-registry.md)).
 - **Kontekst:** Wskaźnik „agent pracuje / czeka na Ciebie” to kluczowa wartość produktu; Claude Code zapisuje `~/.claude/sessions/<pid>.json` ze `status`, istnieje `claude agents --json`.
 - **Decyzja:** Źródła według priorytetu: hook (M9) > rejestr Claude > OSC 9;4 > BEL/notyfikacje > heurystyka outputu; parsowanie tolerancyjne, fallback na `claude agents --json`.
 - **Alternatywy:** tylko heurystyka outputu (niedokładna), wymuszenie hooków w konfiguracji użytkownika (narusza zasadę nieinwazyjności).
@@ -139,6 +139,13 @@ Format ADR: **Kontekst → Decyzja → Alternatywy → Konsekwencje**. Status: `
 - **Zgodność zależności:** dozwolone licencje zależności runtime: MIT, ISC, BSD-2/3-Clause, Apache-2.0, 0BSD, OFL-1.1 (fonty), MPL-2.0 (tylko bez modyfikacji plików). Zabronione bez nowego ADR: GPL/LGPL/AGPL, SSPL, licencje niekomercyjne. Kontrola w CI: `npx license-checker-rseidelsohn --production --onlyAllow "MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1;MPL-2.0;CC0-1.0;BlueOak-1.0.0;Python-2.0"` (lista do dopracowania przy pierwszym uruchomieniu).
 - **Atrybucje:** `THIRD_PARTY_NOTICES.md` generowany skryptem (`scripts/generate-notices.ts`) z licencjami zależności produkcyjnych + ręczne wpisy dla zasobów niepochodzących z npm: skrypty shell integration adaptowane z VS Code (MIT, zachowany nagłówek), fonty Inter i JetBrains Mono (OFL-1.1, pliki licencji obok fontów), dane cennika LiteLLM (MIT — atrybucja w pliku snapshotu). Plik dołączany do paczki aplikacji (`extraResources`) i dostępny z menu „Help → Third-Party Notices”; okno „About” pokazuje licencję MIT.
 - **Konsekwencje:** Wtyczki zewnętrzne mogą mieć dowolną licencję (są dystrybuowane osobno).
+
+## ADR-021 — Process tree on Windows: `ps-list` (fastlist) + CIM instead of `@vscode/windows-process-tree`
+- **Status:** Accepted (implementation, M3-T4).
+- **Context:** The process monitor needs every terminal's descendants every 1–5 s. `@vscode/windows-process-tree` ships no prebuilt binaries (install runs `node-gyp rebuild`, which requires Visual Studio build tools on every contributor machine and CI runner).
+- **Decision:** On Windows one `ps-list` call (bundled `fastlist.exe`, MIT) returns pid/ppid/name for all processes; command lines are queried through CIM (`Get-CimInstance Win32_Process`) only for interpreter processes (`node`, `python`, `bun`, `deno`, …) and cached per pid. POSIX uses `ps -A -o pid=,ppid=,comm=` + `ps -A -o pid=,args=`. `fastlist` is unpacked from the asar (`asarUnpack`).
+- **Alternatives:** `@vscode/windows-process-tree` (native build), WMI for every sample (≈ 300 ms per call).
+- **Consequences:** Command lines of new interpreter processes appear with one CIM call of delay; the monitor backs off (×2, up to 10 s) when sampling takes more than 250 ms.
 
 ---
 

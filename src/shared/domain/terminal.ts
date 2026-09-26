@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentInfoSchema } from './agent';
 
 export const TerminalIdSchema = z.string().min(1).max(64);
 export type TerminalId = z.infer<typeof TerminalIdSchema>;
@@ -71,6 +72,9 @@ export const TerminalInfoSchema = z.object({
   envStale: z.boolean(),
   bell: z.boolean(),
   progress: z.object({ state: z.number().int().min(0).max(4), value: z.number().optional() }).optional(),
+  /** Nearest non-shell descendant (e.g. `node` of `npm run dev`). */
+  foreground: z.object({ name: z.string(), commandLine: z.string() }).optional(),
+  agent: AgentInfoSchema.optional(),
 });
 export type TerminalInfo = z.infer<typeof TerminalInfoSchema>;
 
