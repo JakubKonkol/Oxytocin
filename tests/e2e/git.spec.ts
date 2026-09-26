@@ -42,3 +42,35 @@ test('git status follows files written in a terminal', async () => {
     await app.close();
   }
 });
+
+test('the CHANGES section shows new, modified and committed files live', async () => {
+  const repo = await makeRepo();
+  const { app, win } = await launchApp({ project: repo });
+  try {
+    await waitForTerminal(win);
+    const section = win.getByTestId('changes-section');
+    await expect(section.getByText('No changes since HEAD ✓')).toBeVisible({ timeout: 10_000 });
+    await expect(section.getByTestId('changes-branch')).toHaveText('main');
+
+    const row = (path: string) => section.locator(`[data-testid="changes-row"][data-path="${path}"]`);
+    const start = Date.now();
+    await run(win, nodeCmd("require('fs').writeFileSync('a.txt', 'x\\n')"));
+    await expect(row('a.txt')).toBeVisible({ timeout: 5_000 });
+    const shownAfter = Date.now() - start;
+    await expect(row('a.txt').getByTestId('changes-status-letter')).toHaveText('U');
+    console.log(`untracked file visible after ${shownAfter} ms (incl. typing the command)`);
+
+    await run(win, nodeCmd("require('fs').appendFileSync('tracked.txt', 'two\\nthree\\n')"));
+    await expect(row('tracked.txt').getByTestId('changes-status-letter')).toHaveText('M');
+    await expect(row('tracked.txt')).toContainText('+2');
+    await expect(section.getByTestId('changes-totals')).toContainText('2 files');
+    await expect(win.getByTestId('status-git')).toContainText('2 changes');
+
+    await run(win, 'git add -A');
+    await run(win, 'git -c user.name=t -c user.email=t@e -c commit.gpgsign=false commit -qm done');
+    await expect(section.getByText('No changes since HEAD ✓')).toBeVisible({ timeout: 5_000 });
+    await expect(section.getByText(/Last commit .*: done/)).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});

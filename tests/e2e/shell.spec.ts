@@ -27,7 +27,7 @@ test('sidebar width and collapsed sections persist across restarts', async () =>
     await win.mouse.move(box.x + box.width / 2 + 80, box.y + 200, { steps: 5 });
     await win.mouse.up();
     await expect.poll(async () => (await win.getByTestId('sidebar').boundingBox())?.width).toBe(380);
-    await win.getByTestId('section-header-changes').getByRole('button').click();
+    await win.getByTestId('section-header-changes').getByRole('button', { name: 'CHANGES' }).click();
     await expect(win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
     await win.waitForTimeout(700); // debounced persistence
   } finally {

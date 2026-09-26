@@ -36,7 +36,12 @@ export const WorkspaceStateSchema = z.object({
   ui: z
     .object({
       changes: z
-        .object({ expanded: z.array(z.string()), mode: z.enum(['tree', 'list']), filter: z.string().optional() })
+        .object({
+          /** null: default expansion (everything when ≤ 50 files). */
+          expanded: z.array(z.string()).nullable(),
+          mode: z.enum(['tree', 'list']),
+          filter: z.string().optional(),
+        })
         .optional(),
     })
     .default({}),

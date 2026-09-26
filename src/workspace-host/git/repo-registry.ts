@@ -171,6 +171,19 @@ export class RepoRegistry {
       status = this.emptyStatus(info, info.state, info.error);
     }
     if (this.entries.get(info.projectId) !== entry) return;
+    // Files that appeared or changed since the last status count as touched even when the watcher missed
+    // them (files inside a folder created in the same instant are not always reported).
+    const previous = entry.status;
+    if (previous?.state === 'ok' && status.state === 'ok') {
+      const before = new Map(previous.files.map((f) => [f.path, `${f.status}:${f.additions}:${f.deletions}`]));
+      const now = Date.now();
+      for (const f of status.files) {
+        if (f.touchedAt === undefined && before.get(f.path) !== `${f.status}:${f.additions}:${f.deletions}`) {
+          f.touchedAt = now;
+          entry.touched.set(f.path, now);
+        }
+      }
+    }
     entry.status = status;
     const { computedAt: _c, durationMs: _d, ...stable } = status;
     const key = JSON.stringify(stable);

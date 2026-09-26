@@ -5,6 +5,8 @@ import { Plus } from 'lucide-react';
 import { SectionBody, SectionHeader } from '../ui/Section';
 import { IconButton } from '../ui/IconButton';
 import { ProjectsSection } from '../features/projects/ProjectsSection';
+import { ChangesCount, ChangesHeaderActions, ChangesSection } from '../features/changes/ChangesSection';
+import { registerCommand } from '../lib/commands';
 import { addProjectViaDialog } from '../features/projects/project-actions';
 import { useProjectsStore } from '../stores/projects-store';
 import { EmptyState } from '../ui/EmptyState';
@@ -20,9 +22,9 @@ interface SectionDefinition {
 
 /** Core sidebar sections; plugin panes are appended in M5. */
 const CORE_SECTIONS: SectionDefinition[] = [
-  { id: 'projects', title: 'PROJECTS', size: 220 },
-  { id: 'changes', title: 'CHANGES', size: 320 },
-  { id: 'usage', title: 'USAGE', size: 180 },
+  { id: 'projects', title: 'PROJECTS', size: 200 },
+  { id: 'changes', title: 'CHANGES', size: 380 },
+  { id: 'usage', title: 'USAGE', size: 160 },
 ];
 
 function ProjectsHeaderActions() {
@@ -47,14 +49,19 @@ function PaneHeader(props: IPaneviewPanelProps) {
     const d = props.api.onDidExpansionChange((e) => setExpanded(e.isExpanded));
     return () => d.dispose();
   }, [props.api]);
-  const isProjects = props.api.id === 'projects';
+  const extras =
+    props.api.id === 'projects'
+      ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> }
+      : props.api.id === 'changes'
+        ? { actions: <ChangesHeaderActions />, count: <ChangesCount /> }
+        : {};
   return (
     <SectionHeader
       testId={`section-header-${props.api.id}`}
       title={props.title}
       expanded={expanded}
       onToggle={() => props.api.setExpanded(!expanded)}
-      {...(isProjects ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> } : {})}
+      {...extras}
     />
   );
 }
@@ -69,7 +76,7 @@ function PlaceholderBody({ text }: { text: string }) {
 
 const components = {
   projects: () => <ProjectsSection />,
-  changes: () => <PlaceholderBody text="No project selected" />,
+  changes: () => <ChangesSection />,
   usage: () => <PlaceholderBody text="No usage data yet" />,
 };
 
@@ -110,6 +117,14 @@ export function Sidebar() {
         minimumBodySize: 80,
       });
     }
+    registerCommand({
+      id: 'workbench.focusChanges',
+      title: 'View: Focus Changes',
+      run: () => {
+        event.api.getPanel('changes')?.api.setExpanded(true);
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="changes-tree"]')?.focus());
+      },
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     event.api.onDidLayoutChange(() => {
       if (timer) clearTimeout(timer);

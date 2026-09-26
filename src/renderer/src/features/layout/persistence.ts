@@ -8,6 +8,7 @@ import { notify } from '../../ui/Toast';
 import type { TerminalPanelParams } from './panel-registry';
 import { addExistingTerminalPanel, addTerminalPanel, type PanelPosition } from './workspace-actions';
 import { useProjectsStore } from '../../stores/projects-store';
+import { changesUi, useChangesStore } from '../../stores/changes-store';
 
 const KNOWN_COMPONENTS = new Set(['terminal', 'missing']);
 const SAVE_DEBOUNCE_MS = 1000;
@@ -40,8 +41,13 @@ export function buildWorkspaceState(api: DockviewApi, projectId: string): Worksp
     dockview: api.toJSON() as unknown as Record<string, unknown>,
     panels,
     ...(api.activePanel ? { activePanelId: api.activePanel.id } : {}),
-    ui: {},
+    ui: { changes: persistedChangesUi(projectId) },
   };
+}
+
+function persistedChangesUi(projectId: string): NonNullable<WorkspaceState['ui']['changes']> {
+  const ui = changesUi(projectId);
+  return { expanded: ui.expanded, mode: ui.mode, ...(ui.filter ? { filter: ui.filter } : {}) };
 }
 
 const flushers = new Map<string, () => Promise<void>>();
@@ -71,6 +77,12 @@ export function trackWorkspacePersistence(api: DockviewApi, projectId: string): 
   const unsubscribeStore = useTerminalsStore.subscribe((s, prev) => {
     if (s.terminals !== prev.terminals) schedule();
   });
+  // Expanded folders, view mode and filter of the CHANGES section (per project).
+  const unsubscribeChanges = useChangesStore.subscribe((s, prev) => {
+    const a = s.ui[projectId];
+    const b = prev.ui[projectId];
+    if (a !== b && (a?.expanded !== b?.expanded || a?.mode !== b?.mode || a?.filter !== b?.filter)) schedule();
+  });
   flushers.set(projectId, save);
   return () => {
     // Evicted (LRU) or unmounted: write the latest layout so rehydration starts from it.
@@ -80,6 +92,7 @@ export function trackWorkspacePersistence(api: DockviewApi, projectId: string): 
     layoutSub.dispose();
     activeSub.dispose();
     unsubscribeStore();
+    unsubscribeChanges();
     flushers.delete(projectId);
   };
 }
@@ -94,6 +107,10 @@ type SerializedPanels = SerializedDockview['panels'];
 export async function restoreWorkspace(api: DockviewApi, projectId: string): Promise<boolean> {
   const { state, problem } = await ipc.invoke('workspace:load', { projectId });
   if (problem) notify('warning', problem);
+  if (state?.ui.changes && !useChangesStore.getState().ui[projectId]) {
+    const { expanded, mode, filter } = state.ui.changes;
+    useChangesStore.getState().setUi(projectId, { expanded, mode, filter: filter ?? '' });
+  }
   if (!state || !getSettings()['workspace.restoreOnStartup']) return false;
   const json = structuredClone(state.dockview) as unknown as SerializedDockview;
   const serializedPanels: SerializedPanels = json.panels ?? {};
