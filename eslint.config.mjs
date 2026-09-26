@@ -3,13 +3,16 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-const NODE_BUILTINS = ['node:*', 'fs', 'path', 'os', 'child_process', 'crypto', 'events', 'stream', 'util', 'url'];
+const NODE_BUILTINS = ['fs', 'path', 'os', 'child_process', 'crypto', 'events', 'stream', 'util', 'url'];
 
 /** Directory boundaries from docs/plan/01-architecture.md §3. */
-const boundary = (files, patterns, message) => ({
+const boundary = (files, patterns, message, paths = []) => ({
   files,
   rules: {
-    'no-restricted-imports': ['error', { patterns: [{ group: patterns, message }] }],
+    'no-restricted-imports': [
+      'error',
+      { paths: paths.map((name) => ({ name, message })), patterns: [{ group: patterns, message }] },
+    ],
   },
 });
 
@@ -72,8 +75,7 @@ export default tseslint.config(
   boundary(
     ['src/shared/**/*.ts'],
     [
-      'electron',
-      ...NODE_BUILTINS,
+      'node:*',
       '**/main/**',
       '**/renderer/**',
       '**/pty-host/**',
@@ -82,19 +84,13 @@ export default tseslint.config(
       '**/preload/**',
     ],
     'src/shared must stay pure TypeScript and only import from src/shared.',
+    ['electron', ...NODE_BUILTINS],
   ),
   boundary(
     ['src/renderer/**/*.{ts,tsx}'],
-    [
-      'electron',
-      ...NODE_BUILTINS,
-      '**/main/**',
-      '**/pty-host/**',
-      '**/workspace-host/**',
-      '**/plugin-host/**',
-      '**/preload/**',
-    ],
+    ['node:*', '**/main/**', '**/pty-host/**', '**/workspace-host/**', '**/plugin-host/**', '**/preload/**'],
     'The renderer may only import src/shared and its own modules.',
+    ['electron', ...NODE_BUILTINS],
   ),
   boundary(
     ['src/pty-host/**/*.ts', 'src/workspace-host/**/*.ts', 'src/plugin-host/**/*.ts'],
@@ -108,8 +104,9 @@ export default tseslint.config(
   ),
   boundary(
     ['plugins/*/src/**/*.{ts,tsx}'],
-    ['**/src/main/**', '**/src/renderer/**', '**/src/shared/**', '@shared/*', 'electron'],
+    ['**/src/main/**', '**/src/renderer/**', '**/src/shared/**', '@shared/*'],
     'Built-in plugins use the public API only (@oxytocin/plugin-api, @oxytocin/plugin-sdk).',
+    ['electron'],
   ),
   {
     files: ['scripts/**/*.ts', 'tests/**/*.ts', '**/*.test.{ts,tsx}', '*.config.{ts,mjs}'],

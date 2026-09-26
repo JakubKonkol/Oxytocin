@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron';
-import { APP_ORIGIN } from './protocols';
+import { APP_HOST, APP_ORIGIN, APP_SCHEME } from './protocols';
 import { appPaths } from './paths';
 import { hardenWebContents, secureWebPreferences } from './security';
 
@@ -13,7 +13,8 @@ export function devRendererUrl(): string | null {
 export function isTrustedShellUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    if (parsed.origin === APP_ORIGIN) return true;
+    // Node's URL gives custom schemes an opaque ("null") origin, so compare protocol and host.
+    if (parsed.protocol === `${APP_SCHEME}:` && parsed.host === APP_HOST) return true;
     const dev = devRendererUrl();
     return dev !== null && parsed.origin === new URL(dev).origin;
   } catch {

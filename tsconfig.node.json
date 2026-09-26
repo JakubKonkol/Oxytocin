@@ -2,7 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo/node.tsbuildinfo",
-    "types": ["node"],
+    "types": ["node", "electron"],
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
   "include": [
