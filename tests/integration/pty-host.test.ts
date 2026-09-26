@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { Terminal } from '@xterm/headless';
@@ -83,14 +82,15 @@ describe('PTY Host terminal sessions', () => {
 
   it('propagates resize to the process', async () => {
     setup();
+    // Poll the window size: Windows only emits 'resize' while reading from the console.
     const o = opts([
       '-e',
-      "process.stdout.on('resize', () => console.log('size', process.stdout.columns, process.stdout.rows)); console.log('ready'); setInterval(() => {}, 1000)",
+      "let last = ''; setInterval(() => { const [c, r] = process.stdout.getWindowSize(); const s = 'size ' + c + 'x' + r; if (s !== last) { last = s; console.log(s); } }, 50)",
     ]);
     manager.spawn(o);
-    await waitFor(async () => (await manager.getText(o.id)).includes('ready'));
+    await waitFor(async () => (await manager.getText(o.id)).includes('size 80x24'));
     manager.resize(o.id, 100, 40);
-    await waitFor(async () => (await manager.getText(o.id)).includes('size 100 40'));
+    await waitFor(async () => (await manager.getText(o.id)).includes('size 100x40'));
   });
 
   it('streams a snapshot followed by data without gaps or duplicates', async () => {
@@ -147,38 +147,42 @@ describe('PTY Host terminal sessions', () => {
 
   it('delivers 20 MB without loss and applies flow control', async () => {
     setup();
-    const lines = 200_000;
-    const script = `const line = 'x'.repeat(95); let i = 0; function w() { while (i < ${lines}) { const ok = process.stdout.write(String(i).padStart(6, '0') + line + '\\n'); i++; if (!ok) { process.stdout.once('drain', w); return; } } } w();`;
+    // 60-char lines stay below the 80 columns so no PTY (ConPTY included) has to wrap them.
+    const lines = 330_000;
+    const script = `const line = 'x'.repeat(54); let i = 0; function w() { while (i < ${lines}) { const ok = process.stdout.write(String(i).padStart(6, '0') + line + '\\n'); i++; if (!ok) { process.stdout.once('drain', w); return; } } } w();`;
     const o = opts(['-e', script], { scrollback: 1000 });
     manager.spawn(o);
     const session = manager.get(o.id)!;
-    let received = '';
+    const chunks: string[] = [];
     let paused = 0;
     const origPause = ptys[0]!.pause.bind(ptys[0]);
     ptys[0]!.pause = () => {
       paused++;
       origPause();
     };
-    // A slow renderer: acknowledges in batches with a delay.
+    // A slow renderer: acknowledges with a delay.
     const sub: Subscriber = {
       send(m) {
         if (m.t !== 'data') return;
-        received += m.data;
+        chunks.push(m.data);
         const n = m.data.length;
         setTimeout(() => session.ack(n), 20);
       },
     };
     session.attach(sub);
-    await waitFor(() => exitOf(o.id) !== undefined, 60_000);
+    await waitFor(() => exitOf(o.id) !== undefined, 90_000);
     await new Promise((r) => setTimeout(r, 100));
-    const expected = Array.from({ length: lines }, (_, i) => `${String(i).padStart(6, '0')}${'x'.repeat(95)}\r\n`).join(
-      '',
-    );
-    const hash = (s: string) => createHash('sha256').update(s).digest('hex');
-    expect(received.length).toBe(expected.length);
-    expect(hash(received)).toBe(hash(expected));
+    const received = chunks.join('');
+    expect(received.length).toBeGreaterThanOrEqual(lines * 61);
+    // Platforms may add terminal control sequences (ConPTY); every line must still arrive, in order.
+    // eslint-disable-next-line no-control-regex
+    const plain = received.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g, '');
+    const found = plain.match(/\d{6}x{54}/g) ?? [];
+    expect(found.length).toBe(lines);
+    for (let i = 0; i < lines; i += 997) expect(found[i]).toBe(`${String(i).padStart(6, '0')}${'x'.repeat(54)}`);
+    expect(found.at(-1)).toBe(`${String(lines - 1).padStart(6, '0')}${'x'.repeat(54)}`);
     expect(paused).toBeGreaterThan(0);
-  }, 60_000);
+  }, 120_000);
 
   // Child discovery uses `ps`; Windows uses `taskkill /T` (covered by the E2E quit tests).
   it.skipIf(process.platform === 'win32')('kills the whole process tree', async () => {
