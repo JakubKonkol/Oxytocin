@@ -1,10 +1,13 @@
 import { watch, type FSWatcher } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { applyEdits, modify } from 'jsonc-parser';
 import { basename, dirname } from 'node:path';
 import type { Platform } from '@shared/domain/terminal-profile';
 import { resolveSettings, type Settings, type SettingsProblem } from '@shared/domain/settings';
 import type { Logger } from '@shared/logging/logger';
 import { type Disposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
+import { writeFileAtomic } from '../storage/atomic-write';
 import { readJsonFile, readJsonFileSync, type ReadStatus } from '../storage/json-file-store';
 
 export interface SettingsLoadInfo {
@@ -66,6 +69,28 @@ export class SettingsService implements Disposable {
     this.settings = settings;
     this._problems = problems;
     for (const p of problems) this.logger.warn(`Invalid setting "${p.key}": ${p.message}`);
+  }
+
+  /**
+   * Writes keys into settings.json with minimal JSONC edits (comments and formatting are kept);
+   * `null` removes a key. Returns the reloaded settings.
+   */
+  async update(patch: Record<string, unknown>): Promise<Settings> {
+    let text: string;
+    try {
+      text = await readFile(this.filePath, 'utf8');
+    } catch {
+      text = '{\n}\n';
+    }
+    for (const [key, value] of Object.entries(patch)) {
+      const edits = modify(text, [key], value === null ? undefined : value, {
+        formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' },
+      });
+      text = applyEdits(text, edits);
+    }
+    await writeFileAtomic(this.filePath, text);
+    await this.reload();
+    return this.settings;
   }
 
   /** Watches the settings directory (the file may not exist yet or be replaced atomically). */

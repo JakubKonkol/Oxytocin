@@ -9,6 +9,7 @@ import { ptyChannel } from './features/terminals/pty-channel';
 import { registerTerminalCommands } from './features/terminals/terminal-actions';
 import { installGlobalKeybindings } from './lib/keyboard';
 import { registerLayoutCommands } from './features/layout/layout-commands';
+import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
   document.documentElement.dataset['e2e'] = 'true';
@@ -20,6 +21,7 @@ ptyChannel();
 registerTerminalCommands();
 registerLayoutCommands();
 installGlobalKeybindings();
+(window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');

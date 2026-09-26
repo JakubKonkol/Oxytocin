@@ -9,6 +9,7 @@ import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import type { UtilityHost } from '../../hosts/utility-host';
 import { composeEnv, type EnvLayer } from './env-composer';
+import { withSeparator } from './scrollback-format';
 import type { ProfileService } from './profiles';
 
 export interface ProjectContext {
@@ -22,6 +23,8 @@ export interface TerminalServiceDeps {
   settings: () => Settings;
   resolveProject: (projectId: string) => ProjectContext | null;
   baseEnv: () => EnvLayer | Promise<EnvLayer>;
+  /** Reads the scrollback snapshot saved for a panel at the last quit (already wrapped with a separator). */
+  readScrollback?: (projectId: string, panelId: string) => Promise<string | null>;
   /** Environment contributions from plugins (M5); applied after project env. */
   pluginEnv?: (ctx: { projectId: string; profileId: string }) => EnvLayer[];
   appVersion: string;
@@ -101,7 +104,11 @@ export class TerminalService implements Disposable {
     return info;
   }
 
-  async create(req: CreateTerminalRequest): Promise<TerminalInfo> {
+  create(req: CreateTerminalRequest): Promise<TerminalInfo> {
+    return this.createWith(req);
+  }
+
+  private async createWith(req: CreateTerminalRequest, restoreOverride?: string): Promise<TerminalInfo> {
     const project = this.deps.resolveProject(req.projectId);
     if (!project) throw new OxyError('NOT_FOUND', `Project ${req.projectId} not found`);
     const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
@@ -124,6 +131,11 @@ export class TerminalService implements Disposable {
       ],
     });
     const initialCommand = req.initialCommand ?? launch.initialCommand;
+    const restoreData =
+      restoreOverride ??
+      (req.restoreScrollback && this.deps.readScrollback
+        ? await this.deps.readScrollback(req.projectId, req.restoreScrollback.panelId)
+        : null);
     const { pid } = await this.deps.ptyHost.call('spawn', {
       id,
       file: launch.file,
@@ -134,7 +146,7 @@ export class TerminalService implements Disposable {
       rows: req.rows ?? DEFAULT_ROWS,
       scrollback: settings['terminal.scrollback'],
       useConptyDll: settings['terminal.windows.useBundledConpty'],
-      ...(req.restoreData ? { restoreData: req.restoreData } : {}),
+      ...(restoreData ? { restoreData } : {}),
       ...(initialCommand ? { initialCommand } : {}),
     });
     const info = this.withTitle({
@@ -170,19 +182,30 @@ export class TerminalService implements Disposable {
   async restart(id: string): Promise<TerminalInfo> {
     const info = this.require(id);
     const req = this.requests.get(id);
+    // The old buffer stays visible above a "Restarted" separator.
+    const previous =
+      info.state === 'failed'
+        ? null
+        : await this.deps.ptyHost.call('serialize', { id }).then(
+            (s) => s.data,
+            () => null,
+          );
     await this.close(id);
-    const { restoreData: _restore, ...rest } = req ?? {
+    const { restoreScrollback: _restore, ...rest } = req ?? {
       projectId: info.projectId,
       profileId: info.profileId,
       cwd: info.cwd,
     };
-    return this.create({
-      ...rest,
-      projectId: info.projectId,
-      profileId: info.profileId,
-      cwd: info.cwd,
-      ...(info.userTitle ? { userTitle: info.userTitle } : {}),
-    });
+    return this.createWith(
+      {
+        ...rest,
+        projectId: info.projectId,
+        profileId: info.profileId,
+        cwd: info.cwd,
+        ...(info.userTitle ? { userTitle: info.userTitle } : {}),
+      },
+      previous ? withSeparator(previous, 'Restarted') : undefined,
+    );
   }
 
   rename(id: string, title: string): void {

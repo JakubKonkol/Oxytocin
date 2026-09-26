@@ -52,10 +52,10 @@ test('a killed utility host is restarted and the restart is logged', async () =>
     const after = (await running()).find((h) => h.name === 'Oxytocin PTY Host');
     expect(after?.pid).not.toBe(before?.pid);
     const logFile = await app.evaluate(() => (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.logFile());
-    const log = await readFile(logFile, 'utf8');
-    expect(log).toContain('Oxytocin PTY Host exited unexpectedly');
-    expect(log).toContain('Oxytocin PTY Host restarted');
-    expect(log).toContain('[pty] PTY Host started');
+    const log = () => readFile(logFile, 'utf8');
+    await expect.poll(log).toContain('Oxytocin PTY Host exited unexpectedly');
+    await expect.poll(log).toContain('Oxytocin PTY Host restarted');
+    await expect.poll(log).toContain('[pty] PTY Host started');
   } finally {
     await app.close();
   }

@@ -1,6 +1,16 @@
 import { homedir, release } from 'node:os';
 import { join } from 'node:path';
-import { app, type BrowserWindow, clipboard, ipcMain, MessageChannelMain, screen, session, shell } from 'electron';
+import {
+  app,
+  type BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  MessageChannelMain,
+  screen,
+  session,
+  shell,
+} from 'electron';
 import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import type { Platform } from '@shared/domain/terminal-profile';
@@ -19,6 +29,7 @@ import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
 import { TerminalService } from './services/terminals/terminal-service';
 import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
+import { restoredScrollbackData, WorkspaceStateService } from './services/workspace-state/workspace-state-service';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -69,6 +80,11 @@ function bootstrap(): void {
     nodeDetectDeps(() => shellEnv),
     () => settings.get(),
   );
+  const workspaceState = new WorkspaceStateService(
+    join(app.getPath('userData'), 'workspaces'),
+    createLogger('workspace'),
+  );
+
   const terminals = new TerminalService({
     ptyHost: hosts.pty,
     profiles,
@@ -76,6 +92,11 @@ function bootstrap(): void {
     // Until projects exist (M3), terminals live in a default project rooted at the home directory.
     resolveProject: (projectId) => (projectId === DEFAULT_PROJECT_ID ? { rootPath: homedir() } : null),
     baseEnv: () => shellEnvReady,
+    readScrollback: async (projectId, panelId) => {
+      if (!settings.get()['terminal.restoreScrollback']) return null;
+      const saved = await workspaceState.readScrollback(projectId, panelId);
+      return saved ? restoredScrollbackData(saved.data, saved.savedAt) : null;
+    },
     appVersion: app.getVersion(),
     dev: !app.isPackaged,
     platform: process.platform,
@@ -108,6 +129,9 @@ function bootstrap(): void {
       }),
       'app:getHostStatus': () => hosts.status(),
       'settings:get': () => settings.get(),
+      'settings:update': (patch) => settings.update(patch),
+      'workspace:load': ({ projectId }) => workspaceState.load(projectId),
+      'workspace:save': (state) => workspaceState.save(state),
       'ui:getState': () => uiState.get(),
       'ui:patchState': (patch) => uiState.patch(patch),
       'terminals:create': (req) => terminals.create(req),
@@ -163,17 +187,81 @@ function bootstrap(): void {
     if (!win.webContents.isLoading()) connectPtyPort();
   });
 
+  // Quit sequence (docs/plan/01-architecture.md §7): QuitGuard → flush layouts → scrollback snapshots → hosts.
   let quitting = false;
+  let quitInProgress = false;
+  const quitGuard = async (): Promise<boolean> => {
+    if (!settings.get()['terminal.confirmOnQuit']) return true;
+    const busy = terminals.list().filter((t) => t.state === 'running' && t.kind !== 'shell');
+    if (busy.length === 0) return true;
+    const names = busy.slice(0, 3).map((t) => t.title);
+    const message = `${busy.length} ${busy.length === 1 ? 'terminal has a running process' : 'terminals have running processes'} (${names.join(', ')}${busy.length > 3 ? '…' : ''}). Quit anyway?`;
+    const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] : undefined;
+    if (scripted === 'quit' || scripted === 'cancel') return scripted === 'quit';
+    const { response, checkboxChecked } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      message,
+      buttons: ['Quit', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      checkboxLabel: "Don't ask again",
+    });
+    if (response !== 0) return false;
+    if (checkboxChecked) await settings.update({ 'terminal.confirmOnQuit': false });
+    return true;
+  };
+  const withTimeout = <T>(p: Promise<T>, ms: number) =>
+    Promise.race([p, new Promise<undefined>((r) => setTimeout(() => r(undefined), ms))]);
+  win.on('close', (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    app.quit();
+  });
   app.on('before-quit', (event) => {
     if (quitting) return;
     event.preventDefault();
-    quitting = true;
-    Promise.all([uiState.flush(), hosts.stopAll()])
-      .catch((e: unknown) => log.error('Failed to stop hosts', e))
-      .finally(() => {
-        settings.dispose();
-        app.exit(0);
-      });
+    if (quitInProgress) return;
+    quitInProgress = true;
+    void (async () => {
+      try {
+        if (!(await quitGuard())) return;
+        quitting = true;
+        if (!win.isDestroyed()) {
+          await withTimeout(
+            win.webContents.executeJavaScript(
+              'window.__oxyFlushWorkspaces ? window.__oxyFlushWorkspaces() : null',
+              true,
+            ),
+            2000,
+          ).catch(() => undefined);
+        }
+        await workspaceState.flush();
+        const s = settings.get();
+        if (s['terminal.restoreScrollback']) {
+          await withTimeout(
+            workspaceState.persistScrollback(async (terminalId) => {
+              const info = terminals.get(terminalId);
+              if (!info || info.state !== 'running') return null;
+              const snap = await hosts.pty.call('serialize', {
+                id: terminalId,
+                scrollback: s['terminal.persistScrollbackLines'],
+              });
+              return snap.data;
+            }),
+            3000,
+          ).catch((e: unknown) => log.warn('Failed to persist scrollback', e));
+        }
+        await Promise.all([uiState.flush(), hosts.stopAll()]);
+      } catch (e) {
+        log.error('Error during quit', e);
+      } finally {
+        quitInProgress = false;
+        if (quitting) {
+          settings.dispose();
+          app.exit(0);
+        }
+      }
+    })();
   });
 
   if (e2e) {
@@ -182,6 +270,7 @@ function bootstrap(): void {
       hosts,
       terminals,
       editor,
+      workspaceState,
       logFile: () => logFilePath(),
     };
   }

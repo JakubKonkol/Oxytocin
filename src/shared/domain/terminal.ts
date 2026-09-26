@@ -82,7 +82,7 @@ export const CreateTerminalRequestSchema = z.object({
   rows: z.number().int().min(1).max(500).optional(),
   userTitle: z.string().max(80).optional(),
   initialCommand: z.string().max(10_000).optional(),
-  /** VT data restored into the new terminal's buffer (scrollback after an app restart). */
-  restoreData: z.string().max(4_000_000).optional(),
+  /** Restores the scrollback snapshot saved for this panel at the last quit (read by main). */
+  restoreScrollback: z.object({ panelId: z.string().regex(/^[a-z]+-[a-z0-9]+$/) }).optional(),
 });
 export type CreateTerminalRequest = z.infer<typeof CreateTerminalRequestSchema>;

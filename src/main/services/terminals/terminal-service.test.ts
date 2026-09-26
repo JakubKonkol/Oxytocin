@@ -16,6 +16,7 @@ function setup() {
   const ptyHost = {
     call: vi.fn((method: string, params: unknown) => {
       calls.push({ method, params });
+      if (method === 'serialize') return Promise.resolve({ seq: 1, data: 'old output' });
       return Promise.resolve(method === 'spawn' ? { pid: pid++ } : undefined);
     }),
     onEvent: (name: string, l: (p: unknown) => void) => {
@@ -90,8 +91,11 @@ describe('TerminalService', () => {
     const second = await svc.restart(first.id);
     expect(second.id).not.toBe(first.id);
     expect(second.title).toBe('API');
+    const respawn = calls.at(-1)!.params as { restoreData?: string };
+    expect(respawn.restoreData).toContain('old output');
+    expect(respawn.restoreData).toContain('── Restarted ──');
     expect(removed).toEqual([first.id]);
-    expect(calls.map((c) => c.method)).toEqual(['spawn', 'kill', 'dispose', 'spawn']);
+    expect(calls.map((c) => c.method)).toEqual(['spawn', 'serialize', 'kill', 'dispose', 'spawn']);
   });
 
   it('marks running terminals as failed when the PTY host restarts', async () => {

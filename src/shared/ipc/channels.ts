@@ -6,6 +6,7 @@ export const INVOKE_CHANNELS = [
   'app:getInfo',
   'app:getHostStatus',
   'settings:get',
+  'settings:update',
   'ui:getState',
   'ui:patchState',
   'terminals:create',
@@ -21,6 +22,8 @@ export const INVOKE_CHANNELS = [
   'terminals:clearBell',
   'fs:statMany',
   'editor:open',
+  'workspace:load',
+  'workspace:save',
 ] as const;
 
 export const EVENT_CHANNELS = ['settings:changed', 'hosts:status', 'terminals:updated', 'terminals:removed'] as const;

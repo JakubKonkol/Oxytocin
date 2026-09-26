@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
-import { SettingsSchema } from '../domain/settings';
+import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
+import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { TerminalProfileSchema } from '../domain/terminal-profile';
@@ -16,6 +17,10 @@ export const invokeContract = {
   'app:getInfo': { req: z.null().optional(), res: AppInfoSchema },
   'app:getHostStatus': { req: z.null().optional(), res: z.array(HostStatusSchema) },
   'settings:get': { req: z.null().optional(), res: SettingsSchema },
+  /** Writes keys into settings.json preserving comments; `null` removes a key. */
+  'settings:update': { req: SettingsPatchSchema, res: SettingsSchema },
+  'workspace:load': { req: z.object({ projectId: ProjectIdSchema }), res: WorkspaceLoadResultSchema },
+  'workspace:save': { req: WorkspaceStateSchema, res: z.void() },
   'ui:getState': { req: z.null().optional(), res: UiStateSchema },
   'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
   'terminals:create': { req: CreateTerminalRequestSchema, res: TerminalInfoSchema },

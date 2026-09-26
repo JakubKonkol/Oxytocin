@@ -70,6 +70,8 @@ test('maximize, focus and resize with the keyboard', async () => {
     await win.keyboard.press('Alt+Shift+Equal');
     await expect.poll(async () => (await t.workspace())?.groups).toBe(2);
     const right = (await t.workspace())!.activeGroup!;
+    const rightTerminal = (await t.workspace())!.panels.find((p) => p.group === right.id)!.terminalId;
+    await expect.poll(() => t.activeTerminalId()).toBe(rightTerminal);
 
     await win.keyboard.press('Alt+ArrowLeft');
     await expect.poll(async () => (await t.workspace())?.activeGroup?.id).not.toBe(right.id);

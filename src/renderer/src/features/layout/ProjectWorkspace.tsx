@@ -6,26 +6,22 @@ import {
   type GetTabContextMenuItemsParams,
 } from 'dockview-react';
 import { useEffect, useRef } from 'react';
-import { useTerminalsStore } from '../../stores/terminals-store';
 import { terminalRegistry } from '../terminals/terminal-registry';
 import { EmptyWorkspace } from './EmptyWorkspace';
+import { MissingPanel } from './MissingPanel';
+import { openDefaultLayout, restoreWorkspace, trackWorkspacePersistence } from './persistence';
 import { GroupActions } from './GroupActions';
 import { OxyTab } from './OxyTab';
 import { useRenameStore } from './rename-store';
 import { splitActive } from './layout-commands';
 import type { TerminalPanelParams } from './panel-registry';
 import { TerminalPanelComponent } from './TerminalPanelComponent';
-import {
-  addExistingTerminalPanel,
-  addTerminalPanel,
-  requestClosePanel,
-  restartTerminalPanel,
-} from './workspace-actions';
+import { requestClosePanel, restartTerminalPanel } from './workspace-actions';
 import { setActiveWorkspace, setWorkspaceApi } from './workspace-registry';
 
 const oxyTheme: DockviewTheme = { name: 'oxytocin', className: 'dockview-theme-oxytocin', gap: 8, colorScheme: 'dark' };
 
-const components = { terminal: TerminalPanelComponent };
+const components = { terminal: TerminalPanelComponent, missing: MissingPanel };
 
 const initializing = new Set<string>();
 
@@ -83,20 +79,17 @@ function tabContextMenu(projectId: string) {
   };
 }
 
-/** Opens the initial panels of an empty workspace: existing terminals (renderer reload) or a new one. */
-async function initializeWorkspace(projectId: string, api: DockviewApi): Promise<void> {
-  if (initializing.has(projectId) || api.panels.length > 0) return;
+/** Restores the saved layout, or opens the default one (existing terminals or a new terminal). */
+async function initializeWorkspace(projectId: string, api: DockviewApi): Promise<() => void> {
+  if (initializing.has(projectId) || api.panels.length > 0) return () => undefined;
   initializing.add(projectId);
   try {
-    const existing = Object.values(useTerminalsStore.getState().terminals).filter((t) => t.projectId === projectId);
-    if (existing.length > 0) {
-      for (const t of existing) addExistingTerminalPanel(api, t.id, t.title);
-    } else {
-      await addTerminalPanel(api, { projectId });
-    }
+    const restored = await restoreWorkspace(api, projectId).catch(() => false);
+    if (!restored) await openDefaultLayout(api, projectId);
   } finally {
     initializing.delete(projectId);
   }
+  return trackWorkspacePersistence(api, projectId);
 }
 
 /** The dockview center area of one project. */
@@ -107,8 +100,10 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
     if (active) setActiveWorkspace(projectId);
   }, [active, projectId]);
 
+  const stopPersistence = useRef<(() => void) | null>(null);
   useEffect(
     () => () => {
+      stopPersistence.current?.();
       if (apiRef.current) setWorkspaceApi(projectId, null);
     },
     [projectId],
@@ -125,7 +120,10 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
       }
     });
     trackDragging(api);
-    void initializeWorkspace(projectId, api);
+    void initializeWorkspace(projectId, api).then((stop) => {
+      if (apiRef.current === api) stopPersistence.current = stop;
+      else stop();
+    });
   };
 
   return (

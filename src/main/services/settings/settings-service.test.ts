@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +39,19 @@ describe('SettingsService', () => {
     expect(s.loadSync()['terminal.fontSize']).toBe(13);
     expect(s.loadInfo.status).toBe('corrupt');
     expect(s.loadInfo.corruptPath).toContain('settings.json.corrupt-');
+  });
+
+  it('updates keys while keeping comments and removes keys set to null', async () => {
+    const file = join(dir, 'settings.json');
+    await writeFile(file, '{\n  // keep me\n  "terminal.fontSize": 14,\n  "x.y": 1\n}\n');
+    const s = new SettingsService(file, 'linux', silent);
+    s.loadSync();
+    const updated = await s.update({ 'terminal.confirmOnQuit': false, 'x.y': null });
+    expect(updated['terminal.confirmOnQuit']).toBe(false);
+    const text = await readFile(file, 'utf8');
+    expect(text).toContain('// keep me');
+    expect(text).toContain('"terminal.confirmOnQuit": false');
+    expect(text).not.toContain('x.y');
   });
 
   it('fires onDidChange when a reload changes values', async () => {
