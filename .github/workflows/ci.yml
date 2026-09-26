@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Linux: node-pty 1.1.0 has no prebuild and compiles here (the runner has build-essential and python3).
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: License check (MIT-compatible dependencies only, ADR-020)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run licenses:check
+      - run: npx vitest run --project unit-node --project unit-web
+      - run: npx vitest run --project integration
+
+  e2e:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install system dependencies for Electron (Linux)
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
+      - name: E2E (Linux, virtual display)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run e2e
+      - name: E2E (Windows)
+        if: runner.os == 'Windows'
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-${{ matrix.os }}
+          path: |
+            test-results/
+            playwright-report/
