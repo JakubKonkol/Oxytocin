@@ -133,3 +133,32 @@ test('clicking a change opens its diff (preview tab), live updates and pins on d
     await app.close();
   }
 });
+
+test('"Open in editor" with the terminal preset runs the editor command in a new terminal panel', async () => {
+  const repo = await makeRepo();
+  await writeFile(join(repo, 'show.js'), "console.log('EDITOR-OPENED ' + process.argv[2] + ':' + process.argv[3]);\n");
+  const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  await writeFile(
+    join(userData, 'settings.json'),
+    JSON.stringify({ 'editor.preset': 'terminal', 'editor.command': 'node show.js ${file} ${line}' }),
+  );
+  const { app, win } = await launchApp({ userData, project: repo });
+  try {
+    await waitForTerminal(win);
+    await writeFile(join(repo, 'tracked.txt'), 'changed\n');
+    const row = win.locator('[data-testid="changes-row"][data-path="tracked.txt"]');
+    await expect(row).toBeVisible();
+    await row.click({ button: 'right' });
+    await win.getByRole('menuitem', { name: 'Open in editor' }).click();
+    await expect.poll(async () => (await oxyTest(win).workspace())?.panels.length).toBe(2);
+    const editorTerminal = (await oxyTest(win).workspace())!.panels.find((p) => p.terminalId)!;
+    const ids = (await oxyTest(win).workspace())!.panels.map((p) => p.terminalId).filter(Boolean) as string[];
+    await expect
+      .poll(async () => (await Promise.all(ids.map((id) => oxyTest(win).text(id)))).join('\n'), { timeout: 10_000 })
+      .toMatch(/EDITOR-OPENED .*tracked\.txt:1/);
+    expect(editorTerminal).toBeTruthy();
+    await expect(win.getByTestId('tab-title').filter({ hasText: 'Editor' })).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});

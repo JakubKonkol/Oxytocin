@@ -35,6 +35,8 @@ export const eventContract = {
   /** Focus a terminal (e.g. an OS notification was clicked): activate its project and panel. */
   'terminals:reveal': z.object({ projectId: ProjectIdSchema, terminalId: TerminalIdSchema }),
   'git:status': RepoStatusSchema,
+  /** Terminal editor preset: open a terminal panel running the editor command. */
+  'editor:openInTerminal': z.object({ projectId: ProjectIdSchema.nullable(), cwd: z.string(), command: z.string() }),
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 

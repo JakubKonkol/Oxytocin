@@ -30,7 +30,8 @@ import { SettingsService } from './services/settings/settings-service';
 import { resolveWindowBounds, UiStateService } from './services/ui-state/ui-state-service';
 import { resolveShellEnv } from './services/shell-env/resolve-shell-env';
 import { ProfileService } from './services/terminals/profiles';
-import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
+import { nodeDetectDeps, which } from './services/terminals/shell-detect/deps';
+import { spawn as spawnProcess } from 'node:child_process';
 import { TerminalService } from './services/terminals/terminal-service';
 import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
@@ -193,7 +194,46 @@ function bootstrap(): void {
   });
   void projectsReady.then(() => git.start());
 
-  const editor = new EditorLauncher(createLogger('editor'), e2e);
+  const detectDeps = nodeDetectDeps(() => shellEnv);
+  const editor = new EditorLauncher({
+    settings: () => settings.get(),
+    projectFor: (path) => {
+      const p = projects.findByPath(path);
+      return p
+        ? {
+            id: p.id,
+            rootPath: p.rootPath,
+            ...(p.settings.editorCommand ? { editorCommand: p.settings.editorCommand } : {}),
+          }
+        : undefined;
+    },
+    which: (name) => which(name, detectDeps),
+    isFile: async (path) => {
+      try {
+        return (await stat(path)).isFile();
+      } catch {
+        return false;
+      }
+    },
+    spawn: (file, args, { verbatim }) => {
+      const child = spawnProcess(file, args, {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false,
+        windowsVerbatimArguments: verbatim,
+        env: shellEnv,
+      });
+      child.on('error', (e) => log.warn(`Editor launch failed: ${e.message}`));
+      child.unref();
+    },
+    openPath: (path) => shell.openPath(path),
+    openInTerminal: (req) => {
+      if (mainWindow && !mainWindow.isDestroyed()) sendEvent(mainWindow.webContents, 'editor:openInTerminal', req);
+    },
+    platform: process.platform,
+    logger: createLogger('editor'),
+    dryRun: e2e,
+  });
 
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);

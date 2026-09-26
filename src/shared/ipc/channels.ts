@@ -55,6 +55,7 @@ export const EVENT_CHANNELS = [
   'terminals:reveal',
   'git:status',
   'git:fileTouched',
+  'editor:openInTerminal',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

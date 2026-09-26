@@ -153,7 +153,10 @@ function FileContextMenu({ project, node, children }: { project: Project; node: 
   const reveal = currentPlatform() === 'darwin' ? 'Reveal in Finder' : 'Reveal in Explorer';
   return (
     <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>{children}</ContextMenu.Trigger>
+      <ContextMenu.Trigger asChild>
+        {/* RowView does not forward props/ref: the trigger needs a DOM element. */}
+        <div>{children}</div>
+      </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
           data-testid="changes-context-menu"

@@ -21,6 +21,18 @@ export function isTerminalVisible(projectId: string, terminalId: string): boolea
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(r));
 
+/** Activates a project and resolves its workspace API once mounted (null after 3 s). */
+export async function workspaceFor(projectId: string): Promise<DockviewApi | null> {
+  activateProject(projectId);
+  const deadline = performance.now() + 3000;
+  while (performance.now() < deadline) {
+    const api = getWorkspaceApi(projectId);
+    if (api) return api;
+    await nextFrame();
+  }
+  return null;
+}
+
 /** Activates the terminal's project and focuses its panel (notification click, "Jump to waiting agent"). */
 export async function revealTerminal(projectId: string, terminalId: string): Promise<boolean> {
   activateProject(projectId);
