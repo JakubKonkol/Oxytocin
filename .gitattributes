@@ -1,0 +1,11 @@
+# Keep LF on every platform (Prettier enforces "lf"; Windows checkouts would otherwise get CRLF).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
