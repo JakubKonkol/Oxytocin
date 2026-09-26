@@ -169,4 +169,31 @@ describe('plugin discovery', () => {
     expect(service.get('test.extra')?.state).toBe('disabled');
     await expect(service.setEnabled('nope', true)).rejects.toThrow(/not found/);
   });
+
+  it('PluginService marks tampered built-in plugins invalid when verification is on', async () => {
+    const verifyBuiltin = vi.fn((dir: string) =>
+      Promise.resolve(dir.endsWith('bad') ? ['dist/host.js was modified'] : []),
+    );
+    const service = new PluginService({
+      builtinDir: '/b',
+      userDir: '/u',
+      settings: () => resolveSettings({}, 'linux').settings,
+      updateSettings: () => Promise.resolve(),
+      logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+      fs: memoryFs({
+        '/b/good/package.json': pkg(manifest('test.good')),
+        '/b/bad/package.json': pkg(manifest('test.bad')),
+        '/u/user/package.json': pkg(manifest('test.user')),
+      }),
+      verifyBuiltin,
+    });
+    await service.scan();
+    expect(service.get('test.good')?.state).toBe('enabled');
+    expect(service.get('test.bad')).toMatchObject({
+      state: 'invalid',
+      errors: ['integrity check failed: dist/host.js was modified'],
+    });
+    // User plugins are not checksummed.
+    expect(verifyBuiltin).toHaveBeenCalledTimes(2);
+  });
 });

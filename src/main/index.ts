@@ -39,6 +39,7 @@ import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
 import { GitService } from './services/git/git-service';
 import { PluginService } from './services/plugins/plugin-service';
+import { verifyPluginChecksums } from './services/plugins/checksums';
 import { type EnvContribution, PluginHostService } from './services/plugins/plugin-host-service';
 import { affectedBy, pluginEnvLayers } from './services/plugins/plugin-env';
 import { compilePluginAgentRules, pluginTerminalProfiles } from './services/plugins/contributions';
@@ -213,6 +214,7 @@ function bootstrap(): void {
     settings: () => settings.get(),
     updateSettings: (patch) => settings.update(patch),
     logger: createLogger('plugins'),
+    ...(app.isPackaged ? { verifyBuiltin: verifyPluginChecksums } : {}),
   });
   const pluginsReady = plugins.scan().catch((e: unknown) => log.error('Plugin discovery failed', e));
   // Dev paths need a rescan; `plugins.enabled` only changes states.

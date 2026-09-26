@@ -18,3 +18,5 @@ perf-results.json
 /packages/*/dist/
 /tests/fixtures/plugins/*/oxy-sdk.js
 /tests/fixtures/plugins/*/oxy-theme.css
+/plugins/*/dist/
+/plugins/*/oxytocin-checksums.json

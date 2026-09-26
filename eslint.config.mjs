@@ -59,6 +59,7 @@ export default tseslint.config(
       'packages/plugin-sdk/**/*.{ts,tsx}',
       'plugins/*/src/views/**/*.{ts,tsx}',
       'tests/fixtures/plugins/*/view*.js',
+      'tests/fixtures/plugin-src/*/src/views/**/*.js',
     ],
     plugins: { 'react-hooks': reactHooks },
     languageOptions: { globals: { ...globals.browser } },

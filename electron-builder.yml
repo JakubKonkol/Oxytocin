@@ -17,6 +17,16 @@ extraResources:
   - { from: resources/icons, to: icons }
   - { from: LICENSE, to: LICENSE }
   - { from: THIRD_PARTY_NOTICES.md, to: THIRD_PARTY_NOTICES.md }
+  # Built-in plugins (npm run build:plugins): manifest, bundles and checksums only.
+  - from: plugins
+    to: plugins
+    filter:
+      - '*/package.json'
+      - '*/oxytocin-checksums.json'
+      - '*/dist/**'
+      - '*/README.md'
+      - '*/LICENSE'
+      - '*/icon.*'
 npmRebuild: false
 win:
   target: [nsis]

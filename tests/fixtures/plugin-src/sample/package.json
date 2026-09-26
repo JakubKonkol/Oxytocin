@@ -1,0 +1,26 @@
+{
+  "name": "sample-plugin",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "main": "dist/host.js",
+  "oxytocin": {
+    "id": "test.sample",
+    "displayName": "Sample",
+    "publisher": "test",
+    "engine": "^0.1.0",
+    "activationEvents": [
+      "onStartup"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "type": "sample.main",
+          "title": "Sample",
+          "entry": "dist/views/main.html"
+        }
+      ]
+    }
+  }
+}

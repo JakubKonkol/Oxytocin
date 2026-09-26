@@ -33,6 +33,8 @@ export interface PluginServiceDeps {
   logger: Logger;
   fs?: DiscoveryFs;
   apiVersion?: string;
+  /** Packaged builds: verify built-in plugins against their SHA-256 checksums. */
+  verifyBuiltin?: (dir: string) => Promise<string[]>;
 }
 
 /** Discovery, enablement and runtime state of plugins (docs/plan/07-plugin-engine.md §5). */
@@ -59,6 +61,13 @@ export class PluginService {
       const c = await readPlugin(dir, 'dev', this.fs).catch(() => null);
       if (c) found.push(c);
       else this.deps.logger.warn(`No plugin found in ${dir}`);
+    }
+    if (this.deps.verifyBuiltin) {
+      for (const c of found) {
+        if (c.source !== 'builtin' || c.errors.length > 0) continue;
+        const problems = await this.deps.verifyBuiltin(c.path);
+        if (problems.length > 0) c.errors.push(`integrity check failed: ${problems.slice(0, 3).join('; ')}`);
+      }
     }
     this.candidates = resolveConflicts(found);
     this.recompute();
