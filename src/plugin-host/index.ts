@@ -41,6 +41,7 @@ const impl: Impl<Omit<PluginHostMethods, 'ping' | 'shutdown'>> = {
   'plugins:load': ({ plugins, settings, env }) => runtime.load(plugins, settings, env),
   'plugins:activateByEvent': ({ event }) => runtime.activateByEvent(event),
   'plugins:deactivate': ({ id }) => runtime.deactivate(id),
+  'plugins:reload': ({ id }) => runtime.reload(id),
   'commands:execute': ({ id, args }) => runtime.executeCommand(id, args),
   'plugins:logs': ({ id }) => runtime.logs(id),
   'views:open': (req) => views.open(req),

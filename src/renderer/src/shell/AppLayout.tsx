@@ -11,6 +11,7 @@ import { StatusBar } from './StatusBar';
 import { useAttentionBadge, useWaitingCount } from '../features/attention/attention-badge';
 import { ActivityStatusItems, NotificationsToggle } from '../features/attention/StatusItems';
 import { PluginStatusItems } from '../features/plugins/PluginStatusItems';
+import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
 
 /** "<project> — <active panel> — Oxytocin" (docs/plan/05-layout-center.md §8). */
@@ -71,6 +72,7 @@ export function AppLayout() {
         right={
           <>
             <PluginStatusItems alignment="right" />
+            <PluginsStatusButton />
             <NotificationsToggle />
           </>
         }

@@ -48,10 +48,14 @@ function setup() {
   const runtime = new Map<string, string>();
   const plugins = {
     enabled: () => list.filter((p) => runtime.get(p.id) !== 'failed'),
-    get: (id: string) => list.find((p) => p.id === id),
+    get: (id: string) => {
+      const d = list.find((p) => p.id === id);
+      return d && runtime.get(id) === 'failed' ? { ...d, state: 'failed' as const } : d;
+    },
     onDidChange: new Emitter<PluginDescriptor[]>().event,
     setRuntimeState: vi.fn((id: string, state: string) => runtime.set(id, state)),
   };
+  const toRenderer = vi.fn();
   const core = {
     projects: {
       list: () => [
@@ -68,7 +72,7 @@ function setup() {
     updateSettings: vi.fn(),
     openExternal: vi.fn(),
     openInEditor: vi.fn(),
-    toRenderer: vi.fn(),
+    toRenderer,
     osNotify: vi.fn(),
   } as unknown as PluginCorePort;
   const service = new PluginHostService({
@@ -80,7 +84,7 @@ function setup() {
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
-  return { service, api, calls, events, ready, plugins, core };
+  return { service, api, calls, events, ready, plugins, core, toRenderer };
 }
 
 describe('PluginHostService', () => {
@@ -124,6 +128,16 @@ describe('PluginHostService', () => {
     await s.service.reload();
     const lastLoad = s.calls.filter((c) => c.method === 'plugins:load').at(-1)!.params as { plugins: { id: string }[] };
     expect(lastLoad.plugins.map((p) => p.id)).toEqual(['a.one']);
+
+    // Plugins → Reload gives it another chance and reloads its views.
+    await s.service.reloadPlugin('b.two');
+    expect(s.plugins.setRuntimeState).toHaveBeenCalledWith('b.two', 'inactive');
+    const reloaded = s.calls.filter((c) => c.method === 'plugins:load').at(-1)!.params as {
+      plugins: { id: string }[];
+    };
+    expect(reloaded.plugins.map((p) => p.id)).toEqual(['a.one', 'b.two']);
+    expect(s.calls.at(-1)).toEqual({ method: 'plugins:reload', params: { id: 'b.two' } });
+    expect(s.toRenderer).toHaveBeenCalledWith('pluginReloaded', { id: 'b.two' });
   });
 
   it('keeps status bar items and environment contributions per plugin', async () => {

@@ -70,6 +70,16 @@ export const invokeContract = {
   'plugins:list': { req: z.null().optional(), res: z.array(PluginDescriptorSchema) },
   'plugins:contributions': { req: z.null().optional(), res: ContributionsSchema },
   'plugins:setEnabled': { req: z.object({ id: z.string(), enabled: z.boolean() }), res: z.void() },
+  /** Plugins → Reload: rescans manifests, reloads the backend and the plugin's views. */
+  'plugins:reload': { req: z.object({ id: z.string() }), res: z.void() },
+  /** "Load plugin from folder…" (developer mode): adds the picked folder to `plugins.devPaths`. */
+  'plugins:loadFromFolder': {
+    req: z.null().optional(),
+    res: z.object({ path: z.string(), id: z.string().optional(), errors: z.array(z.string()) }).nullable(),
+  },
+  'plugins:removeDevPath': { req: z.object({ path: z.string() }), res: z.void() },
+  /** Developer mode: DevTools of the window (plugin iframes are selectable frames there). */
+  'plugins:openDevTools': { req: z.null().optional(), res: z.void() },
   'plugins:executeCommand': {
     req: z.object({ id: z.string(), args: z.array(z.unknown()).optional() }),
     res: z.unknown(),

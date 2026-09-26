@@ -11,6 +11,7 @@ import { useEffect, useRef } from 'react';
 import { terminalRegistry } from '../terminals/terminal-registry';
 import { EmptyWorkspace } from './EmptyWorkspace';
 import { MissingPanel } from './MissingPanel';
+import { PluginsPanel } from '../plugins/PluginsPanel';
 import { openDefaultLayout, restoreWorkspace, trackWorkspacePersistence } from './persistence';
 import { GroupActions } from './GroupActions';
 import { OxyTab } from './OxyTab';
@@ -40,6 +41,7 @@ const components = {
   diff: DiffPanelComponent,
   plugin: PluginPanelComponent,
   missing: MissingPanel,
+  plugins: PluginsPanel,
 };
 
 const initializing = new Set<string>();

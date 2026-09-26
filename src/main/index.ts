@@ -40,6 +40,7 @@ import { ActivityService } from './services/activity/activity-service';
 import { GitService } from './services/git/git-service';
 import { PluginService } from './services/plugins/plugin-service';
 import { verifyPluginChecksums } from './services/plugins/checksums';
+import { DevPluginWatcher } from './services/plugins/dev-watcher';
 import { type EnvContribution, PluginHostService } from './services/plugins/plugin-host-service';
 import { affectedBy, pluginEnvLayers } from './services/plugins/plugin-env';
 import { compilePluginAgentRules, pluginTerminalProfiles } from './services/plugins/contributions';
@@ -311,6 +312,7 @@ function bootstrap(): void {
         else if (event === 'viewMessage') sendEvent(wc, 'plugins:viewMessage', payload as never);
         else if (event === 'viewMeta') sendEvent(wc, 'plugins:viewMeta', payload as never);
         else if (event === 'openPanel') sendEvent(wc, 'plugins:openPanel', payload as never);
+        else if (event === 'pluginReloaded') sendEvent(wc, 'plugins:reloaded', payload as never);
         else sendEvent(wc, 'commands:run', payload as never);
       },
       osNotify: (title, body) => {
@@ -324,6 +326,13 @@ function bootstrap(): void {
     logger: createLogger('plugins'),
   });
   void pluginsReady.then(() => pluginHost.reload());
+  const reloadPlugin = async (id: string) => {
+    await plugins.scan();
+    await pluginHost.reloadPlugin(id);
+  };
+  // Developer mode: plugins from `plugins.devPaths` reload when their files change.
+  const devPluginWatcher = new DevPluginWatcher((id) => void reloadPlugin(id), createLogger('plugins'));
+  plugins.onDidChange((list) => devPluginWatcher.update(list, settings.get()['plugins.developerMode']));
   // Environment contributions changed: running terminals in scope are out of date (⟳).
   let previousEnv = new Map<string, EnvContribution>();
   pluginHost.onDidChangeEnvironment((list) => {
@@ -430,6 +439,34 @@ function bootstrap(): void {
         return plugins.contributions();
       },
       'plugins:setEnabled': ({ id, enabled }) => plugins.setEnabled(id, enabled),
+      'plugins:reload': ({ id }) => reloadPlugin(id),
+      'plugins:loadFromFolder': async () => {
+        const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyPickFolderAnswer'] : undefined;
+        let dir: string | null;
+        if (typeof scripted === 'string' || scripted === null) dir = scripted;
+        else {
+          const result = await dialog.showOpenDialog(win, {
+            title: 'Load plugin from folder',
+            properties: ['openDirectory'],
+          });
+          dir = result.canceled ? null : (result.filePaths[0] ?? null);
+        }
+        if (!dir) return null;
+        const current = settings.get()['plugins.devPaths'];
+        await settings.update({
+          'plugins.developerMode': true,
+          'plugins.devPaths': current.includes(dir) ? current : [...current, dir],
+        });
+        const found = (await plugins.scan()).find((p) => p.path === dir);
+        if (!found)
+          return { path: dir, errors: ['No Oxytocin plugin here (a package.json with an "oxytocin" section).'] };
+        return { path: dir, id: found.id, errors: found.errors ?? [] };
+      },
+      'plugins:removeDevPath': async ({ path }) => {
+        const current = settings.get()['plugins.devPaths'];
+        await settings.update({ 'plugins.devPaths': current.filter((p) => p !== path) });
+      },
+      'plugins:openDevTools': () => win.webContents.openDevTools({ mode: 'detach' }),
       'plugins:executeCommand': ({ id, args }) => pluginHost.executeCommand(id, args ?? []),
       'plugins:logs': ({ id }) => pluginHost.logs(id),
       'plugins:activate': ({ event }) => pluginHost.activateByEvent(event),

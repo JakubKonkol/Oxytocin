@@ -44,6 +44,8 @@ export const eventContract = {
   'git:status': RepoStatusSchema,
   'plugins:changed': z.array(PluginDescriptorSchema),
   'plugins:contributionsChanged': ContributionsSchema,
+  /** A plugin was reloaded: its views reload too. */
+  'plugins:reloaded': z.object({ id: z.string() }),
   /** A terminal created by a plugin: show it as a panel. */
   'terminals:openPanel': z.object({
     terminalId: TerminalIdSchema,

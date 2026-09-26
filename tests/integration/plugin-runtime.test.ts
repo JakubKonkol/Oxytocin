@@ -104,6 +104,23 @@ describe('PluginRuntime', () => {
     await expect(runtime.executeCommand('nope.command', [])).resolves.toBeUndefined();
   });
 
+  it('reloads a plugin: fresh activation for active plugins, another chance for failed ones', async () => {
+    const { runtime, states } = setup();
+    await runtime.load([echo, crash], {}, env());
+    await runtime.activateByEvent('onStartup');
+    const generation = runtime.get('test.echo')!.generation;
+    states.length = 0;
+    await runtime.reload('test.echo');
+    expect(states).toEqual(['test.echo:inactive', 'test.echo:active']);
+    expect(runtime.get('test.echo')!.generation).toBeGreaterThan(generation);
+    expect(await runtime.executeCommand('echo.hello', [])).toMatchObject({ echo: [] });
+
+    states.length = 0;
+    await runtime.reload('test.crash');
+    expect(states[0]).toBe('test.crash:inactive');
+    expect(states[1]).toMatch(/^test\.crash:failed:.*boom on activate/);
+  });
+
   it('unloads plugins removed from the list', async () => {
     const { runtime, states } = setup();
     await runtime.load([echo], {}, env());

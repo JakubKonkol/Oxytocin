@@ -57,6 +57,8 @@ export type PluginHostMethods = HostBaseMethods & {
   /** Activates every loaded plugin listening to the event (`onStartup`, `onView:x`, …); returns their ids. */
   'plugins:activateByEvent': (o: { event: string }) => string[];
   'plugins:deactivate': (o: { id: string }) => void;
+  /** Deactivates the plugin and activates it again with a fresh module (Plugins → Reload, dev auto-reload). */
+  'plugins:reload': (o: { id: string }) => void;
   /** Runs a plugin command (activating `onCommand:<id>` first). */
   'commands:execute': (o: { id: string; args: unknown[] }) => unknown;
   /** Last 500 log entries of a plugin. */

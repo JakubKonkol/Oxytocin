@@ -9,7 +9,7 @@ import { EmptyState } from '../../ui/EmptyState';
 import { runCoreCommand } from '../layout/core-commands';
 import { openPluginPanel } from './plugin-panels';
 import { showViewContextMenu } from './view-context-menu';
-import { registerViewTarget, viewStates } from './view-bridge';
+import { onPluginReloaded, registerViewTarget, viewStates } from './view-bridge';
 import { themeTokens } from './theme-tokens';
 
 export interface PluginFrameProps {
@@ -53,6 +53,18 @@ export function PluginFrame(props: PluginFrameProps) {
   useEffect(() => {
     callbacks.current = props;
   });
+
+  // The plugin was reloaded: load the view again against the new backend.
+  useEffect(
+    () =>
+      onPluginReloaded((id) => {
+        if (id !== pluginId) return;
+        setStatus('loading');
+        setError(null);
+        setReloadKey((k) => k + 1);
+      }),
+    [pluginId],
+  );
 
   // Handshake + routing for this frame instance.
   useEffect(() => {

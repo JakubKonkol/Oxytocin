@@ -71,7 +71,7 @@ export interface PluginCorePort {
   openInEditor(req: { path: string; line?: number; column?: number }): Promise<void>;
   /** Renderer-side effects (toasts, panels, core commands). */
   toRenderer(
-    event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta' | 'openPanel',
+    event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta' | 'openPanel' | 'pluginReloaded',
     payload: unknown,
   ): void;
   osNotify(title: string, body: string): void;
@@ -254,6 +254,25 @@ export class PluginHostService implements Disposable {
         if (!infos.some((i) => i.id === id)) this.setEnvironment(id, null);
     });
     return this.loading;
+  }
+
+  /**
+   * Plugins → Reload / dev auto-reload: gives a failed or excluded plugin another chance, reloads its module in
+   * the host and tells the renderer to reload its views.
+   */
+  async reloadPlugin(id: string): Promise<void> {
+    this.excluded.delete(id);
+    this.incidents.delete(id);
+    if (this.deps.plugins.get(id)?.state === 'failed') this.deps.plugins.setRuntimeState(id, 'inactive');
+    await this.reload();
+    if (this.deps.host.state === 'running' && this.hostInfos().some((p) => p.id === id)) {
+      try {
+        await this.deps.host.call('plugins:reload', { id }, { timeoutMs: 30_000 });
+      } catch (e) {
+        this.deps.logger.warn(`Reloading plugin ${id} failed`, e);
+      }
+    }
+    this.deps.core.toRenderer('pluginReloaded', { id });
   }
 
   async activateByEvent(event: string): Promise<string[]> {

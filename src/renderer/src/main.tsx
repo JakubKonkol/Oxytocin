@@ -13,6 +13,7 @@ import { registerProjectCommands } from './features/projects/project-actions';
 import { registerAttentionCommands } from './features/attention/attention';
 import { registerDiffCommands } from './features/diff/diff-actions';
 import { syncPluginCommands } from './features/plugins/plugin-commands';
+import { registerPluginManagerCommands } from './features/plugins/plugin-manager';
 import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
@@ -28,6 +29,7 @@ registerProjectCommands();
 registerAttentionCommands();
 registerDiffCommands();
 syncPluginCommands();
+registerPluginManagerCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 

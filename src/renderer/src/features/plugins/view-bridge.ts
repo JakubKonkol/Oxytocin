@@ -24,5 +24,20 @@ export function registerViewTarget(viewId: string, target: BridgeTarget): () => 
   };
 }
 
+const reloadListeners = new Set<(pluginId: string) => void>();
+let reloadInstalled = false;
+
+/** Called when a plugin was reloaded (Plugins → Reload, dev auto-reload): its frames reload too. */
+export function onPluginReloaded(listener: (pluginId: string) => void): () => void {
+  if (!reloadInstalled) {
+    reloadInstalled = true;
+    ipc.on('plugins:reloaded', ({ id }) => {
+      for (const l of [...reloadListeners]) l(id);
+    });
+  }
+  reloadListeners.add(listener);
+  return () => reloadListeners.delete(listener);
+}
+
 /** Per-instance view state (`oxy.setState`), kept across iframe re-creation and persisted with panels. */
 export const viewStates = new Map<string, unknown>();

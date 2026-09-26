@@ -243,6 +243,22 @@ export class PluginRuntime {
     if (!wasFailed) this.bridge.state(id, 'inactive');
   }
 
+  /**
+   * Reload: deactivate, then activate again (fresh `import()`) when it was active or activates at start-up;
+   * a failed plugin gets another chance. Lazy plugins activate on their next event.
+   */
+  async reload(id: string): Promise<void> {
+    const plugin = this.plugins.get(id);
+    if (!plugin) return;
+    const wasActive = plugin.state === 'active' || plugin.state === 'activating';
+    const wasFailed = plugin.state === 'failed';
+    await this.deactivate(id);
+    if (wasFailed) this.bridge.state(id, 'inactive');
+    const { activationEvents } = plugin.info;
+    if (wasActive || activationEvents.includes('*') || activationEvents.includes('onStartup'))
+      await this.activate(id, 'reload').catch(() => undefined);
+  }
+
   /** Marks a plugin failed after an uncaught error in its code and deactivates it. */
   async fail(id: string, error: unknown): Promise<void> {
     const plugin = this.plugins.get(id);
