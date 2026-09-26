@@ -53,8 +53,8 @@ test('a corrupt layout file falls back to the default layout with a warning', as
 
   const second = await launchApp({ userData: first.userData });
   try {
-    await waitForTerminal(second.win);
     await expect(second.win.getByText('The saved layout could not be read')).toBeVisible();
+    await waitForTerminal(second.win);
     expect((await oxyTest(second.win).workspace())?.panels).toHaveLength(1);
   } finally {
     await second.app.close();
