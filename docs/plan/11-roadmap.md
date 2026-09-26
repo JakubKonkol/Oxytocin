@@ -45,7 +45,7 @@ Wynik każdego spike'a: `docs/spikes/S<n>-<nazwa>.md` (co sprawdzono, wynik, dec
   - Skrypty: `dev`, `build`, `preview`, `typecheck`.
   - Akceptacja: `npm run dev` otwiera okno z HMR; `npm run build` tworzy `out/`; `npm run typecheck` zielony.
 
-- [ ] **M0-T3 — Narzędzia jakości** (M) · zależy: M0-T2
+- [x] **M0-T3 — Narzędzia jakości** (M) · zależy: M0-T2
   - ESLint 10 flat + typescript-eslint 8.70 (typed) + react-hooks + reguły granic katalogów ([01 §3](01-architecture.md)); Prettier; Vitest 5 z projektami `unit-node`, `unit-web`, `integration`; Playwright z helperem `launchApp` i testem smoke (okno się otwiera, tytuł „Oxytocin”).
   - Licencje (ADR-020): skrypty `licenses:check` (`license-checker-rseidelsohn --production --onlyAllow …`) i `licenses:notices` (`scripts/generate-notices.ts` → `THIRD_PARTY_NOTICES.md`); `licenses:check` włączony do `check`.
   - Skrypty: `lint`, `format`, `test`, `e2e`, `check`, `licenses:check`, `licenses:notices`.
@@ -279,3 +279,4 @@ Wynik każdego spike'a: `docs/spikes/S<n>-<nazwa>.md` (co sprawdzono, wynik, dec
 
 - 2026-09-26 · M0-T1 · Repository initialized: `.gitignore`, `.editorconfig`, `.nvmrc` (24), root `package.json` (npm workspaces, MIT), `LICENSE` (MIT, © Jakub Konkol — the repo owner; `git config user.name` in the session was a bot identity), English `README.md`. · `"type": "module"` intentionally not set: electron-vite 5 then emits CommonJS for main/preload/hosts, which a sandboxed preload requires. · —
 - 2026-09-26 · M0-T2 · Electron 44.4.5 + electron-vite 5.0.0 + Vite 7.3 + React 19.3 + TS 6.0.3 skeleton; main forks three stub utility processes (`ptyHost`, `workspaceHost`, `pluginHost` as extra `rollupOptions.input` entries); `tsconfig.base.json` shared by node/web configs with explicit `types`. · `build.externalizeDeps` (default on) used instead of the deprecated `externalizeDepsPlugin`. npm 11 blocks install scripts by default, so `allowScripts` in `package.json` whitelists the packages that need them. · Running as root (containers) requires `--no-sandbox`.
+- 2026-09-26 · M0-T3 · ESLint 10 flat config (typescript-eslint 8.70 recommendedTypeChecked, react-hooks 7, directory boundaries via `no-restricted-imports`, no color literals in TSX, no `console`), Prettier, Vitest 5 projects `unit-node`/`unit-web`/`integration`, Playwright with `launchApp` + smoke test, `licenses:check` and `licenses:notices` (generates `THIRD_PARTY_NOTICES.md`). First shared utilities: `Disposable`/`DisposableStore`, `Emitter`. · `npm run e2e` builds first; on Linux the helper passes `--no-sandbox` and tests run under `xvfb-run -a`. `tsconfig.tools.json` covers tests, scripts and tool configs. · E2E verified on Linux only (no Windows machine in this session).

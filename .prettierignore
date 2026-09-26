@@ -1,0 +1,11 @@
+out/
+dist/
+release/
+coverage/
+node_modules/
+test-results/
+playwright-report/
+docs/
+package-lock.json
+THIRD_PARTY_NOTICES.md
+*.md

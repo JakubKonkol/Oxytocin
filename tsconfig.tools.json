@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo/tools.tsbuildinfo",
+    "lib": ["ES2024", "DOM"],
+    "types": ["node"],
+    "paths": { "@shared/*": ["./src/shared/*"] }
+  },
+  "include": ["tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "playwright.config.ts"],
+  "exclude": ["tests/fixtures/**"]
+}

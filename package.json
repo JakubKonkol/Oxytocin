@@ -14,14 +14,30 @@
     "node": ">=24"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "~1.63",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^24.19.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "~5.2",
+    "@vitest/coverage-v8": "~5.0",
     "electron": "~44.4.5",
     "electron-vite": "~5.0.0",
+    "eslint": "~10.11",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "jsdom": "^30.1.1",
+    "license-checker-rseidelsohn": "^5.0.1",
+    "prettier": "~3.9",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
-    "vite": "~7.3"
+    "typescript-eslint": "~8.70",
+    "vite": "~7.3",
+    "vitest": "~5.0"
   },
   "dependencies": {
     "react": "~19.3",
@@ -36,6 +52,13 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write . && eslint . --fix",
+    "test": "vitest run",
+    "e2e": "electron-vite build && playwright test",
+    "check": "npm run typecheck && npm run lint && npm test && npm run licenses:check",
+    "licenses:check": "license-checker-rseidelsohn --production --excludePrivatePackages --summary --onlyAllow \"MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1;MPL-2.0;CC0-1.0;BlueOak-1.0.0;Python-2.0\"",
+    "licenses:notices": "tsx scripts/generate-notices.ts"
   }
 }

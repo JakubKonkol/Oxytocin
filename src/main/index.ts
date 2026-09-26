@@ -9,7 +9,10 @@ const HOSTS = [
 
 function startHosts(): void {
   for (const host of HOSTS) {
-    const child = utilityProcess.fork(join(__dirname, host.entry), [], { serviceName: host.serviceName, stdio: 'pipe' });
+    const child = utilityProcess.fork(join(__dirname, host.entry), [], {
+      serviceName: host.serviceName,
+      stdio: 'pipe',
+    });
     child.stdout?.on('data', (chunk: Buffer) => process.stdout.write(`[${host.serviceName}] ${chunk.toString()}`));
     child.stderr?.on('data', (chunk: Buffer) => process.stderr.write(`[${host.serviceName}] ${chunk.toString()}`));
   }

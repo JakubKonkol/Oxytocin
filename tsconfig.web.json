@@ -4,7 +4,7 @@
     "tsBuildInfoFile": "./node_modules/.cache/tsbuildinfo/web.tsbuildinfo",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["vite/client"],
+    "types": ["vite/client", "@testing-library/jest-dom/vitest"],
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@renderer/*": ["./src/renderer/src/*"]
