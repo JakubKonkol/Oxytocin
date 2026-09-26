@@ -28,3 +28,9 @@ export function resolveModelKey(raw: string, known: (key: string) => boolean): s
   }
   return undefined;
 }
+
+/** Name shown and grouped by (dates stripped): "claude-sonnet-4-5-20250929" → "claude-sonnet-4-5". */
+export function displayModel(raw: string): string {
+  const name = canonicalModel(raw);
+  return name.replace(/-\d{8}$/, '').replace(/-\d{4}-\d{2}-\d{2}$/, '') || 'unknown';
+}
