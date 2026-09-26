@@ -39,6 +39,7 @@ export function createMainWindow(opts: MainWindowOptions): BrowserWindow {
     show: false,
     title: 'Oxytocin',
     backgroundColor: WINDOW_BACKGROUND,
+    ...(isMac ? {} : { icon: appPaths.windowIcon() }),
     titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
     ...(isMac ? {} : { titleBarOverlay: TITLE_BAR_OVERLAY }),
     webPreferences: secureWebPreferences(appPaths.preload),

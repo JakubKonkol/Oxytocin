@@ -1,3 +1,4 @@
+import appIconSmall from '../assets/brand/app-icon-small.svg';
 import { currentPlatform } from '../lib/platform';
 
 /**
@@ -13,9 +14,7 @@ export function TitleBar({ title }: { title: string }) {
       style={{ paddingLeft: isMac ? 80 : 12 }}
     >
       <div className="flex items-center gap-2">
-        <svg aria-hidden width="14" height="14" viewBox="0 0 14 14" className="text-line-focus">
-          <path d="M7 0 14 7 7 14 0 7Z" fill="currentColor" />
-        </svg>
+        <img src={appIconSmall} alt="" aria-hidden width={16} height={16} draggable={false} />
         <span className="font-mono text-small font-semibold tracking-[0.08em] text-fg-secondary uppercase">
           Oxytocin
         </span>

@@ -1,4 +1,5 @@
-import { FolderOpen, FolderX } from 'lucide-react';
+import { FolderX } from 'lucide-react';
+import logoStacked from '../../assets/brand/logo-stacked-on-dark.svg';
 import { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { activeProject, useProjectsStore } from '../../stores/projects-store';
@@ -33,7 +34,7 @@ function Welcome() {
       }}
     >
       <EmptyState
-        icon={<FolderOpen size={36} />}
+        icon={<img src={logoStacked} alt="Oxytocin" width={152} height={144} draggable={false} className="mb-4" />}
         title="Add your first project"
         description={
           <span>

@@ -11,4 +11,9 @@ export const appPaths = {
   builtinPluginsDir: () =>
     app.isPackaged ? join(process.resourcesPath, 'plugins') : resolve(__dirname, '../../plugins'),
   resourcesDir: () => (app.isPackaged ? process.resourcesPath : resolve(__dirname, '../../resources')),
+  /** Window/taskbar icon (Windows: .ico, Linux: .png; macOS uses the bundle icon). */
+  windowIcon: () => {
+    const dir = join(app.isPackaged ? process.resourcesPath : resolve(__dirname, '../../resources'), 'icons');
+    return process.platform === 'win32' ? join(dir, 'app-icon.ico') : join(dir, 'app-icon-512.png');
+  },
 };

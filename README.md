@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="resources/brand/svg/logo-horizontal-on-dark.svg" />
+    <img alt="Oxytocin" src="resources/brand/svg/logo-horizontal-on-light.svg" width="360" />
+  </picture>
+</p>
+
 # Oxytocin
 
 > **Status: work in progress.** Nothing here is ready for daily use yet.

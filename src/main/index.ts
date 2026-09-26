@@ -15,6 +15,7 @@ import {
 import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import type { Platform } from '@shared/domain/terminal-profile';
+import { appPaths } from './app/paths';
 import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
 import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
 import { resolveUserDataOverride } from './app/user-data';
@@ -219,6 +220,9 @@ function bootstrap(): void {
     },
     { isTrustedUrl: isTrustedShellUrl, logger: createLogger('ipc') },
   );
+
+  // Dev runs use the generic Electron dock icon on macOS; packaged builds use the bundle icon.
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(appPaths.windowIcon());
 
   mainWindow = createMainWindow({
     bounds: resolveWindowBounds(initialUi.window, screen.getAllDisplays(), screen.getPrimaryDisplay()),

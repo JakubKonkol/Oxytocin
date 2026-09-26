@@ -1,0 +1,36 @@
+# Packaging (docs/plan/01-architecture.md §11, docs/plan/10-quality-testing-release.md §8).
+appId: dev.oxytocin.app
+productName: Oxytocin
+copyright: Copyright © 2026 Jakub Konkol
+directories:
+  output: release
+  buildResources: resources/build
+files:
+  - out/**
+  - package.json
+asar: true
+asarUnpack:
+  - '**/node_modules/node-pty/**'
+  - '**/node_modules/@parcel/watcher*/**'
+extraResources:
+  - { from: resources/icons, to: icons }
+  - { from: LICENSE, to: LICENSE }
+  - { from: THIRD_PARTY_NOTICES.md, to: THIRD_PARTY_NOTICES.md }
+npmRebuild: false
+win:
+  target: [nsis]
+  icon: resources/build/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/build/icon.ico
+  uninstallerIcon: resources/build/icon.ico
+mac:
+  target: [dmg, zip]
+  category: public.app-category.developer-tools
+  icon: resources/build/icon.png
+linux:
+  target: [AppImage, deb]
+  category: Development
+  icon: resources/build/icon.png
