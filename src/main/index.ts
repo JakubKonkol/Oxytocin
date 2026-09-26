@@ -1,5 +1,7 @@
+import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { app, type BrowserWindow, ipcMain, screen, session } from 'electron';
+import { app, type BrowserWindow, ipcMain, MessageChannelMain, screen, session } from 'electron';
+import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import type { Platform } from '@shared/domain/terminal-profile';
 import { registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
 import { installPermissionHandlers } from './app/security';
@@ -10,6 +12,10 @@ import { registerInvokeHandlers, sendEvent } from './ipc/router';
 import { createLogger, initLogging, logFilePath, setLogLevel } from './logging/log';
 import { SettingsService } from './services/settings/settings-service';
 import { resolveWindowBounds, UiStateService } from './services/ui-state/ui-state-service';
+import { resolveShellEnv } from './services/shell-env/resolve-shell-env';
+import { ProfileService } from './services/terminals/profiles';
+import { nodeDetectDeps } from './services/terminals/shell-detect/deps';
+import { TerminalService } from './services/terminals/terminal-service';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -50,6 +56,29 @@ function bootstrap(): void {
   const hosts = new Hosts(createLogger, () => ({ ...process.env }));
   hosts.startAll();
 
+  let shellEnv: NodeJS.ProcessEnv = process.env;
+  const shellEnvReady = resolveShellEnv({
+    platform: process.platform,
+    env: process.env,
+    logger: createLogger('shell-env'),
+  }).then((env) => (shellEnv = env));
+  const profiles = new ProfileService(
+    nodeDetectDeps(() => shellEnv),
+    () => settings.get(),
+  );
+  const terminals = new TerminalService({
+    ptyHost: hosts.pty,
+    profiles,
+    settings: () => settings.get(),
+    // Until projects exist (M3), terminals live in a default project rooted at the home directory.
+    resolveProject: (projectId) => (projectId === DEFAULT_PROJECT_ID ? { rootPath: homedir() } : null),
+    baseEnv: () => shellEnvReady,
+    appVersion: app.getVersion(),
+    dev: !app.isPackaged,
+    platform: process.platform,
+    logger: createLogger('terminals'),
+  });
+
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);
 
@@ -75,6 +104,13 @@ function bootstrap(): void {
       'settings:get': () => settings.get(),
       'ui:getState': () => uiState.get(),
       'ui:patchState': (patch) => uiState.patch(patch),
+      'terminals:create': (req) => terminals.create(req),
+      'terminals:kill': (req) => terminals.kill(req.id, req.force ?? false),
+      'terminals:restart': (req) => terminals.restart(req.id),
+      'terminals:rename': (req) => terminals.rename(req.id, req.title),
+      'terminals:dispose': (req) => terminals.close(req.id),
+      'terminals:list': (req) => terminals.list(req?.projectId),
+      'terminals:profiles': () => profiles.list(),
     },
     { isTrustedUrl: isTrustedShellUrl, logger: createLogger('ipc') },
   );
@@ -91,6 +127,21 @@ function bootstrap(): void {
     sendEvent(win.webContents, 'settings:changed', s);
   });
   hosts.onDidChangeStatus((status) => sendEvent(win.webContents, 'hosts:status', status));
+  terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
+  terminals.onDidRemove((id) => sendEvent(win.webContents, 'terminals:removed', { id }));
+
+  // Terminal I/O flows renderer ⇄ PTY Host over a direct MessagePort; re-created after renderer reloads
+  // and PTY Host restarts (docs/plan/01-architecture.md §4.5).
+  const connectPtyPort = () => {
+    if (win.isDestroyed() || hosts.pty.state !== 'running') return;
+    const { port1, port2 } = new MessageChannelMain();
+    hosts.pty.emit('renderer-port', { windowId: win.id }, [port1]);
+    win.webContents.postMessage('pty:port', null, [port2]);
+  };
+  win.webContents.on('did-finish-load', connectPtyPort);
+  hosts.pty.onDidBecomeReady(() => {
+    if (!win.webContents.isLoading()) connectPtyPort();
+  });
 
   let quitting = false;
   app.on('before-quit', (event) => {
@@ -109,6 +160,7 @@ function bootstrap(): void {
     // Test-only hooks, reachable via electronApp.evaluate(); never installed without OXYTOCIN_E2E=1.
     (globalThis as Record<string, unknown>)['__oxyMain'] = {
       hosts,
+      terminals,
       logFile: () => logFilePath(),
     };
   }

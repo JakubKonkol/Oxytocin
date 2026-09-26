@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsSchema } from '../domain/settings';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
+import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
+import { TerminalProfileSchema } from '../domain/terminal-profile';
 import type { InvokeChannel } from './channels';
 
 interface InvokeSpec {
@@ -16,6 +18,16 @@ export const invokeContract = {
   'settings:get': { req: z.null().optional(), res: SettingsSchema },
   'ui:getState': { req: z.null().optional(), res: UiStateSchema },
   'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
+  'terminals:create': { req: CreateTerminalRequestSchema, res: TerminalInfoSchema },
+  'terminals:kill': { req: z.object({ id: TerminalIdSchema, force: z.boolean().optional() }), res: z.void() },
+  'terminals:restart': { req: z.object({ id: TerminalIdSchema }), res: TerminalInfoSchema },
+  'terminals:rename': { req: z.object({ id: TerminalIdSchema, title: z.string().max(80) }), res: z.void() },
+  'terminals:dispose': { req: z.object({ id: TerminalIdSchema }), res: z.void() },
+  'terminals:list': {
+    req: z.object({ projectId: ProjectIdSchema.optional() }).optional(),
+    res: z.array(TerminalInfoSchema),
+  },
+  'terminals:profiles': { req: z.null().optional(), res: z.array(TerminalProfileSchema) },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;
 
 export type InvokeReq<C extends InvokeChannel> = z.input<(typeof invokeContract)[C]['req']>;

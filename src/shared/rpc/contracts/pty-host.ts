@@ -18,6 +18,8 @@ export type PtyHostMethods = HostBaseMethods & {
   list: (p: null) => PtyTerminalListEntry[];
   serialize: (o: { id: TerminalId; scrollback?: number }) => { seq: number; data: string };
   setScrollback: (o: { scrollback: number }) => void;
+  /** Plain text of the mirror (diagnostics and E2E tests). */
+  getText: (o: { id: TerminalId }) => string;
 };
 
 export type PtyHostEvents = HostBaseEvents & {

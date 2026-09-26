@@ -38,3 +38,51 @@ export interface TerminalSnapshot {
   cols: number;
   rows: number;
 }
+
+export const ProjectIdSchema = z.string().min(1).max(64);
+export type ProjectId = z.infer<typeof ProjectIdSchema>;
+
+/** Until projects exist (M3) terminals belong to this pseudo-project rooted at the home directory. */
+export const DEFAULT_PROJECT_ID = 'default';
+
+export const TerminalKindSchema = z.enum(['shell', 'process', 'agent']);
+export type TerminalKind = z.infer<typeof TerminalKindSchema>;
+
+export const TerminalStateSchema = z.enum(['running', 'exited', 'failed']);
+export type TerminalState = z.infer<typeof TerminalStateSchema>;
+
+export const TerminalInfoSchema = z.object({
+  id: TerminalIdSchema,
+  projectId: ProjectIdSchema,
+  profileId: z.string(),
+  profileName: z.string(),
+  /** Title shown in the UI: userTitle ?? oscTitle ?? profileName. */
+  title: z.string(),
+  userTitle: z.string().optional(),
+  oscTitle: z.string().optional(),
+  pid: z.number().nullable(),
+  cwd: z.string(),
+  shellType: z.string(),
+  kind: TerminalKindSchema,
+  state: TerminalStateSchema,
+  exitCode: z.number().optional(),
+  error: z.string().optional(),
+  createdAt: z.number(),
+  envStale: z.boolean(),
+  bell: z.boolean(),
+  progress: z.object({ state: z.number().int().min(0).max(4), value: z.number().optional() }).optional(),
+});
+export type TerminalInfo = z.infer<typeof TerminalInfoSchema>;
+
+export const CreateTerminalRequestSchema = z.object({
+  projectId: ProjectIdSchema,
+  profileId: z.string().optional(),
+  cwd: z.string().optional(),
+  cols: z.number().int().min(2).max(1000).optional(),
+  rows: z.number().int().min(1).max(500).optional(),
+  userTitle: z.string().max(80).optional(),
+  initialCommand: z.string().max(10_000).optional(),
+  /** VT data restored into the new terminal's buffer (scrollback after an app restart). */
+  restoreData: z.string().max(4_000_000).optional(),
+});
+export type CreateTerminalRequest = z.infer<typeof CreateTerminalRequestSchema>;

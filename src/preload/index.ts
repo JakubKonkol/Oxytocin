@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { EVENT_CHANNELS, INVOKE_CHANNELS } from '@shared/ipc/channels';
 import type { OxyPreloadApi } from '@shared/ipc/preload-api';
@@ -24,3 +25,9 @@ const api: OxyPreloadApi = {
 };
 
 contextBridge.exposeInMainWorld('oxy', api);
+
+// The PTY MessagePort arrives in the isolated world; hand it to the main world (Electron "MessagePorts" pattern).
+ipcRenderer.on('pty:port', (event) => {
+  const [port] = event.ports;
+  if (port) window.postMessage({ type: 'oxy:pty-port' }, window.location.origin, [port]);
+});
