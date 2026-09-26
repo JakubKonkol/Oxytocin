@@ -9,15 +9,55 @@
     "publisher": "oxytocin-tests",
     "engine": "^0.1.0",
     "activationEvents": [
-      "onCommand:echo.hello"
+      "onStartup"
     ],
     "contributes": {
       "commands": [
         {
           "id": "echo.hello",
           "title": "Echo: Hello"
+        },
+        {
+          "id": "echo.projects",
+          "title": "Echo: Projects"
+        },
+        {
+          "id": "echo.terminals",
+          "title": "Echo: Terminals"
+        },
+        {
+          "id": "echo.git",
+          "title": "Echo: Git"
+        },
+        {
+          "id": "echo.store",
+          "title": "Echo: Store"
         }
-      ]
-    }
-  }
+      ],
+      "statusBarItems": [
+        {
+          "id": "echo.status",
+          "alignment": "right",
+          "priority": 10
+        }
+      ],
+      "configuration": {
+        "prefix": "echo",
+        "properties": {
+          "echo.greeting": {
+            "type": "string",
+            "default": "Hello"
+          }
+        }
+      }
+    },
+    "main": "host.js",
+    "permissions": [
+      "projects.read",
+      "terminals.read-metadata",
+      "terminals.create",
+      "terminals.env"
+    ]
+  },
+  "type": "module"
 }

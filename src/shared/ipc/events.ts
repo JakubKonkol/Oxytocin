@@ -38,6 +38,14 @@ export const eventContract = {
   'git:status': RepoStatusSchema,
   'plugins:changed': z.array(PluginDescriptorSchema),
   'plugins:contributionsChanged': ContributionsSchema,
+  /** A terminal created by a plugin: show it as a panel. */
+  'terminals:openPanel': z.object({
+    terminalId: TerminalIdSchema,
+    projectId: ProjectIdSchema,
+    placement: z.enum(['active-group', 'right', 'below']),
+  }),
+  /** A core command requested by a plugin (oxytocin.*). */
+  'commands:run': z.object({ id: z.string(), args: z.array(z.unknown()) }),
   /** Terminal editor preset: open a terminal panel running the editor command. */
   'editor:openInTerminal': z.object({ projectId: ProjectIdSchema.nullable(), cwd: z.string(), command: z.string() }),
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),

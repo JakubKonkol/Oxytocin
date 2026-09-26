@@ -39,6 +39,9 @@ export const INVOKE_CHANNELS = [
   'plugins:list',
   'plugins:contributions',
   'plugins:setEnabled',
+  'plugins:executeCommand',
+  'plugins:logs',
+  'plugins:activate',
   'fs:statMany',
   'editor:open',
   'workspace:load',
@@ -61,6 +64,8 @@ export const EVENT_CHANNELS = [
   'editor:openInTerminal',
   'plugins:changed',
   'plugins:contributionsChanged',
+  'terminals:openPanel',
+  'commands:run',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

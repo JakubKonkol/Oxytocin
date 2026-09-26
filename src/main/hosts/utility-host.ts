@@ -56,6 +56,8 @@ export class UtilityHost<
   private stopping = false;
   private readyWaiters: { resolve: () => void; reject: (e: unknown) => void }[] = [];
   private readonly eventListeners = new Map<string, Set<(payload: unknown, ports: readonly unknown[]) => void>>();
+  /** Methods the host may call on main (mutable: services register them after construction). */
+  private readonly served: Record<string, (params: never) => unknown> = {};
 
   private readonly stateEmitter = new Emitter<HostStatus>();
   readonly onDidChangeState = this.stateEmitter.event;
@@ -91,6 +93,14 @@ export class UtilityHost<
     return { name: this.o.name, state: this._state, pid: this._pid, restarts: this.totalRestarts };
   }
 
+  /** Serves methods the host calls on main (`rpc.call` from the host side). */
+  serve(methods: Record<string, (params: never) => unknown>): Disposable {
+    Object.assign(this.served, methods);
+    return toDisposable(() => {
+      for (const name of Object.keys(methods)) if (this.served[name] === methods[name]) delete this.served[name];
+    });
+  }
+
   start(): void {
     if (this.child) return;
     this.stopping = false;
@@ -115,7 +125,7 @@ export class UtilityHost<
     }
     this.child = child;
     this._pid = child.pid ?? null;
-    const rpc = createPortRpc<Methods, RpcEvents, Events>(fromUtilityProcess(child));
+    const rpc = createPortRpc<Methods, RpcEvents, Events>(fromUtilityProcess(child), this.served);
     this.rpc = rpc;
     this.rpcSubscriptions = [
       rpc.onEvent('log', (record) => this.forwardLog(record)),

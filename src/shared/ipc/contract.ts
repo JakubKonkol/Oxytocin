@@ -64,6 +64,16 @@ export const invokeContract = {
   'plugins:list': { req: z.null().optional(), res: z.array(PluginDescriptorSchema) },
   'plugins:contributions': { req: z.null().optional(), res: ContributionsSchema },
   'plugins:setEnabled': { req: z.object({ id: z.string(), enabled: z.boolean() }), res: z.void() },
+  'plugins:executeCommand': {
+    req: z.object({ id: z.string(), args: z.array(z.unknown()).optional() }),
+    res: z.unknown(),
+  },
+  'plugins:logs': {
+    req: z.object({ id: z.string() }),
+    res: z.array(z.object({ at: z.number(), level: z.enum(['debug', 'info', 'warn', 'error']), message: z.string() })),
+  },
+  /** Fires an activation event (\`onView:<id>\`, \`onPanel:<type>\`…); returns the activated plugin ids. */
+  'plugins:activate': { req: z.object({ event: z.string().min(1) }), res: z.array(z.string()) },
   'agents:list': { req: z.null().optional(), res: z.array(AgentInfoWithTerminalSchema) },
   'fs:statMany': {
     req: z.object({ baseDirs: z.array(z.string()).max(4), paths: z.array(z.string().max(4096)).max(50) }),

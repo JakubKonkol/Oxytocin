@@ -1,0 +1,17 @@
+{
+  "name": "oxytocin-test-crash",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "oxytocin": {
+    "id": "test.crash",
+    "displayName": "Crash on activate (test)",
+    "publisher": "oxytocin-tests",
+    "engine": "^0.1.0",
+    "main": "host.js",
+    "activationEvents": [
+      "onStartup"
+    ]
+  }
+}

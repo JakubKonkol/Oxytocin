@@ -8,6 +8,7 @@ import { subscribeChanges } from './stores/changes-store';
 import { showNotification } from './features/attention/attention';
 import { revealTerminal } from './features/attention/reveal';
 import { openEditorInTerminal } from './features/layout/editor-terminal';
+import { openPluginTerminal, runCoreCommand } from './features/layout/core-commands';
 import { ipc } from './lib/ipc-client';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
@@ -27,6 +28,8 @@ export function App() {
     ipc.on('notifications:show', showNotification);
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req));
+    ipc.on('terminals:openPanel', (req) => void openPluginTerminal(req));
+    ipc.on('commands:run', ({ id, args }) => runCoreCommand(id, args));
     Promise.all([
       useUiStore.getState().load(),
       useSettingsStore.getState().load(),

@@ -37,6 +37,7 @@ import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
 import { GitService } from './services/git/git-service';
 import { PluginService } from './services/plugins/plugin-service';
+import { PluginHostService } from './services/plugins/plugin-host-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-registry';
 import { statMany } from './services/fs/stat-many';
@@ -260,6 +261,61 @@ function bootstrap(): void {
     dryRun: e2e,
   });
 
+  const pluginHost = new PluginHostService({
+    host: hosts.plugin,
+    plugins,
+    env: {
+      appVersion: app.getVersion(),
+      platform: process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux',
+      locale: app.getLocale() || 'en-US',
+      homeDir: homedir(),
+      userDataDir: app.getPath('userData'),
+    },
+    core: {
+      projects: {
+        list: () => projects.list(),
+        get: (id) => projects.get(id),
+        activeId: () => projects.activeProjectId,
+        findByPath: (path) => projects.findByPath(path),
+      },
+      terminals: {
+        list: (projectId) => terminals.list(projectId),
+        get: (id) => terminals.get(id),
+        create: (req) => terminals.create(req),
+        write: (id, data) => hosts.pty.call('write', { id, data }),
+      },
+      agents: { list: () => agents.list(), reportSession: (id, sessionId) => agents.reportSession(id, sessionId) },
+      git: { status: (id) => git.status(id) },
+      settings: () => settings.get(),
+      updateSettings: (patch) => settings.update(patch),
+      openExternal: (url) => shell.openExternal(url),
+      openInEditor: (req) => editor.open(req),
+      toRenderer: (event, payload) => {
+        const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
+        if (!wc) return;
+        if (event === 'toast') sendEvent(wc, 'notifications:show', payload as never);
+        else if (event === 'openTerminalPanel') sendEvent(wc, 'terminals:openPanel', payload as never);
+        else sendEvent(wc, 'commands:run', payload as never);
+      },
+      osNotify: (title, body) => {
+        if (e2e) {
+          osNotifications.push({ title, body, click: () => undefined });
+          return;
+        }
+        if (Notification.isSupported()) new Notification({ title, body, icon: appPaths.windowIcon() }).show();
+      },
+    },
+    logger: createLogger('plugins'),
+  });
+  void pluginsReady.then(() => pluginHost.reload());
+  projects.onDidChange((list) => pluginHost.notifyProjects(list));
+  projects.onDidChangeActive((id) => pluginHost.notifyActiveProject(id));
+  terminals.onDidUpdate((info) => pluginHost.notifyTerminal(info));
+  terminals.onDidRemove((id) => pluginHost.notifyTerminalRemoved(id));
+  agents.onDidUpdate((list) => pluginHost.notifyAgents(list));
+  git.onDidChangeStatus((status) => pluginHost.notifyGitStatus(status));
+  settings.onDidChange((s) => pluginHost.notifySettings(s));
+
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);
 
@@ -336,6 +392,9 @@ function bootstrap(): void {
         return plugins.contributions();
       },
       'plugins:setEnabled': ({ id, enabled }) => plugins.setEnabled(id, enabled),
+      'plugins:executeCommand': ({ id, args }) => pluginHost.executeCommand(id, args ?? []),
+      'plugins:logs': ({ id }) => pluginHost.logs(id),
+      'plugins:activate': ({ event }) => pluginHost.activateByEvent(event),
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
@@ -570,6 +629,7 @@ function bootstrap(): void {
       activity,
       git,
       plugins,
+      pluginHost,
       osNotifications,
       attentionCount: () => attentionCount,
       lastQuitPrompt: () => lastQuitPrompt,

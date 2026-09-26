@@ -8,7 +8,7 @@ import type { Logger } from '@shared/logging/logger';
 import { Emitter } from '@shared/utils/emitter';
 import { appPaths } from '../app/paths';
 import { writeForwardedLog } from '../logging/log';
-import { type HostProcess, UtilityHost } from './utility-host';
+import { type HostProcess, UtilityHost, type UtilityHostOptions } from './utility-host';
 
 /** The lifecycle surface shared by all hosts regardless of their RPC contract. */
 export type SupervisedHost = Pick<
@@ -41,6 +41,7 @@ export class Hosts {
       entry: HostEntry,
       serviceName: string,
       scope: string,
+      extra: Partial<UtilityHostOptions> = {},
     ) => {
       const logger = createLogger(scope);
       const host = new UtilityHost<M, E>({
@@ -48,13 +49,18 @@ export class Hosts {
         logger: createLogger('hosts'),
         onLog: writeForwardedLog,
         spawn: () => forkHost(entry, serviceName, logger, env()),
+        ...extra,
       });
       host.onDidChangeState(() => this.statusEmitter.fire(this.status()));
       return host;
     };
     this.pty = make<PtyHostMethods, PtyHostEvents>('ptyHost', 'Oxytocin PTY Host', 'pty');
     this.workspace = make<WorkspaceHostMethods, WorkspaceHostEvents>('workspaceHost', 'Oxytocin Workspace Host', 'ws');
-    this.plugin = make<PluginHostMethods, PluginHostEvents>('pluginHost', 'Oxytocin Plugin Host', 'plg');
+    // A plugin blocking the event loop must be noticed quickly: ping every 5 s, restart after 15 s of silence.
+    this.plugin = make<PluginHostMethods, PluginHostEvents>('pluginHost', 'Oxytocin Plugin Host', 'plg', {
+      pingIntervalMs: 5000,
+      maxMissedPings: 3,
+    });
   }
 
   all(): SupervisedHost[] {

@@ -18,7 +18,9 @@
     "src/pty-host/**/*",
     "src/workspace-host/**/*",
     "src/plugin-host/**/*",
-    "src/preload/**/*"
+    "src/preload/**/*",
+    "packages/*/index.d.ts",
+    "packages/*/src/**/*"
   ],
   "exclude": ["tests/fixtures/**"]
 }

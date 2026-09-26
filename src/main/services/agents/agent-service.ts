@@ -335,6 +335,14 @@ export class AgentService implements Disposable {
     this.emitter.fire(this.list());
   }
 
+  /** A session id reported by a plugin (agents.annotate) — kept unless the registry already knows one. */
+  reportSession(terminalId: string, sessionId: string): void {
+    const t = this.tracked.get(terminalId);
+    if (!t?.agent || t.agent.sessionId) return;
+    t.agent = { ...t.agent, sessionId };
+    this.publish(t, { agent: t.agent });
+  }
+
   dispose(): void {
     if (this.timer) clearInterval(this.timer);
     this.store.dispose();

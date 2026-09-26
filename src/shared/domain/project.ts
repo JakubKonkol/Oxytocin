@@ -5,6 +5,19 @@ export { ProjectIdSchema };
 export type { ProjectId } from './terminal';
 
 export const PROJECT_COLOR_COUNT = 10;
+/** CSS values of the project palette (mirrors `--project-0…9` in tokens.css) for plugins and native UI. */
+export const PROJECT_COLOR_VALUES = [
+  '#4f8cff',
+  '#22c55e',
+  '#f5a524',
+  '#ef4444',
+  '#a78bfa',
+  '#38bdf8',
+  '#f472b6',
+  '#14b8a6',
+  '#eab308',
+  '#fb923c',
+] as const;
 
 export const StartupTerminalSchema = z.object({
   name: z.string().optional(),
