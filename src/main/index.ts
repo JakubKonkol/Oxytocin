@@ -1,6 +1,6 @@
 import { homedir, release } from 'node:os';
 import { join } from 'node:path';
-import { app, type BrowserWindow, ipcMain, MessageChannelMain, screen, session, shell } from 'electron';
+import { app, type BrowserWindow, clipboard, ipcMain, MessageChannelMain, screen, session, shell } from 'electron';
 import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import type { Platform } from '@shared/domain/terminal-profile';
@@ -113,6 +113,12 @@ function bootstrap(): void {
       'terminals:dispose': (req) => terminals.close(req.id),
       'terminals:list': (req) => terminals.list(req?.projectId),
       'terminals:profiles': () => profiles.list(),
+      // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
+      'clipboard:read': async () => {
+        const text = await clipboard.readText();
+        return { text, hasImage: text === '' && (await clipboard.has('image/png')) };
+      },
+      'clipboard:writeText': ({ text }) => clipboard.writeText(text),
       'shell:openExternal': async ({ url }) => {
         if (!isSafeExternalUrl(url))
           throw new OxyError('PERMISSION', 'Only http, https and mailto links can be opened');

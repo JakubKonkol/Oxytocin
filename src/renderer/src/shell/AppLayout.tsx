@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { registerCommand } from '../lib/commands';
 import { useUiStore } from '../stores/ui-store';
 import { DefaultTerminalArea } from '../features/terminals/DefaultTerminalArea';
 import { Sidebar } from './Sidebar';
@@ -8,19 +9,16 @@ import { TitleBar } from './TitleBar';
 
 export function AppLayout() {
   const sidebar = useUiStore((s) => s.state.sidebar);
-  const toggleSidebar = useUiStore((s) => s.toggleSidebar);
 
-  useEffect(() => {
-    // Temporary until the KeybindingService (M1-T4): Ctrl/⌘+Shift+B toggles the sidebar.
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey && e.code === 'KeyB') {
-        e.preventDefault();
-        toggleSidebar();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [toggleSidebar]);
+  useEffect(
+    () =>
+      registerCommand({
+        id: 'workbench.toggleSidebar',
+        title: 'View: Toggle Sidebar',
+        run: () => useUiStore.getState().toggleSidebar(),
+      }),
+    [],
+  );
 
   return (
     <div className="flex h-full flex-col bg-app">

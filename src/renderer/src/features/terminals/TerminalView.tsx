@@ -1,8 +1,16 @@
 import '@xterm/xterm/css/xterm.css';
+import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { useEffect, useRef } from 'react';
+import { ipc } from '../../lib/ipc-client';
+import { currentPlatform } from '../../lib/platform';
 import { useAppInfo } from '../../stores/app-store';
-import { useSettingsStore } from '../../stores/settings-store';
+import { confirmDialog } from '../../stores/dialog-store';
+import { getSettings, useSettingsStore } from '../../stores/settings-store';
+import { useTerminalsStore } from '../../stores/terminals-store';
+import { createTerminalKeyHandler } from './key-handler';
+import { formatDroppedPaths, type ShellType } from './path-quoting';
 import { ptyChannel } from './pty-channel';
+import { copySelection, pasteClipboard, setActiveTerminal } from './terminal-actions';
 import { terminalRegistry } from './terminal-registry';
 import { createXterm } from './xterm-factory';
 
@@ -56,6 +64,68 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
     );
     const inputSub = term.onData((d) => sub.input(d));
     const binarySub = term.onBinary((d) => sub.binary(d));
+    const sendRaw = (data: string) => sub.input(data);
+    const platform = currentPlatform();
+
+    term.attachCustomKeyEventHandler(createTerminalKeyHandler({ term, platform, settings: getSettings, sendRaw }));
+
+    // OSC 52: applications may write (never read) the clipboard, per `terminal.osc52`.
+    term.loadAddon(
+      new ClipboardAddon(undefined, {
+        readText: () => '',
+        writeText: async (_selection, text) => {
+          const policy = getSettings()['terminal.osc52'];
+          if (policy === 'deny') return;
+          if (policy === 'ask') {
+            const ok = await confirmDialog({
+              title: 'Allow the terminal to copy to the clipboard?',
+              description: text.length > 200 ? `${text.slice(0, 200)}…` : text,
+              confirmLabel: 'Allow',
+            });
+            if (!ok) return;
+          }
+          await ipc.invoke('clipboard:writeText', { text });
+        },
+      }),
+    );
+
+    const selectionSub = term.onSelectionChange(() => {
+      if (getSettings()['terminal.copyOnSelect'] && term.hasSelection()) {
+        void ipc.invoke('clipboard:writeText', { text: term.getSelection() });
+      }
+    });
+
+    // Windows console convention: right click copies the selection, or pastes when there is none.
+    const onContextMenu = (e: MouseEvent) => {
+      if (getSettings()['terminal.rightClickBehavior'] !== 'copyPaste') return;
+      e.preventDefault();
+      if (term.hasSelection()) void copySelection(term);
+      else void pasteClipboard(term, sendRaw);
+    };
+    container.addEventListener('contextmenu', onContextMenu);
+
+    // Dropping files pastes their quoted paths (handy for giving agents images and files).
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      const files = [...(e.dataTransfer?.files ?? [])];
+      if (files.length === 0) return;
+      e.preventDefault();
+      const paths = files.map((f) => window.oxy.getPathForFile(f)).filter(Boolean);
+      const shell = (useTerminalsStore.getState().terminals[terminalId]?.shellType ?? 'other') as ShellType;
+      const text = formatDroppedPaths(paths, shell);
+      if (text) term.paste(text);
+      term.focus();
+    };
+    container.addEventListener('dragover', onDragOver);
+    container.addEventListener('drop', onDrop);
+
+    const onFocus = () => setActiveTerminal(terminalId);
+    term.textarea?.addEventListener('focus', onFocus);
 
     const fitNow = () => {
       const dims = measure();
@@ -74,7 +144,7 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
     });
     observer.observe(container);
 
-    terminalRegistry.set(terminalId, { term, focus: () => term.focus() });
+    terminalRegistry.set(terminalId, { term, focus: () => term.focus(), sendRaw });
     if (autoFocus) term.focus();
 
     return () => {
@@ -83,6 +153,11 @@ export function TerminalView({ terminalId, autoFocus = false }: TerminalViewProp
       cancelAnimationFrame(frame);
       inputSub.dispose();
       binarySub.dispose();
+      selectionSub.dispose();
+      container.removeEventListener('contextmenu', onContextMenu);
+      container.removeEventListener('dragover', onDragOver);
+      container.removeEventListener('drop', onDrop);
+      term.textarea?.removeEventListener('focus', onFocus);
       sub.dispose();
       terminalRegistry.delete(terminalId);
       disposeWebgl();

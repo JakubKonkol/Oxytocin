@@ -12,6 +12,20 @@ export function installTestHooks(): void {
       const term = terminalRegistry.get(id)?.term;
       return term ? { cols: term.cols, rows: term.rows } : null;
     },
+    /** Selects the first occurrence of `text` in the buffer. */
+    selectText: (id: string, text: string) => {
+      const term = terminalRegistry.get(id)?.term;
+      if (!term) return false;
+      const buffer = term.buffer.active;
+      for (let y = 0; y < buffer.length; y++) {
+        const x = buffer.getLine(y)?.translateToString(true).indexOf(text) ?? -1;
+        if (x >= 0) {
+          term.select(x, y, text.length);
+          return true;
+        }
+      }
+      return false;
+    },
     /** Finds `text` in the buffer and returns the foreground color of its first cell. */
     getTextColor: (id: string, text: string) => {
       const term = terminalRegistry.get(id)?.term;

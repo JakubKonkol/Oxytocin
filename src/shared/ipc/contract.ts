@@ -27,6 +27,8 @@ export const invokeContract = {
     req: z.object({ projectId: ProjectIdSchema.optional() }).optional(),
     res: z.array(TerminalInfoSchema),
   },
+  'clipboard:read': { req: z.null().optional(), res: z.object({ text: z.string(), hasImage: z.boolean() }) },
+  'clipboard:writeText': { req: z.object({ text: z.string().max(10_000_000) }), res: z.void() },
   'shell:openExternal': { req: z.object({ url: z.string().url() }), res: z.void() },
   'terminals:profiles': { req: z.null().optional(), res: z.array(TerminalProfileSchema) },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;

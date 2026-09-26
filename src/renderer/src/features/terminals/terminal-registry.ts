@@ -2,7 +2,9 @@ import type { Terminal } from '@xterm/xterm';
 
 export interface RegisteredTerminal {
   term: Terminal;
-  focus(): void;
+  focus: () => void;
+  /** Sends raw input to the PTY (bypassing xterm's paste handling). */
+  sendRaw: (data: string) => void;
 }
 
 /** terminalId → live xterm instance (used by commands, keybindings and E2E hooks). */

@@ -5,6 +5,7 @@ import { subscribeTerminals, useTerminalsStore } from './stores/terminals-store'
 import { useUiStore } from './stores/ui-store';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
+import { DialogHost } from './ui/DialogHost';
 import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
@@ -30,6 +31,7 @@ export function App() {
         <AppLayout />
       </div>
       <Toaster />
+      <DialogHost />
     </TooltipProvider>
   );
 }
