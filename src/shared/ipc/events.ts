@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
+import { ContributionsSchema, PluginDescriptorSchema } from '../domain/plugin';
 import { RepoStatusSchema } from '../domain/git';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { HostStatusSchema } from '../domain/app-info';
@@ -35,6 +36,8 @@ export const eventContract = {
   /** Focus a terminal (e.g. an OS notification was clicked): activate its project and panel. */
   'terminals:reveal': z.object({ projectId: ProjectIdSchema, terminalId: TerminalIdSchema }),
   'git:status': RepoStatusSchema,
+  'plugins:changed': z.array(PluginDescriptorSchema),
+  'plugins:contributionsChanged': ContributionsSchema,
   /** Terminal editor preset: open a terminal panel running the editor command. */
   'editor:openInTerminal': z.object({ projectId: ProjectIdSchema.nullable(), cwd: z.string(), command: z.string() }),
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),

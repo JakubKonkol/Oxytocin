@@ -1,0 +1,23 @@
+{
+  "name": "oxytocin-test-echo",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "oxytocin": {
+    "id": "test.echo",
+    "displayName": "Echo (test)",
+    "publisher": "oxytocin-tests",
+    "engine": "^0.1.0",
+    "activationEvents": [
+      "onCommand:echo.hello"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "echo.hello",
+          "title": "Echo: Hello"
+        }
+      ]
+    }
+  }
+}

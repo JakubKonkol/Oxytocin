@@ -1,0 +1,12 @@
+{
+  "name": "oxytocin-test-broken",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "oxytocin": {
+    "id": "Broken Id",
+    "displayName": "Broken",
+    "publisher": "tests",
+    "engine": "^0.1.0"
+  }
+}

@@ -36,6 +36,7 @@ import { TerminalService } from './services/terminals/terminal-service';
 import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
 import { GitService } from './services/git/git-service';
+import { PluginService } from './services/plugins/plugin-service';
 import { NotificationService } from './services/notifications/notification-service';
 import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-registry';
 import { statMany } from './services/fs/stat-many';
@@ -194,6 +195,30 @@ function bootstrap(): void {
   });
   void projectsReady.then(() => git.start());
 
+  const plugins = new PluginService({
+    builtinDir: appPaths.builtinPluginsDir(),
+    userDir: join(app.getPath('userData'), 'plugins'),
+    settings: () => settings.get(),
+    updateSettings: (patch) => settings.update(patch),
+    logger: createLogger('plugins'),
+  });
+  const pluginsReady = plugins.scan().catch((e: unknown) => log.error('Plugin discovery failed', e));
+  // Dev paths need a rescan; `plugins.enabled` only changes states.
+  let pluginScanKey = JSON.stringify([settings.get()['plugins.developerMode'], settings.get()['plugins.devPaths']]);
+  let pluginEnabledKey = JSON.stringify(settings.get()['plugins.enabled']);
+  settings.onDidChange((s) => {
+    const scanKey = JSON.stringify([s['plugins.developerMode'], s['plugins.devPaths']]);
+    const enabledKey = JSON.stringify(s['plugins.enabled']);
+    if (scanKey !== pluginScanKey) {
+      pluginScanKey = scanKey;
+      pluginEnabledKey = enabledKey;
+      void plugins.scan();
+    } else if (enabledKey !== pluginEnabledKey) {
+      pluginEnabledKey = enabledKey;
+      plugins.recompute();
+    }
+  });
+
   const detectDeps = nodeDetectDeps(() => shellEnv);
   const editor = new EditorLauncher({
     settings: () => settings.get(),
@@ -302,6 +327,15 @@ function bootstrap(): void {
       'git:getStatus': ({ projectId }) => git.status(projectId),
       'git:refresh': ({ projectId }) => git.refresh(projectId, 'manual'),
       'git:getFileDiff': (req) => git.fileDiff(req),
+      'plugins:list': async () => {
+        await pluginsReady;
+        return plugins.list();
+      },
+      'plugins:contributions': async () => {
+        await pluginsReady;
+        return plugins.contributions();
+      },
+      'plugins:setEnabled': ({ id, enabled }) => plugins.setEnabled(id, enabled),
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
@@ -345,6 +379,16 @@ function bootstrap(): void {
   agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));
   activity.onDidChange((list) => sendEvent(win.webContents, 'projects:activity', list));
   git.onDidChangeStatus((status) => sendEvent(win.webContents, 'git:status', status));
+  let lastContributions = '';
+  plugins.onDidChange((list) => {
+    sendEvent(win.webContents, 'plugins:changed', list);
+    const contributions = plugins.contributions();
+    const key = JSON.stringify(contributions);
+    if (key !== lastContributions) {
+      lastContributions = key;
+      sendEvent(win.webContents, 'plugins:contributionsChanged', contributions);
+    }
+  });
   git.onDidTouchFiles((e) => sendEvent(win.webContents, 'git:fileTouched', e));
 
   // Attention system (docs/plan/02-ui-ux.md §9).
@@ -525,6 +569,7 @@ function bootstrap(): void {
       agents,
       activity,
       git,
+      plugins,
       osNotifications,
       attentionCount: () => attentionCount,
       lastQuitPrompt: () => lastQuitPrompt,
