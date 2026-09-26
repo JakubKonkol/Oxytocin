@@ -1,4 +1,5 @@
 import { getActiveWorkspace } from '../features/layout/workspace-registry';
+import { getLastProjectSwitchMs } from './perf';
 import { getActiveTerminalId } from '../features/terminals/terminal-actions';
 import { terminalRegistry, terminalText } from '../features/terminals/terminal-registry';
 
@@ -6,6 +7,7 @@ import { terminalRegistry, terminalText } from '../features/terminals/terminal-r
 export function installTestHooks(): void {
   (window as unknown as Record<string, unknown>)['__oxyTest'] = {
     terminalIds: () => [...terminalRegistry.keys()],
+    lastSwitchMs: () => getLastProjectSwitchMs(),
     activeTerminalId: () => getActiveTerminalId(),
     /** Moves a panel into another group (the operation a tab drop performs). */
     movePanel: (panelId: string, targetPanelId: string) => {

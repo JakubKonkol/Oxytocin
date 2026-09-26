@@ -18,6 +18,18 @@ import type { TerminalPanelParams } from './panel-registry';
 import { TerminalPanelComponent } from './TerminalPanelComponent';
 import { requestClosePanel, restartTerminalPanel } from './workspace-actions';
 import { setActiveWorkspace, setWorkspaceApi } from './workspace-registry';
+import { WorkspaceVisibleContext } from './workspace-visibility';
+import { markProjectSwitchEnd } from '../../lib/perf';
+import { useTitleStore } from '../../stores/title-store';
+
+function publishActivePanelTitle(api: DockviewApi | null): void {
+  const panel = api?.activePanel;
+  const terminalId =
+    panel?.api.component === 'terminal' ? (panel.params as TerminalPanelParams | undefined)?.terminalId : undefined;
+  useTitleStore
+    .getState()
+    .setActivePanel(panel ? { title: panel.title ?? '', ...(terminalId ? { terminalId } : {}) } : null);
+}
 
 const oxyTheme: DockviewTheme = { name: 'oxytocin', className: 'dockview-theme-oxytocin', gap: 8, colorScheme: 'dark' };
 
@@ -96,9 +108,29 @@ async function initializeWorkspace(projectId: string, api: DockviewApi): Promise
 export function ProjectWorkspace({ projectId, active }: { projectId: string; active: boolean }) {
   const apiRef = useRef<DockviewApi | null>(null);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (active) setActiveWorkspace(projectId);
+    if (!active) return;
+    setActiveWorkspace(projectId);
+    // Shown again (keep-alive): re-layout, focus the last active panel, record the switch time.
+    const frame = requestAnimationFrame(() => {
+      const api = apiRef.current;
+      const el = containerRef.current;
+      if (api && el && el.clientWidth > 0) api.layout(el.clientWidth, el.clientHeight, true);
+      publishActivePanelTitle(api);
+      const panel = api?.activePanel;
+      if (panel?.api.component === 'terminal') {
+        const id = (panel.params as TerminalPanelParams | undefined)?.terminalId;
+        if (id) terminalRegistry.get(id)?.focus();
+      }
+      markProjectSwitchEnd();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [active, projectId]);
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
 
   const stopPersistence = useRef<(() => void) | null>(null);
   useEffect(
@@ -114,6 +146,7 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
     apiRef.current = api;
     setWorkspaceApi(projectId, api);
     api.onDidActivePanelChange(({ panel }) => {
+      if (activeRef.current) publishActivePanelTitle(api);
       if (panel?.api.component === 'terminal') {
         const id = (panel.params as TerminalPanelParams | undefined)?.terminalId;
         if (id) requestAnimationFrame(() => terminalRegistry.get(id)?.focus());
@@ -127,20 +160,22 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
   };
 
   return (
-    <div data-testid={`workspace-${projectId}`} className="h-full">
-      <DockviewReact
-        className="oxy-dockview"
-        theme={oxyTheme}
-        components={components}
-        defaultTabComponent={OxyTab}
-        watermarkComponent={EmptyWorkspace}
-        rightHeaderActionsComponent={GroupActions}
-        getTabContextMenuItems={tabContextMenu(projectId)}
-        singleTabMode="fullwidth"
-        defaultRenderer="always"
-        disableFloatingGroups
-        onReady={onReady}
-      />
+    <div data-testid={`workspace-${projectId}`} className="h-full" ref={containerRef}>
+      <WorkspaceVisibleContext.Provider value={active}>
+        <DockviewReact
+          className="oxy-dockview"
+          theme={oxyTheme}
+          components={components}
+          defaultTabComponent={OxyTab}
+          watermarkComponent={EmptyWorkspace}
+          rightHeaderActionsComponent={GroupActions}
+          getTabContextMenuItems={tabContextMenu(projectId)}
+          singleTabMode="fullwidth"
+          defaultRenderer="always"
+          disableFloatingGroups
+          onReady={onReady}
+        />
+      </WorkspaceVisibleContext.Provider>
     </div>
   );
 }

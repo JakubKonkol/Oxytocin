@@ -6,7 +6,8 @@ import { getSettings } from '../../stores/settings-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
 import type { TerminalPanelParams } from './panel-registry';
-import { addExistingTerminalPanel, addTerminalPanel } from './workspace-actions';
+import { addExistingTerminalPanel, addTerminalPanel, type PanelPosition } from './workspace-actions';
+import { useProjectsStore } from '../../stores/projects-store';
 
 const KNOWN_COMPONENTS = new Set(['terminal', 'missing']);
 const SAVE_DEBOUNCE_MS = 1000;
@@ -72,6 +73,8 @@ export function trackWorkspacePersistence(api: DockviewApi, projectId: string): 
   });
   flushers.set(projectId, save);
   return () => {
+    // Evicted (LRU) or unmounted: write the latest layout so rehydration starts from it.
+    if (timer) void save();
     enabled = false;
     if (timer) clearTimeout(timer);
     layoutSub.dispose();
@@ -149,11 +152,46 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
   return api.panels.length > 0;
 }
 
+/**
+ * First open of a project: its existing terminals, else the project's startup terminals
+ * (`settings.startupTerminals`), else one terminal with the project's default profile.
+ */
 export async function openDefaultLayout(api: DockviewApi, projectId: string): Promise<void> {
   const existing = Object.values(useTerminalsStore.getState().terminals).filter((t) => t.projectId === projectId);
   if (existing.length > 0) {
     for (const t of existing) addExistingTerminalPanel(api, t.id, t.title);
     return;
   }
-  await addTerminalPanel(api, { projectId });
+  const project = useProjectsStore.getState().projects.find((p) => p.id === projectId);
+  const defaultProfileId = project?.settings.defaultProfileId;
+  const startup = project?.settings.startupTerminals ?? [];
+  if (startup.length === 0) {
+    await addTerminalPanel(api, { projectId, ...(defaultProfileId ? { profileId: defaultProfileId } : {}) });
+    return;
+  }
+  let previous: string | null = null;
+  for (const task of startup) {
+    const profileId = task.profileId ?? defaultProfileId;
+    const position: PanelPosition | undefined =
+      previous && task.placement && task.placement !== 'tab'
+        ? { referencePanel: previous, direction: task.placement === 'right' ? 'right' : 'below' }
+        : undefined;
+    previous =
+      (await addTerminalPanel(
+        api,
+        {
+          projectId,
+          ...(profileId ? { profileId } : {}),
+          ...(task.cwd && project ? { cwd: joinPath(project.rootPath, task.cwd) } : {}),
+          ...(task.name ? { userTitle: task.name } : {}),
+          ...(task.command ? { initialCommand: task.command } : {}),
+        },
+        position,
+      )) ?? previous;
+  }
+}
+
+function joinPath(root: string, relative: string): string {
+  const sep = root.includes('\\') ? '\\' : '/';
+  return `${root.replace(/[\\/]+$/, '')}${sep}${relative.replace(/^[\\/]+/, '')}`;
 }

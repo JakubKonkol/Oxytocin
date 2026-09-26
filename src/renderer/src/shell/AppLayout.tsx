@@ -1,14 +1,34 @@
 import { useEffect } from 'react';
 import { registerCommand } from '../lib/commands';
 import { useUiStore } from '../stores/ui-store';
+import { activeProject, useProjectsStore } from '../stores/projects-store';
+import { useTerminalsStore } from '../stores/terminals-store';
+import { useTitleStore } from '../stores/title-store';
 import { WorkspaceArea } from '../features/projects/WorkspaceArea';
 import { Sidebar } from './Sidebar';
 import { SidebarResizer } from './SidebarResizer';
 import { StatusBar } from './StatusBar';
 import { TitleBar } from './TitleBar';
 
+/** "<project> — <active panel> — Oxytocin" (docs/plan/05-layout-center.md §8). */
+function useWindowTitle(): string {
+  const project = useProjectsStore(activeProject);
+  const panel = useTitleStore((s) => s.panel);
+  const terminalTitle = useTerminalsStore((s) =>
+    panel?.terminalId ? s.terminals[panel.terminalId]?.title : undefined,
+  );
+  const panelTitle = terminalTitle ?? panel?.title;
+  const parts = [project?.name, project ? panelTitle : undefined, 'Oxytocin'].filter(Boolean);
+  const title = parts.join(' — ');
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+  return project ? [project.name, panelTitle].filter(Boolean).join(' — ') : 'Oxytocin';
+}
+
 export function AppLayout() {
   const sidebar = useUiStore((s) => s.state.sidebar);
+  const title = useWindowTitle();
 
   useEffect(
     () =>
@@ -22,7 +42,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full flex-col bg-app">
-      <TitleBar title="Oxytocin" />
+      <TitleBar title={title} />
       <div className="flex min-h-0 flex-1 px-2">
         {!sidebar.collapsed && (
           <>

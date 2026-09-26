@@ -8,6 +8,7 @@ import { formatShortcut } from '../../ui/Kbd';
 import { shortcutFor } from '../../lib/keyboard';
 import { registerFileLinkProvider } from './link-provider';
 import { TerminalSearch } from './TerminalSearch';
+import { useWorkspaceVisible } from '../layout/workspace-visibility';
 import { ipc } from '../../lib/ipc-client';
 import { currentPlatform } from '../../lib/platform';
 import { useAppInfo } from '../../stores/app-store';
@@ -40,6 +41,8 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
   const [search, setSearch] = useState<SearchAddon | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const termRef = useRef<{ term: Terminal; sendRaw: (d: string) => void } | null>(null);
+  const webglRef = useRef<{ enable: () => void; dispose: () => void } | null>(null);
+  const visible = useWorkspaceVisible();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -49,6 +52,7 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
       osBuild: appInfo.osBuild,
     });
     term.open(container);
+    webglRef.current = { enable: enableWebgl, dispose: disposeWebgl };
     enableWebgl();
     const searchAddon = new SearchAddon({ highlightLimit: 1000 });
     term.loadAddon(searchAddon);
@@ -186,6 +190,7 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
       selectionSub.dispose();
       linkSub.dispose();
       termRef.current = null;
+      webglRef.current = null;
       setSearch(null);
       container.removeEventListener('contextmenu', onContextMenu);
       container.removeEventListener('dragover', onDragOver);
@@ -200,6 +205,18 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
     // updates arrive with the settings UI (M7).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalId, settings === null, appInfo === null]);
+
+  // Hidden (keep-alive) workspaces release their WebGL context; showing them again restores it.
+  useEffect(() => {
+    const t = termRef.current;
+    if (!t) return;
+    if (visible) {
+      webglRef.current?.enable();
+      t.term.refresh(0, t.term.rows - 1);
+    } else {
+      webglRef.current?.dispose();
+    }
+  }, [visible]);
 
   const run = (fn: (t: { term: Terminal; sendRaw: (d: string) => void }) => unknown) => {
     const t = termRef.current;

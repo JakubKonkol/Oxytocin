@@ -1,6 +1,9 @@
 import { FolderX } from 'lucide-react';
 import logoStacked from '../../assets/brand/logo-stacked-on-dark.svg';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { Project } from '@shared/domain/project';
+import { useSettingsStore } from '../../stores/settings-store';
+import { useWorkspacesStore } from '../../stores/workspaces-store';
 import { cn } from '../../lib/cn';
 import { activeProject, useProjectsStore } from '../../stores/projects-store';
 import { Button } from '../../ui/Button';
@@ -51,35 +54,66 @@ function Welcome() {
   );
 }
 
-/** Center area: the active project's workspace, the welcome screen or a "folder not found" card. */
+function MissingProject({ project }: { project: Project }) {
+  return (
+    <div
+      data-testid="project-missing"
+      className="flex h-full items-center justify-center rounded-card border border-line-subtle bg-card"
+    >
+      <EmptyState
+        icon={<FolderX size={32} className="text-warning" />}
+        title={`Folder not found: ${project.rootPath}`}
+        actions={
+          <>
+            <Button variant="primary" onClick={() => void locateProjectFolder(project)}>
+              Locate folder…
+            </Button>
+            <Button variant="secondary" onClick={() => void removeProject(project)}>
+              Remove from list
+            </Button>
+          </>
+        }
+      />
+    </div>
+  );
+}
+
+/**
+ * Center area. Workspaces of recently used projects stay mounted and are hidden with `display: none`
+ * (keep-alive LRU, `workspace.keepAliveProjects`); evicted ones are rebuilt from the saved layout and the
+ * PTY Host snapshots (rehydration). Processes never stop when switching.
+ */
 export function WorkspaceArea() {
   const project = useProjectsStore(activeProject);
-  const hasProjects = useProjectsStore((s) => s.projects.length > 0);
-  if (!project) {
-    return hasProjects ? <EmptyState title="Select a project" className="h-full" /> : <Welcome />;
-  }
-  if (project.missing) {
-    return (
-      <div
-        data-testid="project-missing"
-        className="flex h-full items-center justify-center rounded-card border border-line-subtle bg-card"
-      >
-        <EmptyState
-          icon={<FolderX size={32} className="text-warning" />}
-          title={`Folder not found: ${project.rootPath}`}
-          actions={
-            <>
-              <Button variant="primary" onClick={() => void locateProjectFolder(project)}>
-                Locate folder…
-              </Button>
-              <Button variant="secondary" onClick={() => void removeProject(project)}>
-                Remove from list
-              </Button>
-            </>
-          }
-        />
-      </div>
-    );
-  }
-  return <ProjectWorkspace key={project.id} projectId={project.id} active />;
+  const projects = useProjectsStore((s) => s.projects);
+  const mounted = useWorkspacesStore((s) => s.mounted);
+  const keepAlive = useSettingsStore((s) => s.settings?.['workspace.keepAliveProjects'] ?? 4);
+  const activeId = project && !project.missing ? project.id : null;
+
+  useEffect(() => {
+    if (activeId) useWorkspacesStore.getState().activate(activeId, keepAlive);
+  }, [activeId, keepAlive]);
+
+  useEffect(() => {
+    useWorkspacesStore.getState().retain(new Set(projects.filter((p) => !p.missing).map((p) => p.id)));
+  }, [projects]);
+
+  return (
+    <div className="relative h-full">
+      {mounted.map((id) => (
+        <div
+          key={id}
+          data-testid="mounted-workspace"
+          data-workspace-id={id}
+          aria-hidden={id !== activeId}
+          className="absolute inset-0"
+          style={{ display: id === activeId ? 'block' : 'none' }}
+        >
+          <ProjectWorkspace projectId={id} active={id === activeId} />
+        </div>
+      ))}
+      {!project && (projects.length > 0 ? <EmptyState title="Select a project" className="h-full" /> : <Welcome />)}
+      {project?.missing && <MissingProject project={project} />}
+    </div>
+  );
 }

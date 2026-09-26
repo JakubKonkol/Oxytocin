@@ -37,7 +37,7 @@ test('layout, titles and scrollback survive an app restart', async () => {
     const restoredText = async () =>
       (await Promise.all(ws.panels.map((p) => t.text(p.terminalId!)))).find((x) => x.includes('remember-this')) ?? '';
     await expect.poll(restoredText).toMatch(/remember-this[\s\S]*── Session restored · .+ ──/);
-    await expect(second.win.getByText('Logs')).toBeVisible();
+    await expect(second.win.getByTestId('tab-title').filter({ hasText: 'Logs' })).toBeVisible();
   } finally {
     await second.app.close();
   }

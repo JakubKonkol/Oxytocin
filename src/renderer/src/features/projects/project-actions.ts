@@ -6,6 +6,7 @@ import { confirmDialogEx } from '../../stores/dialog-store';
 import { useProjectsStore } from '../../stores/projects-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
+import { markProjectSwitchStart } from '../../lib/perf';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -28,6 +29,7 @@ export async function addProjectViaDialog(): Promise<void> {
 
 export function activateProject(id: string): void {
   if (useProjectsStore.getState().activeId === id) return;
+  markProjectSwitchStart();
   useProjectsStore.setState({ activeId: id });
   void ipc.invoke('projects:setActive', { id });
 }
