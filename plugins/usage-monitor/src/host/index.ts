@@ -1,7 +1,8 @@
 import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import type { AgentSnapshot, PluginContext } from '@oxytocin/plugin-api';
-import { type CollectorSettings, DEFAULT_SETTINGS, type UsageSettings } from './settings';
+import { type CollectorSettings, DEFAULT_SETTINGS, type TelemetrySettings, type UsageSettings } from './settings';
+import { applyTelemetryEnv, type OtlpEndpointInfo } from './telemetry-env';
 import { WorkerClient } from './worker-rpc';
 
 function settingsReader(ctx: PluginContext) {
@@ -25,6 +26,15 @@ function readCollectorSettings(ctx: PluginContext): CollectorSettings {
     codex: get('usage.sources.codex', true),
     gemini: get('usage.sources.gemini', true),
     backfillDays: get('usage.backfillDays', 30),
+  };
+}
+
+function readTelemetrySettings(ctx: PluginContext): TelemetrySettings {
+  const get = settingsReader(ctx);
+  return {
+    claudeCode: get('usage.liveTelemetry.claudeCode', false),
+    gemini: get('usage.liveTelemetry.gemini', false),
+    scope: get<TelemetrySettings['scope']>('usage.liveTelemetry.scope', 'agentProfiles'),
   };
 }
 
@@ -76,11 +86,30 @@ export async function activate(ctx: PluginContext): Promise<void> {
   let collectorKey = JSON.stringify(readCollectorSettings(ctx));
   await client.request('startCollectors', readCollectorSettings(ctx));
 
+  // Live telemetry (opt-in): the receiver runs in the worker, the variables go through the environment collection.
+  const configureTelemetry = async () => {
+    const telemetry = readTelemetrySettings(ctx);
+    const { endpoint, userConfig } = await client.request<{
+      endpoint: OtlpEndpointInfo | null;
+      userConfig: string | null;
+    }>('otlp.configure', { enabled: telemetry.claudeCode || telemetry.gemini });
+    if (telemetry.claudeCode && userConfig)
+      ctx.log.warn(`Your OpenTelemetry configuration was detected (${userConfig}) — live mode for Claude Code is off.`);
+    applyTelemetryEnv(oxy.terminals.environment, endpoint, telemetry, userConfig);
+  };
+  let telemetryKey = JSON.stringify(readTelemetrySettings(ctx));
+  await configureTelemetry();
+
   ctx.subscriptions.push(
     oxy.projects.onDidChange(() => void pushProjects()),
     oxy.agents.onDidChange((agents) => void client.request('setAgents', agentRefs(agents))),
     oxy.settings.onDidChange('usage.', () => {
       void client.request('setSettings', readSettings(ctx));
+      const telemetry = JSON.stringify(readTelemetrySettings(ctx));
+      if (telemetry !== telemetryKey) {
+        telemetryKey = telemetry;
+        void configureTelemetry();
+      }
       const next = readCollectorSettings(ctx);
       if (JSON.stringify(next) === collectorKey) return;
       collectorKey = JSON.stringify(next);

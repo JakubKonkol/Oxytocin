@@ -4,3 +4,4 @@
 
 - First version: projects, terminals (metadata, create, sendText, environment), agents, git status, UI (views, panels,
   status bar items, notifications, open external/editor), commands, settings, storage and logging.
+- `EnvironmentCollection.append/prepend` accept `{ separator }`, inserted only when the variable already has a value.

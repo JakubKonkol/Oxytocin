@@ -32,8 +32,18 @@ export function pluginEnvLayers(
     const layer: Record<string, string | null> = {};
     for (const e of c.entries) {
       if (!scopeMatches(e.scope, target)) continue;
-      const joiner = isPathVar(e.name) ? sep : '';
-      const current = e.name in layer ? (layer[e.name] ?? '') : `\${env:${e.name}}`;
+      const inherited = !(e.name in layer);
+      const current = inherited ? `\${env:${e.name}}` : (layer[e.name] ?? '');
+      // PATH always joins with the platform separator; other variables only with an explicit separator, and only
+      // when the value so far is not empty (`\${ifenv:NAME:sep}` is expanded by the env composer).
+      const custom = (e.separator ?? '').replace(/[{}:]/g, '');
+      const joiner = isPathVar(e.name)
+        ? sep
+        : custom && inherited
+          ? `\${ifenv:${e.name}:${custom}}`
+          : custom && current
+            ? custom
+            : '';
       switch (e.op) {
         case 'replace':
           layer[e.name] = e.value ?? '';

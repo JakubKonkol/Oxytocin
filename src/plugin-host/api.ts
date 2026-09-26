@@ -52,6 +52,7 @@ export interface EnvEntry {
   name: string;
   value?: string;
   scope?: EnvScope;
+  separator?: string;
 }
 
 export interface ApiDeps {
@@ -112,17 +113,23 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       );
     }, 50);
   };
-  const envOp = (op: EnvEntry['op'], name: string, value?: string, scope?: EnvScope) => {
+  const envOp = (op: EnvEntry['op'], name: string, value?: string, scope?: EnvScope, separator?: string) => {
     require('terminals.env');
     const key = JSON.stringify(scope ?? {});
     envEntries = envEntries.filter((e) => !(e.name === name && JSON.stringify(e.scope ?? {}) === key));
-    envEntries.push({ op, name, ...(value !== undefined ? { value } : {}), ...(scope ? { scope } : {}) });
+    envEntries.push({
+      op,
+      name,
+      ...(value !== undefined ? { value } : {}),
+      ...(scope ? { scope } : {}),
+      ...(separator ? { separator } : {}),
+    });
     syncEnv();
   };
   const environment: EnvironmentCollection = {
     replace: (n, v, s) => envOp('replace', n, v, s),
-    append: (n, v, s) => envOp('append', n, v, s),
-    prepend: (n, v, s) => envOp('prepend', n, v, s),
+    append: (n, v, s, o) => envOp('append', n, v, s, o?.separator),
+    prepend: (n, v, s, o) => envOp('prepend', n, v, s, o?.separator),
     delete: (n, s) => envOp('delete', n, undefined, s),
     clear: () => {
       require('terminals.env');

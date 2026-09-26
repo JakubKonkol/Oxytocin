@@ -16,3 +16,9 @@ export interface CollectorSettings {
   gemini: boolean;
   backfillDays: number;
 }
+
+export interface TelemetrySettings {
+  claudeCode: boolean;
+  gemini: boolean;
+  scope: 'agentProfiles' | 'allTerminals';
+}

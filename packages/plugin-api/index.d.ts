@@ -123,8 +123,9 @@ export interface EnvScope {
  */
 export interface EnvironmentCollection {
   replace(name: string, value: string, scope?: EnvScope): void;
-  append(name: string, value: string, scope?: EnvScope): void;
-  prepend(name: string, value: string, scope?: EnvScope): void;
+  /** `separator` is inserted only when the variable already has a value (PATH always uses the platform one). */
+  append(name: string, value: string, scope?: EnvScope, options?: { separator?: string }): void;
+  prepend(name: string, value: string, scope?: EnvScope, options?: { separator?: string }): void;
   delete(name: string, scope?: EnvScope): void;
   clear(): void;
   /** Declares the collection complete (releases the start-up spawn barrier). */

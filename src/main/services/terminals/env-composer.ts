@@ -64,9 +64,14 @@ export class EnvMap {
   }
 }
 
-/** Expands `${env:NAME}` against the environment composed so far (unknown variables become empty). */
+/**
+ * Expands `${env:NAME}` against the environment composed so far (unknown variables become empty) and
+ * `${ifenv:NAME:SEP}` to SEP only when NAME has a non-empty value (separators of plugin append/prepend).
+ */
 export function expandEnvReferences(value: string, env: EnvMap): string {
-  return value.replace(/\$\{env:([^}]+)\}/g, (_m, name: string) => env.get(name) ?? '');
+  return value
+    .replace(/\$\{ifenv:([^:}]+):([^}]*)\}/g, (_m, name: string, separator: string) => (env.get(name) ? separator : ''))
+    .replace(/\$\{env:([^}]+)\}/g, (_m, name: string) => env.get(name) ?? '');
 }
 
 export interface ComposeEnvInput {

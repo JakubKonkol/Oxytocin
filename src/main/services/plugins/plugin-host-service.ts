@@ -40,6 +40,8 @@ export interface EnvContribution {
     name: string;
     value?: string;
     scope?: { projectId?: string; profileIds?: string[] };
+    /** append/prepend: inserted only when the variable already has a value. */
+    separator?: string;
   }[];
 }
 

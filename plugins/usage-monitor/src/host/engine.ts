@@ -1,4 +1,7 @@
+import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectAttribution, type ProjectRef } from './attribution';
 import { acceptClaudeLine, claudeProjectDirs, parseClaudeLine } from './collectors/claude-jsonl';
@@ -17,8 +20,10 @@ import {
   parseGeminiLine,
 } from './collectors/gemini-chats';
 import { FileCollector } from './collectors/file-collector';
+import { CumulativeTracker, parseOtlpMetrics, type OtlpSessionInfo } from './collectors/otlp';
+import { OtlpServer } from './collectors/otlp-server';
 import { CursorStore } from './collectors/tail';
-import { type AgentLimitRecord, type CollectedItem, isLimit, type UsageSource } from './model';
+import { type AgentLimitRecord, type CollectedItem, isLimit, type UsageRecord, type UsageSource } from './model';
 import snapshot from './pricing/snapshot.json';
 import { PricingService, type PricingCache, type PricingServiceDeps } from './pricing/pricing-service';
 import type { PricingTable } from './pricing/types';
@@ -60,6 +65,44 @@ const CORRELATION_BEFORE_MS = 5_000;
 const CORRELATION_AFTER_MS = 60_000;
 const CORRELATED_AGENTS = ['codex', 'gemini-cli'];
 
+/** One source per session (§9.4): OTLP data waits this long for the session's log file before it counts. */
+export const OTLP_PRIMARY_WAIT_MS = 15_000;
+const FILE_SOURCE: Record<string, UsageSource> = { 'claude-code': 'claude-jsonl', 'gemini-cli': 'gemini-chat' };
+
+/** Variables that mean the user configured OpenTelemetry for Claude Code themselves (§9.3). */
+const USER_OTEL_VARS = [
+  'OTEL_EXPORTER_OTLP_ENDPOINT',
+  'OTEL_METRICS_EXPORTER',
+  'OTEL_LOGS_EXPORTER',
+  'CLAUDE_CODE_ENABLE_TELEMETRY',
+];
+
+/** Whether the environment or Claude Code's settings.json already configure OpenTelemetry. */
+export function detectUserOtelConfig(env: NodeJS.ProcessEnv, home = homedir()): string | null {
+  const inEnv = USER_OTEL_VARS.find((v) => env[v]);
+  if (inEnv) return `${inEnv} is set in the environment`;
+  const dirs = [...(env['CLAUDE_CONFIG_DIR'] ?? '').split(','), join(home, '.claude')]
+    .map((d) => d.trim())
+    .filter(Boolean);
+  for (const dir of dirs) {
+    const file = join(dir, 'settings.json');
+    if (!existsSync(file)) continue;
+    try {
+      const settings = JSON.parse(readFileSync(file, 'utf8')) as { env?: Record<string, unknown> };
+      const found = USER_OTEL_VARS.find((v) => settings.env?.[v] !== undefined);
+      if (found) return `${found} is set in ${file}`;
+    } catch {
+      // Unreadable settings: ignore.
+    }
+  }
+  return null;
+}
+
+export interface OtlpEndpoint {
+  port: number;
+  token: string;
+}
+
 const PRICING_CACHE = 'pricing-cache.json';
 const RECOMPUTE_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -84,6 +127,11 @@ export class UsageEngine {
   private readonly linkListeners = new Set<(link: { terminalId: string; sessionId: string; agent: string }) => void>();
   private agents: AgentRef[] = [];
   private readonly linkedTerminals = new Set<string>();
+  private otlp: OtlpServer | undefined;
+  private readonly otlpTracker = new CumulativeTracker();
+  private readonly primary = new Map<string, string>();
+  private readonly pendingOtel = new Map<string, { records: UsageRecord[]; since: number }>();
+  private pendingTimer: ReturnType<typeof setTimeout> | undefined;
 
   private constructor(private readonly opts: EngineOptions) {
     this.now = opts.now ?? Date.now;
@@ -181,6 +229,7 @@ export class UsageEngine {
           if (this.writeLimit(item)) changed++;
           continue;
         }
+        if (!this.admitFileRecord(item)) continue;
         if (this.writer.write(item, ctx)) {
           changed++;
           if (CORRELATED_AGENTS.includes(item.agent)) correlate = true;
@@ -191,6 +240,125 @@ export class UsageEngine {
     if (correlate) this.correlate();
     if (changed > 0) this.emitChanged(changed);
     return changed;
+  }
+
+  private primarySource(sessionId: string): string | null {
+    const cached = this.primary.get(sessionId);
+    if (cached) return cached;
+    const row = this.db.prepare('SELECT primary_source AS source FROM sessions WHERE session_id = ?').get(sessionId) as
+      { source: string | null } | undefined;
+    if (row?.source) this.primary.set(sessionId, row.source);
+    return row?.source ?? null;
+  }
+
+  /** Log-file records of a session whose primary source became OTLP are dropped (no double counting). */
+  private admitFileRecord(r: UsageRecord): boolean {
+    const fileSource = FILE_SOURCE[r.agent];
+    if (!r.sessionId || r.source !== fileSource) return true;
+    const primary = this.primarySource(r.sessionId);
+    if (primary && primary !== fileSource) return false;
+    if (!primary) {
+      this.primary.set(r.sessionId, fileSource);
+      this.pendingOtel.delete(r.sessionId);
+      this.db
+        .prepare(
+          `INSERT INTO sessions (session_id, agent, primary_source) VALUES (?, ?, ?)
+           ON CONFLICT(session_id) DO UPDATE SET primary_source = coalesce(sessions.primary_source, excluded.primary_source)`,
+        )
+        .run(r.sessionId, r.agent, fileSource);
+    }
+    return true;
+  }
+
+  /** An OTLP metrics export (§9.4). */
+  ingestOtlp(body: unknown): void {
+    const batch = parseOtlpMetrics(body, this.otlpTracker);
+    transaction(this.db, () => {
+      for (const s of batch.sessions) this.applyOtlpSession(s);
+    });
+    const now = this.now();
+    const admitted: UsageRecord[] = [];
+    for (const r of batch.records) {
+      const primary = this.primarySource(r.sessionId!);
+      if (primary === r.source) admitted.push(r);
+      else if (!primary) {
+        const pending = this.pendingOtel.get(r.sessionId!) ?? { records: [], since: now };
+        pending.records.push(r);
+        this.pendingOtel.set(r.sessionId!, pending);
+      }
+      // Primary is the log file: tokens come from there; the export only updated the session above.
+    }
+    if (admitted.length > 0) this.ingest(admitted);
+    this.schedulePendingCheck();
+    this.emitChanged(1);
+  }
+
+  private applyOtlpSession(s: OtlpSessionInfo): void {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (session_id, agent, project_id, terminal_id, reported_cost_usd) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           project_id = coalesce(sessions.project_id, excluded.project_id),
+           terminal_id = coalesce(sessions.terminal_id, excluded.terminal_id),
+           reported_cost_usd = coalesce(sessions.reported_cost_usd, 0) + excluded.reported_cost_usd`,
+      )
+      .run(s.sessionId, s.agent, s.projectId ?? null, s.terminalId ?? null, s.reportedCostUsd);
+    if (s.terminalId && !this.terminals.has(s.sessionId)) {
+      this.terminals.set(s.sessionId, s.terminalId);
+      this.db
+        .prepare('UPDATE usage_events SET terminal_id = ? WHERE session_id = ? AND terminal_id IS NULL')
+        .run(s.terminalId, s.sessionId);
+    }
+  }
+
+  /** OTLP data waiting for a log file: after 15 s without one, OTLP becomes the session's primary source. */
+  flushPendingOtel(): void {
+    const now = this.now();
+    for (const [sessionId, pending] of [...this.pendingOtel]) {
+      if (now - pending.since < OTLP_PRIMARY_WAIT_MS) continue;
+      this.pendingOtel.delete(sessionId);
+      if (this.primarySource(sessionId)) continue;
+      const source = pending.records[0]!.source;
+      this.primary.set(sessionId, source);
+      this.db.prepare('UPDATE sessions SET primary_source = ? WHERE session_id = ?').run(source, sessionId);
+      this.ingest(pending.records);
+    }
+    this.schedulePendingCheck();
+  }
+
+  private schedulePendingCheck(): void {
+    clearTimeout(this.pendingTimer);
+    if (this.pendingOtel.size === 0) return;
+    const oldest = Math.min(...[...this.pendingOtel.values()].map((p) => p.since));
+    this.pendingTimer = setTimeout(
+      () => this.flushPendingOtel(),
+      Math.max(0, oldest + OTLP_PRIMARY_WAIT_MS - this.now()) + 10,
+    );
+    this.pendingTimer.unref?.();
+  }
+
+  /** Starts or stops the local receiver; the endpoint (port + token) is kept in the database across restarts. */
+  async configureOtlp(enabled: boolean): Promise<OtlpEndpoint | null> {
+    if (!enabled) {
+      await this.otlp?.stop();
+      this.otlp = undefined;
+      return null;
+    }
+    let token = getMeta(this.db, 'otlp_token');
+    if (!token) {
+      token = randomBytes(32).toString('hex');
+      setMeta(this.db, 'otlp_token', token);
+    }
+    if (!this.otlp) {
+      this.otlp = new OtlpServer(token, (body) => this.ingestOtlp(body), this.now);
+      const port = await this.otlp.start(Number(getMeta(this.db, 'otlp_port') ?? 0));
+      setMeta(this.db, 'otlp_port', String(port));
+    }
+    return { port: this.otlp.stats.port!, token };
+  }
+
+  get otlpStats() {
+    return this.otlp?.stats ?? null;
   }
 
   private writeLimit(l: AgentLimitRecord): boolean {
@@ -391,6 +559,8 @@ export class UsageEngine {
 
   close(): void {
     this.stopCollectors();
+    clearTimeout(this.pendingTimer);
+    void this.otlp?.stop();
     this.db.close();
   }
 }

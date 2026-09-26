@@ -1,6 +1,6 @@
 /** Ingest worker (worker_threads inside the Plugin Host): owns the SQLite database and all heavy work. */
 import { parentPort, workerData } from 'node:worker_threads';
-import { type EngineOptions, UsageEngine } from '../engine';
+import { detectUserOtelConfig, type EngineOptions, UsageEngine } from '../engine';
 import type { ProjectRef } from '../attribution';
 import type { AgentRef } from '../engine';
 import type { CollectorSettings, UsageSettings } from '../settings';
@@ -31,6 +31,11 @@ const emit = serveWorker(parentPort, {
   'pricing.refresh': async () => (await ready).maybeRefreshPricing(true),
   setProjects: async (projects: ProjectRef[]) => (await ready).setProjects(projects),
   setAgents: async (list: AgentRef[]) => (await ready).setAgents(list),
+  /** Live telemetry (§9): starts/stops the receiver; reports a user OpenTelemetry configuration for Claude Code. */
+  'otlp.configure': async ({ enabled }: { enabled: boolean }) => {
+    const endpoint = await (await ready).configureOtlp(enabled);
+    return { endpoint, userConfig: detectUserOtelConfig(process.env) };
+  },
   startCollectors: async (options: CollectorSettings) => {
     const e = await ready;
     e.stopCollectors();

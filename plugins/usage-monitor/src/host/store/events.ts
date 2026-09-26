@@ -62,14 +62,16 @@ export class EventWriter {
        VALUES (:session_id, :agent, :project_id, :cwd, :terminal_id, :source, :ts, :ts, :model, :project_hash,
          :started_at)
        ON CONFLICT(session_id) DO UPDATE SET
+         agent = excluded.agent,
+         primary_source = coalesce(sessions.primary_source, excluded.primary_source),
          project_hash = coalesce(excluded.project_hash, sessions.project_hash),
          started_at = coalesce(sessions.started_at, excluded.started_at),
          project_id = coalesce(excluded.project_id, sessions.project_id),
          cwd = coalesce(excluded.cwd, sessions.cwd),
          terminal_id = coalesce(sessions.terminal_id, excluded.terminal_id),
-         first_event_at = min(sessions.first_event_at, excluded.first_event_at),
-         last_event_at = max(sessions.last_event_at, excluded.last_event_at),
-         last_model = CASE WHEN excluded.last_event_at >= sessions.last_event_at THEN excluded.last_model
+         first_event_at = min(coalesce(sessions.first_event_at, excluded.first_event_at), excluded.first_event_at),
+         last_event_at = max(coalesce(sessions.last_event_at, excluded.last_event_at), excluded.last_event_at),
+         last_model = CASE WHEN excluded.last_event_at >= coalesce(sessions.last_event_at, 0) THEN excluded.last_model
                            ELSE sessions.last_model END`,
     );
   }

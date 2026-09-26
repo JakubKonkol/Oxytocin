@@ -48,6 +48,34 @@ describe('plugin environment collections', () => {
     expect(agent[0]).toMatchObject({ ONLY_AGENTS: '1', ONLY_P2: '1', PATH: '${env:PATH};/plugin/bin' });
   });
 
+  it('appends with a separator only when the variable already has a value', () => {
+    const attrs = [
+      {
+        pluginId: 'otel',
+        entries: [
+          {
+            op: 'append' as const,
+            name: 'OTEL_RESOURCE_ATTRIBUTES',
+            value: 'oxytocin.terminal_id=${env:OXYTOCIN_TERMINAL_ID}',
+            separator: ',',
+          },
+        ],
+      },
+    ];
+    const compose = (base: Record<string, string>) =>
+      composeEnv({
+        platform: 'linux',
+        base,
+        dev: false,
+        appVersion: '1',
+        projectId: 'p1',
+        terminalId: 't-1',
+        layers: pluginEnvLayers(attrs, { projectId: 'p1', profileId: 'bash' }, 'linux'),
+      })['OTEL_RESOURCE_ATTRIBUTES'];
+    expect(compose({})).toBe('oxytocin.terminal_id=t-1');
+    expect(compose({ OTEL_RESOURCE_ATTRIBUTES: 'team=a' })).toBe('team=a,oxytocin.terminal_id=t-1');
+  });
+
   it('finds affected terminals', () => {
     const c = contributions[0]!;
     expect(affectedBy(undefined, c, { projectId: 'x', profileId: 'bash' })).toBe(true);
