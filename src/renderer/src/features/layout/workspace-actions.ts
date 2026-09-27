@@ -9,11 +9,15 @@ import { newPanelId, type TerminalPanelParams } from './panel-registry';
 
 export type PanelPosition = AddPanelPositionOptions;
 
-/** Creates a terminal and opens it as a panel (default: in the active group). */
+/**
+ * Creates a terminal and opens it as a panel (default: in the active group). With `background`, a non-terminal
+ * panel the user opened while the terminal was starting (Settings from a start-up toast, a diff) stays in front.
+ */
 export async function addTerminalPanel(
   api: DockviewApi,
   req: CreateTerminalRequest,
   position?: PanelPosition,
+  opts: { background?: boolean } = {},
 ): Promise<string | null> {
   let info;
   try {
@@ -30,6 +34,7 @@ export async function addTerminalPanel(
     params: { terminalId: info.id },
     title: info.title,
     ...(position ? { position } : {}),
+    ...(opts.background && api.activePanel && api.activePanel.api.component !== 'terminal' ? { inactive: true } : {}),
   });
   return id;
 }

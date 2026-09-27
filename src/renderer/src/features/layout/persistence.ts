@@ -235,7 +235,14 @@ export async function openDefaultLayout(api: DockviewApi, projectId: string): Pr
   const defaultProfileId = project?.settings.defaultProfileId;
   const startup = project?.settings.startupTerminals ?? [];
   if (startup.length === 0) {
-    await addTerminalPanel(api, { projectId, ...(defaultProfileId ? { profileId: defaultProfileId } : {}) });
+    await addTerminalPanel(
+      api,
+      { projectId, ...(defaultProfileId ? { profileId: defaultProfileId } : {}) },
+      undefined,
+      {
+        background: true,
+      },
+    );
     return;
   }
   let previous: string | null = null;
@@ -256,6 +263,7 @@ export async function openDefaultLayout(api: DockviewApi, projectId: string): Pr
           ...(task.command ? { initialCommand: task.command } : {}),
         },
         position,
+        { background: true },
       )) ?? previous;
   }
 }

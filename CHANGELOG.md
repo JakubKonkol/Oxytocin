@@ -25,6 +25,11 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   while the window loads, so the first terminal opens sooner. The process tree of busy terminals is sampled every
   2 s instead of every second, which halves the `fastlist.exe` spawns while agents are printing.
 
+### Fixed
+
+- A panel opened while a project's first terminal is still starting (for example Settings from the start-up
+  "invalid value" notification) is no longer covered by the new terminal tab.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added
