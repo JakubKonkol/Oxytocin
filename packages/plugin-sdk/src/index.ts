@@ -40,7 +40,7 @@ const MAX_STATE_BYTES = 256 * 1024;
 function applyTheme(tokens: Record<string, string>): void {
   const root = document.documentElement;
   for (const [name, value] of Object.entries(tokens)) root.style.setProperty(name, value);
-  root.dataset['oxyTheme'] = 'dark';
+  root.dataset['oxyTheme'] = tokens['--color-scheme'] === 'light' ? 'light' : 'dark';
 }
 
 /** "KeyB" → "b", "Digit1" → "1", "F7" → "f7" (same names as the shell's keybindings). */

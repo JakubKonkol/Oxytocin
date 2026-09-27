@@ -54,6 +54,11 @@ export function installTestHooks(): void {
       const entry = terminalRegistry.get(id);
       return entry ? terminalText(entry.term) : null;
     },
+    /** xterm theme colors in use (theme switches, M7-T4). */
+    getTerminalTheme: (id: string) => {
+      const theme = terminalRegistry.get(id)?.term.options.theme;
+      return theme ? { background: theme.background ?? null, red: theme.red ?? null } : null;
+    },
     getTerminalSize: (id: string) => {
       const term = terminalRegistry.get(id)?.term;
       return term ? { cols: term.cols, rows: term.rows } : null;

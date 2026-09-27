@@ -2,7 +2,7 @@
 
 /* Dockview theme mapped to tokens (used by the center Dockview and the sidebar Paneview). */
 .dockview-theme-oxytocin {
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
   --dv-paneview-active-outline-color: transparent;
   --dv-tabs-and-actions-container-font-size: var(--font-size-ui);
   --dv-tabs-and-actions-container-height: 34px;

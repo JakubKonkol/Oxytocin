@@ -46,6 +46,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
       ...(opts.args ?? []),
     ],
     cwd: executablePath ? tmpdir() : repoRoot,
+    // No prefers-color-scheme emulation: the app's theme follows nativeTheme (appearance.theme).
+    colorScheme: null,
     env: {
       ...(process.env as Record<string, string>),
       OXYTOCIN_E2E: '1',

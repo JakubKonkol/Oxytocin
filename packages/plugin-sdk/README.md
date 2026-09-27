@@ -14,3 +14,10 @@ view.setTitle('My view');
 ```
 
 Views have no network access (`connect-src 'none'`) and no access to the shell's DOM; fetch data through the backend.
+
+## Themes
+
+The shell's design tokens (`--bg-card`, `--text-primary`, `--accent`, …) are applied as CSS variables on `<html>`,
+and `data-oxy-theme` is `dark` or `light`. When the user switches the theme, the tokens are replaced and
+`view.onThemeChange(tokens)` fires; with React, `useOxyTheme()` (from `@oxytocin/plugin-sdk/react`) re-renders
+components that read token values imperatively (charts, canvases). Styles that only use `var(--…)` need nothing.

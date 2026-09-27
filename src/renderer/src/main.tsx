@@ -5,6 +5,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { installTestHooks } from './lib/test-hooks';
+import { buildXtermTheme, installThemeController, onDidChangeTheme, setThemeSetting } from './lib/theme';
+import { useSettingsStore } from './stores/settings-store';
+import { terminalRegistry } from './features/terminals/terminal-registry';
 import { ptyChannel } from './features/terminals/pty-channel';
 import { registerTerminalCommands } from './features/terminals/terminal-actions';
 import { installGlobalKeybindings } from './lib/keyboard';
@@ -24,7 +27,15 @@ if (window.oxy.e2e) {
   document.documentElement.dataset['e2e'] = 'true';
   installTestHooks();
 }
-document.documentElement.dataset['theme'] = 'dark';
+installThemeController();
+useSettingsStore.subscribe((s) => {
+  if (s.settings) setThemeSetting(s.settings['appearance.theme']);
+});
+// Terminals re-read the ANSI palette from the swapped tokens.
+onDidChangeTheme(() => {
+  const theme = buildXtermTheme();
+  for (const entry of terminalRegistry.values()) entry.term.options.theme = theme;
+});
 // Listen for the PTY MessagePort before main sends it (did-finish-load).
 ptyChannel();
 registerTerminalCommands();

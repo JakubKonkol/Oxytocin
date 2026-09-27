@@ -11,6 +11,7 @@ import { openPluginPanel } from './plugin-panels';
 import { showViewContextMenu } from './view-context-menu';
 import { onPluginReloaded, registerViewTarget, viewStates } from './view-bridge';
 import { themeTokens } from './theme-tokens';
+import { onDidChangeTheme } from '../../lib/theme';
 
 export interface PluginFrameProps {
   pluginId: string;
@@ -173,6 +174,8 @@ export function PluginFrame(props: PluginFrameProps) {
         });
     };
     window.addEventListener('message', onWindowMessage);
+    // Theme switches (M7-T4): the SDK re-applies the tokens and fires `onThemeChange`.
+    const offTheme = onDidChangeTheme(() => post({ t: 'evt', name: 'theme', payload: themeTokens() }));
     const unregister = registerViewTarget(viewId, {
       deliver: (envelope) => {
         if (envelope.kind === 'msg') post({ t: 'msg', payload: envelope.payload });
@@ -200,6 +203,7 @@ export function PluginFrame(props: PluginFrameProps) {
       clearTimeout(timeout);
       window.removeEventListener('message', onWindowMessage);
       unregister();
+      offTheme();
       portRef.current?.close();
       portRef.current = null;
       void ipc.invoke('plugins:viewClosed', { viewId }).catch(() => undefined);

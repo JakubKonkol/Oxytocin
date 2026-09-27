@@ -22,7 +22,7 @@ import { PLUGIN_SCHEME, registerAppProtocol, registerPrivilegedSchemes } from '.
 import { createPluginProtocolHandler } from './app/plugin-protocol';
 import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
 import { resolveUserDataOverride } from './app/user-data';
-import { createMainWindow, isTrustedShellUrl } from './app/window-manager';
+import { applyNativeTheme, createMainWindow, isTrustedShellUrl } from './app/window-manager';
 import { busyTerminals, describeQuit } from './app/quit-guard';
 import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
@@ -92,6 +92,8 @@ function bootstrap(): void {
     createLogger('settings'),
   );
   setLogLevel(settings.loadSync()['diagnostics.logLevel']);
+  applyNativeTheme(settings.get()['appearance.theme']);
+  settings.onDidChange((s) => applyNativeTheme(s['appearance.theme']));
   settings.watch();
   const keybindings = new KeybindingsService(
     join(app.getPath('userData'), 'keybindings.json'),

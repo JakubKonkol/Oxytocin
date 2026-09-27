@@ -1,7 +1,9 @@
-/* Design tokens — the only place colors are defined (ADR-014). Theme "Oxytocin Dark". */
+/* Design tokens — the only place colors are defined (ADR-014). Themes "Oxytocin Dark" and "Oxytocin Light". */
 :root,
 :root[data-theme='dark'] {
   color-scheme: dark;
+  /* Read by plugin views and native chrome (the property itself is not a custom property). */
+  --color-scheme: dark;
 
   /* Surfaces */
   --bg-app: #0b0d10;
@@ -95,4 +97,84 @@
   /* Motion */
   --motion-fast: 120ms;
   --motion-normal: 200ms;
+}
+
+/* Oxytocin Light (M7-T4): same token names; shapes, fonts, sizes and motion are inherited from :root. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-scheme: light;
+
+  /* Surfaces */
+  --bg-app: #e9ecf0;
+  --bg-surface: #f1f3f6;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f3f6fa;
+  --bg-elevated: #ffffff;
+  --bg-input: #f5f7fa;
+  --bg-terminal: #fbfcfd;
+  --bg-focus-tint: #e3edff;
+
+  /* Borders */
+  --border-subtle: #e2e6eb;
+  --border-default: #cfd5dc;
+  --border-strong: #b1bac5;
+  --border-focus: #2f6fdf;
+
+  /* Text */
+  --text-primary: #1b1f24;
+  --text-secondary: #4b5563;
+  --text-muted: #6f7782;
+  --text-inverse: #ffffff;
+
+  /* Accents and states */
+  --accent: #2f6fdf;
+  --accent-muted: #dbe7fd;
+  --success: #16a34a;
+  --warning: #b7791f;
+  --danger: #d93636;
+  --info: #0b87c2;
+  --agent: #7c4ddb;
+
+  /* Git */
+  --git-added: #1f883d;
+  --git-modified: #9a6700;
+  --git-deleted: #cf222e;
+  --git-renamed: #8250df;
+  --git-untracked: #1a7f37;
+  --git-conflict: #d1242f;
+
+  /* Project avatar palette (darker for contrast on light surfaces) */
+  --project-0: #2f6fdf;
+  --project-1: #16a34a;
+  --project-2: #d08700;
+  --project-3: #d93636;
+  --project-4: #7c4ddb;
+  --project-5: #0b87c2;
+  --project-6: #db2777;
+  --project-7: #0f9488;
+  --project-8: #a37b00;
+  --project-9: #ea6c1a;
+
+  /* Terminal ANSI palette (readable on a light background) */
+  --ansi-black: #24292f;
+  --ansi-red: #cf222e;
+  --ansi-green: #116329;
+  --ansi-yellow: #8a5a00;
+  --ansi-blue: #0969da;
+  --ansi-magenta: #8250df;
+  --ansi-cyan: #1b7c83;
+  --ansi-white: #6e7781;
+  --ansi-bright-black: #57606a;
+  --ansi-bright-red: #a40e26;
+  --ansi-bright-green: #1a7f37;
+  --ansi-bright-yellow: #633c01;
+  --ansi-bright-blue: #218bff;
+  --ansi-bright-magenta: #a475f9;
+  --ansi-bright-cyan: #3192aa;
+  --ansi-bright-white: #8c959f;
+  --terminal-foreground: #1f2328;
+  --terminal-cursor: #2f6fdf;
+  --terminal-selection: rgb(47 111 223 / 0.25);
+
+  --shadow-elevated: 0 8px 24px rgb(15 23 42 / 0.16);
 }

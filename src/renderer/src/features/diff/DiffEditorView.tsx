@@ -28,9 +28,9 @@ export default function DiffEditorView({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    ensureTheme();
+    const theme = ensureTheme();
     const editor = monaco.editor.createDiffEditor(host, {
-      theme: 'oxytocin-dark',
+      theme,
       readOnly: true,
       originalEditable: false,
       domReadOnly: true,

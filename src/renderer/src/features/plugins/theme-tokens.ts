@@ -1,7 +1,11 @@
-let cached: Record<string, string> | null = null;
+import { currentTheme } from '../../lib/theme';
+
+const cache = new Map<string, Record<string, string>>();
 
 /** Design tokens (custom properties declared on :root) with their computed values, for plugin views. */
 export function themeTokens(): Record<string, string> {
+  const theme = currentTheme();
+  const cached = cache.get(theme);
   if (cached) return cached;
   const names = new Set<string>();
   for (const sheet of Array.from(document.styleSheets)) {
@@ -22,6 +26,6 @@ export function themeTokens(): Record<string, string> {
     const value = style.getPropertyValue(name).trim();
     if (value) tokens[name] = value;
   }
-  if (Object.keys(tokens).length > 0) cached = tokens;
+  if (Object.keys(tokens).length > 0) cache.set(theme, tokens);
   return tokens;
 }

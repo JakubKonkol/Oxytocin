@@ -5,6 +5,7 @@ import 'monaco-editor/basic-languages/monaco.contribution';
 // Icon font (fold arrows, "hidden lines" controls).
 import 'monaco-editor/features/codicon/register';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
+import { currentTheme, type EffectiveTheme, expandHex, onDidChangeTheme } from '../../lib/theme';
 
 declare global {
   interface Window {
@@ -14,7 +15,7 @@ declare global {
 
 window.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 
-const token = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const token = (name: string) => expandHex(getComputedStyle(document.documentElement).getPropertyValue(name).trim());
 /** `#rrggbb` + alpha (0–1) → `#rrggbbaa`. */
 const alpha = (hex: string, a: number) =>
   /^#[0-9a-f]{6}$/i.test(hex)
@@ -23,16 +24,21 @@ const alpha = (hex: string, a: number) =>
         .padStart(2, '0')}`
     : hex;
 
-let themeDefined = false;
+const defined = new Set<EffectiveTheme>();
 
-/** `oxytocin-dark` built from the CSS tokens. */
-export function ensureTheme(): void {
-  if (themeDefined) return;
-  themeDefined = true;
+/**
+ * `oxytocin-dark` / `oxytocin-light` built from the CSS tokens of the current theme; returns the theme name.
+ * A theme switch defines the other one (tokens are swapped by then) and re-themes every editor.
+ */
+export function ensureTheme(): string {
+  const theme = currentTheme();
+  const name = `oxytocin-${theme}`;
+  if (defined.has(theme)) return name;
+  defined.add(theme);
   const added = token('--git-added');
   const deleted = token('--git-deleted');
-  monaco.editor.defineTheme('oxytocin-dark', {
-    base: 'vs-dark',
+  monaco.editor.defineTheme(name, {
+    base: theme === 'dark' ? 'vs-dark' : 'vs',
     inherit: true,
     rules: [],
     colors: {
@@ -58,6 +64,9 @@ export function ensureTheme(): void {
       'diffEditor.unchangedRegionForeground': token('--text-muted'),
     },
   });
+  return name;
 }
+
+onDidChangeTheme(() => monaco.editor.setTheme(ensureTheme()));
 
 export { monaco };

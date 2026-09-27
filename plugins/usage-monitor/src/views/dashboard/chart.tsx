@@ -1,3 +1,4 @@
+import { useOxyTheme } from '@oxytocin/plugin-sdk/react';
 import { useEffect, useRef } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
@@ -27,6 +28,8 @@ export function StackedBars({
   height?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Colors are read from the tokens when the chart is built: rebuild it on theme switches.
+  const theme = useOxyTheme();
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -71,8 +74,8 @@ export function StackedBars({
       resize.disconnect();
       plot.destroy();
     };
-  }, [buckets, series, height]);
-  return <div ref={ref} className="chart" data-testid="usage-chart" />;
+  }, [buckets, series, height, theme]);
+  return <div ref={ref} className="chart" data-testid="usage-chart" data-theme={theme} />;
 }
 
 /** A tiny cost sparkline (SVG) for session details. */

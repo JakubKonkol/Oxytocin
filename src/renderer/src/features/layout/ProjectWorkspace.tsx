@@ -26,6 +26,9 @@ import { setActiveWorkspace, setWorkspaceApi } from './workspace-registry';
 import { WorkspaceVisibleContext } from './workspace-visibility';
 import { markProjectSwitchEnd } from '../../lib/perf';
 import { isDialogOpen } from '../../lib/focus';
+import { withErrorBoundary } from '../../ui/ErrorBoundary';
+import type { EffectiveTheme } from '../../lib/theme';
+import { useEffectiveTheme } from '../../lib/use-theme';
 import { useTitleStore } from '../../stores/title-store';
 
 function publishActivePanelTitle(api: DockviewApi | null): void {
@@ -37,16 +40,20 @@ function publishActivePanelTitle(api: DockviewApi | null): void {
     .setActivePanel(panel ? { title: panel.title ?? '', ...(terminalId ? { terminalId } : {}) } : null);
 }
 
-const oxyTheme: DockviewTheme = { name: 'oxytocin', className: 'dockview-theme-oxytocin', gap: 8, colorScheme: 'dark' };
+const DOCKVIEW_THEMES: Record<EffectiveTheme, DockviewTheme> = {
+  dark: { name: 'oxytocin', className: 'dockview-theme-oxytocin', gap: 8, colorScheme: 'dark' },
+  light: { name: 'oxytocin', className: 'dockview-theme-oxytocin', gap: 8, colorScheme: 'light' },
+};
 
+// Each panel type renders inside an error boundary: a failing panel must not unmount the window.
 const components = {
-  terminal: TerminalPanelComponent,
-  diff: DiffPanelComponent,
-  plugin: PluginPanelComponent,
+  terminal: withErrorBoundary(TerminalPanelComponent, 'The terminal panel'),
+  diff: withErrorBoundary(DiffPanelComponent, 'The diff panel'),
+  plugin: withErrorBoundary(PluginPanelComponent, 'The plugin panel'),
   missing: MissingPanel,
-  plugins: PluginsPanel,
-  keybindings: KeybindingsPanel,
-  settings: SettingsPanel,
+  plugins: withErrorBoundary(PluginsPanel, 'The Plugins panel'),
+  keybindings: withErrorBoundary(KeybindingsPanel, 'Keyboard Shortcuts'),
+  settings: withErrorBoundary(SettingsPanel, 'Settings'),
 };
 
 const initializing = new Set<string>();
@@ -120,6 +127,7 @@ async function initializeWorkspace(projectId: string, api: DockviewApi): Promise
 
 /** The dockview center area of one project. */
 export function ProjectWorkspace({ projectId, active }: { projectId: string; active: boolean }) {
+  const theme = useEffectiveTheme();
   const apiRef = useRef<DockviewApi | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -178,7 +186,7 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
       <WorkspaceVisibleContext.Provider value={active}>
         <DockviewReact
           className="oxy-dockview"
-          theme={oxyTheme}
+          theme={DOCKVIEW_THEMES[theme]}
           components={components}
           defaultTabComponent={OxyTab}
           watermarkComponent={EmptyWorkspace}
