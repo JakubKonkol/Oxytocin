@@ -310,6 +310,17 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       openInEditor: async (path, line, column) => {
         await call('ui.openInEditor', { path, ...(line ? { line } : {}), ...(column ? { column } : {}) });
       },
+      showQuickPick: async (items, options) => {
+        const index = await call<number | null>('ui.showQuickPick', {
+          items: items.map((i) => ({
+            label: String(i.label),
+            ...(i.description !== undefined ? { description: String(i.description) } : {}),
+            ...(i.detail !== undefined ? { detail: String(i.detail) } : {}),
+          })),
+          ...(options?.placeholder ? { placeholder: options.placeholder } : {}),
+        });
+        return typeof index === 'number' ? items[index] : undefined;
+      },
     },
     commands,
     settings: {

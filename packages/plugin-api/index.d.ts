@@ -189,6 +189,21 @@ export interface UiApi {
   /** http/https only */
   openExternal(url: string): Promise<void>;
   openInEditor(path: string, line?: number, column?: number): Promise<void>;
+  /**
+   * Lets the user pick one item in the command palette (fuzzy filtered). Resolves the chosen item, or
+   * undefined when the pick was dismissed. At most 5000 items. Since API 0.1.1.
+   */
+  showQuickPick<T extends QuickPickItem>(
+    items: readonly T[],
+    options?: { placeholder?: string },
+  ): Promise<T | undefined>;
+}
+export interface QuickPickItem {
+  label: string;
+  /** Muted text after the label. */
+  description?: string;
+  /** Second line under the label. */
+  detail?: string;
 }
 export interface ViewProvider {
   resolve(view: PluginView): void | Promise<void>;

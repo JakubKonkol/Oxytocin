@@ -36,6 +36,8 @@ export const UiStateSchema = z.object({
   paneview: PaneviewStateSchema,
   pluginViewState: z.record(z.string(), z.unknown()),
   dismissedHints: z.array(z.string()),
+  /** Command ids run from the command palette, most recent first (docs/plan/02-ui-ux.md §8). */
+  recentCommands: z.array(z.string()).max(50).default([]),
 });
 export type UiState = z.infer<typeof UiStateSchema>;
 
@@ -47,6 +49,7 @@ export function defaultUiState(): UiState {
     paneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
     pluginViewState: {},
     dismissedHints: [],
+    recentCommands: [],
   };
 }
 
@@ -56,6 +59,7 @@ export const UiStatePatchSchema = z.object({
   paneview: PaneviewStateSchema.optional(),
   pluginViewState: z.record(z.string(), z.unknown()).optional(),
   dismissedHints: z.array(z.string()).optional(),
+  recentCommands: z.array(z.string()).max(50).optional(),
 });
 export type UiStatePatch = z.infer<typeof UiStatePatchSchema>;
 
@@ -68,5 +72,6 @@ export function applyUiStatePatch(state: UiState, patch: UiStatePatch): UiState 
       ? { ...state.pluginViewState, ...patch.pluginViewState }
       : state.pluginViewState,
     dismissedHints: patch.dismissedHints ?? state.dismissedHints,
+    recentCommands: patch.recentCommands ?? state.recentCommands,
   };
 }

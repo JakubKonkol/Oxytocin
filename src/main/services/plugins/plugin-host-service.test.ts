@@ -56,6 +56,7 @@ function setup() {
     setRuntimeState: vi.fn((id: string, state: string) => runtime.set(id, state)),
   };
   const toRenderer = vi.fn();
+  const quickPick = vi.fn(() => Promise.resolve(1));
   const core = {
     projects: {
       list: () => [
@@ -72,6 +73,7 @@ function setup() {
     updateSettings: vi.fn(),
     openExternal: vi.fn(),
     openInEditor: vi.fn(),
+    quickPick,
     toRenderer,
     osNotify: vi.fn(),
   } as unknown as PluginCorePort;
@@ -84,7 +86,7 @@ function setup() {
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
-  return { service, api, calls, events, ready, plugins, core, toRenderer };
+  return { service, api, calls, events, ready, plugins, core, toRenderer, quickPick };
 }
 
 describe('PluginHostService', () => {
@@ -114,6 +116,22 @@ describe('PluginHostService', () => {
     await expect(s.api('b.two', 'commands.executeCore', { id: 'rm.rf', args: [] })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
+  });
+
+  it('validates quick picks and returns the chosen index', async () => {
+    const s = setup();
+    const items = [{ label: 'a' }, { label: 'b', description: 'docs', detail: 'more' }];
+    expect(await s.api('b.two', 'ui.showQuickPick', { items, placeholder: 'Pick one' })).toBe(1);
+    expect(s.quickPick).toHaveBeenCalledWith(items, {
+      placeholder: 'Pick one',
+      source: s.plugins.get('b.two')!.displayName,
+    });
+    await expect(s.api('b.two', 'ui.showQuickPick', { items: [{ label: 3 }] })).rejects.toMatchObject({
+      code: 'INVALID',
+    });
+    await expect(
+      s.api('b.two', 'ui.showQuickPick', { items: Array.from({ length: 5001 }, () => ({ label: 'x' })) }),
+    ).rejects.toMatchObject({ code: 'INVALID' });
   });
 
   it('attributes a hang to the busy plugin and excludes it after two incidents', async () => {

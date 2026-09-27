@@ -6,6 +6,7 @@ import type { Terminal } from '@xterm/xterm';
 import { ContextMenu } from 'radix-ui';
 import { useEffect, useRef, useState } from 'react';
 import { formatShortcut } from '../../ui/Kbd';
+import { isDialogOpen } from '../../lib/focus';
 import { shortcutFor } from '../../lib/keyboard';
 import { registerFileLinkProvider } from './link-provider';
 import { TerminalSearch } from './TerminalSearch';
@@ -186,7 +187,7 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
 
     termRef.current = { term, sendRaw };
     terminalRegistry.set(terminalId, { term, focus: () => term.focus(), sendRaw, openFind: () => setFindOpen(true) });
-    if (autoFocus) term.focus();
+    if (autoFocus && !isDialogOpen()) term.focus();
 
     return () => {
       observer.disconnect();

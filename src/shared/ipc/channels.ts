@@ -10,6 +10,7 @@ export const INVOKE_CHANNELS = [
   'settings:update',
   'ui:getState',
   'ui:patchState',
+  'ui:quickPickResult',
   'projects:list',
   'projects:getActive',
   'projects:add',
@@ -81,6 +82,7 @@ export const EVENT_CHANNELS = [
   'plugins:viewMeta',
   'plugins:statusBar',
   'plugins:openPanel',
+  'ui:quickPick',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

@@ -13,6 +13,7 @@ import { HostStatusSchema } from '../domain/app-info';
 import { SettingsSchema } from '../domain/settings';
 import { ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { ProjectSchema } from '../domain/project';
+import { QuickPickRequestSchema } from '../domain/quick-pick';
 import type { EventChannel } from './channels';
 
 /** In-app toast requested by main. */
@@ -70,6 +71,8 @@ export const eventContract = {
   /** Terminal editor preset: open a terminal panel running the editor command. */
   'editor:openInTerminal': z.object({ projectId: ProjectIdSchema.nullable(), cwd: z.string(), command: z.string() }),
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),
+  /** Show a plugin's quick pick in the command palette; answered with `ui:quickPickResult`. */
+  'ui:quickPick': QuickPickRequestSchema,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

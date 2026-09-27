@@ -5,6 +5,8 @@ export interface Command {
   run: (...args: unknown[]) => unknown;
   /** Hidden from the command palette (internal commands). */
   internal?: boolean;
+  /** Shown in the command palette only while this returns true (e.g. an active terminal exists). */
+  when?: () => boolean;
 }
 
 const registry = new Map<string, Command>();
@@ -23,6 +25,18 @@ export function hasCommand(id: string): boolean {
 
 export function getCommands(): Command[] {
   return [...registry.values()];
+}
+
+/** Commands offered by the command palette right now. */
+export function paletteCommands(): Command[] {
+  return getCommands().filter((c) => {
+    if (c.internal) return false;
+    try {
+      return c.when?.() ?? true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 export async function executeCommand(id: string, ...args: unknown[]): Promise<unknown> {

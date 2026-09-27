@@ -23,6 +23,7 @@ import { requestClosePanel, restartTerminalPanel } from './workspace-actions';
 import { setActiveWorkspace, setWorkspaceApi } from './workspace-registry';
 import { WorkspaceVisibleContext } from './workspace-visibility';
 import { markProjectSwitchEnd } from '../../lib/perf';
+import { isDialogOpen } from '../../lib/focus';
 import { useTitleStore } from '../../stores/title-store';
 
 function publishActivePanelTitle(api: DockviewApi | null): void {
@@ -130,7 +131,7 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
       const panel = api?.activePanel;
       if (panel?.api.component === 'terminal') {
         const id = (panel.params as TerminalPanelParams | undefined)?.terminalId;
-        if (id) terminalRegistry.get(id)?.focus();
+        if (id && !isDialogOpen()) terminalRegistry.get(id)?.focus();
       }
       markProjectSwitchEnd();
     });
@@ -158,7 +159,7 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
       if (activeRef.current) publishActivePanelTitle(api);
       if (panel?.api.component === 'terminal') {
         const id = (panel.params as TerminalPanelParams | undefined)?.terminalId;
-        if (id) requestAnimationFrame(() => terminalRegistry.get(id)?.focus());
+        if (id) requestAnimationFrame(() => !isDialogOpen() && terminalRegistry.get(id)?.focus());
       }
     });
     trackDragging(api);

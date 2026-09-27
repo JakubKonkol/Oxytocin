@@ -26,6 +26,8 @@ import { createMainWindow, isTrustedShellUrl } from './app/window-manager';
 import { busyTerminals, describeQuit } from './app/quit-guard';
 import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
+import { QuickPickBroker } from './services/ui/quick-pick-broker';
+import { PtyPortLink } from './services/terminals/pty-port-link';
 import { createLogger, initLogging, logFilePath, setLogLevel } from './logging/log';
 import { SettingsService } from './services/settings/settings-service';
 import { resolveWindowBounds, UiStateService } from './services/ui-state/ui-state-service';
@@ -286,6 +288,14 @@ function bootstrap(): void {
     dryRun: e2e,
   });
 
+  // Created with the window below; tracks whether the shell document (main frame) has loaded.
+  let ptyPortLink: PtyPortLink | null = null;
+  const quickPicks = new QuickPickBroker((request) => {
+    if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
+    sendEvent(mainWindow.webContents, 'ui:quickPick', request);
+    return true;
+  });
+
   const pluginHost: PluginHostService = new PluginHostService({
     host: hosts.plugin,
     plugins,
@@ -315,6 +325,7 @@ function bootstrap(): void {
       updateSettings: (patch) => settings.update(patch),
       openExternal: (url) => shell.openExternal(url),
       openInEditor: (req) => editor.open(req),
+      quickPick: (items, options) => quickPicks.show(items, options),
       toRenderer: (event, payload) => {
         const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
         if (!wc) return;
@@ -432,6 +443,7 @@ function bootstrap(): void {
       'workspace:save': (state) => workspaceState.save(state),
       'ui:getState': () => uiState.get(),
       'ui:patchState': (patch) => uiState.patch(patch),
+      'ui:quickPickResult': ({ requestId, index }) => quickPicks.settle(requestId, index),
       'terminals:create': (req) => terminals.create(req),
       'terminals:kill': (req) => terminals.kill(req.id, req.force ?? false),
       'terminals:restart': (req) => terminals.restart(req.id),
@@ -623,16 +635,29 @@ function bootstrap(): void {
 
   // Terminal I/O flows renderer ⇄ PTY Host over a direct MessagePort; re-created after renderer reloads
   // and PTY Host restarts (docs/plan/01-architecture.md §4.5).
-  const connectPtyPort = () => {
-    if (win.isDestroyed() || hosts.pty.state !== 'running') return;
-    const { port1, port2 } = new MessageChannelMain();
-    hosts.pty.emit('renderer-port', { windowId: win.id }, [port1]);
-    win.webContents.postMessage('pty:port', null, [port2]);
-  };
-  win.webContents.on('did-finish-load', connectPtyPort);
-  hosts.pty.onDidBecomeReady(() => {
-    if (!win.webContents.isLoading()) connectPtyPort();
+  const link = new PtyPortLink(
+    () => hosts.pty.state === 'running',
+    () => {
+      if (win.isDestroyed()) return;
+      const { port1, port2 } = new MessageChannelMain();
+      hosts.pty.emit('renderer-port', { windowId: win.id }, [port1]);
+      win.webContents.postMessage('pty:port', null, [port2]);
+    },
+  );
+  ptyPortLink = link;
+  win.webContents.on('did-finish-load', () => link.shellDidLoad());
+  // A reload or crash drops the palette: pending plugin quick picks resolve as dismissed.
+  win.webContents.on('did-start-navigation', (details) => {
+    if (!details.isMainFrame || details.isSameDocument) return;
+    link.shellDidUnload();
+    quickPicks.cancelAll();
   });
+  win.webContents.on('render-process-gone', () => {
+    link.shellDidUnload();
+    quickPicks.cancelAll();
+  });
+  win.on('closed', () => quickPicks.cancelAll());
+  hosts.pty.onDidBecomeReady(() => link.hostDidBecomeReady());
 
   // Quit sequence (docs/plan/01-architecture.md §7): QuitGuard → flush layouts → scrollback snapshots → hosts.
   let quitting = false;

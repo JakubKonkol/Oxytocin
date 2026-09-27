@@ -31,6 +31,8 @@ test('Ctrl+V pastes clipboard text', async () => {
     const id = await waitForTerminal(win);
     await writeClipboard(app, nodeCmd("console.log('pasted-' + 'ok')"));
     await win.keyboard.press('Control+V');
+    // The paste reads the clipboard asynchronously: wait for the echo before submitting.
+    await expect.poll(() => oxyTest(win).text(id)).toContain("'pasted-'");
     await win.keyboard.press('Enter');
     await expect.poll(() => oxyTest(win).text(id)).toContain('pasted-ok');
   } finally {

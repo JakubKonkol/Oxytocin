@@ -16,7 +16,11 @@ interface UiStore {
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
   setPaneview: (paneview: PaneviewState) => void;
+  /** Moves a command to the top of the palette's "recently used" list. */
+  recordCommand: (id: string) => void;
 }
+
+const RECENT_COMMANDS_MAX = 20;
 
 let pending: UiStatePatch = {};
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,5 +63,10 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setPaneview(paneview) {
     set({ state: { ...get().state, paneview } });
     persist({ paneview });
+  },
+  recordCommand(id) {
+    const recentCommands = [id, ...get().state.recentCommands.filter((c) => c !== id)].slice(0, RECENT_COMMANDS_MAX);
+    set({ state: { ...get().state, recentCommands } });
+    persist({ recentCommands });
   },
 }));

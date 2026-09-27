@@ -3,6 +3,7 @@ import { stat } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Logger, OxytocinApi, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
 import { renderFile } from './render';
+import { listMarkdownFiles } from './files';
 
 export const PANEL_TYPE = 'markdown.preview';
 const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdx'];
@@ -198,26 +199,32 @@ export function activate(ctx: PluginContext): void {
         path = isAbsolute(arg) ? arg : active ? resolve(active.rootPath, arg) : undefined;
         project = path ? await oxy.projects.findByPath(path) : undefined;
       } else if (active) {
-        // Without an argument: the project's README (a file picker comes with the command palette).
-        for (const name of ['README.md', 'readme.md', 'Readme.md']) {
-          const candidate = join(active.rootPath, name);
-          if (
-            await stat(candidate).then(
-              (s) => s.isFile(),
-              () => false,
-            )
-          ) {
-            path = candidate;
-            break;
-          }
+        // Without an argument: pick one of the project's Markdown files in the command palette.
+        const files = await listMarkdownFiles(active.rootPath);
+        if (files.length === 0) {
+          void oxy.ui.showNotification({ level: 'info', message: 'No Markdown files in the active project.' });
+          return;
         }
+        const picked = await oxy.ui.showQuickPick(
+          files.map((f) => {
+            const slash = f.relativePath.lastIndexOf('/');
+            return {
+              label: f.relativePath.slice(slash + 1),
+              ...(slash > 0 ? { description: f.relativePath.slice(0, slash) } : {}),
+              path: f.path,
+            };
+          }),
+          { placeholder: 'Open a Markdown preview' },
+        );
+        if (!picked) return;
+        path = picked.path;
         project = active;
       }
       if (!path || !project || !isInside(project.rootPath, path)) {
         void oxy.ui.showNotification({
           level: 'warning',
           message:
-            typeof arg === 'string' ? `Not a file of an open project: ${arg}` : 'No README.md in the active project.',
+            typeof arg === 'string' ? `Not a file of an open project: ${arg}` : 'Open a project to preview its files.',
         });
         return;
       }

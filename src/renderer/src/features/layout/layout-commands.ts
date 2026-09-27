@@ -74,9 +74,12 @@ export function registerLayoutCommands(): void {
     if (ws) return fn(ws.api, ws.projectId);
     return undefined;
   };
+  const hasWs = () => getActiveWorkspace() !== null;
+  const activeIsTerminal = () => getActiveWorkspace()?.api.activePanel?.api.component === 'terminal';
   registerCommand({
     id: 'terminal.new',
     title: 'Terminal: New Terminal',
+    when: hasWs,
     run: withWs((api, p) => newTerminal(api, p)),
   });
   registerCommand({
@@ -87,21 +90,25 @@ export function registerLayoutCommands(): void {
   registerCommand({
     id: 'terminal.splitRight',
     title: 'Terminal: Split Right',
+    when: hasWs,
     run: withWs((api, p) => splitActive(api, p, 'right')),
   });
   registerCommand({
     id: 'terminal.splitDown',
     title: 'Terminal: Split Down',
+    when: hasWs,
     run: withWs((api, p) => splitActive(api, p, 'below')),
   });
   registerCommand({
     id: 'panel.close',
     title: 'View: Close Panel',
+    when: hasWs,
     run: withWs((api) => (api.activePanel ? requestClosePanel(api, api.activePanel.id) : undefined)),
   });
   registerCommand({
     id: 'panel.toggleMaximize',
     title: 'View: Toggle Maximized Panel',
+    when: hasWs,
     run: withWs((api) => toggleMaximize(api)),
   });
   for (const dir of ['left', 'right', 'up', 'down'] as const) {
@@ -109,19 +116,32 @@ export function registerLayoutCommands(): void {
     registerCommand({
       id: `panel.focus${cap}`,
       title: `View: Focus Panel ${cap}`,
+      when: hasWs,
       run: withWs((api) => focusNeighbour(api, dir)),
     });
     registerCommand({
       id: `panel.resize${cap}`,
       title: `View: Resize Panel ${cap}`,
+      when: hasWs,
       run: withWs((api) => resizeActive(api, dir)),
     });
   }
-  registerCommand({ id: 'panel.nextTab', title: 'View: Next Tab', run: withWs((api) => cycleTab(api, 1)) });
-  registerCommand({ id: 'panel.previousTab', title: 'View: Previous Tab', run: withWs((api) => cycleTab(api, -1)) });
+  registerCommand({
+    id: 'panel.nextTab',
+    title: 'View: Next Tab',
+    when: hasWs,
+    run: withWs((api) => cycleTab(api, 1)),
+  });
+  registerCommand({
+    id: 'panel.previousTab',
+    title: 'View: Previous Tab',
+    when: hasWs,
+    run: withWs((api) => cycleTab(api, -1)),
+  });
   registerCommand({
     id: 'terminal.restart',
     title: 'Terminal: Restart',
+    when: activeIsTerminal,
     run: withWs((api) => (api.activePanel ? restartTerminalPanel(api, api.activePanel.id) : undefined)),
   });
 }

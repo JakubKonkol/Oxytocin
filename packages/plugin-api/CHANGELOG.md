@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- `oxy.ui.showQuickPick(items, { placeholder })`: a fuzzy-filtered pick in the command palette.
+
 ## 0.1.0
 
 - First version: projects, terminals (metadata, create, sendText, environment), agents, git status, UI (views, panels,

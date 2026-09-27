@@ -13,6 +13,7 @@ import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
+import { QuickPickResultSchema } from '../domain/quick-pick';
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { TerminalProfileSchema } from '../domain/terminal-profile';
 import { AddProjectResultSchema, ProjectPatchSchema, ProjectSchema } from '../domain/project';
@@ -36,6 +37,8 @@ export const invokeContract = {
   'workspace:save': { req: WorkspaceStateSchema, res: z.void() },
   'ui:getState': { req: z.null().optional(), res: UiStateSchema },
   'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
+  /** The renderer answers a `ui:quickPick` request (plugin `oxy.ui.showQuickPick`). */
+  'ui:quickPickResult': { req: QuickPickResultSchema, res: z.void() },
   'projects:list': { req: z.null().optional(), res: z.array(ProjectSchema) },
   'projects:getActive': { req: z.null().optional(), res: z.object({ id: ProjectIdSchema.nullable() }) },
   'projects:add': { req: z.object({ path: z.string().min(1) }), res: AddProjectResultSchema },

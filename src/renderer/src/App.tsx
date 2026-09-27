@@ -16,6 +16,7 @@ import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
 import { DialogHost } from './ui/DialogHost';
 import { ProfilePicker } from './features/layout/ProfilePicker';
+import { CommandPalette } from './features/palette/CommandPalette';
 import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
@@ -56,6 +57,7 @@ export function App() {
       <DialogHost />
       <ViewContextMenuHost />
       <ProfilePicker />
+      <CommandPalette />
     </TooltipProvider>
   );
 }

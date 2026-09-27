@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { AgentInfoWithTerminal } from '@shared/domain/agent';
 import type { RepoStatus } from '@shared/domain/git';
 import { type PluginDescriptor, type PluginPermission } from '@shared/domain/plugin';
@@ -5,6 +6,7 @@ import { type Project, PROJECT_COLOR_VALUES } from '@shared/domain/project';
 import type { Settings } from '@shared/domain/settings';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
+import { QUICK_PICK_MAX_ITEMS, type QuickPickItem, QuickPickItemSchema } from '@shared/domain/quick-pick';
 import type { Logger } from '@shared/logging/logger';
 import type {
   HostApiEnv,
@@ -71,6 +73,8 @@ export interface PluginCorePort {
   updateSettings(patch: Record<string, unknown>): Promise<unknown>;
   openExternal(url: string): Promise<void>;
   openInEditor(req: { path: string; line?: number; column?: number }): Promise<void>;
+  /** Shows a quick pick in the command palette; resolves the chosen index or null. */
+  quickPick(items: QuickPickItem[], options: { placeholder?: string; source?: string }): Promise<number | null>;
   /** Renderer-side effects (toasts, panels, core commands). */
   toRenderer(
     event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta' | 'openPanel' | 'pluginReloaded',
@@ -617,6 +621,19 @@ export class PluginHostService implements Disposable {
           if (s['notifications.os'] && !s['notifications.doNotDisturb']) core.osNotify(plugin.displayName, message);
         }
         return null;
+      }
+      case 'ui.showQuickPick': {
+        const parsed = z
+          .object({
+            items: z.array(QuickPickItemSchema).max(QUICK_PICK_MAX_ITEMS),
+            placeholder: z.string().max(200).optional(),
+          })
+          .safeParse(p);
+        if (!parsed.success) throw new OxyError('INVALID', 'Invalid quick pick items');
+        return await core.quickPick(parsed.data.items, {
+          ...(parsed.data.placeholder ? { placeholder: parsed.data.placeholder } : {}),
+          source: plugin.displayName,
+        });
       }
       case 'ui.openExternal': {
         const url = String(p['url']);

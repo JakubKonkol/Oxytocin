@@ -87,10 +87,17 @@ function activeDiff() {
 }
 
 export function registerDiffCommands(): void {
-  registerCommand({ id: 'diff.nextChange', title: 'Diff: Next Change', run: () => activeDiff()?.goToChange('next') });
+  const hasDiff = () => activeDiff() !== undefined;
+  registerCommand({
+    id: 'diff.nextChange',
+    title: 'Diff: Next Change',
+    when: hasDiff,
+    run: () => activeDiff()?.goToChange('next'),
+  });
   registerCommand({
     id: 'diff.previousChange',
     title: 'Diff: Previous Change',
+    when: hasDiff,
     run: () => activeDiff()?.goToChange('previous'),
   });
 }

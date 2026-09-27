@@ -10,7 +10,7 @@
     "displayName": "Markdown Preview",
     "description": "Live preview of Markdown files next to the terminal.",
     "publisher": "oxytocin",
-    "engine": "^0.1.0",
+    "engine": "^0.1.1",
     "main": "dist/host.js",
     "activationEvents": [
       "onPanel:markdown.preview",

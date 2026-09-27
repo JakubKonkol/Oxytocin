@@ -79,6 +79,21 @@ body {
   color: var(--text-muted);
 }
 
+/* The palette input sits in its own bordered row; the focus ring would double it. */
+[cmdk-input]:focus-visible {
+  outline: none;
+}
+
+/* Command palette group headings (cmdk). */
+.oxy-palette-group [cmdk-group-heading] {
+  padding: 8px 8px 4px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
 .oxy-drag {
   -webkit-app-region: drag;
 }

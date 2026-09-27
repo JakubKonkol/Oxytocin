@@ -54,8 +54,10 @@ export function registerTerminalCommands(): void {
     const id = getActiveTerminalId();
     return id ? { id, entry: terminalRegistry.get(id)! } : null;
   };
+  const hasActive = () => getActiveTerminalId() !== null;
   registerCommand({
     id: 'terminal.copy',
+    when: hasActive,
     title: 'Terminal: Copy Selection',
     run: async () => {
       const a = active();
@@ -64,6 +66,7 @@ export function registerTerminalCommands(): void {
   });
   registerCommand({
     id: 'terminal.paste',
+    when: hasActive,
     title: 'Terminal: Paste',
     run: async () => {
       const a = active();
@@ -72,16 +75,19 @@ export function registerTerminalCommands(): void {
   });
   registerCommand({
     id: 'terminal.clear',
+    when: hasActive,
     title: 'Terminal: Clear',
     run: () => active()?.entry.term.clear(),
   });
   registerCommand({
     id: 'terminal.find',
+    when: hasActive,
     title: 'Terminal: Find',
     run: () => active()?.entry.openFind?.(),
   });
   registerCommand({
     id: 'terminal.selectAll',
+    when: hasActive,
     title: 'Terminal: Select All',
     run: () => active()?.entry.term.selectAll(),
   });

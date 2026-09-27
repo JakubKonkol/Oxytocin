@@ -25,7 +25,7 @@ export function registerPluginManagerCommands(): void {
   registerCommand({ id: 'workbench.showPlugins', title: 'Plugins: Show Plugins', run: () => openPluginsManager() });
 }
 
-/** Status bar entry point until the command palette arrives (M7). */
+/** Status bar entry point to the Plugins panel (also "Plugins: Show Plugins" in the command palette). */
 export function PluginsStatusButton() {
   return (
     <IconButton
