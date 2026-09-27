@@ -21,6 +21,7 @@ import { registerHelpCommands } from './features/help/HelpDialogs';
 import { registerPaletteCommands } from './features/palette/palette-store';
 import { registerKeybindingCommands } from './features/keybindings/KeybindingsPanel';
 import { registerSettingsCommands } from './features/settings/SettingsPanel';
+import { registerProjectSettingsCommands } from './features/projects/ProjectSettingsDialog';
 import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
@@ -49,6 +50,7 @@ registerHelpCommands();
 registerPaletteCommands();
 registerKeybindingCommands();
 registerSettingsCommands();
+registerProjectSettingsCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 

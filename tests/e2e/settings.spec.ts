@@ -17,7 +17,17 @@ test('settings UI: problems, generated controls, plugin settings, reset and exte
   await writeFile(file, '{\n  // my settings\n  "terminal.fontSize": 99,\n  "git.periodicRefreshSeconds": 20\n}\n');
   const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
   try {
-    await waitForTerminal(win);
+    const terminal = await waitForTerminal(win);
+    const termOptions = () =>
+      win.evaluate(
+        (id) =>
+          (
+            window as unknown as {
+              __oxyTest: { getTerminalOptions(id: string): { fontSize: number; cursorStyle: string } | null };
+            }
+          ).__oxyTest.getTerminalOptions(id),
+        terminal,
+      );
 
     // Start-up toast for the invalid value → Settings filtered to problems.
     const toast = win.locator('[data-sonner-toast]').filter({ hasText: 'settings.json has 1 invalid value' });
@@ -42,6 +52,8 @@ test('settings UI: problems, generated controls, plugin settings, reset and exte
     await expect(win.getByTestId('settings-problems')).toHaveCount(0);
     await win.getByTestId('settings-search').fill('');
     await expect(row(win, 'terminal.fontSize')).toHaveAttribute('data-modified', 'true');
+    // Open terminals follow the change.
+    await expect.poll(termOptions).toMatchObject({ fontSize: 15 });
 
     // Sections, a boolean, an enum, and reset.
     await win.locator('[data-testid="settings-section"][data-section="Terminal"]').click();
@@ -51,6 +63,7 @@ test('settings UI: problems, generated controls, plugin settings, reset and exte
     await expect.poll(() => settingsFile(userData)).toContain('"terminal.copyOnSelect": true');
     await row(win, 'terminal.cursorStyle').getByTestId('setting-control').selectOption({ label: 'Block' });
     await expect.poll(() => settingsFile(userData)).toContain('"terminal.cursorStyle": "block"');
+    await expect.poll(termOptions).toMatchObject({ cursorStyle: 'block' });
     await copy.hover();
     await copy.getByTestId('setting-reset').click();
     await expect.poll(() => settingsFile(userData)).not.toContain('copyOnSelect');

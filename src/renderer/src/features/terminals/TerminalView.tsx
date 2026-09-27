@@ -22,7 +22,7 @@ import { formatDroppedPaths, type ShellType } from './path-quoting';
 import { ptyChannel } from './pty-channel';
 import { copySelection, pasteClipboard, setActiveTerminal } from './terminal-actions';
 import { terminalRegistry } from './terminal-registry';
-import { createXterm } from './xterm-factory';
+import { createXterm, LAYOUT_OPTIONS, liveTerminalOptions } from './xterm-factory';
 
 export interface TerminalViewProps {
   terminalId: string;
@@ -36,6 +36,20 @@ export interface TerminalViewProps {
  * A view onto a PTY Host terminal. The buffer lives in the PTY Host; this component can be destroyed and
  * re-created at any time (snapshot + stream), so it never owns terminal state.
  */
+/**
+ * Focuses a terminal once it is really on screen: a panel that was just added or activated may still be
+ * hidden for a frame or two (dockview moves it into place), and focusing a hidden textarea does nothing.
+ * Never steals the focus from an open dialog.
+ */
+function focusSoon(term: Terminal, container: HTMLElement, frames = 30): void {
+  const attempt = (left: number) => {
+    if (isDialogOpen() || container.contains(document.activeElement)) return;
+    if (container.offsetParent !== null) term.focus();
+    if (!container.contains(document.activeElement) && left > 0) requestAnimationFrame(() => attempt(left - 1));
+  };
+  attempt(frames);
+}
+
 export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const settings = useSettingsStore((s) => s.settings);
@@ -43,18 +57,23 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
   const [search, setSearch] = useState<SearchAddon | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   const termRef = useRef<{ term: Terminal; sendRaw: (d: string) => void } | null>(null);
-  const webglRef = useRef<{ enable: () => void; dispose: () => void } | null>(null);
+  const webglRef = useRef<{
+    enable: () => void;
+    dispose: () => void;
+    setRenderer: (r: 'dom' | 'webgl') => void;
+  } | null>(null);
+  const fitRef = useRef<(() => void) | null>(null);
   const visible = useWorkspaceVisible();
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !settings || !appInfo) return;
-    const { term, fit, enableWebgl, disposeWebgl } = createXterm(settings, {
+    const { term, fit, enableWebgl, disposeWebgl, setRenderer } = createXterm(settings, {
       platform: appInfo.platform,
       osBuild: appInfo.osBuild,
     });
     term.open(container);
-    webglRef.current = { enable: enableWebgl, dispose: disposeWebgl };
+    webglRef.current = { enable: enableWebgl, dispose: disposeWebgl, setRenderer };
     enableWebgl();
     const searchAddon = new SearchAddon({ highlightLimit: 1000 });
     term.loadAddon(searchAddon);
@@ -186,8 +205,9 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
     observer.observe(container);
 
     termRef.current = { term, sendRaw };
+    fitRef.current = fitNow;
     terminalRegistry.set(terminalId, { term, focus: () => term.focus(), sendRaw, openFind: () => setFindOpen(true) });
-    if (autoFocus && !isDialogOpen()) term.focus();
+    if (autoFocus) focusSoon(term, container);
 
     return () => {
       observer.disconnect();
@@ -209,10 +229,31 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
       disposeWebgl();
       term.dispose();
     };
-    // Settings changes are applied by re-creating the view only when the terminal changes; live option
-    // updates arrive with the settings UI (M7).
+    // The view is created once per terminal; later settings changes are applied live by the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [terminalId, settings === null, appInfo === null]);
+
+  // Settings edits (settings UI or settings.json) apply to open terminals too (09 §3.3).
+  useEffect(() => {
+    const t = termRef.current;
+    if (!t || !settings) return;
+    let relayout = false;
+    const options = t.term.options as Record<string, unknown>;
+    for (const [key, value] of Object.entries(liveTerminalOptions(settings))) {
+      if (options[key] === value) continue;
+      options[key] = value;
+      if (LAYOUT_OPTIONS.has(key)) relayout = true;
+    }
+    if (visible) webglRef.current?.setRenderer(settings['terminal.renderer']);
+    if (relayout) requestAnimationFrame(() => fitRef.current?.());
+  }, [settings, visible]);
+
+  // A panel that becomes active takes the keyboard focus (new terminals included), unless a dialog is open.
+  useEffect(() => {
+    const t = termRef.current;
+    const container = containerRef.current;
+    if (autoFocus && t && container) focusSoon(t.term, container);
+  }, [autoFocus]);
 
   // Hidden (keep-alive) workspaces release their WebGL context; showing them again restores it.
   useEffect(() => {

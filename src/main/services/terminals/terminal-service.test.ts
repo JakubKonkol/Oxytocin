@@ -25,7 +25,14 @@ function setup() {
     },
     onDidBecomeReady: ready.event,
   };
-  const settings = { ...defaultSettings('linux'), 'terminal.env': { FROM_SETTINGS: '1' } } as Settings;
+  const settings = {
+    ...defaultSettings('linux'),
+    'terminal.env': { FROM_SETTINGS: '1' },
+    'terminal.profiles': [
+      { id: 'custom', name: 'Custom', kind: 'shell', file: '/bin/bash', args: ['--norc'], source: 'user' },
+      { id: 'agent:fake', name: 'Fake', kind: 'agent', file: '', args: [], command: 'fake-agent', source: 'user' },
+    ],
+  } as Settings;
   const profiles = new ProfileService(
     {
       platform: 'linux',
@@ -40,7 +47,15 @@ function setup() {
     ptyHost: ptyHost as never,
     profiles,
     settings: () => settings,
-    resolveProject: (id) => (id === 'p1' ? { rootPath: tmpdir(), env: { FROM_PROJECT: '1' } } : null),
+    resolveProject: (id) =>
+      id === 'p1'
+        ? { rootPath: tmpdir(), env: { FROM_PROJECT: '1' } }
+        : id === 'p2'
+          ? { rootPath: tmpdir(), defaultProfileId: 'custom' }
+          : id === 'p3'
+            ? { rootPath: tmpdir(), defaultProfileId: 'gone' }
+            : null,
+    shellIntegration: () => Promise.resolve({ dir: '/si', pwsh: 'x' }),
     baseEnv: () => ({ PATH: '/bin', CLAUDECODE: '1' }),
     appVersion: '0.1.0',
     dev: false,
@@ -66,7 +81,7 @@ describe('TerminalService', () => {
     const spawn = calls.find((c) => c.method === 'spawn')!.params as { env: Record<string, string>; args: string[] };
     expect(spawn.env).toMatchObject({ FROM_SETTINGS: '1', FROM_PROJECT: '1', OXYTOCIN_TERMINAL_ID: info.id });
     expect(spawn.env['CLAUDECODE']).toBeUndefined();
-    expect(spawn.args).toEqual(['-l']);
+    expect(spawn.args).toEqual(['--init-file', '/si/bash.sh']);
   });
 
   it('tracks title, exit, bell and user titles', async () => {
@@ -112,5 +127,38 @@ describe('TerminalService', () => {
   it('rejects unknown projects', async () => {
     const { svc } = setup();
     await expect(svc.create({ projectId: 'nope' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('uses the project default profile, falling back when it no longer exists', async () => {
+    const { svc } = setup();
+    expect((await svc.create({ projectId: 'p2' })).profileId).toBe('custom');
+    expect((await svc.create({ projectId: 'p2', profileId: 'bash' })).profileId).toBe('bash');
+    expect((await svc.create({ projectId: 'p3' })).profileId).toBe('bash');
+    await expect(svc.create({ projectId: 'p3', profileId: 'gone' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('injects shell integration and tracks command events', async () => {
+    const { svc, calls, emit } = setup();
+    const info = await svc.create({ projectId: 'p1' });
+    const spawn = calls.find((c) => c.method === 'spawn')!.params as { args: string[]; shellIntegration?: boolean };
+    expect(spawn.args).toEqual(['--init-file', '/si/bash.sh']);
+    expect(spawn.shellIntegration).toBe(true);
+    emit('terminal:command', { id: info.id, phase: 'prompt' });
+    expect(svc.get(info.id)?.shellIntegration).toBe(true);
+    emit('terminal:command', { id: info.id, phase: 'start', commandLine: 'make' });
+    expect(svc.get(info.id)?.command?.commandLine).toBe('make');
+    emit('terminal:command', { id: info.id, phase: 'end', commandLine: 'make', exitCode: 2, durationMs: 1500 });
+    expect(svc.get(info.id)?.command).toBeUndefined();
+    expect(svc.get(info.id)?.lastCommand).toMatchObject({ commandLine: 'make', exitCode: 2, durationMs: 1500 });
+  });
+
+  it('starts only the shell of an agent profile when asked to skip its command (restored terminals)', async () => {
+    const { svc, calls } = setup();
+    const agent = await svc.create({ projectId: 'p1', profileId: 'agent:fake' });
+    expect(agent.kind).toBe('agent');
+    const restored = await svc.create({ projectId: 'p1', profileId: 'agent:fake', skipInitialCommand: true });
+    expect(restored.kind).toBe('shell');
+    const spawns = calls.filter((c) => c.method === 'spawn').map((c) => c.params as { initialCommand?: string });
+    expect(spawns.map((s) => s.initialCommand)).toEqual(['fake-agent', undefined]);
   });
 });

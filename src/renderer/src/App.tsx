@@ -18,6 +18,7 @@ import { Toaster } from './ui/Toast';
 import { DialogHost } from './ui/DialogHost';
 import { ProfilePicker } from './features/layout/ProfilePicker';
 import { CommandPalette } from './features/palette/CommandPalette';
+import { ProjectSettingsDialog } from './features/projects/ProjectSettingsDialog';
 import { reportSettingsProblems } from './features/settings/SettingsPanel';
 import { TooltipProvider } from './ui/Tooltip';
 
@@ -65,6 +66,7 @@ export function App() {
       <ViewContextMenuHost />
       <ProfilePicker />
       <CommandPalette />
+      <ProjectSettingsDialog />
     </TooltipProvider>
   );
 }

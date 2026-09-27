@@ -12,6 +12,7 @@ import { PROJECT_ACTIVITY_LABELS } from '@shared/domain/activity';
 import { StatusDot } from '../../ui/StatusDot';
 import { useProjectsStore } from '../../stores/projects-store';
 import { activateProject, removeProject, renameProject } from './project-actions';
+import { openProjectSettings } from './ProjectSettingsDialog';
 import { ProjectAvatar } from './ProjectAvatar';
 
 export const PROJECT_DRAG_TYPE = 'application/x-oxytocin-project';
@@ -181,6 +182,13 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
             onSelect={() => void ipc.invoke('clipboard:writeText', { text: project.rootPath })}
           >
             Copy path
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItem}
+            data-testid="project-menu-settings"
+            onSelect={() => setTimeout(() => openProjectSettings(project.id), 0)}
+          >
+            Project settings…
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
           <ContextMenu.Item className={cn(menuItem, 'text-danger')} onSelect={() => void removeProject(project)}>

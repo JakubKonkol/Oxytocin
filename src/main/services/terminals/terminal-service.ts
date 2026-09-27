@@ -24,6 +24,8 @@ export interface TerminalRuntimePatch {
 export interface ProjectContext {
   rootPath: string;
   env?: EnvLayer;
+  /** Project setting: profile for terminals created without an explicit profile. */
+  defaultProfileId?: string;
 }
 
 export interface TerminalServiceDeps {
@@ -161,7 +163,15 @@ export class TerminalService implements Disposable {
     if (!project) throw new OxyError('NOT_FOUND', `Project ${req.projectId} not found`);
     const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
     if (!(await isDirectory(cwd))) throw new OxyError('NOT_FOUND', `Folder not found: ${cwd}`);
-    const launch = await this.deps.profiles.resolveLaunch(req.profileId, cwd);
+    // The project's default profile applies when none was asked for; a profile that no longer exists falls back.
+    const profileId = req.profileId ?? project.defaultProfileId;
+    const launch = await this.deps.profiles
+      .resolveLaunch(profileId, cwd)
+      .catch((e: unknown) =>
+        !req.profileId && e instanceof OxyError && e.code === 'NOT_FOUND'
+          ? this.deps.profiles.resolveLaunch(undefined, cwd)
+          : Promise.reject(e instanceof Error ? e : new Error(String(e))),
+      );
     await this.deps.beforeSpawn?.();
     const settings = this.deps.settings();
     const id = `t-${randomUUID().slice(0, 12)}`;

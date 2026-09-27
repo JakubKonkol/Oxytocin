@@ -161,9 +161,11 @@ function bootstrap(): void {
     resolveProject: (projectId) => {
       const project = projects.get(projectId);
       if (project)
-        return project.settings.env
-          ? { rootPath: project.rootPath, env: project.settings.env }
-          : { rootPath: project.rootPath };
+        return {
+          rootPath: project.rootPath,
+          ...(project.settings.env ? { env: project.settings.env } : {}),
+          ...(project.settings.defaultProfileId ? { defaultProfileId: project.settings.defaultProfileId } : {}),
+        };
       // Pseudo-project used before any project is added (the default workspace).
       return projectId === DEFAULT_PROJECT_ID ? { rootPath: homedir() } : null;
     },
@@ -386,6 +388,16 @@ function bootstrap(): void {
     previousEnv = next;
   });
   projects.onDidChange((list) => pluginHost.notifyProjects(list));
+  // Project environment edited (project settings): its running terminals are out of date (⟳, 04 §2.4).
+  let projectEnv = new Map(projects.list().map((p) => [p.id, JSON.stringify(p.settings.env ?? {})]));
+  projects.onDidChange((list) => {
+    const next = new Map(list.map((p) => [p.id, JSON.stringify(p.settings.env ?? {})]));
+    for (const [id, env] of next) {
+      if (!projectEnv.has(id) || projectEnv.get(id) === env) continue;
+      for (const t of terminals.list(id)) if (t.state === 'running') terminals.markEnvStale(t.id);
+    }
+    projectEnv = next;
+  });
   projects.onDidChangeActive((id) => pluginHost.notifyActiveProject(id));
   terminals.onDidUpdate((info) => pluginHost.notifyTerminal(info));
   terminals.onDidRemove((id) => pluginHost.notifyTerminalRemoved(id));
