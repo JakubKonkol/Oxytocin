@@ -39,8 +39,10 @@ test('performance budgets: start-up, mounted project switch and memory of 3 proj
           .firstTerminalOutputMs,
     );
     expect(startup).not.toBeNull();
-    await record('startToFirstTerminalOutput', startup!, 'ms', 3000);
-    expect(startup!).toBeLessThan(3000);
+    // Windows runners: the PowerShell cold start alone takes 1–2 s and varies a lot (10 §5, M7-T2 journal).
+    const startupBudget = process.platform === 'win32' ? 4000 : 3000;
+    await record('startToFirstTerminalOutput', startup!, 'ms', startupBudget);
+    expect(startup!).toBeLessThan(startupBudget);
 
     // Three projects with three terminals each.
     const t = oxyTest(win);

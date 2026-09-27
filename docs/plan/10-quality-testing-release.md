@@ -86,7 +86,7 @@ Artefakty przy porażce: Playwright trace, zrzut ekranu, `userData/logs/main.log
 
 | Metryka | Cel | Próg CI (tolerancja) | Pomiar |
 |---|---|---|---|
-| Start → pierwszy prompt terminala | < 1,5 s | < 3 s | `performance.mark('app-start')` w main (czas procesu) + `mark('terminal-first-output')` |
+| Start → pierwszy prompt terminala | < 1,5 s | < 3 s (Windows CI: < 4 s — zimny start PowerShell na runnerach) | `performance.mark('app-start')` w main (czas procesu) + `mark('terminal-first-output')` |
 | Przełączenie projektu (zamontowany) | < 100 ms | < 150 ms | mark przed `setActive` → po `requestAnimationFrame` z widocznym terminalem |
 | Rehydratacja 5 terminali × 5000 linii | < 400 ms | < 800 ms | jw. |
 | Echo klawisza (p95) | < 30 ms | — (ręcznie/benchmark) | benchmark lokalny |
