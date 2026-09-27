@@ -97,6 +97,66 @@ describe('ProcessMonitor', () => {
     expect(updates).toHaveLength(2);
     monitor.stop();
   });
+
+  it('keeps a nudge that arrives while a sample is running', async () => {
+    vi.useFakeTimers();
+    let rows = [row(10, 1, 'bash')];
+    let slow: ((rows: ReturnType<typeof row>[]) => void) | undefined;
+    const updates: unknown[] = [];
+    const monitor = new ProcessMonitor({
+      source: {
+        list: () => (slow === undefined ? Promise.resolve(rows) : new Promise((resolve) => (slow = resolve))),
+      },
+      terminals: () => [{ id: 't1', pid: 10, lastOutputAt: 0 }],
+      onChange: (u) => updates.push(u),
+      logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    });
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(250); // first sample; next one in 5 s (idle)
+    slow = () => {};
+    monitor.poke();
+    await vi.advanceTimersByTimeAsync(100); // a slow sample is running now
+    monitor.nudge(300); // e.g. the user pressed Enter
+    const finish = slow;
+    slow = undefined;
+    finish(rows);
+    rows = [row(10, 1, 'bash'), row(11, 10, 'node')];
+    await vi.advanceTimersByTimeAsync(300);
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toMatchObject({ foreground: { pid: 11, name: 'node' } });
+    monitor.stop();
+  });
+
+  it('samples every 400 ms for a few seconds after a command started, even on Windows', async () => {
+    vi.useFakeTimers();
+    let rows = [row(10, 1, 'pwsh')];
+    const updates: unknown[] = [];
+    const monitor = new ProcessMonitor({
+      source: { list: () => Promise.resolve(rows) },
+      terminals: () => [{ id: 't1', pid: 10, lastOutputAt: Date.now() }],
+      onChange: (u) => updates.push(u),
+      logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+      fastMs: 2000,
+    });
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(250); // first sample; next one in 2 s (busy)
+    monitor.commandStarted();
+    await vi.advanceTimersByTimeAsync(400); // the command's process has not started yet
+    expect(updates).toHaveLength(1);
+    rows = [row(10, 1, 'pwsh'), row(11, 10, 'node')];
+    await vi.advanceTimersByTimeAsync(400);
+    expect(updates).toHaveLength(2);
+    // After the burst, back to the busy interval.
+    rows = [row(10, 1, 'pwsh')];
+    await vi.advanceTimersByTimeAsync(3000);
+    const count = updates.length;
+    rows = [row(10, 1, 'pwsh'), row(12, 10, 'git')];
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(updates).toHaveLength(count);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(updates).toHaveLength(count + 1);
+    monitor.stop();
+  });
 });
 
 describe('descendantPids', () => {

@@ -60,10 +60,15 @@ export interface ProcessMonitorOptions {
   maxMs?: number;
 }
 
+/** After a shell integration command start, sample this often for `COMMAND_BURST_MS` (the command's process appears). */
+export const COMMAND_SAMPLE_MS = 400;
+export const COMMAND_BURST_MS = 3000;
+
 /**
  * Samples the process table (one query for all terminals) and reports each terminal's descendants when they
- * change. Every `busySampleMs()` (1 s, 2 s on Windows) while any terminal produced output in the last 5 s, otherwise every 5 s; slow cycles
- * (> 250 ms) back off up to 10 s.
+ * change. Every `busySampleMs()` (1 s, 2 s on Windows) while any terminal produced output in the last 5 s, otherwise
+ * every 5 s; every `COMMAND_SAMPLE_MS` for a few seconds after a command started. Slow cycles (> 250 ms) back off up
+ * to 10 s.
  */
 export class ProcessMonitor {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -72,6 +77,9 @@ export class ProcessMonitor {
   private readonly hashes = new Map<string, string>();
   private backoff = 1;
   private stopped = false;
+  /** Shortest nudge requested while a sample was running; applied when it finishes. */
+  private pendingNudgeMs: number | undefined;
+  private burstUntil = 0;
   private readonly source: ProcessSource;
   private readonly now: () => number;
 
@@ -94,8 +102,21 @@ export class ProcessMonitor {
 
   /** Samples within `withinMs` unless a sample is already due sooner (user pressed Enter, output resumed). */
   nudge(withinMs: number): void {
-    if (this.stopped || this.running) return;
+    if (this.stopped) return;
+    if (this.running) {
+      this.pendingNudgeMs = Math.min(this.pendingNudgeMs ?? withinMs, withinMs);
+      return;
+    }
     if (this.nextAt - this.now() > withinMs) this.schedule(withinMs);
+  }
+
+  /**
+   * A command started (shell integration): its process shows up within moments, so sample quickly for a few
+   * seconds instead of waiting for the next busy cycle (2 s on Windows).
+   */
+  commandStarted(): void {
+    this.burstUntil = this.now() + COMMAND_BURST_MS;
+    this.nudge(COMMAND_SAMPLE_MS);
   }
 
   /** Runs a sampling cycle now (e.g. right after a terminal was created). */
@@ -139,7 +160,11 @@ export class ProcessMonitor {
     this.backoff = cost > 250 ? Math.min(this.backoff * 2, 10) : 1;
     const busy = terminals.some((t) => this.now() - t.lastOutputAt < 5000);
     const base = busy ? (this.o.fastMs ?? busySampleMs()) : (this.o.slowMs ?? 5000);
-    this.schedule(Math.min(base * this.backoff, this.o.maxMs ?? 10_000));
+    let next = Math.min(base * this.backoff, this.o.maxMs ?? 10_000);
+    if (this.now() < this.burstUntil) next = Math.min(next, COMMAND_SAMPLE_MS);
+    if (this.pendingNudgeMs !== undefined) next = Math.min(next, this.pendingNudgeMs);
+    this.pendingNudgeMs = undefined;
+    this.schedule(next);
   }
 
   stop(): void {
