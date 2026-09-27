@@ -7,6 +7,7 @@ import { useTitleStore } from '../stores/title-store';
 import { WorkspaceArea } from '../features/projects/WorkspaceArea';
 import { Sidebar } from './Sidebar';
 import { SidebarResizer } from './SidebarResizer';
+import { SecondarySidebar } from './SecondarySidebar';
 import { StatusBar } from './StatusBar';
 import { useAttentionBadge, useWaitingCount } from '../features/attention/attention-badge';
 import { ActivityStatusItems, NotificationsToggle } from '../features/attention/StatusItems';
@@ -36,17 +37,32 @@ function useWindowTitle(): string {
 
 export function AppLayout() {
   const sidebar = useUiStore((s) => s.state.sidebar);
+  const secondary = useUiStore((s) => s.state.secondarySidebar);
   const title = useWindowTitle();
 
-  useEffect(
-    () =>
+  useEffect(() => {
+    const disposers = [
       registerCommand({
         id: 'workbench.toggleSidebar',
         title: 'View: Toggle Sidebar',
         run: () => useUiStore.getState().toggleSidebar(),
       }),
-    [],
-  );
+      registerCommand({
+        id: 'workbench.toggleSecondarySidebar',
+        title: 'View: Toggle Right Sidebar',
+        run: () => useUiStore.getState().toggleSecondarySidebar(),
+      }),
+      registerCommand({
+        id: 'workbench.focusScratchpad',
+        title: 'View: Focus Scratchpad',
+        run: () => {
+          useUiStore.getState().toggleSecondarySidebar(true);
+          requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="scratchpad-input"]')?.focus());
+        },
+      }),
+    ];
+    return () => disposers.forEach((d) => d());
+  }, []);
 
   return (
     <div className="flex h-full flex-col bg-app">
@@ -64,6 +80,14 @@ export function AppLayout() {
         <main data-testid="center" className="min-w-0 flex-1 pb-0">
           <WorkspaceArea />
         </main>
+        {!secondary.collapsed && (
+          <>
+            <SidebarResizer side="right" />
+            <aside data-testid="secondary-sidebar" className="h-full flex-none" style={{ width: secondary.width }}>
+              <SecondarySidebar />
+            </aside>
+          </>
+        )}
       </div>
       <StatusBar
         left={

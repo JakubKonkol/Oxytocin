@@ -5,6 +5,24 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+### Added
+
+- **Right sidebar.** A second column on the right of the workspace, as wide as the left sidebar by default
+  (resizable, collapsible sections). Toggle it with the new title bar button or `Ctrl+Alt+B`
+  (*View: Toggle Right Sidebar*).
+- **Scratchpad** in the right sidebar for notes and prompt drafts, kept across restarts. **Send to agent**
+  (`Ctrl+Enter` in the scratchpad) pastes the text into a running AI agent terminal without submitting it, so you can
+  review it and press Enter. With a single running agent it goes there; with several it goes to the one you last
+  used, or you pick one from the menu next to the button. *View: Focus Scratchpad* is in the command palette.
+- **Settings button** in the title bar (next to the window controls). Settings were previously only reachable
+  through the Oxytocin logo menu or `Ctrl+,`.
+
+### Changed
+
+- **Faster on Windows:** shell and agent detection (PATH lookups, `reg`, `wsl -l`) now runs in parallel and starts
+  while the window loads, so the first terminal opens sooner. The process tree of busy terminals is sampled every
+  2 s instead of every second, which halves the `fastlist.exe` spawns while agents are printing.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

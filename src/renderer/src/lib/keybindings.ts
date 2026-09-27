@@ -53,6 +53,7 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { key: 'Ctrl+Shift+G', mac: 'Ctrl+Shift+G', command: 'workbench.focusChanges' },
   { key: 'Ctrl+Shift+`', mac: 'Cmd+Shift+`', command: 'workbench.focusCenter' },
   { key: 'Ctrl+Shift+B', mac: 'Cmd+Shift+B', command: 'workbench.toggleSidebar' },
+  { key: 'Ctrl+Alt+B', mac: 'Alt+Cmd+B', command: 'workbench.toggleSecondarySidebar' },
   { key: 'Ctrl+Shift+F', mac: 'Cmd+F', command: 'terminal.find', when: ['terminalFocus'] },
   { key: 'Ctrl+Shift+C', mac: 'Cmd+C', command: 'terminal.copy', when: ['terminalFocus'] },
   { key: 'Ctrl+Shift+V', mac: 'Cmd+V', command: 'terminal.paste', when: ['terminalFocus'] },

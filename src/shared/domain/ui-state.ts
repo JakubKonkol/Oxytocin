@@ -20,6 +20,14 @@ export const SidebarStateSchema = z.object({
 });
 export type SidebarState = z.infer<typeof SidebarStateSchema>;
 
+/** Scratchpad text is capped so ui-state.json stays small. */
+export const SCRATCHPAD_MAX_LENGTH = 100_000;
+
+export const ScratchpadStateSchema = z.object({
+  text: z.string().max(SCRATCHPAD_MAX_LENGTH),
+});
+export type ScratchpadState = z.infer<typeof ScratchpadStateSchema>;
+
 export const PaneviewStateSchema = z.object({
   order: z.array(z.string()),
   sizes: z.record(z.string(), z.number()),
@@ -34,6 +42,10 @@ export const UiStateSchema = z.object({
   window: WindowStateSchema,
   sidebar: SidebarStateSchema,
   paneview: PaneviewStateSchema,
+  /** Right-hand column (scratchpad and future tools); same width limits as the left sidebar. */
+  secondarySidebar: SidebarStateSchema.default({ width: SIDEBAR_DEFAULT_WIDTH, collapsed: false }),
+  secondaryPaneview: PaneviewStateSchema.default({ order: [], sizes: {}, collapsed: [], hidden: [] }),
+  scratchpad: ScratchpadStateSchema.default({ text: '' }),
   pluginViewState: z.record(z.string(), z.unknown()),
   dismissedHints: z.array(z.string()),
   /** Command ids run from the command palette, most recent first. */
@@ -47,6 +59,9 @@ export function defaultUiState(): UiState {
     window: { width: 1280, height: 800, maximized: false },
     sidebar: { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false },
     paneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
+    secondarySidebar: { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false },
+    secondaryPaneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
+    scratchpad: { text: '' },
     pluginViewState: {},
     dismissedHints: [],
     recentCommands: [],
@@ -57,6 +72,9 @@ export function defaultUiState(): UiState {
 export const UiStatePatchSchema = z.object({
   sidebar: SidebarStateSchema.partial().optional(),
   paneview: PaneviewStateSchema.optional(),
+  secondarySidebar: SidebarStateSchema.partial().optional(),
+  secondaryPaneview: PaneviewStateSchema.optional(),
+  scratchpad: ScratchpadStateSchema.optional(),
   pluginViewState: z.record(z.string(), z.unknown()).optional(),
   dismissedHints: z.array(z.string()).optional(),
   recentCommands: z.array(z.string()).max(50).optional(),
@@ -68,6 +86,11 @@ export function applyUiStatePatch(state: UiState, patch: UiStatePatch): UiState 
     ...state,
     sidebar: patch.sidebar ? SidebarStateSchema.parse({ ...state.sidebar, ...patch.sidebar }) : state.sidebar,
     paneview: patch.paneview ?? state.paneview,
+    secondarySidebar: patch.secondarySidebar
+      ? SidebarStateSchema.parse({ ...state.secondarySidebar, ...patch.secondarySidebar })
+      : state.secondarySidebar,
+    secondaryPaneview: patch.secondaryPaneview ?? state.secondaryPaneview,
+    scratchpad: patch.scratchpad ?? state.scratchpad,
     pluginViewState: patch.pluginViewState
       ? { ...state.pluginViewState, ...patch.pluginViewState }
       : state.pluginViewState,

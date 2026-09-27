@@ -1,4 +1,5 @@
 import { DropdownMenu } from 'radix-ui';
+import { PanelRight, Settings } from 'lucide-react';
 import appIconSmall from '../assets/brand/app-icon-small.svg';
 import { useHelpStore } from '../features/help/HelpDialogs';
 import { openKeybindingsEditor } from '../features/keybindings/KeybindingsPanel';
@@ -6,6 +7,9 @@ import { openSettingsEditor } from '../features/settings/SettingsPanel';
 import { openPluginsManager } from '../features/plugins/plugin-manager';
 import { checkForUpdates } from '../features/updates/update-store';
 import { currentPlatform } from '../lib/platform';
+import { shortcutFor } from '../lib/keyboard';
+import { useUiStore } from '../stores/ui-store';
+import { IconButton } from '../ui/IconButton';
 
 const menuItem =
   'flex h-7 cursor-default items-center rounded-badge px-2 text-ui text-fg outline-none data-[highlighted]:bg-accent-muted';
@@ -59,6 +63,33 @@ function AppMenu() {
   );
 }
 
+/** Right side of the title bar, next to the window controls: right sidebar toggle and settings. */
+function TitleBarActions() {
+  const secondaryOpen = useUiStore((s) => !s.state.secondarySidebar.collapsed);
+  const toggleShortcut = shortcutFor('workbench.toggleSecondarySidebar');
+  const settingsShortcut = shortcutFor('workbench.openSettings');
+  return (
+    <div className="oxy-no-drag relative ml-auto flex items-center gap-0.5 pr-2">
+      <IconButton
+        data-testid="toggle-secondary-sidebar"
+        label={secondaryOpen ? 'Hide right sidebar' : 'Show right sidebar'}
+        {...(toggleShortcut ? { shortcut: toggleShortcut } : {})}
+        active={secondaryOpen}
+        aria-pressed={secondaryOpen}
+        icon={<PanelRight size={14} />}
+        onClick={() => useUiStore.getState().toggleSecondarySidebar()}
+      />
+      <IconButton
+        data-testid="open-settings"
+        label="Settings"
+        {...(settingsShortcut ? { shortcut: settingsShortcut } : {})}
+        icon={<Settings size={14} />}
+        onClick={() => openSettingsEditor()}
+      />
+    </div>
+  );
+}
+
 /**
  * Custom title bar (36 px). The whole bar is a window drag region; interactive children must use `oxy-no-drag`.
  * Right padding leaves room for the Windows/Linux window controls overlay (titlebar-area env variables).
@@ -75,6 +106,7 @@ export function TitleBar({ title }: { title: string }) {
       <div className="pointer-events-none absolute inset-x-0 text-center font-mono text-small text-fg-muted">
         {title}
       </div>
+      <TitleBarActions />
     </header>
   );
 }
