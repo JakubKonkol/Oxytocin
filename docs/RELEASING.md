@@ -1,15 +1,20 @@
 # Releasing Oxytocin
 
 Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed (or manually with
-*Run workflow*). It packages Windows (NSIS), macOS (dmg + zip) and Linux (AppImage + deb), checks the Electron fuses,
-runs a smoke test against each packaged app (on Windows after a silent install) and drafts a GitHub Release with the
-matching `CHANGELOG.md` section.
+*Run workflow*). It first runs the full test suite (`full-tests.yml`: all Vitest projects on Windows, Linux and
+macOS, E2E on Windows and Linux), then packages Windows (NSIS), macOS (dmg + zip) and Linux (AppImage + deb), checks
+the Electron fuses, runs a smoke test against each packaged app (on Windows after a silent install) and drafts a
+GitHub Release with the matching `CHANGELOG.md` section.
+
+Pushes to `main` only run the fast checks in `ci.yml` (typecheck, lint, licenses, unit tests on Linux and Windows).
+Start *Actions → Full tests → Run workflow* by hand to run the full suite without releasing.
 
 ## Checklist
 
 1. Update `CHANGELOG.md` (a `## [x.y.z]` section) and `version` in `package.json`.
 2. `npm run licenses:notices` and commit `THIRD_PARTY_NOTICES.md` if it changed.
-3. `npm run check` and `npm run e2e` are green on `main`.
+3. `npm run check` and `npm run e2e` are green on `main` (optionally run the *Full tests* workflow first, so a failure
+   does not surface only after tagging).
 4. Tag and push: `git tag -a vX.Y.Z -m "Oxytocin X.Y.Z" && git push origin vX.Y.Z`.
 5. Review the draft release and publish it. Publishing makes the update visible to installed apps (auto-update).
 

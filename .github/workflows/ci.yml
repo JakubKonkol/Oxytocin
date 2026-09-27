@@ -1,5 +1,8 @@
 name: CI
 
+# Fast checks on every push to main and on pull requests: typecheck, lint, license allowlist and unit tests.
+# Integration tests on all three platforms and the E2E suite live in full-tests.yml (run manually and before
+# every release).
 on:
   push:
     branches: [main]
@@ -14,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -30,44 +33,3 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npm run licenses:check
       - run: npx vitest run --project unit-node --project unit-web
-      - name: Shells for the shell integration tests (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y -q zsh fish
-      - run: npx vitest run --project integration
-
-  e2e:
-    needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - name: Install system dependencies for Electron (Linux)
-        if: runner.os == 'Linux'
-        run: npx playwright install-deps chromium
-      - name: E2E (Linux, virtual display)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a npm run e2e
-      - name: E2E (Windows)
-        if: runner.os == 'Windows'
-        run: npm run e2e
-      - uses: actions/upload-artifact@v5
-        if: failure()
-        with:
-          name: e2e-${{ matrix.os }}
-          path: |
-            test-results/
-            playwright-report/
-      - uses: actions/upload-artifact@v5
-        if: always()
-        with:
-          name: perf-${{ matrix.os }}
-          path: perf-results.json
-          if-no-files-found: ignore

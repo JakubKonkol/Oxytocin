@@ -1,7 +1,7 @@
 name: Release
 
-# Tag v* → packages for Windows (NSIS), macOS and Linux, a packaged smoke test on each, and a draft GitHub Release
-#. Signed and notarized when the signing secrets exist
+# Tag v* → the full test suite (full-tests.yml), then packages for Windows (NSIS), macOS and Linux, a packaged smoke
+# test on each, and a draft GitHub Release. Signed and notarized when the signing secrets exist
 # (docs/RELEASING.md); unsigned otherwise.
 on:
   push:
@@ -12,7 +12,11 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    uses: ./.github/workflows/full-tests.yml
+
   package:
+    needs: tests
     strategy:
       fail-fast: false
       matrix:
