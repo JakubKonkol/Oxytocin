@@ -1,18 +1,35 @@
 name: Full tests
 
-# The complete suite: typecheck, lint and all Vitest projects on Windows, Linux and macOS, then E2E on Windows and
-# Linux. Started by hand (Actions → Full tests → Run workflow) and called by release.yml before packaging.
+# The complete suite per platform: typecheck, lint, unit and integration tests, then E2E (Windows and Linux; the
+# app is not E2E-tested on macOS). Started by hand (Actions → Full tests → Run workflow) and called by release.yml,
+# once per group of platforms so that each platform's tests gate only its own packages.
 on:
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: Platforms to test
+        type: choice
+        options: [all, windows, linux-macos]
+        default: all
   workflow_call:
+    inputs:
+      platforms:
+        description: all, windows or linux-macos
+        type: string
+        default: all
 
 jobs:
-  check:
+  test:
+    name: test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: >-
+          ${{ fromJSON(inputs.platforms == 'windows' && '["windows-latest"]'
+          || inputs.platforms == 'linux-macos' && '["ubuntu-latest","macos-latest"]'
+          || '["windows-latest","ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -24,28 +41,12 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - name: License check (MIT-compatible dependencies only, ADR-020)
-        if: matrix.os == 'ubuntu-latest'
         run: npm run licenses:check
       - run: npx vitest run --project unit-node --project unit-web
       - name: Shells for the shell integration tests (Linux)
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: sudo apt-get install -y -q zsh fish
       - run: npx vitest run --project integration
-
-  e2e:
-    needs: check
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
       - name: Install system dependencies for Electron (Linux)
         if: runner.os == 'Linux'
         run: npx playwright install-deps chromium
@@ -62,8 +63,9 @@ jobs:
           path: |
             test-results/
             playwright-report/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v5
-        if: always()
+        if: always() && runner.os != 'macOS'
         with:
           name: perf-${{ matrix.os }}
           path: perf-results.json

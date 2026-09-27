@@ -1,8 +1,11 @@
 name: Release
 
-# Tag v* → the full test suite (full-tests.yml), then packages for Windows (NSIS), macOS and Linux, a packaged smoke
-# test on each, and a draft GitHub Release. Signed and notarized when the signing secrets exist
-# (docs/RELEASING.md); unsigned otherwise.
+# Tag v* → the full test suite (full-tests.yml), packages for Windows (NSIS), macOS and Linux with a packaged smoke
+# test on each (package.yml), then a published GitHub Release with the changelog section. Windows is the primary
+# platform: its tests gate its package, and its package gates the release. Linux and macOS are tested and packaged in
+# parallel; their packages are attached when they succeed but never block the release (re-running their failed jobs
+# later re-runs this release job, which adds them). Signed and notarized when the signing secrets exist
+# (docs/RELEASING.md); unsigned otherwise. "Run workflow" on a branch runs everything except the release.
 on:
   push:
     tags: ['v*']
@@ -11,142 +14,42 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  tests:
+  tests-windows:
     uses: ./.github/workflows/full-tests.yml
+    with:
+      platforms: windows
 
-  package:
-    needs: tests
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: --win
-            platform: win
-          - os: macos-latest
-            target: --mac
-            platform: mac
-          - os: ubuntu-latest
-            target: --linux
-            platform: linux
-    runs-on: ${{ matrix.os }}
-    env:
-      # Azure Trusted Signing (Windows) and notarization (macOS) read these while electron-builder runs.
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run licenses:notices
-      - run: npm run build
-      - name: Signing setup
-        id: signing
-        shell: bash
-        env:
-          AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
-          AZURE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
-          AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
-          AZURE_SIGN_PUBLISHER: ${{ secrets.AZURE_SIGN_PUBLISHER }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-        run: |
-          if [ -n "$APPLE_API_KEY_P8" ]; then
-            mkdir -p "$RUNNER_TEMP/apple"
-            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple/AuthKey.p8"
-            export APPLE_API_KEY="$RUNNER_TEMP/apple/AuthKey.p8"
-            echo "APPLE_API_KEY=$APPLE_API_KEY" >> "$GITHUB_ENV"
-          fi
-          npx tsx scripts/signing-args.ts ${{ matrix.platform }}
-      - run: npx electron-builder ${{ matrix.target }} ${{ steps.signing.outputs.args }} --publish never
-      - name: Verify Electron fuses
-        shell: bash
-        run: |
-          case "${{ matrix.platform }}" in
-            linux) APP=release/linux-unpacked/oxytocin ;;
-            mac) APP=$(ls -d release/mac*/Oxytocin.app | head -n 1) ;;
-            win) APP=release/win-unpacked/Oxytocin.exe ;;
-          esac
-          npx tsx scripts/verify-fuses.ts "$APP"
-      - name: Verify signatures (macOS)
-        if: runner.os == 'macOS' && steps.signing.outputs.signed == 'true'
-        run: |
-          APP=$(ls -d release/mac*/Oxytocin.app | head -n 1)
-          codesign --verify --deep --strict --verbose=2 "$APP"
-          if [ "${{ steps.signing.outputs.notarized }}" = "true" ]; then
-            xcrun stapler validate "$APP"
-            spctl --assess --type execute --verbose=2 "$APP"
-          fi
-      - name: Verify signatures (Windows)
-        if: runner.os == 'Windows' && steps.signing.outputs.signed == 'true'
-        shell: pwsh
-        run: |
-          foreach ($file in @((Get-ChildItem release -Filter '*Setup*.exe' | Select-Object -First 1).FullName, 'release\win-unpacked\Oxytocin.exe')) {
-            $sig = Get-AuthenticodeSignature $file
-            Write-Host "$file : $($sig.Status) $($sig.SignerCertificate.Subject)"
-            if ($sig.Status -ne 'Valid') { throw "Not validly signed: $file" }
-          }
-      - name: Install system dependencies for Electron (Linux)
-        if: runner.os == 'Linux'
-        run: npx playwright install-deps chromium
-      - name: Packaged smoke test (Linux)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a npx playwright test -c tests/smoke
-        env:
-          OXYTOCIN_EXECUTABLE: ${{ github.workspace }}/release/linux-unpacked/oxytocin
-      - name: Packaged smoke test (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          APP=$(ls -d release/mac*/Oxytocin.app | head -n 1)
-          OXYTOCIN_EXECUTABLE="$PWD/$APP/Contents/MacOS/Oxytocin" npx playwright test -c tests/smoke
-      - name: Install (NSIS, silent), smoke test and uninstall (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem release -Filter '*Setup*.exe' | Select-Object -First 1
-          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
-          $exe = Join-Path $env:LOCALAPPDATA 'Programs\oxytocin\Oxytocin.exe'
-          if (-not (Test-Path $exe)) { throw "Installed app not found at $exe" }
-          $env:OXYTOCIN_EXECUTABLE = $exe
-          npx playwright test -c tests/smoke
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged smoke test failed' }
-          $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\oxytocin\Uninstall Oxytocin.exe'
-          Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
-          Start-Sleep -Seconds 5
-          if (Test-Path $exe) { throw 'The app is still installed after uninstalling' }
-      - uses: actions/upload-artifact@v5
-        with:
-          name: packages-${{ matrix.os }}
-          path: |
-            release/*.exe
-            release/*.dmg
-            release/*.zip
-            release/*.AppImage
-            release/*.deb
-            release/latest*.yml
-            release/beta*.yml
-            release/*.blockmap
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v5
-        if: failure()
-        with:
-          name: smoke-${{ matrix.os }}
-          path: test-results/
+  tests-linux-macos:
+    uses: ./.github/workflows/full-tests.yml
+    with:
+      platforms: linux-macos
 
-  draft-release:
-    needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
+  package-windows:
+    needs: tests-windows
+    uses: ./.github/workflows/package.yml
+    secrets: inherit
+    with:
+      platforms: windows
+
+  package-linux-macos:
+    needs: tests-linux-macos
+    uses: ./.github/workflows/package.yml
+    secrets: inherit
+    with:
+      platforms: linux-macos
+
+  release:
+    needs: [package-windows, package-linux-macos]
+    # Runs when the Windows package exists, whatever happened to Linux and macOS.
+    if: >-
+      !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.package-windows.result == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v5
@@ -154,18 +57,30 @@ jobs:
           path: dist-packages
           pattern: packages-*
           merge-multiple: true
-      - name: Draft GitHub Release with the changelog section
+      - name: Publish the GitHub Release with the changelog section
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PACKAGE_VERSION"
+            exit 1
+          fi
           awk -v v="$VERSION" '$0 ~ "^## \\[?"v"\\]?" {p=1; next} /^## / && p {exit} p' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::warning::CHANGELOG.md has no section for $VERSION"
+            echo "Oxytocin $VERSION" > notes.md
+          fi
+          ls -la dist-packages
           # Pre-release versions (1.2.0-beta.1) are offered only on the beta update channel.
           PRERELEASE=""
           case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
-          # A release created by hand (e.g. with a locally built installer) gets the CI packages added.
+          # An existing release (created by hand, or by an earlier run of this workflow) gets the packages added or
+          # replaced: re-running the Linux/macOS jobs after a failure completes the release.
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" dist-packages/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist-packages/* --draft $PRERELEASE --title "Oxytocin $VERSION" --notes-file notes.md
+            gh release create "$GITHUB_REF_NAME" dist-packages/* $PRERELEASE --verify-tag \
+              --title "Oxytocin $VERSION" --notes-file notes.md
           fi

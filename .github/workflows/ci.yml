@@ -1,8 +1,8 @@
 name: CI
 
-# Fast checks on every push to main and on pull requests: typecheck, lint, license allowlist and unit tests.
-# Integration tests on all three platforms and the E2E suite live in full-tests.yml (run manually and before
-# every release).
+# Fast checks on every push to main and on pull requests, on Windows (the primary platform): typecheck, lint,
+# license allowlist and unit tests. Integration and E2E tests on Windows, Linux and macOS live in full-tests.yml
+# (started by hand and before every release by release.yml).
 on:
   push:
     branches: [main]
@@ -14,22 +14,17 @@ concurrency:
 
 jobs:
   check:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
-      # Linux: node-pty 1.1.0 has no prebuild and compiles here (the runner has build-essential and python3).
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - name: License check (MIT-compatible dependencies only, ADR-020)
-        if: matrix.os == 'ubuntu-latest'
         run: npm run licenses:check
       - run: npx vitest run --project unit-node --project unit-web

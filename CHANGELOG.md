@@ -5,6 +5,18 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases are built and published by GitHub Actions.** Pushing a version tag runs the full test suite and
+  publishes the release with the Windows installer; the Linux and macOS packages are added when their builds
+  succeed. Pushes to `main` only run the fast checks on Windows.
+
+### Fixed
+
+- **Windows:** a command started in a terminal shows as running right away again. Since 0.3.0 the busy-terminal
+  sampling every 2 s could delay it by up to two seconds; the process tree is now sampled quickly for a few seconds
+  after each command starts.
+
 ## [0.3.0] - 2026-09-27
 
 ### Added
