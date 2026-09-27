@@ -83,4 +83,6 @@ mac:
 linux:
   target: [AppImage, deb]
   category: Development
+  # Required for the .deb package (otherwise read from the author email in package.json).
+  maintainer: Jakub Konkol <jakub.konkol27@gmail.com>
   icon: resources/build/icon.png
