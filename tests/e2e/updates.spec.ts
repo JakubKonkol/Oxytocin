@@ -2,7 +2,7 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { expect, test } from '@playwright/test';
-import { launchApp } from './helpers/launch';
+import { launchApp, repoRoot } from './helpers/launch';
 import { waitForTerminal } from './helpers/terminal';
 
 // M9-T2: E2E runs use a scripted update backend in main (never the network); see e2e-update-backend.ts.
@@ -36,7 +36,9 @@ test('auto-update: check, background download, restart through QuitGuard', async
   try {
     await waitForTerminal(win);
     const status = win.getByTestId('status-update');
-    await expect(status).toHaveText('v0.1.0');
+    // The current version from package.json (hard-coding it broke the test on every release).
+    const { version } = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as { version: string };
+    await expect(status).toHaveText(`v${version}`);
     await expect(status).toHaveAttribute('data-kind', 'version');
 
     // Up to date: the palette command reports it.
