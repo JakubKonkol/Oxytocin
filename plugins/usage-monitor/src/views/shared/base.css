@@ -1,0 +1,83 @@
+/* Shared styles of the Usage views; colours come from the shell's theme tokens. */
+body {
+  overflow: hidden;
+  font-size: 12px;
+}
+.muted {
+  color: var(--text-muted);
+}
+.secondary {
+  color: var(--text-secondary);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.bar {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--bg-input);
+}
+.bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 300ms ease;
+}
+.bar[data-level='warning'] > span {
+  background: var(--warning);
+}
+.bar[data-level='danger'] > span {
+  background: var(--danger);
+}
+.dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.dot[data-state='working'] {
+  background: var(--agent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.dot[data-state='waiting'] {
+  background: var(--warning);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot[data-state='working'] {
+    animation: none;
+  }
+}
+button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+}
+button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+}
+button.icon:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-primary);
+}

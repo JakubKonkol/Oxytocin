@@ -37,6 +37,11 @@ const emit = serveWorker(parentPort, {
     (await ready).activeProjectId = id;
   },
   'view.sidebar': async () => (await ready).sidebar(),
+  'dash.overview': async () => (await ready).overview(),
+  'dash.sessions': async (opts: Parameters<UsageEngine['sessionList']>[0]) => (await ready).sessionList(opts ?? {}),
+  'dash.session': async ({ id }: { id: string }) => (await ready).sessionDetail(id),
+  'dash.pricing': async () => (await ready).pricingDetail(),
+  'dash.sources': async () => (await ready).sources(),
   'view.status': async () => (await ready).status(),
   'budgets.list': async () => (await ready).budgets(),
   'budgets.save': async (input: BudgetInput) => (await ready).saveBudget(input),

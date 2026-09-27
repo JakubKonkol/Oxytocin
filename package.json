@@ -76,6 +76,7 @@
     "shiki": "~4.4.3",
     "sonner": "~2.0",
     "tailwindcss": "~4.3",
+    "uplot": "~1.6.32",
     "zod": "~4.6",
     "zustand": "~5.0"
   },

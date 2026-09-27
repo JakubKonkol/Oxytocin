@@ -66,16 +66,25 @@ function subscribe(): void {
   void ipc.invoke('plugins:statusBar').then((items) => useStatusStore.setState({ items }));
 }
 
-/** "$(graph) $4.82 today" → icon + text parts. */
+/** "$(graph) $4.82 today" → icon + text parts; `$(sync~spin)` spins. */
 export function renderStatusText(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const re = /\$\(([a-z0-9-]+)\)/g;
+  const re = /\$\(([a-z0-9-]+)(~spin)?\)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     if (m.index > last) parts.push(text.slice(last, m.index));
     const Icon = ICONS[m[1]!];
-    if (Icon) parts.push(<Icon key={`${m.index}-icon`} aria-hidden size={12} className="inline-block" />);
+    if (Icon)
+      parts.push(
+        <Icon
+          key={`${m.index}-icon`}
+          aria-hidden
+          size={12}
+          data-spin={m[2] ? 'true' : undefined}
+          className={cn('inline-block', m[2] && 'animate-spin')}
+        />,
+      );
     last = m.index + m[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));

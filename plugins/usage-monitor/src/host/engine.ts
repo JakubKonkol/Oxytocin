@@ -38,6 +38,18 @@ import {
   saveBudget,
 } from './analytics/budgets';
 import { sidebarModel, statusModel, type ViewContext } from './analytics/view-model';
+import { addDays, startOfDay } from './analytics/periods';
+import {
+  breakdown,
+  burnRate,
+  sessionById,
+  sessionEvents,
+  sessions,
+  type SessionSort,
+  summary,
+  timeseries,
+  unknownModels,
+} from './analytics/queries';
 import { type Database, getMeta, openDatabase, schemaVersion, setMeta, transaction } from './store/db';
 import { EventWriter, type IngestContext, recomputeCosts } from './store/events';
 
@@ -89,7 +101,7 @@ const USER_OTEL_VARS = [
 ];
 
 /** Whether the environment or Claude Code's settings.json already configure OpenTelemetry. */
-export function detectUserOtelConfig(env: NodeJS.ProcessEnv, home = homedir()): string | null {
+export function detectUserOtelConfig(env: NodeJS.ProcessEnv, home: string = homedir()): string | null {
   const inEnv = USER_OTEL_VARS.find((v) => env[v]);
   if (inEnv) return `${inEnv} is set in the environment`;
   const dirs = [...(env['CLAUDE_CONFIG_DIR'] ?? '').split(','), join(home, '.claude')]
@@ -612,6 +624,110 @@ export class UsageEngine {
       .filter((b) => b.enabled)
       .map((b) => evaluateBudget(this.db, b, now, this.settings.weekStartsOn));
     return checkBudgetAlerts(this.db, statuses, now);
+  }
+
+  /** Dashboard → Overview (§14.3). */
+  overview() {
+    const now = this.now();
+    const today = startOfDay(now);
+    const end = addDays(today, 1);
+    const last30 = { from: addDays(today, -29), to: end };
+    const named = <T extends { key: string | null }>(rows: T[]) =>
+      rows.map((r) => ({ ...r, name: this.attribution.name(r.key) ?? null }));
+    return {
+      now,
+      today: summary(this.db, { from: today, to: end }),
+      last7: summary(this.db, { from: addDays(today, -6), to: end }),
+      last30: summary(this.db, last30),
+      burnRate: burnRate(this.db, now),
+      daily: timeseries(this.db, last30, 'day', 'agent'),
+      projects: named(breakdown(this.db, last30, 'project')),
+      models: breakdown(this.db, last30, 'model'),
+      billing: this.settings.billing,
+    };
+  }
+
+  /** Dashboard → Sessions. */
+  sessionList(opts: {
+    days?: number;
+    offset?: number;
+    limit?: number;
+    sort?: SessionSort;
+    agent?: string;
+    projectId?: string;
+  }) {
+    const now = this.now();
+    const from = opts.days ? addDays(startOfDay(now), -(opts.days - 1)) : 0;
+    const result = sessions(
+      this.db,
+      { from, to: now + 1 },
+      {
+        filter: {
+          ...(opts.agent ? { agent: opts.agent } : {}),
+          ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        },
+        ...(opts.offset !== undefined ? { offset: opts.offset } : {}),
+        ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
+        ...(opts.sort ? { sort: opts.sort } : {}),
+      },
+    );
+    return {
+      ...result,
+      rows: result.rows.map((r) => ({ ...r, projectName: this.attribution.name(r.projectId) ?? null })),
+    };
+  }
+
+  sessionDetail(sessionId: string) {
+    const session = sessionById(this.db, sessionId);
+    if (!session) return null;
+    return {
+      session: { ...session, projectName: this.attribution.name(session.projectId) ?? null },
+      events: sessionEvents(this.db, sessionId),
+    };
+  }
+
+  pricingDetail() {
+    return {
+      version: this.pricing.version,
+      source: this.pricing.tableSource,
+      fetchedAt: this.pricing.lastFetchedAt,
+      generatedAt: this.pricing.table.generatedAt,
+      models: this.pricing.list(),
+      unknown: unknownModels(this.db),
+    };
+  }
+
+  /** Dashboard → Sources (§14.3). */
+  sources() {
+    const env = this.opts.env ?? process.env;
+    const known = {
+      claude: claudeProjectDirs(env, [], this.opts.home),
+      codex: codexRoots(env, this.opts.home),
+      gemini: geminiRoots(env, this.opts.home),
+    };
+    const collectors = (['claude-jsonl', 'codex-rollout', 'gemini-chat'] as const).map((source) => {
+      const c = this.collectors.get(source);
+      const roots = c?.stats.roots.length
+        ? c.stats.roots
+        : source === 'claude-jsonl'
+          ? known.claude
+          : source === 'codex-rollout'
+            ? known.codex
+            : known.gemini;
+      return {
+        source,
+        enabled: !!c,
+        roots: roots.map((path) => ({ path, exists: existsSync(path) })),
+        files: c?.stats.files ?? 0,
+        lastEventAt: c?.stats.lastEventAt ?? null,
+        parseErrors: c?.stats.parseErrors ?? 0,
+      };
+    });
+    return {
+      collectors,
+      otlp: this.otlp ? { ...this.otlp.stats } : null,
+      userOtelConfig: detectUserOtelConfig(env, this.opts.home),
+    };
   }
 
   /** Deletes events older than `usage.retentionDays` (§11); returns the number removed. */

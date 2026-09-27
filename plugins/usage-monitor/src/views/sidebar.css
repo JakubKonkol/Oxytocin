@@ -1,0 +1,116 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100vh;
+  padding: 6px 10px 8px;
+  overflow-y: auto;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+}
+.row > * {
+  white-space: nowrap;
+}
+.head .icon {
+  align-self: center;
+  margin-right: -4px;
+}
+.unknown {
+  margin-left: -3px;
+  font-size: 11px;
+  color: var(--warning);
+  cursor: help;
+}
+.today-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.spacer {
+  flex: 1;
+}
+.trend-up {
+  color: var(--warning);
+}
+.trend-down {
+  color: var(--success);
+}
+.limit-label {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.heading {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.session {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.session:hover {
+  background: var(--bg-card-hover);
+}
+.session .title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+.session .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session .meta {
+  padding-left: 13px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--text-secondary);
+}
+.empty code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bg-elevated);
+}
+.sources li {
+  list-style: none;
+  font-size: 11px;
+}
+.sources {
+  margin: 0;
+  padding: 0;
+}
+.ok {
+  color: var(--success);
+}
+.missing {
+  color: var(--text-muted);
+}
+.compact .hide-compact {
+  display: none;
+}

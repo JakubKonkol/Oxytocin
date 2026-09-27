@@ -2,14 +2,13 @@ import { type IPaneviewPanelProps, type PaneviewApi, PaneviewReact, type Panevie
 import { useEffect, useRef, useState } from 'react';
 import type { PaneviewState } from '@shared/domain/ui-state';
 import { Plus } from 'lucide-react';
-import { SectionBody, SectionHeader } from '../ui/Section';
+import { SectionHeader } from '../ui/Section';
 import { IconButton } from '../ui/IconButton';
 import { ProjectsSection } from '../features/projects/ProjectsSection';
 import { ChangesCount, ChangesHeaderActions, ChangesSection } from '../features/changes/ChangesSection';
 import { registerCommand } from '../lib/commands';
 import { addProjectViaDialog } from '../features/projects/project-actions';
 import { useProjectsStore } from '../stores/projects-store';
-import { EmptyState } from '../ui/EmptyState';
 import { useUiStore } from '../stores/ui-store';
 import { usePluginsStore } from '../stores/plugins-store';
 import { type PluginPaneParams, PluginSidebarView, sidebarViewInstanceId } from '../features/plugins/PluginSidebarView';
@@ -28,7 +27,6 @@ interface SectionDefinition {
 const CORE_SECTIONS: SectionDefinition[] = [
   { id: 'projects', title: 'PROJECTS', size: 200, order: 0 },
   { id: 'changes', title: 'CHANGES', size: 380, order: 100 },
-  { id: 'usage', title: 'USAGE', size: 160, order: 300 },
 ];
 
 const pluginPaneId = (pluginId: string, viewId: string) => `plugin:${pluginId}:${viewId}`;
@@ -81,19 +79,10 @@ function PaneHeader(props: IPaneviewPanelProps) {
   );
 }
 
-function PlaceholderBody({ text }: { text: string }) {
-  return (
-    <SectionBody>
-      <EmptyState title={text} className="py-4" />
-    </SectionBody>
-  );
-}
-
 const components = {
   'plugin-view': PluginSidebarView,
   projects: () => <ProjectsSection />,
   changes: () => <ChangesSection />,
-  usage: () => <PlaceholderBody text="No usage data yet" />,
 };
 
 function readPaneviewState(api: PaneviewApi): PaneviewState {

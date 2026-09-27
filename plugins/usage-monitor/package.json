@@ -12,7 +12,12 @@
     "publisher": "oxytocin",
     "engine": "^0.1.0",
     "main": "dist/host.js",
-    "activationEvents": [],
+    "activationEvents": [
+      "onStartup",
+      "onView:usage.sidebar",
+      "onPanel:usage.dashboard",
+      "onCommand:usage.openDashboard"
+    ],
     "permissions": [
       "projects.read",
       "agents.read",
@@ -25,6 +30,42 @@
       "notifications.os"
     ],
     "contributes": {
+      "views": [
+        {
+          "id": "usage.sidebar",
+          "slot": "sidebar",
+          "title": "Usage",
+          "entry": "dist/views/sidebar.html",
+          "order": 300,
+          "initialHeight": 180,
+          "minHeight": 72
+        }
+      ],
+      "panels": [
+        {
+          "type": "usage.dashboard",
+          "title": "Usage",
+          "entry": "dist/views/dashboard.html",
+          "singleton": "global"
+        }
+      ],
+      "statusBarItems": [
+        {
+          "id": "usage.today",
+          "alignment": "right",
+          "priority": 10
+        }
+      ],
+      "commands": [
+        {
+          "id": "usage.openDashboard",
+          "title": "Usage: Open Dashboard"
+        },
+        {
+          "id": "usage.refreshPricing",
+          "title": "Usage: Refresh Pricing"
+        }
+      ],
       "configuration": {
         "prefix": "usage",
         "properties": {

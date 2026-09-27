@@ -5,7 +5,7 @@ test('the shell shows the prototype layout', async () => {
   const { app, win } = await launchApp();
   try {
     await expect(win.getByTestId('titlebar')).toContainText('Oxytocin');
-    for (const id of ['projects', 'changes', 'usage']) {
+    for (const id of ['projects', 'changes', 'plugin:oxytocin.usage-monitor:usage.sidebar']) {
       await expect(win.getByTestId(`section-header-${id}`)).toBeVisible();
     }
     await expect(win.getByTestId('statusbar')).toBeVisible();

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { AgentSnapshot, PluginContext } from '@oxytocin/plugin-api';
 import { type CollectorSettings, DEFAULT_SETTINGS, type TelemetrySettings, type UsageSettings } from './settings';
 import { applyTelemetryEnv, type OtlpEndpointInfo } from './telemetry-env';
+import { registerUi } from './ui';
 import { WorkerClient } from './worker-rpc';
 
 function settingsReader(ctx: PluginContext) {
@@ -102,6 +103,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const { schemaVersion } = await client.request<{ schemaVersion: number }>('init');
   ctx.log.info(`Usage database ready (schema ${schemaVersion})`);
   await client.request('setSettings', readSettings(ctx));
+  registerUi(ctx, client);
 
   const pushProjects = async () =>
     client.request(

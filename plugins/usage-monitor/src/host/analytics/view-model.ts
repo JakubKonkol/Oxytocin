@@ -3,8 +3,8 @@ import type { Billing } from '../settings';
 import type { Database } from '../store/db';
 import { activeBlock, BLOCK_MS } from './blocks';
 import { type BudgetStatus, evaluateBudget, listBudgets } from './budgets';
-import { addDays, startOfDay, type WeekStart } from './periods';
-import { burnRate, summary, type TokenTotals } from './queries';
+import { addDays, periodRange, startOfDay, type WeekStart } from './periods';
+import { breakdown, burnRate, summary, type TokenTotals } from './queries';
 
 export const LIVE_WINDOW_MS = 10 * 60 * 1000;
 const RECENT_ACTIVITY_MS = 30 * 1000;
@@ -47,6 +47,10 @@ export interface SidebarModel {
 
 export interface StatusModel {
   todayUsd: number;
+  weekUsd: number;
+  monthUsd: number;
+  /** Top projects of the day by cost (tooltip). */
+  topProjects: { name: string; usd: number }[];
   approximate: boolean;
   activeSession: { costUsd: number; agent: string } | null;
   /** New events of a live session within the last 30 s (spinner). */
@@ -258,8 +262,16 @@ export function statusModel(db: Database, ctx: ViewContext): StatusModel {
   const today = summary(db, { from: todayFrom, to: addDays(todayFrom, 1) });
   const live = liveSessions(db, ctx);
   const active = live[0];
+  const week = periodRange('week', ctx.now, ctx.weekStartsOn);
+  const month = periodRange('month', ctx.now);
   return {
     todayUsd: today.costUsd,
+    weekUsd: summary(db, week).costUsd,
+    monthUsd: summary(db, month).costUsd,
+    topProjects: breakdown(db, { from: todayFrom, to: addDays(todayFrom, 1) }, 'project')
+      .filter((p) => p.key && p.costUsd > 0)
+      .slice(0, 3)
+      .map((p) => ({ name: ctx.projectName(p.key) ?? 'Other', usd: p.costUsd })),
     approximate: live.some((s) => s.approximate),
     activeSession: active ? { costUsd: active.costUsd, agent: active.agent } : null,
     busy: live.some((s) => ctx.now - s.lastEventAt <= RECENT_ACTIVITY_MS),

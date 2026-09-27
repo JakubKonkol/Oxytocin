@@ -92,3 +92,29 @@ th {
 .oxy-muted {
   color: var(--text-muted, #6e7682);
 }
+
+/* Native controls and scrollbars follow the shell's theme (set by the SDK from oxy:init). */
+:root[data-oxy-theme='dark'] {
+  color-scheme: dark;
+}
+:root[data-oxy-theme='light'] {
+  color-scheme: light;
+}
+
+/* Scrollbars like the shell's (docs/plan/02-ui-ux.md). */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background: var(--border-default, #2c333d) padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-strong, #3a4350);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
