@@ -66,7 +66,10 @@ test('restored agent terminals never start the agent by themselves and offer "Re
 
     await second.win.getByTestId('terminal-resume').click();
     await expect(bar).toHaveCount(0);
-    await expect.poll(async () => oxyTest(second.win).text(restored.terminalId)).toContain('claude --resume sess-0123');
+    // A long prompt (PowerShell on CI) can wrap the command onto the next buffer line.
+    await expect
+      .poll(async () => (await oxyTest(second.win).text(restored.terminalId)).replace(/\r?\n/g, ''))
+      .toContain('claude --resume sess-0123');
     await second.win.waitForTimeout(1200);
   } finally {
     await second.app.close();
