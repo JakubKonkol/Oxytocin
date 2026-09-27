@@ -64,14 +64,18 @@ test('plugin backends run in the Plugin Host: commands, crash isolation and hang
     const logs = (await invoke(win, 'plugins:logs', { id: 'test.echo' })) as { message: string }[];
     expect(logs.map((l) => l.message)).toContain('echo activated');
 
-    // A plugin blocking the event loop: the host stops answering pings and is restarted.
+    // A plugin blocking the event loop: its host stops answering pings and is restarted. Developer (and user)
+    // plugins run in the external Plugin Host, so the built-in one is not affected (ADR-022).
     void invoke(win, 'plugins:executeCommand', { id: 'hang.forever' }).catch(() => undefined);
-    const hostState = async () =>
-      ((await invoke(win, 'app:getHostStatus')) as { name: string; state: string; restarts: number }[]).find((h) =>
-        h.name.includes('Plugin'),
+    const hostState = async (name: string) =>
+      ((await invoke(win, 'app:getHostStatus')) as { name: string; state: string; restarts: number }[]).find(
+        (h) => h.name === name,
       );
-    await expect.poll(async () => (await hostState())?.restarts, { timeout: 40_000, intervals: [1000] }).toBe(1);
-    await expect.poll(async () => (await hostState())?.state, { timeout: 15_000 }).toBe('running');
+    const external = () => hostState('Oxytocin Plugin Host (external)');
+    await expect.poll(async () => (await external())?.restarts, { timeout: 40_000, intervals: [1000] }).toBe(1);
+    await expect.poll(async () => (await external())?.state, { timeout: 15_000 }).toBe('running');
+    expect(await hostState('Oxytocin Plugin Host')).toMatchObject({ state: 'running', restarts: 0 });
+    await expect.poll(() => state('oxytocin.usage-monitor')).toBe('active');
     // Other plugins come back.
     await expect.poll(() => state('test.echo'), { timeout: 15_000 }).toBe('active');
     expect(await invoke(win, 'plugins:executeCommand', { id: 'echo.hello', args: [] })).toMatchObject({ echo: [] });

@@ -147,6 +147,14 @@ Format ADR: **Kontekst → Decyzja → Alternatywy → Konsekwencje**. Status: `
 - **Alternatives:** `@vscode/windows-process-tree` (native build), WMI for every sample (≈ 300 ms per call).
 - **Consequences:** Command lines of new interpreter processes appear with one CIM call of delay; the monitor backs off (×2, up to 10 s) when sampling takes more than 250 ms.
 
+
+## ADR-022 — A separate Plugin Host for user and developer plugins
+- **Status:** Accepted (implementation, M9-T3; settles the question left open in 07 §6.5).
+- **Context:** All plugin backends shared one Plugin Host. A plugin the user installed (or one under development) that blocks the event loop or crashes the process took the built-in plugins (Usage Monitor, Markdown Preview) down with it until the host restarted, and the hang counter could only guess which plugin was busy.
+- **Decision:** Two Plugin Hosts from the same entry point: `Oxytocin Plugin Host` runs built-in plugins; `Oxytocin Plugin Host (external)` runs plugins from `userData/plugins` and `plugins.devPaths`. The external host starts only when such a plugin is enabled (no extra process for users without external plugins). Main keeps one `PluginHostService` per host, each with its plugin set (`scopedPlugins`), behind a `PluginHosts` facade that routes requests by plugin (commands by their contributing plugin, views by their open view) and broadcasts core events; status bar items and terminal environments are merged.
+- **Alternatives:** one host (07 §6.5 v1), one host per plugin (strongest isolation, ~40–90 MB per plugin).
+- **Consequences:** User plugins cannot freeze or crash the built-in ones; hang attribution only competes among external plugins. One more utility process (~40–90 MB) while external plugins are enabled. Not a security boundary: backends still have full Node access (07 §2), so installing asks for consent.
+
 ---
 
 ## Rejestr ryzyk

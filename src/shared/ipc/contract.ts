@@ -3,6 +3,7 @@ import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
 import {
   ContributionsSchema,
+  InstalledPluginSchema,
   OpenViewRequestSchema,
   PluginDescriptorSchema,
   StatusBarItemStateSchema,
@@ -106,6 +107,11 @@ export const invokeContract = {
     res: z.object({ path: z.string(), id: z.string().optional(), errors: z.array(z.string()) }).nullable(),
   },
   'plugins:removeDevPath': { req: z.object({ path: z.string() }), res: z.void() },
+  /** Installs a plugin into userData/plugins from a folder or a .zip picked by the user; null = cancelled (M9-T3). */
+  'plugins:install': { req: z.object({ kind: z.enum(['folder', 'zip']) }), res: InstalledPluginSchema.nullable() },
+  /** Removes a plugin installed by the user. */
+  'plugins:uninstall': { req: z.object({ id: z.string() }), res: z.void() },
+  'plugins:openUserFolder': { req: z.null().optional(), res: z.void() },
   /** Developer mode: DevTools of the window (plugin iframes are selectable frames there). */
   'plugins:openDevTools': { req: z.null().optional(), res: z.void() },
   'plugins:executeCommand': {

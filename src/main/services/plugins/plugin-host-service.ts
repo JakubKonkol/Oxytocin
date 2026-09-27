@@ -360,6 +360,11 @@ export class PluginHostService implements Disposable {
     await ready;
   }
 
+  /** The view belongs to a plugin of this host. */
+  hasView(viewId: string): boolean {
+    return this.openViews.has(viewId);
+  }
+
   async viewClosed(viewId: string): Promise<void> {
     const req = this.openViews.get(viewId);
     this.openViews.delete(viewId);

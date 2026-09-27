@@ -68,11 +68,12 @@ export async function readPlugin(dir: string, source: PluginSource, fs: Discover
   return { source, path: dir, version, manifest, id: manifest.id, errors };
 }
 
-/** Plugin folders directly inside `dir`. */
+/** Plugin folders directly inside `dir` (dot folders are skipped: installations in progress). */
 export async function scanDir(dir: string, source: PluginSource, fs: DiscoveryFs): Promise<Candidate[]> {
   const names = await fs.readdir(dir).catch(() => [] as string[]);
   const out: Candidate[] = [];
   for (const name of names.sort()) {
+    if (name.startsWith('.')) continue;
     const c = await readPlugin(join(dir, name), source, fs).catch(() => null);
     if (c) out.push(c);
   }

@@ -20,6 +20,24 @@ export const PLUGIN_PERMISSIONS = [
 export const PluginPermissionSchema = z.enum(PLUGIN_PERMISSIONS);
 export type PluginPermission = z.infer<typeof PluginPermissionSchema>;
 
+/** What each permission allows, shown in the consent dialog and the plugin manager (07 §9). */
+export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
+  'projects.read': 'See your projects (names and folders)',
+  'terminals.read-metadata': 'See your terminals (titles, folders, running processes)',
+  'terminals.create': 'Open new terminals and run commands in them',
+  'terminals.write': 'Type into your terminals',
+  'terminals.read-output': 'Read everything your terminals print',
+  'terminals.env': 'Add environment variables to new terminals',
+  'agents.read': 'See the state of AI agents in your terminals',
+  'agents.annotate': 'Report AI agent sessions',
+  'git.read': 'See git changes in your projects',
+  'fs.read-project': 'Read files in your projects',
+  'fs.read-home': 'Read files in your home folder',
+  'net.listen-local': 'Accept connections on this computer (a local server)',
+  'net.fetch': 'Download data from the internet',
+  'notifications.os': 'Show system notifications',
+};
+
 /** Used as the host of `oxy-plugin://<id>`: lowercase, dot-separated. */
 export const PluginIdSchema = z.string().regex(/^[a-z0-9]+(\.[a-z0-9-]+)+$/, 'must look like "publisher.name"');
 
@@ -167,6 +185,16 @@ export const PluginDescriptorSchema = z.object({
   manifest: PluginManifestSchema.optional(),
 });
 export type PluginDescriptor = z.infer<typeof PluginDescriptorSchema>;
+
+/** Result of installing a plugin from a folder or a .zip archive (M9-T3). */
+export const InstalledPluginSchema = z.object({
+  id: z.string(),
+  displayName: z.string(),
+  version: z.string(),
+  replaced: z.boolean(),
+  needsNewConsent: z.boolean(),
+});
+export type InstalledPlugin = z.infer<typeof InstalledPluginSchema>;
 
 /** Aggregated contributions of enabled plugins, tagged with the contributing plugin. */
 export const ContributionsSchema = z.object({

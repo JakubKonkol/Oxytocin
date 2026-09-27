@@ -18,21 +18,29 @@ export type SupervisedHost = Pick<
 
 type HostEntry = 'ptyHost' | 'workspaceHost' | 'pluginHost';
 
-const INSPECT_PORTS: Record<HostEntry, number> = { ptyHost: 9230, workspaceHost: 9231, pluginHost: 9232 };
-
-function forkHost(entry: HostEntry, serviceName: string, logger: Logger, env: NodeJS.ProcessEnv): HostProcess {
-  const execArgv = process.env['OXYTOCIN_INSPECT_HOSTS'] === '1' ? [`--inspect=${INSPECT_PORTS[entry]}`] : [];
+function forkHost(
+  entry: HostEntry,
+  serviceName: string,
+  logger: Logger,
+  env: NodeJS.ProcessEnv,
+  inspectPort: number,
+): HostProcess {
+  const execArgv = process.env['OXYTOCIN_INSPECT_HOSTS'] === '1' ? [`--inspect=${inspectPort}`] : [];
   const child = utilityProcess.fork(appPaths.hostEntry(entry), [], { serviceName, stdio: 'pipe', env, execArgv });
   child.stdout?.on('data', (chunk: Buffer) => logger.info(chunk.toString().trimEnd()));
   child.stderr?.on('data', (chunk: Buffer) => logger.warn(chunk.toString().trimEnd()));
   return child;
 }
 
-/** The three utility processes (docs/plan/01-architecture.md §2). */
+/**
+ * The utility processes (docs/plan/01-architecture.md §2). Plugins installed by the user or loaded in developer mode
+ * run in a second Plugin Host (ADR-022), started on demand by the plugin engine.
+ */
 export class Hosts {
   readonly pty: UtilityHost<PtyHostMethods, PtyHostEvents>;
   readonly workspace: UtilityHost<WorkspaceHostMethods, WorkspaceHostEvents>;
   readonly plugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
+  readonly externalPlugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
   private readonly statusEmitter = new Emitter<HostStatus[]>();
   readonly onDidChangeStatus = this.statusEmitter.event;
 
@@ -41,6 +49,7 @@ export class Hosts {
       entry: HostEntry,
       serviceName: string,
       scope: string,
+      inspectPort: number,
       extra: Partial<UtilityHostOptions> = {},
     ) => {
       const logger = createLogger(scope);
@@ -48,31 +57,48 @@ export class Hosts {
         name: serviceName,
         logger: createLogger('hosts'),
         onLog: writeForwardedLog,
-        spawn: () => forkHost(entry, serviceName, logger, env()),
+        spawn: () => forkHost(entry, serviceName, logger, env(), inspectPort),
         ...extra,
       });
       host.onDidChangeState(() => this.statusEmitter.fire(this.status()));
       return host;
     };
-    this.pty = make<PtyHostMethods, PtyHostEvents>('ptyHost', 'Oxytocin PTY Host', 'pty');
-    this.workspace = make<WorkspaceHostMethods, WorkspaceHostEvents>('workspaceHost', 'Oxytocin Workspace Host', 'ws');
+    this.pty = make<PtyHostMethods, PtyHostEvents>('ptyHost', 'Oxytocin PTY Host', 'pty', 9230);
+    this.workspace = make<WorkspaceHostMethods, WorkspaceHostEvents>(
+      'workspaceHost',
+      'Oxytocin Workspace Host',
+      'ws',
+      9231,
+    );
     // A plugin blocking the event loop must be noticed quickly: ping every 5 s, restart after 15 s of silence.
-    this.plugin = make<PluginHostMethods, PluginHostEvents>('pluginHost', 'Oxytocin Plugin Host', 'plg', {
-      pingIntervalMs: 5000,
-      maxMissedPings: 3,
-    });
+    const pluginPing = { pingIntervalMs: 5000, maxMissedPings: 3 };
+    this.plugin = make<PluginHostMethods, PluginHostEvents>(
+      'pluginHost',
+      'Oxytocin Plugin Host',
+      'plg',
+      9232,
+      pluginPing,
+    );
+    this.externalPlugin = make<PluginHostMethods, PluginHostEvents>(
+      'pluginHost',
+      'Oxytocin Plugin Host (external)',
+      'plg-ext',
+      9233,
+      pluginPing,
+    );
   }
 
   all(): SupervisedHost[] {
-    return [this.pty, this.workspace, this.plugin];
+    return [this.pty, this.workspace, this.plugin, this.externalPlugin];
   }
 
   status(): HostStatus[] {
     return this.all().map((h) => h.status);
   }
 
+  /** Starts the core hosts; the external Plugin Host starts when a user or developer plugin is enabled. */
   startAll(): void {
-    for (const host of this.all()) host.start();
+    for (const host of [this.pty, this.workspace, this.plugin]) host.start();
   }
 
   async stopAll(): Promise<void> {

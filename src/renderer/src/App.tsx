@@ -20,6 +20,7 @@ import { ProfilePicker } from './features/layout/ProfilePicker';
 import { CommandPalette } from './features/palette/CommandPalette';
 import { ProjectSettingsDialog } from './features/projects/ProjectSettingsDialog';
 import { reportSettingsProblems } from './features/settings/SettingsPanel';
+import { PluginConsentDialog } from './features/plugins/PluginConsentDialog';
 import { subscribeUpdates } from './features/updates/update-store';
 import { TooltipProvider } from './ui/Tooltip';
 
@@ -65,6 +66,7 @@ export function App() {
       </div>
       <Toaster />
       <DialogHost />
+      <PluginConsentDialog />
       <ViewContextMenuHost />
       <ProfilePicker />
       <CommandPalette />

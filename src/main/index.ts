@@ -1,5 +1,5 @@
 import { homedir, release } from 'node:os';
-import { readFile, realpath, stat } from 'node:fs/promises';
+import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   app,
@@ -45,7 +45,13 @@ import { GitService } from './services/git/git-service';
 import { PluginService } from './services/plugins/plugin-service';
 import { verifyPluginChecksums } from './services/plugins/checksums';
 import { DevPluginWatcher } from './services/plugins/dev-watcher';
-import { type EnvContribution, PluginHostService } from './services/plugins/plugin-host-service';
+import {
+  type EnvContribution,
+  PluginHostService,
+  type PluginHostServiceDeps,
+} from './services/plugins/plugin-host-service';
+import { PluginHosts, runsInBuiltinHost, scopedPlugins } from './services/plugins/plugin-hosts';
+import { PluginInstaller } from './services/plugins/plugin-installer';
 import { affectedBy, pluginEnvLayers } from './services/plugins/plugin-env';
 import { compilePluginAgentRules, pluginTerminalProfiles } from './services/plugins/contributions';
 import { DEFAULT_AGENT_RULES } from './services/agents/rules';
@@ -178,7 +184,7 @@ function bootstrap(): void {
       const saved = await workspaceState.readScrollback(projectId, panelId);
       return saved ? restoredScrollbackData(saved.data, saved.savedAt) : null;
     },
-    pluginEnv: (ctx): EnvLayer[] => pluginEnvLayers([...pluginHost.environments.values()], ctx, process.platform),
+    pluginEnv: (ctx): EnvLayer[] => pluginEnvLayers(pluginHost.environments(), ctx, process.platform),
     beforeSpawn: (): Promise<void> => pluginHost.envBarrier(),
     appVersion,
     dev: !app.isPackaged,
@@ -245,15 +251,28 @@ function bootstrap(): void {
   });
   void projectsReady.then(() => git.start());
 
+  const userPluginsDir = join(app.getPath('userData'), 'plugins');
+  const pluginInstaller = new PluginInstaller(userPluginsDir, createLogger('plugins'));
   const plugins = new PluginService({
     builtinDir: appPaths.builtinPluginsDir(),
-    userDir: join(app.getPath('userData'), 'plugins'),
+    userDir: userPluginsDir,
     settings: () => settings.get(),
     updateSettings: (patch) => settings.update(patch),
     logger: createLogger('plugins'),
     ...(app.isPackaged ? { verifyBuiltin: verifyPluginChecksums } : {}),
   });
-  const pluginsReady = plugins.scan().catch((e: unknown) => log.error('Plugin discovery failed', e));
+  const pluginsReady = pluginInstaller
+    .cleanup()
+    .then(() => plugins.scan())
+    .catch((e: unknown) => log.error('Plugin discovery failed', e));
+  /** Removes a plugin's entry from `plugins.enabled` (a user plugin is then disabled until the user consents). */
+  const forgetPluginConsent = async (id: string) => {
+    const current = settings.get()['plugins.enabled'];
+    if (!(id in current)) return;
+    const next = { ...current };
+    delete next[id];
+    await settings.update({ 'plugins.enabled': next });
+  };
   // Dev paths need a rescan; `plugins.enabled` only changes states.
   let pluginScanKey = JSON.stringify([settings.get()['plugins.developerMode'], settings.get()['plugins.devPaths']]);
   let pluginEnabledKey = JSON.stringify(settings.get()['plugins.enabled']);
@@ -355,9 +374,7 @@ function bootstrap(): void {
     return true;
   });
 
-  const pluginHost: PluginHostService = new PluginHostService({
-    host: hosts.plugin,
-    plugins,
+  const pluginDeps: Omit<PluginHostServiceDeps, 'host' | 'plugins' | 'logger'> = {
     env: {
       appVersion,
       platform: process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux',
@@ -404,9 +421,33 @@ function bootstrap(): void {
         if (Notification.isSupported()) new Notification({ title, body, icon: appPaths.windowIcon() }).show();
       },
     },
-    logger: createLogger('plugins'),
+  };
+  // Built-in plugins and user/developer plugins run in separate Plugin Hosts (ADR-022).
+  const pluginHost = new PluginHosts(
+    new PluginHostService({
+      ...pluginDeps,
+      host: hosts.plugin,
+      plugins: scopedPlugins(plugins, true),
+      logger: createLogger('plugins'),
+    }),
+    new PluginHostService({
+      ...pluginDeps,
+      host: hosts.externalPlugin,
+      plugins: scopedPlugins(plugins, false),
+      logger: createLogger('plugins-ext'),
+    }),
+    plugins,
+  );
+  // The external host starts once a user or developer plugin is enabled.
+  const startExternalPluginHost = () => {
+    if (hosts.externalPlugin.state === 'stopped' && plugins.enabled().some((p) => !runsInBuiltinHost(p)))
+      hosts.externalPlugin.start();
+  };
+  plugins.onDidChange(startExternalPluginHost);
+  void pluginsReady.then(() => {
+    startExternalPluginHost();
+    return pluginHost.reload();
   });
-  void pluginsReady.then(() => pluginHost.reload());
   const reloadPlugin = async (id: string) => {
     await plugins.scan();
     await pluginHost.reloadPlugin(id);
@@ -560,6 +601,47 @@ function bootstrap(): void {
           return { path: dir, errors: ['No Oxytocin plugin here (a package.json with an "oxytocin" section).'] };
         return { path: dir, id: found.id, errors: found.errors ?? [] };
       },
+      'plugins:install': async ({ kind }) => {
+        const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyPickPluginAnswer'] : undefined;
+        let source: string | null;
+        if (typeof scripted === 'string' || scripted === null) source = scripted;
+        else {
+          const result = await dialog.showOpenDialog(
+            win,
+            kind === 'zip'
+              ? {
+                  title: 'Install plugin from a .zip file',
+                  properties: ['openFile'],
+                  filters: [{ name: 'Plugin archive', extensions: ['zip'] }],
+                }
+              : { title: 'Install plugin from a folder', properties: ['openDirectory'] },
+          );
+          source = result.canceled ? null : (result.filePaths[0] ?? null);
+        }
+        if (!source) return null;
+        await pluginsReady;
+        const installed = await pluginInstaller.install(source);
+        // New permissions or a new Node backend: disabled until the user agrees again.
+        if (installed.needsNewConsent) await forgetPluginConsent(installed.id);
+        await plugins.scan();
+        if (installed.replaced) await pluginHost.reloadPlugin(installed.id);
+        return installed;
+      },
+      'plugins:uninstall': async ({ id }) => {
+        const plugin = plugins.get(id);
+        if (!plugin || plugin.source !== 'user')
+          throw new OxyError('INVALID', 'Only plugins you installed can be uninstalled');
+        // Unload it from the Plugin Host before its files go away.
+        await plugins.setEnabled(id, false);
+        await pluginHost.reload();
+        await pluginInstaller.uninstall(id, plugin.path);
+        await forgetPluginConsent(id);
+        await plugins.scan();
+      },
+      'plugins:openUserFolder': async () => {
+        await mkdir(userPluginsDir, { recursive: true });
+        if (!e2e) await shell.openPath(userPluginsDir);
+      },
       'plugins:removeDevPath': async ({ path }) => {
         const current = settings.get()['plugins.devPaths'];
         await settings.update({ 'plugins.devPaths': current.filter((p) => p !== path) });
@@ -569,7 +651,7 @@ function bootstrap(): void {
       'plugins:logs': ({ id }) => pluginHost.logs(id),
       'plugins:activate': ({ event }) => pluginHost.activateByEvent(event),
       'plugins:viewOpened': (req) => pluginHost.viewOpened(req),
-      'plugins:statusBar': () => [...pluginHost.statusBarItems.values()],
+      'plugins:statusBar': () => pluginHost.statusBarItems(),
       'plugins:viewClosed': ({ viewId }) => pluginHost.viewClosed(viewId),
       'plugins:viewVisibility': ({ viewId, visible }) => pluginHost.viewVisibility(viewId, visible),
       'plugins:viewMessage': ({ viewId, envelope }) => pluginHost.viewMessage(viewId, envelope),

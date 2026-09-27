@@ -1,5 +1,17 @@
 import type { IDockviewPanelProps } from 'dockview-react';
-import { Bug, ChevronDown, ChevronRight, FolderOpen, FolderPlus, Puzzle, RotateCw, ScrollText, X } from 'lucide-react';
+import {
+  Bug,
+  ChevronDown,
+  ChevronRight,
+  FileArchive,
+  FolderOpen,
+  FolderPlus,
+  Puzzle,
+  RotateCw,
+  ScrollText,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { PluginDescriptor } from '@shared/domain/plugin';
 import { cn } from '../../lib/cn';
@@ -10,6 +22,9 @@ import { Badge, type BadgeVariant } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { notify } from '../../ui/Toast';
+import { confirmDialog } from '../../stores/dialog-store';
+import { needsConsent } from './consent-model';
+import { requestPluginConsent } from './PluginConsentDialog';
 
 type LogEntry = { at: number; level: 'debug' | 'info' | 'warn' | 'error'; message: string };
 
@@ -32,6 +47,49 @@ async function run(label: string, action: () => Promise<unknown>): Promise<void>
   } catch (e) {
     notify('error', label, { description: errorText(e) });
   }
+}
+
+/** Enables a plugin; one the user installed runs only after they agree to its permissions. */
+async function enablePlugin(plugin: PluginDescriptor): Promise<boolean> {
+  const settings = await ipc.invoke('settings:get');
+  if (needsConsent(plugin, settings['plugins.enabled']) && !(await requestPluginConsent(plugin))) return false;
+  await ipc.invoke('plugins:setEnabled', { id: plugin.id, enabled: true });
+  return true;
+}
+
+/** "Install from folder…" / "Install from .zip…" (M9-T3). */
+function installPlugin(kind: 'folder' | 'zip'): void {
+  void run('Could not install the plugin', async () => {
+    const installed = await ipc.invoke('plugins:install', { kind });
+    if (!installed) return;
+    const plugin = (await ipc.invoke('plugins:list')).find((p) => p.id === installed.id && p.source === 'user');
+    const verb = installed.replaced ? 'Updated' : 'Installed';
+    if (
+      plugin &&
+      plugin.state === 'disabled' &&
+      needsConsent(plugin, (await ipc.invoke('settings:get'))['plugins.enabled'])
+    ) {
+      if (await enablePlugin(plugin)) notify('success', `${verb} and enabled ${installed.displayName}`);
+      else
+        notify('info', `${verb} ${installed.displayName}`, { description: 'It stays disabled until you enable it.' });
+      return;
+    }
+    notify('success', `${verb} ${installed.displayName} ${installed.version}`);
+  });
+}
+
+async function uninstallPlugin(plugin: PluginDescriptor): Promise<void> {
+  const ok = await confirmDialog({
+    title: `Uninstall ${plugin.displayName}?`,
+    description: 'Its files are removed from the plugins folder. Its settings stay in settings.json.',
+    confirmLabel: 'Uninstall',
+    destructive: true,
+  });
+  if (!ok) return;
+  await run(`Could not uninstall ${plugin.displayName}`, async () => {
+    await ipc.invoke('plugins:uninstall', { id: plugin.id });
+    notify('success', `Uninstalled ${plugin.displayName}`);
+  });
 }
 
 function PluginLogs({ id }: { id: string }) {
@@ -110,7 +168,7 @@ function PluginRow({ plugin, developerMode }: { plugin: PluginDescriptor; develo
               variant={enabled ? 'secondary' : 'primary'}
               onClick={() =>
                 void run(`Could not ${enabled ? 'disable' : 'enable'} ${plugin.displayName}`, () =>
-                  ipc.invoke('plugins:setEnabled', { id: plugin.id, enabled: !enabled }),
+                  enabled ? ipc.invoke('plugins:setEnabled', { id: plugin.id, enabled: false }) : enablePlugin(plugin),
                 )
               }
             >
@@ -143,6 +201,17 @@ function PluginRow({ plugin, developerMode }: { plugin: PluginDescriptor; develo
           >
             <FolderOpen size={12} /> Open folder
           </Button>
+          {plugin.source === 'user' && (
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="plugin-uninstall"
+              title="Remove the plugin"
+              onClick={() => void uninstallPlugin(plugin)}
+            >
+              <Trash2 size={12} /> Uninstall
+            </Button>
+          )}
           {plugin.source === 'dev' && developerMode && (
             <Button
               size="sm"
@@ -191,6 +260,20 @@ export function PluginsPanel(_props: IDockviewPanelProps) {
         <span className="font-medium text-fg">Plugins</span>
         <span className="text-small text-fg-muted">{plugins.length}</span>
         <span className="flex-1" />
+        <Button size="sm" data-testid="plugins-install-folder" onClick={() => installPlugin('folder')}>
+          <FolderPlus size={12} /> Install from folder…
+        </Button>
+        <Button size="sm" data-testid="plugins-install-zip" onClick={() => installPlugin('zip')}>
+          <FileArchive size={12} /> Install from .zip…
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          title="Open the folder of installed plugins"
+          onClick={() => void ipc.invoke('plugins:openUserFolder')}
+        >
+          <FolderOpen size={12} /> Plugins folder
+        </Button>
         <label className="flex items-center gap-1.5 text-small text-fg-secondary">
           <input
             type="checkbox"
