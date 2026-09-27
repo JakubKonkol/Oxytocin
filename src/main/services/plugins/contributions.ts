@@ -35,32 +35,7 @@ export function compilePluginAgentRules(contributions: Contributions): AgentRule
   }));
 }
 
-export interface ConfigProperty {
-  type: 'boolean' | 'number' | 'integer' | 'string' | 'array' | 'object';
-  default?: unknown;
-  enum?: unknown[];
-  minimum?: number;
-  maximum?: number;
-}
-
-/** Checks a value against a `contributes.configuration` property (JSON Schema subset, 07 §8.5). */
-export function validateConfigValue(key: string, prop: ConfigProperty, value: unknown): string | null {
-  const type = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
-  const ok =
-    prop.type === 'integer'
-      ? typeof value === 'number' && Number.isInteger(value)
-      : prop.type === 'object'
-        ? type === 'object'
-        : type === prop.type;
-  if (!ok) return `${key} must be of type ${prop.type}`;
-  if (prop.enum && !prop.enum.some((e) => JSON.stringify(e) === JSON.stringify(value)))
-    return `${key} must be one of ${prop.enum.map((e) => JSON.stringify(e)).join(', ')}`;
-  if (typeof value === 'number') {
-    if (prop.minimum !== undefined && value < prop.minimum) return `${key} must be ≥ ${prop.minimum}`;
-    if (prop.maximum !== undefined && value > prop.maximum) return `${key} must be ≤ ${prop.maximum}`;
-  }
-  return null;
-}
+export { validateConfigValue } from '@shared/domain/settings-ui';
 
 /** Default values of all contributed settings (used when settings.json has no value). */
 export function configDefaults(contributions: Contributions): Record<string, unknown> {

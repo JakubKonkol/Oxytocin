@@ -518,6 +518,10 @@ function bootstrap(): void {
       'terminals:clearBell': ({ id }) => terminals.clearBell(id),
       'fs:statMany': ({ baseDirs, paths }) => statMany(baseDirs, paths),
       'editor:open': (req) => editor.open(req),
+      'settings:problems': () => [...settings.problems],
+      'settings:openFile': async () => {
+        await editor.open({ path: await settings.ensureFile() });
+      },
       'keybindings:get': async () => {
         await keybindingsReady;
         return keybindings.state;

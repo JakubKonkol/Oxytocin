@@ -2,6 +2,7 @@ import { DropdownMenu } from 'radix-ui';
 import appIconSmall from '../assets/brand/app-icon-small.svg';
 import { useHelpStore } from '../features/help/HelpDialogs';
 import { openKeybindingsEditor } from '../features/keybindings/KeybindingsPanel';
+import { openSettingsEditor } from '../features/settings/SettingsPanel';
 import { openPluginsManager } from '../features/plugins/plugin-manager';
 import { currentPlatform } from '../lib/platform';
 
@@ -34,6 +35,9 @@ function AppMenu() {
         >
           <DropdownMenu.Item className={menuItem} onSelect={() => openPluginsManager()}>
             Plugins
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItem} onSelect={() => openSettingsEditor()}>
+            Settings
           </DropdownMenu.Item>
           <DropdownMenu.Item className={menuItem} onSelect={() => openKeybindingsEditor()}>
             Keyboard Shortcuts

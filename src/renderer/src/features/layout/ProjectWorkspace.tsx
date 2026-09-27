@@ -13,6 +13,7 @@ import { EmptyWorkspace } from './EmptyWorkspace';
 import { MissingPanel } from './MissingPanel';
 import { PluginsPanel } from '../plugins/PluginsPanel';
 import { KeybindingsPanel } from '../keybindings/KeybindingsPanel';
+import { SettingsPanel } from '../settings/SettingsPanel';
 import { openDefaultLayout, restoreWorkspace, trackWorkspacePersistence } from './persistence';
 import { GroupActions } from './GroupActions';
 import { OxyTab } from './OxyTab';
@@ -45,6 +46,7 @@ const components = {
   missing: MissingPanel,
   plugins: PluginsPanel,
   keybindings: KeybindingsPanel,
+  settings: SettingsPanel,
 };
 
 const initializing = new Set<string>();

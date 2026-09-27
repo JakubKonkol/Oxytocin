@@ -18,6 +18,7 @@ import { Toaster } from './ui/Toast';
 import { DialogHost } from './ui/DialogHost';
 import { ProfilePicker } from './features/layout/ProfilePicker';
 import { CommandPalette } from './features/palette/CommandPalette';
+import { reportSettingsProblems } from './features/settings/SettingsPanel';
 import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
@@ -45,7 +46,10 @@ export function App() {
       usePluginsStore.getState().load(),
       useKeybindingsStore.getState().load(),
     ])
-      .then(() => setLoaded(true))
+      .then(() => {
+        setLoaded(true);
+        void reportSettingsProblems();
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 

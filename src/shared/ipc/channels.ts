@@ -8,6 +8,8 @@ export const INVOKE_CHANNELS = [
   'app:readLegal',
   'settings:get',
   'settings:update',
+  'settings:problems',
+  'settings:openFile',
   'ui:getState',
   'ui:patchState',
   'ui:quickPickResult',

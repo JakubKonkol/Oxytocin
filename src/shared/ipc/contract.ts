@@ -34,6 +34,13 @@ export const invokeContract = {
   'settings:get': { req: z.null().optional(), res: SettingsSchema },
   /** Writes keys into settings.json preserving comments; `null` removes a key. */
   'settings:update': { req: SettingsPatchSchema, res: SettingsSchema },
+  /** Invalid values in settings.json (the defaults are used instead). */
+  'settings:problems': {
+    req: z.null().optional(),
+    res: z.array(z.object({ key: z.string(), message: z.string() })),
+  },
+  /** Opens settings.json in the configured editor (created when missing). */
+  'settings:openFile': { req: z.null().optional(), res: z.void() },
   'workspace:load': { req: z.object({ projectId: ProjectIdSchema }), res: WorkspaceLoadResultSchema },
   'workspace:save': { req: WorkspaceStateSchema, res: z.void() },
   'ui:getState': { req: z.null().optional(), res: UiStateSchema },

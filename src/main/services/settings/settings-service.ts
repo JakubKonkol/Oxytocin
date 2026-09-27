@@ -17,7 +17,7 @@ export interface SettingsLoadInfo {
 
 /**
  * Owns settings.json (JSONC). Loads synchronously at startup, validates key by key and reloads on
- * external edits. Writing from the UI arrives with the settings UI (M7).
+ * external edits; the settings UI (M7-T3) writes through `update`.
  */
 export class SettingsService implements Disposable {
   private settings: Settings;
@@ -91,6 +91,16 @@ export class SettingsService implements Disposable {
     await writeFileAtomic(this.filePath, text);
     await this.reload();
     return this.settings;
+  }
+
+  /** Creates an empty settings.json when missing ("Open settings.json"). */
+  async ensureFile(): Promise<string> {
+    try {
+      await readFile(this.filePath, 'utf8');
+    } catch {
+      await writeFileAtomic(this.filePath, '{\n}\n');
+    }
+    return this.filePath;
   }
 
   /** Watches the settings directory (the file may not exist yet or be replaced atomically). */

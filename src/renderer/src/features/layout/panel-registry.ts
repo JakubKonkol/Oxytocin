@@ -1,5 +1,5 @@
 /** Center-area panel kinds (docs/plan/05-layout-center.md §3). Params hold identifiers only. */
-export type PanelKind = 'terminal' | 'diff' | 'plugin' | 'plugins' | 'keybindings' | 'welcome' | 'missing';
+export type PanelKind = 'terminal' | 'diff' | 'plugin' | 'plugins' | 'keybindings' | 'settings' | 'welcome' | 'missing';
 
 export interface TerminalPanelParams {
   terminalId: string;
