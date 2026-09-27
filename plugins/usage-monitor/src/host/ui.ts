@@ -16,6 +16,7 @@ export const EDITABLE_SETTINGS = [
   'usage.pricing.autoUpdate',
   'usage.pricing.overrides',
   'usage.limits.claudeBlock',
+  'usage.claudeLimits.statusLine',
   'usage.backfillDays',
   'usage.retentionDays',
   'usage.statusBar',
@@ -37,15 +38,46 @@ interface StatusModel {
   approximate: boolean;
   activeSession: { costUsd: number; agent: string } | null;
   busy: boolean;
+  subscriptionLimits?: { window: string; percent: number; resetsAt: number | null }[];
+}
+
+/** State of the Claude subscription limits (Pricing tab). */
+export interface StatusLineStatus {
+  enabled: boolean;
+  /** Claude Code's settings run our status line script. */
+  installed: boolean;
+  settingsFile: string;
+  /** Last reading of the limits. */
+  observedAt: number | null;
+  error: string | null;
+}
+
+export interface UiExtras {
+  statusLineStatus?: () => Promise<StatusLineStatus>;
 }
 
 const usd = (v: number) => (v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`);
+
+const WINDOW_SHORT: Record<string, string> = { five_hour: '5h', seven_day: 'week', spend_limit: 'spend' };
+const WINDOW_LONG: Record<string, string> = {
+  five_hour: '5-hour limit',
+  seven_day: 'Weekly limit',
+  spend_limit: 'Spend limit',
+};
+
+/** 45 min · 3h 20m · 2d 5h */
+function inTime(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h}h ${m % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
 
 /**
  * The Usage Monitor's UI: sidebar card, dashboard panel, status bar item and
  * commands. Views are "dumb": the backend sends ready models and answers their requests from the worker.
  */
-export function registerUi(ctx: PluginContext, client: WorkerClient): void {
+export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiExtras = {}): void {
   const { oxy } = ctx;
   const sidebars = new Set<PluginView>();
   const dashboards = new Set<PluginView>();
@@ -65,8 +97,20 @@ export function registerUi(ctx: PluginContext, client: WorkerClient): void {
     const m = await client.request<StatusModel>('view.status');
     const approx = m.approximate ? '≈' : '';
     const value = mode === 'activeSession' && m.activeSession ? m.activeSession.costUsd : m.todayUsd;
-    status.text = `$(graph) ${approx}${usd(value)}${m.busy ? ' $(sync~spin)' : ''}`;
+    const limits = m.subscriptionLimits ?? [];
+    // With a Claude subscription its limits matter more than the API-equivalent cost.
+    const main =
+      limits.length > 0
+        ? limits.map((l) => `${WINDOW_SHORT[l.window] ?? l.window} ${l.percent}%`).join(' · ')
+        : `${approx}${usd(value)}`;
+    status.text = `$(graph) ${main}${m.busy ? ' $(sync~spin)' : ''}`;
+    const now = Date.now();
     status.tooltip = [
+      ...limits.map(
+        (l) =>
+          `Claude ${(WINDOW_LONG[l.window] ?? l.window).toLowerCase()}: ${l.percent}%${l.resetsAt ? `, resets in ${inTime(l.resetsAt - now)}` : ''}`,
+      ),
+      ...(limits.length > 0 ? [''] : []),
       `Today: ${approx}${usd(m.todayUsd)}`,
       `This week: ${approx}${usd(m.weekUsd)}`,
       `This month: ${approx}${usd(m.monthUsd)}`,
@@ -130,6 +174,7 @@ export function registerUi(ctx: PluginContext, client: WorkerClient): void {
         view.onRequest('pricing', () => client.request('dash.pricing'));
         view.onRequest('pricing.refresh', () => client.request('pricing.refresh'));
         view.onRequest('sources', () => client.request('dash.sources'));
+        view.onRequest('statusLine', () => extras.statusLineStatus?.() ?? null);
         view.onRequest('settings', () => Object.fromEntries(EDITABLE_SETTINGS.map((k) => [k, oxy.settings.get(k)])));
         view.onRequest<{ key: string; value: unknown }, void>('settings.set', async ({ key, value }) => {
           if (!(EDITABLE_SETTINGS as readonly string[]).includes(key)) throw new Error(`${key} cannot be changed here`);

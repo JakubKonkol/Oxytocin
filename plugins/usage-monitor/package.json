@@ -157,6 +157,11 @@
             "default": {},
             "description": "Own limit of a Claude 5-hour block: { metric: 'tokens' | 'usd', amount }"
           },
+          "usage.claudeLimits.statusLine": {
+            "type": "boolean",
+            "default": false,
+            "description": "Show the Claude subscription's 5-hour and weekly limits. Sets a status line command in Claude Code's settings.json that passes them to Oxytocin; an existing status line keeps working."
+          },
           "usage.backfillDays": {
             "type": "integer",
             "default": 30,

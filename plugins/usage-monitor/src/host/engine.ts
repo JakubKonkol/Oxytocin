@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ProjectAttribution, type ProjectRef } from './attribution';
 import { acceptClaudeLine, claudeProjectDirs, parseClaudeLine } from './collectors/claude-jsonl';
+import { ClaudeStatusLineReader } from './collectors/claude-statusline';
 import {
   acceptCodexLine,
   codexDedupeKey,
@@ -156,6 +157,7 @@ export class UsageEngine {
   private readonly primary = new Map<string, string>();
   private readonly pendingOtel = new Map<string, { records: UsageRecord[]; since: number }>();
   private pendingTimer: ReturnType<typeof setTimeout> | undefined;
+  private statusLine: ClaudeStatusLineReader | undefined;
 
   private constructor(private readonly opts: EngineOptions) {
     this.now = opts.now ?? Date.now;
@@ -379,6 +381,27 @@ export class UsageEngine {
       setMeta(this.db, 'otlp_port', String(port));
     }
     return { port: this.otlp.stats.port!, token };
+  }
+
+  /** Reads Claude subscription limits written by the status line script in `dir` (null stops reading). */
+  async configureClaudeStatusLine(dir: string | null): Promise<void> {
+    if (this.statusLine?.dir !== dir) {
+      this.statusLine?.stop();
+      this.statusLine = undefined;
+      if (dir) {
+        this.statusLine = new ClaudeStatusLineReader(dir, (items) => this.ingest(items), this.warn);
+        await this.statusLine.start();
+      }
+    }
+    // The views show whether the status line is set up.
+    this.emitChanged(1);
+  }
+
+  /** When the Claude subscription limits were last reported (null: never). */
+  claudeLimitsObservedAt(): number | null {
+    const row = this.db.prepare("SELECT max(observed_at) AS at FROM agent_limits WHERE agent = 'claude-code'").get() as
+      { at: number | null } | undefined;
+    return row?.at ?? null;
   }
 
   get otlpStats() {
@@ -740,6 +763,7 @@ export class UsageEngine {
 
   close(): void {
     this.stopCollectors();
+    this.statusLine?.stop();
     clearTimeout(this.pendingTimer);
     void this.otlp?.stop();
     this.db.close();

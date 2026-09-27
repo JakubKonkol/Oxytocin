@@ -55,7 +55,10 @@ function BlockLimit() {
     <div className="setting">
       <div>
         <div>Claude 5-hour block limit</div>
-        <div className="desc">Anthropic does not publish subscription limits; set your own to see a percentage.</div>
+        <div className="desc">
+          An estimate of your own. For the real 5-hour and weekly limits of a Claude subscription, turn on Claude
+          subscription limits in Pricing.
+        </div>
       </div>
       <div className="toolbar" style={{ margin: 0 }}>
         <select value={m} onChange={(e) => setMetric(e.target.value)} aria-label="Block limit metric">

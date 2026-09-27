@@ -4,10 +4,37 @@ import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './shared/base.css';
 import './sidebar.css';
-import { agentName, duration, level, shortModel, SOURCE_NAMES, STATE_LABELS, tokens, usd } from './shared/format';
-import type { LiveSession, Progress, SidebarModel, SourceStatus } from './shared/types';
+import {
+  agentName,
+  clock,
+  duration,
+  level,
+  shortModel,
+  SOURCE_NAMES,
+  STATE_LABELS,
+  tokens,
+  usd,
+} from './shared/format';
+import type { LimitBar, LiveSession, Progress, SidebarModel, SourceStatus } from './shared/types';
 
 const COMPACT_HEIGHT = 120;
+/** A limit reading older than this gets its time ("as of 14:02"): no Claude Code session updated it since. */
+const STALE_MS = 15 * 60 * 1000;
+
+function Limit({ bar, now, testId, title }: { bar: LimitBar; now: number; testId: string; title?: string }) {
+  return (
+    <div data-testid={testId} title={title}>
+      <div className="bar" data-level={level(bar.ratio)}>
+        <span style={{ width: `${Math.min(100, Math.round(bar.ratio * 100))}%` }} />
+      </div>
+      <div className="limit-label">
+        {bar.label}
+        {bar.resetsAt ? ` · resets in ${duration(bar.resetsAt - now)}` : ''}
+        {bar.observedAt && now - bar.observedAt > STALE_MS ? ` · as of ${clock(bar.observedAt)}` : ''}
+      </div>
+    </div>
+  );
+}
 
 function useHeight(): number {
   const [height, setHeight] = useState(window.innerHeight);
@@ -134,6 +161,9 @@ function App() {
           Indexing history… {Math.round((progress.done / Math.max(1, progress.total)) * 100)}%
         </div>
       )}
+      {model.subscriptionLimits.map((bar) => (
+        <Limit key={bar.window ?? bar.label} bar={bar} now={model.now} testId="usage-subscription-limit" />
+      ))}
       {!model.hasData ? (
         <>
           <div className="row head">
@@ -178,15 +208,12 @@ function App() {
             <MenuButton onClick={(e) => void menu(e)} />
           </div>
           {limit && (
-            <div data-testid="usage-limit" title={model.limits.map((l) => l.label).join('\n')}>
-              <div className="bar" data-level={level(limit.ratio)}>
-                <span style={{ width: `${Math.min(100, Math.round(limit.ratio * 100))}%` }} />
-              </div>
-              <div className="limit-label">
-                {limit.label}
-                {limit.resetsAt ? ` · resets in ${duration(limit.resetsAt - model.now)}` : ''}
-              </div>
-            </div>
+            <Limit
+              bar={limit}
+              now={model.now}
+              testId="usage-limit"
+              title={model.limits.map((l) => l.label).join('\n')}
+            />
           )}
           {model.sessions.length > 0 && (
             <div className="hide-compact">

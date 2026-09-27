@@ -5,6 +5,15 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+### Added
+
+- **Usage Monitor: Claude subscription limits.** An opt-in setting (Usage dashboard → Pricing → Claude
+  subscription limits) shows the real 5-hour and weekly limits of a Claude Pro/Max plan, which Claude Code
+  reports to its status line. Oxytocin sets a status line command in Claude Code's `settings.json`; a status line
+  you already have keeps working and comes back when you turn the option off. With Claude Code billing set to
+  Subscription, the limits get their own bars in the Usage sidebar (with reset times) and replace the cost in the
+  status bar (`5h 24% · week 41%`).
+
 ## [0.1.0] - 2026-09-27
 
 First MVP release: a desktop hub for developers who work with AI coding agents in the terminal.

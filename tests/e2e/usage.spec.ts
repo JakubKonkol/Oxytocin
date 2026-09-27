@@ -134,3 +134,79 @@ test('Usage Monitor: today from fixtures, live update, dashboard and budget noti
     await app.close();
   }
 });
+
+test('Usage Monitor: Claude subscription limits through the Claude Code status line', async () => {
+  test.setTimeout(90_000);
+  const root = await mkdtemp(join(tmpdir(), 'oxy-e2e-limits-'));
+  const claudeDir = join(root, 'claude');
+  await mkdir(claudeDir, { recursive: true });
+  const settingsFile = join(claudeDir, 'settings.json');
+  const original = { type: 'command', command: 'echo mine', padding: 1 };
+  await writeFile(settingsFile, JSON.stringify({ model: 'opus', statusLine: original }));
+  const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  await writeFile(
+    join(userData, 'settings.json'),
+    JSON.stringify({ 'usage.pricing.autoUpdate': false, 'usage.billing.claudeCode': 'subscription' }),
+  );
+  const home = join(root, 'home');
+  await mkdir(home, { recursive: true });
+  const { app, win } = await launchApp({
+    userData,
+    project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')),
+    env: {
+      CLAUDE_CONFIG_DIR: claudeDir,
+      CODEX_HOME: join(root, 'codex'),
+      GEMINI_CLI_HOME: join(root, 'gemini'),
+      HOME: home,
+      USERPROFILE: home,
+    },
+  });
+  const statusLine = async () =>
+    (JSON.parse(await readFile(settingsFile, 'utf8')) as { statusLine?: { command?: string } }).statusLine;
+  try {
+    await waitForTerminal(win);
+    const sidebar = await frameOf(win, 'sidebar.html');
+    await win.getByTestId('status-item-usage.today').click();
+    const dashboard = await frameOf(win, 'dashboard.html');
+    await dashboard.getByRole('tab', { name: 'Pricing' }).click();
+    const section = dashboard.getByTestId('usage-claude-limits');
+    await section.getByLabel('Show Claude subscription limits').check();
+
+    // Our script becomes the status line; the previous command is kept for it to run.
+    await expect.poll(async () => (await statusLine())?.command ?? '').toContain('oxytocin-statusline');
+    expect(await statusLine()).toMatchObject({ type: 'command', padding: 1 });
+    const dir = join(claudeDir, 'oxytocin-statusline');
+    expect(await readFile(join(dir, 'original-command'), 'utf8')).toBe('echo mine');
+    await expect(section.getByTestId('usage-claude-limits-state')).toContainText('no reading yet');
+
+    // What the script saves when Claude Code reports the limits.
+    const now = Math.floor(Date.now() / 1000);
+    await writeFile(
+      join(dir, 'usage.json'),
+      JSON.stringify({
+        session_id: 'e2e',
+        rate_limits: {
+          five_hour: { used_percentage: 23.5, resets_at: now + 2 * 3600 },
+          seven_day: { used_percentage: 41.2, resets_at: now + 3 * 86400 },
+        },
+      }),
+    );
+    const bars = sidebar.getByTestId('usage-subscription-limit');
+    await expect(bars).toHaveCount(2, { timeout: 10_000 });
+    await expect(bars.nth(0)).toContainText('Claude: 24% of 5h limit · resets in');
+    await expect(bars.nth(1)).toContainText('Claude: 41% of weekly limit');
+    await expect(win.getByTestId('status-item-usage.today')).toContainText('5h 24% · week 41%');
+    await expect(section.getByTestId('usage-claude-limits-state')).toContainText('last reading');
+
+    // Turning it off restores the previous status line.
+    await section.getByLabel('Show Claude subscription limits').uncheck();
+    await expect
+      .poll(() => readFile(settingsFile, 'utf8').then((t) => JSON.parse(t) as unknown))
+      .toEqual({
+        model: 'opus',
+        statusLine: original,
+      });
+  } finally {
+    await app.close();
+  }
+});

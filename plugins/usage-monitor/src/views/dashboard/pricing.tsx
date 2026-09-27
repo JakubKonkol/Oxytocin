@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { dateTime } from '../shared/format';
+import type { StatusLineStatus } from '../shared/types';
 import { useRequest, useView } from './api';
 
 interface Rates {
@@ -44,6 +45,55 @@ function Select({ settingKey, options, label }: { settingKey: string; options: [
         ))}
       </select>
     </label>
+  );
+}
+
+/** Claude subscription limits through Claude Code's status line (opt-in, it changes Claude Code's settings). */
+function ClaudeLimits() {
+  const view = useView();
+  const { data: status, reload } = useRequest<StatusLineStatus | null>('statusLine');
+  // The user's choice shows right away; the backend's state follows once it has set up (or removed) the status line.
+  const [pending, setPending] = useState<boolean | null>(null);
+  const enabled = pending ?? status?.enabled ?? false;
+  const toggle = async (enabled: boolean) => {
+    setPending(enabled);
+    await view.request('settings.set', { key: 'usage.claudeLimits.statusLine', value: enabled });
+    // The backend then sets up (or removes) the status line and reports a change, which reloads the state again.
+    reload();
+  };
+  let state = 'Off.';
+  if (status?.error) state = `Error: ${status.error}`;
+  else if (status?.enabled && status.installed)
+    state = `Status line set in ${status.settingsFile} · ${
+      status.observedAt
+        ? `last reading ${dateTime(status.observedAt)}`
+        : 'no reading yet — send a message in Claude Code'
+    }`;
+  else if (status?.enabled)
+    state = `The status line in ${status.settingsFile} was changed — turn this off and on again.`;
+  return (
+    <section data-testid="usage-claude-limits">
+      <h3>CLAUDE SUBSCRIPTION LIMITS</h3>
+      <label className="setting">
+        <span>
+          <div>Show the 5-hour and weekly limits</div>
+          <div className="desc">
+            Claude Code passes them to its status line (Pro and Max plans). Oxytocin sets a status line command in
+            Claude Code&apos;s settings.json; a status line you already have keeps working and comes back when you turn
+            this off. With Claude Code billing set to Subscription, the limits replace the cost in the status bar.
+          </div>
+        </span>
+        <input
+          type="checkbox"
+          aria-label="Show Claude subscription limits"
+          checked={enabled}
+          onChange={(e) => void toggle(e.target.checked)}
+        />
+      </label>
+      <div className="muted" data-testid="usage-claude-limits-state">
+        {state}
+      </div>
+    </section>
   );
 }
 
@@ -113,6 +163,7 @@ export function PricingTab() {
           />
         </label>
       </section>
+      <ClaudeLimits />
       {unknown.length > 0 && (
         <div className="banner" data-testid="usage-unknown-models">
           {unknown.map((u) => (

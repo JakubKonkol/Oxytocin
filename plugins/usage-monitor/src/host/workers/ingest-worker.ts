@@ -51,6 +51,9 @@ const emit = serveWorker(parentPort, {
     const endpoint = await (await ready).configureOtlp(enabled);
     return { endpoint, userConfig: detectUserOtelConfig(process.env) };
   },
+  /** Claude subscription limits from the status line script's folder (null: off). */
+  'statusline.configure': async ({ dir }: { dir: string | null }) => (await ready).configureClaudeStatusLine(dir),
+  'statusline.observedAt': async () => (await ready).claudeLimitsObservedAt(),
   startCollectors: async (options: CollectorSettings) => {
     const e = await ready;
     e.stopCollectors();

@@ -56,6 +56,28 @@ describe('Usage Monitor UI glue', () => {
     for (const d of s.ctx.subscriptions) d.dispose();
   });
 
+  it('shows the Claude subscription limits instead of the cost when reported', async () => {
+    const s = setup({
+      todayUsd: 4.8,
+      weekUsd: 10,
+      monthUsd: 20,
+      topProjects: [],
+      approximate: true,
+      activeSession: null,
+      busy: false,
+      subscriptionLimits: [
+        { window: 'five_hour', percent: 24, resetsAt: Date.now() + 90 * 60_000 },
+        { window: 'seven_day', percent: 41, resetsAt: null },
+      ],
+    });
+    await flush();
+    expect(s.item.text).toBe('$(graph) 5h 24% · week 41%');
+    expect(s.item.tooltip).toMatch(
+      /^Claude 5-hour limit: 24%, resets in 1h 30m\nClaude weekly limit: 41%\n\nToday: ≈\$4\.80/,
+    );
+    for (const d of s.ctx.subscriptions) d.dispose();
+  });
+
   it('hides the item when turned off and only lets the dashboard change usage settings', async () => {
     const s = setup({ todayUsd: 1 }, { 'usage.statusBar': 'off' });
     await flush();

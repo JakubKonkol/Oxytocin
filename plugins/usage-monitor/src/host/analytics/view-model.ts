@@ -32,6 +32,9 @@ export interface LimitBar {
   ratio: number;
   resetsAt: number | null;
   exhaustedAt?: number | null;
+  /** Agent limits only: the agent's window id (`five_hour`, `seven_day`, `primary` …) and when it was reported. */
+  window?: string;
+  observedAt?: number;
 }
 
 export interface SidebarModel {
@@ -41,6 +44,8 @@ export interface SidebarModel {
   burnRate: { usdPerHour: number; trend: 'up' | 'down' | 'flat' };
   limit: LimitBar | null;
   limits: LimitBar[];
+  /** Claude subscription limits (5-hour, weekly) with subscription billing, shown as their own bars. */
+  subscriptionLimits: LimitBar[];
   sessions: LiveSession[];
   project: { id: string; name: string | undefined; todayUsd: number; last7DaysUsd: number } | null;
 }
@@ -55,6 +60,8 @@ export interface StatusModel {
   activeSession: { costUsd: number; agent: string } | null;
   /** New events of a live session within the last 30 s (spinner). */
   busy: boolean;
+  /** Claude subscription limits (subscription billing only); replace the cost in the status bar. */
+  subscriptionLimits: { window: string; percent: number; resetsAt: number | null }[];
 }
 
 export interface ViewContext {
@@ -122,7 +129,10 @@ const pct = (ratio: number) => `${Math.round(ratio * 100)}%`;
 const money = (usd: number) => `$${usd.toFixed(2)}`;
 const PERIOD_LABEL: Record<string, string> = { day: 'daily', week: 'weekly', month: 'monthly', block5h: '5-hour' };
 
-function windowLabel(minutes: number | null): string {
+const AGENT_LABELS: Record<string, string> = { codex: 'Codex', 'claude-code': 'Claude' };
+
+function windowLabel(minutes: number | null, window: string): string {
+  if (window === 'spend_limit') return 'spend ';
   if (!minutes) return '';
   if (minutes === 10080) return 'weekly ';
   if (minutes % 60 === 0) return `${minutes / 60}h `;
@@ -158,12 +168,15 @@ export function limitBars(
   db: Database,
   ctx: ViewContext,
   live: LiveSession[],
-): { limit: LimitBar | null; limits: LimitBar[] } {
+): { limit: LimitBar | null; limits: LimitBar[]; subscription: LimitBar[] } {
+  const subscription: LimitBar[] = [];
   const groups: LimitBar[][] = [[], [], [], [], []];
   const liveAgents = new Set(live.map((s) => s.agent));
   const limits = db
     .prepare(
-      'SELECT agent, window, used_percent AS used, window_minutes AS minutes, resets_at AS resetsAt FROM agent_limits',
+      `SELECT agent, window, used_percent AS used, window_minutes AS minutes, resets_at AS resetsAt,
+              observed_at AS observedAt
+         FROM agent_limits ORDER BY agent, coalesce(window_minutes, 1e9)`,
     )
     .all() as unknown as {
     agent: string;
@@ -171,16 +184,20 @@ export function limitBars(
     used: number | null;
     minutes: number | null;
     resetsAt: number | null;
+    observedAt: number;
   }[];
   for (const l of limits) {
     if (l.used === null || (l.resetsAt !== null && l.resetsAt < ctx.now)) continue;
     const bar: LimitBar = {
       kind: 'agent-limit',
-      label: `${l.agent === 'codex' ? 'Codex' : l.agent}: ${Math.round(l.used)}% of ${windowLabel(l.minutes)}limit`,
+      label: `${AGENT_LABELS[l.agent] ?? l.agent}: ${Math.round(l.used)}% of ${windowLabel(l.minutes, l.window)}limit`,
       ratio: l.used / 100,
       resetsAt: l.resetsAt,
+      window: l.window,
+      observedAt: l.observedAt,
     };
-    groups[liveAgents.has(l.agent) ? 0 : 4]!.push(bar);
+    if (l.agent === 'claude-code' && ctx.billing['claude-code'] === 'subscription') subscription.push(bar);
+    else groups[liveAgents.has(l.agent) ? 0 : 4]!.push(bar);
   }
   for (const b of listBudgets(db).filter((x) => x.enabled)) {
     const status = evaluateBudget(db, b, ctx.now, ctx.weekStartsOn);
@@ -212,7 +229,7 @@ export function limitBars(
   const all = groups.flat();
   const first = groups.find((g) => g.length > 0);
   const limit = first ? first.reduce((a, b) => (b.ratio > a.ratio ? b : a)) : null;
-  return { limit, limits: all };
+  return { limit, limits: all, subscription };
 }
 
 export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
@@ -224,7 +241,7 @@ export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
   const rate = burnRate(db, ctx.now);
   const previous = summary(db, { from: ctx.now - 2 * 60 * 60_000, to: ctx.now - 60 * 60_000 }).costUsd;
   const sessions = liveSessions(db, ctx);
-  const { limit, limits } = limitBars(db, ctx, sessions);
+  const { limit, limits, subscription } = limitBars(db, ctx, sessions);
   let project: SidebarModel['project'] = null;
   if (ctx.activeProjectId) {
     const filter = { projectId: ctx.activeProjectId };
@@ -252,6 +269,7 @@ export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
     },
     limit,
     limits,
+    subscriptionLimits: subscription,
     sessions,
     project,
   };
@@ -275,5 +293,10 @@ export function statusModel(db: Database, ctx: ViewContext): StatusModel {
     approximate: live.some((s) => s.approximate),
     activeSession: active ? { costUsd: active.costUsd, agent: active.agent } : null,
     busy: live.some((s) => ctx.now - s.lastEventAt <= RECENT_ACTIVITY_MS),
+    subscriptionLimits: limitBars(db, ctx, live).subscription.map((b) => ({
+      window: b.window!,
+      percent: Math.round(b.ratio * 100),
+      resetsAt: b.resetsAt,
+    })),
   };
 }

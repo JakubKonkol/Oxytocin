@@ -38,6 +38,8 @@ export interface LimitBar {
   ratio: number;
   resetsAt: number | null;
   exhaustedAt?: number | null;
+  window?: string;
+  observedAt?: number;
 }
 
 export interface SidebarModel {
@@ -47,6 +49,7 @@ export interface SidebarModel {
   burnRate: { usdPerHour: number; trend: 'up' | 'down' | 'flat' };
   limit: LimitBar | null;
   limits: LimitBar[];
+  subscriptionLimits: LimitBar[];
   sessions: LiveSession[];
   project: { id: string; name?: string; todayUsd: number; last7DaysUsd: number } | null;
 }
@@ -68,4 +71,12 @@ export interface Progress {
   source: string;
   done: number;
   total: number;
+}
+
+export interface StatusLineStatus {
+  enabled: boolean;
+  installed: boolean;
+  settingsFile: string;
+  observedAt: number | null;
+  error: string | null;
 }

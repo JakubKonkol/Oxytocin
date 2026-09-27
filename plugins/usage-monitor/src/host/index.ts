@@ -2,8 +2,15 @@ import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import type { AgentSnapshot, PluginContext } from '@oxytocin/plugin-api';
 import { type CollectorSettings, DEFAULT_SETTINGS, type TelemetrySettings, type UsageSettings } from './settings';
+import {
+  findGitBash,
+  installStatusLine,
+  isStatusLineInstalled,
+  statusLinePaths,
+  uninstallStatusLine,
+} from './statusline-install';
 import { applyTelemetryEnv, type OtlpEndpointInfo } from './telemetry-env';
-import { registerUi } from './ui';
+import { registerUi, type StatusLineStatus } from './ui';
 import { WorkerClient } from './worker-rpc';
 
 function settingsReader(ctx: PluginContext) {
@@ -103,7 +110,39 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const { schemaVersion } = await client.request<{ schemaVersion: number }>('init');
   ctx.log.info(`Usage database ready (schema ${schemaVersion})`);
   await client.request('setSettings', readSettings(ctx));
-  registerUi(ctx, client);
+
+  // Claude subscription limits (opt-in): our status line script in Claude Code's settings saves its input.
+  const statusLine = statusLinePaths(process.env);
+  let statusLineError: string | null = null;
+  const configureStatusLine = async () => {
+    const enabled = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
+    try {
+      if (enabled) {
+        const shell = process.platform !== 'win32' || (await findGitBash(process.env)) ? 'sh' : 'powershell';
+        await installStatusLine(statusLine, shell);
+      } else await uninstallStatusLine(statusLine);
+      statusLineError = null;
+    } catch (e) {
+      statusLineError = e instanceof Error ? e.message : String(e);
+      ctx.log.error(`Could not ${enabled ? 'set up' : 'remove'} the Claude Code status line`, e);
+      void oxy.ui.showNotification({
+        level: 'warning',
+        message: `Claude subscription limits: could not ${enabled ? 'set up' : 'remove'} the status line`,
+        detail: statusLineError,
+      });
+    }
+    await client.request('statusline.configure', { dir: enabled ? statusLine.dir : null });
+  };
+  const statusLineStatus = async (): Promise<StatusLineStatus> => ({
+    enabled: oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false,
+    installed: await isStatusLineInstalled(statusLine),
+    settingsFile: statusLine.settingsFile,
+    observedAt: await client.request<number | null>('statusline.observedAt'),
+    error: statusLineError,
+  });
+  let statusLineKey = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
+  await configureStatusLine();
+  registerUi(ctx, client, { statusLineStatus });
 
   const pushProjects = async () =>
     client.request(
@@ -136,6 +175,11 @@ export async function activate(ctx: PluginContext): Promise<void> {
     oxy.agents.onDidChange((agents) => void client.request('setAgents', agentRefs(agents))),
     oxy.settings.onDidChange('usage.', () => {
       void client.request('setSettings', readSettings(ctx));
+      const statusLineEnabled = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
+      if (statusLineEnabled !== statusLineKey) {
+        statusLineKey = statusLineEnabled;
+        void configureStatusLine();
+      }
       const telemetry = JSON.stringify(readTelemetrySettings(ctx));
       if (telemetry !== telemetryKey) {
         telemetryKey = telemetry;

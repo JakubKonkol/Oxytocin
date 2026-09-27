@@ -141,7 +141,7 @@ describe('sidebar model', () => {
     ]);
     expect(engine.sidebar().limit).toMatchObject({
       kind: 'agent-limit',
-      label: 'claude-code: 64% of 5h limit',
+      label: 'Claude: 64% of 5h limit',
       ratio: 0.64,
     });
     expect(engine.status()).toMatchObject({ busy: false, activeSession: { agent: 'claude-code' } });
@@ -157,5 +157,38 @@ describe('sidebar model', () => {
     now += 1000;
     engine.ingest([record('b', now, 1)]);
     expect(engine.status().busy).toBe(true);
+  });
+
+  it('shows Claude subscription limits as their own bars and in the status model', () => {
+    const limit = (window: string, used: number, minutes: number, resetsAt: number) => ({
+      kind: 'limit' as const,
+      agent: 'claude-code',
+      window,
+      usedPercent: used,
+      windowMinutes: minutes,
+      resetsAt,
+      observedAt: now,
+    });
+    engine.ingest([
+      limit('seven_day', 41.2, 10080, now + 3 * 86_400_000),
+      limit('five_hour', 23.5, 300, now + 3_600_000),
+      limit('five_hour_old', 90, 300, now - 1),
+    ]);
+    // API billing: an ordinary agent limit.
+    expect(engine.sidebar().subscriptionLimits).toEqual([]);
+    expect(engine.sidebar().limit).toMatchObject({ label: 'Claude: 41% of weekly limit' });
+
+    engine.setSettings({ billing: { 'claude-code': 'subscription' } });
+    const model = engine.sidebar();
+    expect(model.subscriptionLimits.map((b) => [b.window, b.label])).toEqual([
+      ['five_hour', 'Claude: 24% of 5h limit'],
+      ['seven_day', 'Claude: 41% of weekly limit'],
+    ]);
+    expect(model.subscriptionLimits[0]).toMatchObject({ ratio: 0.235, resetsAt: now + 3_600_000, observedAt: now });
+    expect(model.limit).toBeNull();
+    expect(engine.status().subscriptionLimits).toEqual([
+      { window: 'five_hour', percent: 24, resetsAt: now + 3_600_000 },
+      { window: 'seven_day', percent: 41, resetsAt: now + 3 * 86_400_000 },
+    ]);
   });
 });
