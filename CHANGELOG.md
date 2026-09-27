@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-27
+
 ### Added
 
 - **Right sidebar.** A second column on the right of the workspace, as wide as the left sidebar by default
