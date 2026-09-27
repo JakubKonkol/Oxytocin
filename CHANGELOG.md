@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-27
+
 ### Changed
 
 - **Releases are built and published by GitHub Actions.** Pushing a version tag runs the full test suite and
