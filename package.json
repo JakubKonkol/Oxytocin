@@ -102,7 +102,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write . && eslint . --fix",
-    "test": "vitest run",
+    "test": "vitest run --project unit-node --project unit-web && vitest run --project integration",
     "e2e": "electron-vite build && tsx scripts/build-sdk.ts --copy tests/fixtures/plugins/views && tsx scripts/build-plugins.ts && playwright test",
     "check": "npm run typecheck && npm run lint && npm test && npm run licenses:check",
     "licenses:check": "license-checker-rseidelsohn --production --excludePrivatePackages --summary --onlyAllow \"MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1;MPL-2.0;CC0-1.0;BlueOak-1.0.0;Python-2.0;PSF-2.0\"",

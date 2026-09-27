@@ -24,7 +24,7 @@ a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Moni
 - `npm install` — install (npm workspaces; native modules come from prebuilt binaries — node-pty compiles from source on Linux; do not run electron-rebuild). npm 11 only runs install scripts of packages listed in `allowScripts` in `package.json`; approve new ones with `npm install-scripts approve <pkg>`.
 - `npm run dev` — run the app in dev mode (renderer HMR; main/host changes restart the app).
 - `npm run build` — build into `out/`.
-- `npm run typecheck` · `npm run lint` (ESLint + Prettier check) · `npm run format` · `npm test` (Vitest projects `unit-node`, `unit-web`, `integration`) · `npm run e2e` (builds, then Playwright + Electron) · `npm run check` (typecheck + lint + test + licenses).
+- `npm run typecheck` · `npm run lint` (ESLint + Prettier check) · `npm run format` · `npm test` (Vitest projects `unit-node` + `unit-web`, then `integration` on its own like CI — its timing tests are flaky under parallel load) · `npm run e2e` (builds, then Playwright + Electron) · `npm run check` (typecheck + lint + test + licenses).
 - `npm run licenses:check` · `npm run licenses:notices` — license allowlist check and `THIRD_PARTY_NOTICES.md` generation (run it after adding production dependencies).
 - `npm run pricing:update` — refresh the Usage Monitor pricing snapshot (M6).
 - `npm run package:win` — Windows installer (electron-builder, M5/M6).
