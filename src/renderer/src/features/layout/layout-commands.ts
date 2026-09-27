@@ -37,7 +37,8 @@ export function toggleMaximize(api: DockviewApi): void {
     return;
   }
   const panel = api.activePanel;
-  if (panel && api.groups.length > 1) api.maximizeGroup(panel);
+  // Floating groups are not part of the grid and cannot be maximized.
+  if (panel && panel.api.location.type === 'grid' && api.groups.length > 1) api.maximizeGroup(panel);
 }
 
 export function focusNeighbour(api: DockviewApi, direction: 'left' | 'right' | 'up' | 'down'): void {
@@ -57,6 +58,34 @@ export function resizeActive(api: DockviewApi, direction: 'left' | 'right' | 'up
     const delta = Math.round(api.height * RESIZE_STEP) * (direction === 'down' ? 1 : -1);
     group.api.setSize({ height: Math.max(60, group.height + delta) });
   }
+}
+
+const FLOATING_SIZE = 0.6;
+
+/** Moves a panel into a new floating group centred over the workspace (05 §5, M7-T9). */
+export function moveToFloating(api: DockviewApi, panelId: string): void {
+  const panel = api.getPanel(panelId);
+  if (!panel || panel.api.location.type === 'floating') return;
+  if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
+  const width = Math.max(360, Math.round(api.width * FLOATING_SIZE));
+  const height = Math.max(220, Math.round(api.height * FLOATING_SIZE));
+  api.addFloatingGroup(panel, {
+    x: Math.max(0, Math.round((api.width - width) / 2)),
+    y: Math.max(0, Math.round((api.height - height) / 2)),
+    width,
+    height,
+  });
+  panel.api.setActive();
+}
+
+/** Docks a floating panel back into the grid (next to the active grid group, or as the only one). */
+export function dockPanel(api: DockviewApi, panelId: string): void {
+  const panel = api.getPanel(panelId);
+  if (!panel || panel.api.location.type !== 'floating') return;
+  const target = api.groups.find((g) => g.api.location.type === 'grid');
+  if (target) panel.api.moveTo({ group: target, position: 'center' });
+  else panel.api.moveTo({ group: api.addGroup(), position: 'center' });
+  panel.api.setActive();
 }
 
 export function cycleTab(api: DockviewApi, step: 1 | -1): void {
@@ -126,6 +155,19 @@ export function registerLayoutCommands(): void {
       run: withWs((api) => resizeActive(api, dir)),
     });
   }
+  const activeLocation = () => getActiveWorkspace()?.api.activePanel?.api.location.type;
+  registerCommand({
+    id: 'panel.moveToFloating',
+    title: 'View: Move Panel to Floating Group',
+    when: () => activeLocation() === 'grid',
+    run: withWs((api) => (api.activePanel ? moveToFloating(api, api.activePanel.id) : undefined)),
+  });
+  registerCommand({
+    id: 'panel.dock',
+    title: 'View: Dock Floating Panel',
+    when: () => activeLocation() === 'floating',
+    run: withWs((api) => (api.activePanel ? dockPanel(api, api.activePanel.id) : undefined)),
+  });
   registerCommand({
     id: 'panel.nextTab',
     title: 'View: Next Tab',

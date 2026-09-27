@@ -18,7 +18,7 @@ import { openDefaultLayout, restoreWorkspace, trackWorkspacePersistence } from '
 import { GroupActions } from './GroupActions';
 import { OxyTab } from './OxyTab';
 import { useRenameStore } from './rename-store';
-import { splitActive } from './layout-commands';
+import { dockPanel, moveToFloating, splitActive } from './layout-commands';
 import type { TerminalPanelParams } from './panel-registry';
 import { TerminalPanelComponent } from './TerminalPanelComponent';
 import { requestClosePanel, restartTerminalPanel } from './workspace-actions';
@@ -59,7 +59,7 @@ const components = {
 const initializing = new Set<string>();
 
 /** Marks drags so plugin iframes stop swallowing pointer events (docs/plan/05-layout-center.md §7). */
-function trackDragging(api: DockviewApi): void {
+function trackDragging(api: DockviewApi, container: HTMLElement | null): void {
   let safety: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {
     document.body.classList.remove('oxy-dragging');
@@ -75,6 +75,17 @@ function trackDragging(api: DockviewApi): void {
   };
   api.onWillDragPanel(start);
   api.onWillDragGroup(start);
+  // Moving/resizing a floating group and dragging a sash use pointer events, not HTML5 drag events.
+  container?.addEventListener(
+    'pointerdown',
+    (e) => {
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target) return;
+      const floatingChrome = target.closest('.dv-resize-container') && !target.closest('.dv-content-container');
+      if (floatingChrome || target.closest('.dv-sash')) start();
+    },
+    true,
+  );
 }
 
 function tabContextMenu(projectId: string) {
@@ -84,6 +95,7 @@ function tabContextMenu(projectId: string) {
     const closeMany = async (ids: string[]) => {
       for (const id of ids) if (!(await requestClosePanel(api, id))) return;
     };
+    const floating = panel.api.location.type === 'floating';
     return [
       { label: 'Close', action: () => void requestClosePanel(api, panel.id) },
       { label: 'Close others', disabled: others.length === 0, action: () => void closeMany(others.map((p) => p.id)) },
@@ -108,6 +120,9 @@ function tabContextMenu(projectId: string) {
             { label: 'Restart', action: () => void restartTerminalPanel(api, panel.id) },
           ]
         : []),
+      floating
+        ? { label: 'Dock to layout', action: () => dockPanel(api, panel.id) }
+        : { label: 'Move to new floating group', action: () => moveToFloating(api, panel.id) },
     ];
   };
 }
@@ -174,7 +189,7 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
         if (id) requestAnimationFrame(() => !isDialogOpen() && terminalRegistry.get(id)?.focus());
       }
     });
-    trackDragging(api);
+    trackDragging(api, containerRef.current);
     void initializeWorkspace(projectId, api).then((stop) => {
       if (apiRef.current === api) stopPersistence.current = stop;
       else stop();
@@ -194,7 +209,6 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
           getTabContextMenuItems={tabContextMenu(projectId)}
           singleTabMode="fullwidth"
           defaultRenderer="always"
-          disableFloatingGroups
           onReady={onReady}
         />
       </WorkspaceVisibleContext.Provider>

@@ -5,7 +5,7 @@ export interface WorkspaceSnapshot {
   maximized: boolean;
   activeGroup: { id: string; width: number; height: number } | null;
   activePanelId: string | null;
-  panels: { id: string; group: string; terminalId: string | null }[];
+  panels: { id: string; group: string; terminalId: string | null; floating: boolean }[];
 }
 
 interface OxyTest {

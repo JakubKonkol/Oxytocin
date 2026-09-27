@@ -47,6 +47,7 @@ export function installTestHooks(): void {
           id: p.id,
           group: p.group.id,
           terminalId: (p.params as { terminalId?: string } | undefined)?.terminalId ?? null,
+          floating: p.api.location.type === 'floating',
         })),
       };
     },
