@@ -8,7 +8,7 @@ import type { Logger } from '@shared/logging/logger';
 import { type Disposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { writeFileAtomic } from '../storage/atomic-write';
-import { readJsonFile, readJsonFileSync, type ReadStatus } from '../storage/json-file-store';
+import { parseJsonText, readJsonFileSync, type ReadStatus } from '../storage/json-file-store';
 
 export interface SettingsLoadInfo {
   status: ReadStatus;
@@ -55,10 +55,27 @@ export class SettingsService implements Disposable {
     return this.settings;
   }
 
+  /**
+   * Re-reads settings.json while the app runs. Unlike the startup load, a file that does not parse is never
+   * moved aside: the user (or an editor writing in several steps) is editing it, so the last valid settings stay.
+   */
   async reload(): Promise<void> {
-    const result = await readJsonFile(this.filePath, { jsonc: true });
+    let text: string | null;
+    try {
+      text = await readFile(this.filePath, 'utf8');
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+      text = null;
+    }
+    let raw: unknown;
+    try {
+      raw = text === null ? undefined : parseJsonText(text, true);
+    } catch (e) {
+      this.logger.warn('settings.json does not parse; keeping the last valid settings', e);
+      return;
+    }
     const before = JSON.stringify(this.settings);
-    this.apply(result.value, result.status, result.corruptPath);
+    this.apply(raw, text === null ? 'missing' : 'ok', undefined);
     if (JSON.stringify(this.settings) !== before) this.changeEmitter.fire(this.settings);
   }
 

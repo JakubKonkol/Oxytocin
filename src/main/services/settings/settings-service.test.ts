@@ -67,4 +67,26 @@ describe('SettingsService', () => {
     expect(listener).toHaveBeenCalledOnce();
     expect(s.get()['terminal.fontSize']).toBe(20);
   });
+
+  it('keeps the last valid settings while the file is being edited and never moves it aside', async () => {
+    const file = join(dir, 'settings.json');
+    await writeFile(file, '{ "terminal.fontSize": 20 }');
+    const s = new SettingsService(file, 'linux', silent);
+    s.loadSync();
+    const listener = vi.fn();
+    s.onDidChange(listener);
+    for (const partial of ['', '{ "terminal.fontSize": 2']) {
+      await writeFile(file, partial);
+      await s.reload();
+      expect(s.get()['terminal.fontSize']).toBe(20);
+      expect(await readFile(file, 'utf8')).toBe(partial);
+    }
+    await writeFile(file, '{ "terminal.fontSize": 22 }');
+    await s.reload();
+    expect(s.get()['terminal.fontSize']).toBe(22);
+    await rm(file);
+    await s.reload();
+    expect(s.get()['terminal.fontSize']).toBe(13);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
 });
