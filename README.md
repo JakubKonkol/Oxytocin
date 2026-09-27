@@ -7,7 +7,7 @@
 
 # Oxytocin
 
-> **Status: work in progress.** Nothing here is ready for daily use yet.
+> **Status: v0.1 — first preview release.** Expect rough edges; see the [changelog](CHANGELOG.md).
 
 Oxytocin is an "IDE for the terminal and AI": a desktop hub (Electron + TypeScript + React) for developers who
 run AI coding agents (Claude Code, Codex CLI, Gemini CLI, Aider, …) in terminals. It is **not** a code editor —
@@ -26,6 +26,11 @@ keep using the editor you like. Oxytocin organizes everything around it:
 - Node.js 24 (see `.nvmrc`) and npm 11.
 - `git` 2.30 or newer on `PATH`.
 
+## Installation
+
+Download the installer for your platform from the GitHub releases (Windows `.exe`, macOS `.dmg`, Linux `.AppImage` /
+`.deb`). The builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper show a warning.
+
 ## Development
 
 ```sh
@@ -34,6 +39,7 @@ npm run dev        # run the app in development mode
 npm run build      # production build into out/
 npm run check      # typecheck + lint + unit tests + license check
 npm run e2e        # end-to-end tests (Playwright + Electron)
+npm run package:win   # Windows installer into release/ (also package:mac, package:linux)
 ```
 
 ## Documentation

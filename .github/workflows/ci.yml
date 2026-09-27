@@ -62,3 +62,9 @@ jobs:
           path: |
             test-results/
             playwright-report/
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: perf-${{ matrix.os }}
+          path: perf-results.json
+          if-no-files-found: ignore

@@ -5,6 +5,7 @@
 export const INVOKE_CHANNELS = [
   'app:getInfo',
   'app:getHostStatus',
+  'app:readLegal',
   'settings:get',
   'settings:update',
   'ui:getState',

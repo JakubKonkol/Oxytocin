@@ -34,15 +34,18 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
         : await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
   // Chromium's OS-level sandbox is unavailable in Linux containers/CI runners (root, AppArmor userns).
   const platformArgs = process.platform === 'linux' ? ['--no-sandbox'] : [];
+  // Packaged smoke tests run the installed/unpacked app instead of out/ (OXYTOCIN_EXECUTABLE).
+  const executablePath = process.env['OXYTOCIN_EXECUTABLE'];
   const app = await electron.launch({
+    ...(executablePath ? { executablePath } : {}),
     args: [
-      join(repoRoot, 'out/main/index.js'),
+      ...(executablePath ? [] : [join(repoRoot, 'out/main/index.js')]),
       ...platformArgs,
       `--user-data-dir=${userData}`,
       ...(project ? [project] : []),
       ...(opts.args ?? []),
     ],
-    cwd: repoRoot,
+    cwd: executablePath ? tmpdir() : repoRoot,
     env: {
       ...(process.env as Record<string, string>),
       OXYTOCIN_E2E: '1',

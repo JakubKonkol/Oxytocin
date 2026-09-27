@@ -27,6 +27,8 @@ interface InvokeSpec {
 export const invokeContract = {
   'app:getInfo': { req: z.null().optional(), res: AppInfoSchema },
   'app:getHostStatus': { req: z.null().optional(), res: z.array(HostStatusSchema) },
+  /** LICENSE (MIT) or THIRD_PARTY_NOTICES.md shipped with the app (About / Help → Third-Party Notices). */
+  'app:readLegal': { req: z.object({ doc: z.enum(['license', 'notices']) }), res: z.object({ text: z.string() }) },
   'settings:get': { req: z.null().optional(), res: SettingsSchema },
   /** Writes keys into settings.json preserving comments; `null` removes a key. */
   'settings:update': { req: SettingsPatchSchema, res: SettingsSchema },

@@ -1,5 +1,5 @@
 import { homedir, release } from 'node:os';
-import { realpath, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   app,
@@ -75,10 +75,13 @@ app.on('second-instance', (_event, argv, workingDirectory) => {
   else pendingSecondInstance.push({ argv, cwd: workingDirectory });
 });
 
+/** The Oxytocin version (packaged: from the app; dev/E2E: injected at build time). */
+const appVersion = app.isPackaged ? app.getVersion() : __OXYTOCIN_VERSION__;
+
 function bootstrap(): void {
   initLogging();
   const log = createLogger('main');
-  log.info(`Oxytocin ${app.getVersion()} starting (Electron ${process.versions.electron}, ${process.platform})`);
+  log.info(`Oxytocin ${appVersion} starting (Electron ${process.versions.electron}, ${process.platform})`);
 
   const settings = new SettingsService(
     join(app.getPath('userData'), 'settings.json'),
@@ -152,7 +155,7 @@ function bootstrap(): void {
     },
     pluginEnv: (ctx): EnvLayer[] => pluginEnvLayers([...pluginHost.environments.values()], ctx, process.platform),
     beforeSpawn: (): Promise<void> => pluginHost.envBarrier(),
-    appVersion: app.getVersion(),
+    appVersion,
     dev: !app.isPackaged,
     platform: process.platform,
     logger: createLogger('terminals'),
@@ -163,6 +166,14 @@ function bootstrap(): void {
     dir: join(process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'), 'sessions'),
     logger: createLogger('agents'),
     cliFallback: claudeAgentsCli(),
+  });
+  // Performance budget (docs/plan/10-quality-testing-release.md §5): process start → first terminal output.
+  let firstTerminalOutputMs: number | null = null;
+  const firstOutput = hosts.pty.onEvent('terminal:activity', () => {
+    if (firstTerminalOutputMs !== null) return;
+    firstTerminalOutputMs = Math.round(performance.now());
+    log.info(`Start → first terminal output: ${firstTerminalOutputMs} ms`);
+    firstOutput.dispose();
   });
   const agents = new AgentService({
     ptyHost: hosts.pty,
@@ -279,7 +290,7 @@ function bootstrap(): void {
     host: hosts.plugin,
     plugins,
     env: {
-      appVersion: app.getVersion(),
+      appVersion,
       platform: process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux',
       locale: app.getLocale() || 'en-US',
       homeDir: homedir(),
@@ -369,9 +380,12 @@ function bootstrap(): void {
   registerInvokeHandlers(
     ipcMain,
     {
+      'app:readLegal': async ({ doc }) => ({
+        text: await readFile(appPaths.legalFile(doc === 'license' ? 'LICENSE' : 'THIRD_PARTY_NOTICES.md'), 'utf8'),
+      }),
       'app:getInfo': () => ({
         name: app.getName(),
-        version: app.getVersion(),
+        version: appVersion,
         platform: process.platform,
         arch: process.arch,
         osBuild: process.platform === 'win32' ? Number(release().split('.')[2] ?? 0) : 0,
@@ -718,6 +732,7 @@ function bootstrap(): void {
       workspaceState,
       projects,
       logFile: () => logFilePath(),
+      perf: () => ({ firstTerminalOutputMs }),
     };
   }
 }

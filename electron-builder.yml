@@ -8,6 +8,13 @@ directories:
 files:
   - out/**
   - package.json
+  # Renderer and plugin libraries are bundled by Vite/esbuild; only modules loaded at runtime by main and the hosts
+  # (and their dependencies) ship in app.asar. Keep in sync with the externals of out/main (tests/smoke checks it).
+  - '!node_modules/**'
+  - node_modules/{zod,semver,node-pty,jsonc-parser,electron-log,ps-list}/**
+  - node_modules/{detect-libc,is-extglob,is-glob,picomatch,node-addon-api}/**
+  - node_modules/@xterm/{headless,addon-serialize}/**
+  - node_modules/@parcel/watcher*/**
 asar: true
 asarUnpack:
   - '**/node_modules/node-pty/**'

@@ -1,7 +1,7 @@
 {
   "name": "oxytocin",
   "productName": "Oxytocin",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "An IDE for the terminal and AI: a desktop hub for projects, AI agent terminals, live git changes and API usage.",
   "private": true,
   "license": "MIT",
@@ -104,6 +104,10 @@
     "licenses:check": "license-checker-rseidelsohn --production --excludePrivatePackages --summary --onlyAllow \"MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;OFL-1.1;MPL-2.0;CC0-1.0;BlueOak-1.0.0;Python-2.0;PSF-2.0\"",
     "licenses:notices": "tsx scripts/generate-notices.ts",
     "postinstall": "node scripts/postinstall.mjs",
-    "pricing:update": "tsx scripts/update-pricing.ts"
+    "pricing:update": "tsx scripts/update-pricing.ts",
+    "package:win": "npm run licenses:notices && npm run build && electron-builder --win --publish never",
+    "package:mac": "npm run licenses:notices && npm run build && electron-builder --mac --publish never",
+    "package:linux": "npm run licenses:notices && npm run build && electron-builder --linux --publish never",
+    "smoke:packaged": "playwright test -c tests/smoke"
   }
 }

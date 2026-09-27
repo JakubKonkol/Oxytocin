@@ -14,6 +14,7 @@ import { registerAttentionCommands } from './features/attention/attention';
 import { registerDiffCommands } from './features/diff/diff-actions';
 import { syncPluginCommands } from './features/plugins/plugin-commands';
 import { registerPluginManagerCommands } from './features/plugins/plugin-manager';
+import { registerHelpCommands } from './features/help/HelpDialogs';
 import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
@@ -30,6 +31,7 @@ registerAttentionCommands();
 registerDiffCommands();
 syncPluginCommands();
 registerPluginManagerCommands();
+registerHelpCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 

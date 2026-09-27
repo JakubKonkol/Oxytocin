@@ -13,6 +13,7 @@ import { ActivityStatusItems, NotificationsToggle } from '../features/attention/
 import { PluginStatusItems } from '../features/plugins/PluginStatusItems';
 import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
+import { HelpDialogs } from '../features/help/HelpDialogs';
 
 /** "<project> — <active panel> — Oxytocin" (docs/plan/05-layout-center.md §8). */
 function useWindowTitle(): string {
@@ -49,6 +50,7 @@ export function AppLayout() {
   return (
     <div className="flex h-full flex-col bg-app">
       <TitleBar title={title} />
+      <HelpDialogs />
       <div className="flex min-h-0 flex-1 px-2">
         {!sidebar.collapsed && (
           <>

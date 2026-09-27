@@ -1,0 +1,99 @@
+name: Release
+
+# Tag v* → packages for Windows (NSIS), macOS and Linux, a packaged smoke test on each, and a draft GitHub Release
+# (docs/plan/10-quality-testing-release.md §7, §11). Unsigned until M9.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run licenses:notices
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Install system dependencies for Electron (Linux)
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
+      - name: Packaged smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx playwright test -c tests/smoke
+        env:
+          OXYTOCIN_EXECUTABLE: ${{ github.workspace }}/release/linux-unpacked/oxytocin
+      - name: Packaged smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          APP=$(ls -d release/mac*/Oxytocin.app | head -n 1)
+          OXYTOCIN_EXECUTABLE="$PWD/$APP/Contents/MacOS/Oxytocin" npx playwright test -c tests/smoke
+      - name: Install (NSIS, silent), smoke test and uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release -Filter '*Setup*.exe' | Select-Object -First 1
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\oxytocin\Oxytocin.exe'
+          if (-not (Test-Path $exe)) { throw "Installed app not found at $exe" }
+          $env:OXYTOCIN_EXECUTABLE = $exe
+          npx playwright test -c tests/smoke
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged smoke test failed' }
+          $uninstaller = Join-Path $env:LOCALAPPDATA 'Programs\oxytocin\Uninstall Oxytocin.exe'
+          Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+          Start-Sleep -Seconds 5
+          if (Test-Path $exe) { throw 'The app is still installed after uninstalling' }
+      - uses: actions/upload-artifact@v5
+        with:
+          name: packages-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v5
+        if: failure()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: test-results/
+
+  draft-release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist-packages
+          pattern: packages-*
+          merge-multiple: true
+      - name: Draft GitHub Release with the changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="$VERSION" '$0 ~ "^## \\[?"v"\\]?" {p=1; next} /^## / && p {exit} p' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" dist-packages/* --draft --title "Oxytocin $VERSION" --notes-file notes.md
