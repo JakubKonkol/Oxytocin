@@ -15,6 +15,9 @@ files:
   - node_modules/{detect-libc,is-extglob,is-glob,picomatch,node-addon-api}/**
   - node_modules/@xterm/{headless,addon-serialize}/**
   - node_modules/@parcel/watcher*/**
+  # electron-updater and its dependencies (loaded only in packaged builds, M9-T2).
+  - node_modules/{electron-updater,builder-util-runtime,fs-extra,graceful-fs,jsonfile,universalify}/**
+  - node_modules/{js-yaml,argparse,lazy-val,lodash.escaperegexp,lodash.isequal,tiny-typed-emitter,debug,ms,sax}/**
 asar: true
 asarUnpack:
   - '**/node_modules/node-pty/**'
@@ -36,6 +39,14 @@ extraResources:
       - '*/LICENSE'
       - '*/icon.*'
 npmRebuild: false
+# Auto-update (docs/plan/10-quality-testing-release.md §9): electron-updater reads app-update.yml generated from
+# this section; latest*.yml (beta*.yml for 1.2.0-beta.N versions) and the blockmaps are uploaded to the GitHub
+# Release with the packages. The beta channel = GitHub pre-releases (falls back to latest*.yml for stable ones).
+publish:
+  provider: github
+  owner: JakubKonkol
+  repo: Oxytocin
+  releaseType: draft
 # Electron fuses (docs/plan/01-architecture.md §5), flipped before signing.
 electronFuses:
   runAsNode: false

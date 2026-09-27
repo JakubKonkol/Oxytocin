@@ -3,6 +3,30 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Command palette** (`Ctrl+Shift+P`) and **Quick Open** (`Ctrl+P`: projects, terminals, changed files), also for
+  plugins (`oxy.ui.showQuickPick`).
+- **Keyboard shortcuts editor** and `keybindings.json` overrides with conflict detection.
+- **Settings UI** generated from the settings schema (plugin settings included), with search, `@modified` and
+  `@problems` filters.
+- **Light theme** and "follow the system" (`appearance.theme`), also for plugin views.
+- **Shell integration** for bash, zsh, fish and PowerShell: command start/finish marks, exit codes and
+  "command finished" notifications.
+- **Agent session resume** after a restart, a **project settings** dialog (name, colour, icon, environment, startup
+  terminals, default profile) and **floating panel groups**.
+- **Auto-update** from GitHub Releases (`latest` / `beta` channels): background download, installed when you quit
+  or click *Restart to update* — never an automatic restart.
+- Release pipeline: Windows/macOS code signing and notarization (activated by repository secrets) and hardened
+  Electron fuses.
+
+### Fixed
+
+- Terminals default to a UTF-8 locale when the environment has none.
+- A half-written `settings.json` (external editor) no longer resets the settings or gets moved aside.
+
 ## [0.1.0] - 2026-09-27
 
 First MVP release: a desktop hub for developers who work with AI coding agents in the terminal.

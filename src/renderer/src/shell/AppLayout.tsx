@@ -10,6 +10,7 @@ import { SidebarResizer } from './SidebarResizer';
 import { StatusBar } from './StatusBar';
 import { useAttentionBadge, useWaitingCount } from '../features/attention/attention-badge';
 import { ActivityStatusItems, NotificationsToggle } from '../features/attention/StatusItems';
+import { UpdateStatusItem } from '../features/updates/UpdateStatusItem';
 import { PluginStatusItems } from '../features/plugins/PluginStatusItems';
 import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
@@ -75,6 +76,7 @@ export function AppLayout() {
           <>
             <PluginStatusItems alignment="right" />
             <PluginsStatusButton />
+            <UpdateStatusItem />
             <NotificationsToggle />
           </>
         }

@@ -57,3 +57,20 @@ workflow then checks `codesign --verify`, `stapler validate` and `spctl --assess
 only from `app.asar`, cookie encryption, no extra `file://` privileges. As a consequence the packaged smoke test
 (`tests/smoke`) drives the app over the Chrome DevTools Protocol (`--remote-debugging-port`) instead of Playwright's
 Electron launcher, and `OXYTOCIN_INSPECT_HOSTS=1` only works in development builds.
+
+## Auto-update
+
+Installed apps update from GitHub Releases through `electron-updater` (`publish` in `electron-builder.yml`). The
+workflow uploads `latest.yml` / `latest-mac.yml` / `latest-linux.yml` and the `.blockmap` files next to the packages;
+**keep them in the release**, they are what the apps read. A draft release is invisible to the updater until you
+publish it.
+
+- **Channels:** the `updates.channel` setting is `latest` (stable releases) or `beta` (also GitHub pre-releases). A
+  version with a pre-release suffix (`0.3.0-beta.1`) is drafted as a pre-release and only offered on `beta`.
+- **Behaviour:** a check 15 s after start and every 6 hours (`updates.checkAutomatically`), download in the
+  background, install when the user quits or clicks *Restart to update* (after the same running-process confirmation
+  as quitting). Oxytocin never restarts by itself.
+- **Platforms:** Windows (NSIS) and macOS (zip; signed builds only, Squirrel.Mac requires a signature) update
+  themselves; on Linux only the AppImage does — `deb` installs are updated through the package manager.
+- **Checking a release:** install the previous version, publish the new release and use *Check for Updates…* in the
+  app menu; `logs/main.log` in the user data folder shows the `[updates]` entries.

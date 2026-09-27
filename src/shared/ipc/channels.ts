@@ -6,6 +6,9 @@ export const INVOKE_CHANNELS = [
   'app:getInfo',
   'app:getHostStatus',
   'app:readLegal',
+  'updates:getState',
+  'updates:check',
+  'updates:restart',
   'settings:get',
   'settings:update',
   'settings:problems',
@@ -89,6 +92,7 @@ export const EVENT_CHANNELS = [
   'plugins:openPanel',
   'ui:quickPick',
   'keybindings:changed',
+  'updates:state',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

@@ -15,6 +15,7 @@ import { ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain
 import { ProjectSchema } from '../domain/project';
 import { QuickPickRequestSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema } from '../domain/keybindings';
+import { UpdateStateSchema } from '../domain/updates';
 import type { EventChannel } from './channels';
 
 /** In-app toast requested by main. */
@@ -76,6 +77,8 @@ export const eventContract = {
   'ui:quickPick': QuickPickRequestSchema,
   /** keybindings.json changed (editor or external edit). */
   'keybindings:changed': KeybindingsStateSchema,
+  /** Auto-update progress (M9-T2). */
+  'updates:state': UpdateStateSchema,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

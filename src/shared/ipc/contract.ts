@@ -11,6 +11,7 @@ import {
 import { FileDiffContentSchema, FileDiffRequestSchema, RepoStatusSchema } from '../domain/git';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
+import { UpdateStateSchema } from '../domain/updates';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
 import { QuickPickResultSchema } from '../domain/quick-pick';
@@ -31,6 +32,11 @@ export const invokeContract = {
   'app:getHostStatus': { req: z.null().optional(), res: z.array(HostStatusSchema) },
   /** LICENSE (MIT) or THIRD_PARTY_NOTICES.md shipped with the app (About / Help → Third-Party Notices). */
   'app:readLegal': { req: z.object({ doc: z.enum(['license', 'notices']) }), res: z.object({ text: z.string() }) },
+  /** Auto-update (M9-T2). `check` resolves once the check is done; the download continues in the background. */
+  'updates:getState': { req: z.null().optional(), res: UpdateStateSchema },
+  'updates:check': { req: z.null().optional(), res: UpdateStateSchema },
+  /** Quits through QuitGuard and restarts into the downloaded update; false when no update is ready. */
+  'updates:restart': { req: z.null().optional(), res: z.boolean() },
   'settings:get': { req: z.null().optional(), res: SettingsSchema },
   /** Writes keys into settings.json preserving comments; `null` removes a key. */
   'settings:update': { req: SettingsPatchSchema, res: SettingsSchema },

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type Platform, TerminalProfileSchema } from './terminal-profile';
+import { UpdateChannelSchema } from './updates';
 
 interface SettingDefinition<S extends z.ZodType> {
   schema: S;
@@ -249,6 +250,12 @@ export const CORE_SETTINGS = {
     'Loads plugins from development folders and reloads them on changes.',
   ),
   'plugins.devPaths': def(z.array(z.string()), [], 'Development plugin folders (one per line).'),
+  'updates.checkAutomatically': def(
+    z.boolean(),
+    true,
+    'Checks for new versions at start and every 6 hours and downloads them in the background. Updates install when you quit or restart Oxytocin.',
+  ),
+  'updates.channel': def(UpdateChannelSchema, 'latest', 'Release channel: "beta" also offers pre-release versions.'),
   'diagnostics.logLevel': def(z.enum(['error', 'warn', 'info', 'debug']), 'info', 'Detail of the log files.'),
 } as const;
 

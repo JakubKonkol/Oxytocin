@@ -42,6 +42,7 @@ const SECTION_NAMES: Record<string, string> = {
   editor: 'Editor',
   notifications: 'Notifications',
   plugins: 'Plugins',
+  updates: 'Updates',
   diagnostics: 'Diagnostics',
 };
 export const CORE_SECTIONS = Object.values(SECTION_NAMES);

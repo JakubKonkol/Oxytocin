@@ -56,6 +56,9 @@ import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
 import { projectPathsFromArgv } from './app/argv';
 import { restoredScrollbackData, WorkspaceStateService } from './services/workspace-state/workspace-state-service';
+import { UpdateService, type UpdaterBackend } from './services/updates/update-service';
+import { createElectronUpdaterBackend, updateUnsupportedReason } from './services/updates/electron-updater-backend';
+import { createE2eUpdateBackend } from './services/updates/e2e-update-backend';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -309,6 +312,42 @@ function bootstrap(): void {
   });
 
   // Created with the window below; tracks whether the shell document (main frame) has loaded.
+  // Auto-update (docs/plan/10-quality-testing-release.md §9). E2E runs use a scripted backend, never the network.
+  let updates: UpdateService | null = null;
+  const updatesReady = (async () => {
+    const updatesLog = createLogger('updates');
+    let backend: UpdaterBackend | null = null;
+    let disabledReason: string | undefined;
+    if (e2e) backend = createE2eUpdateBackend(app.getPath('userData'));
+    else {
+      disabledReason =
+        (await updateUnsupportedReason({
+          isPackaged: app.isPackaged,
+          platform: process.platform,
+          env: process.env,
+          resourcesPath: process.resourcesPath,
+        })) ?? undefined;
+      if (!disabledReason) {
+        try {
+          backend = await createElectronUpdaterBackend(updatesLog);
+        } catch (e) {
+          updatesLog.error('Could not load the updater', e);
+          disabledReason = 'The updater could not be loaded.';
+        }
+      }
+    }
+    if (disabledReason) updatesLog.info(disabledReason);
+    updates = new UpdateService({
+      currentVersion: appVersion,
+      backend,
+      ...(disabledReason ? { disabledReason } : {}),
+      settings: () => settings.get(),
+      onDidChangeSettings: (listener) => settings.onDidChange(listener),
+      requestQuit: () => app.quit(),
+      logger: updatesLog,
+    });
+    return updates;
+  })();
   let ptyPortLink: PtyPortLink | null = null;
   const quickPicks = new QuickPickBroker((request) => {
     if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
@@ -421,6 +460,9 @@ function bootstrap(): void {
   registerInvokeHandlers(
     ipcMain,
     {
+      'updates:getState': async () => (await updatesReady).get(),
+      'updates:check': async () => (await updatesReady).check(),
+      'updates:restart': async () => (await updatesReady).restartToUpdate(),
       'app:readLegal': async ({ doc }) => ({
         text: await readFile(appPaths.legalFile(doc === 'license' ? 'LICENSE' : 'THIRD_PARTY_NOTICES.md'), 'utf8'),
       }),
@@ -599,6 +641,10 @@ function bootstrap(): void {
     }
   });
   git.onDidTouchFiles((e) => sendEvent(win.webContents, 'git:fileTouched', e));
+  void updatesReady.then((u) => {
+    u.onDidChange((state) => sendEvent(win.webContents, 'updates:state', state));
+    u.start();
+  });
 
   // Attention system (docs/plan/02-ui-ux.md §9).
   const liveNotifications = new Set<Notification>();
@@ -743,7 +789,10 @@ function bootstrap(): void {
     quitInProgress = true;
     void (async () => {
       try {
-        if (!(await quitGuard())) return;
+        if (!(await quitGuard())) {
+          updates?.cancelRestart();
+          return;
+        }
         quitting = true;
         if (!win.isDestroyed()) {
           await withTimeout(
@@ -777,7 +826,9 @@ function bootstrap(): void {
         quitInProgress = false;
         if (quitting) {
           settings.dispose();
-          app.exit(0);
+          // A downloaded update installs now; the updater then quits the app itself (fallback exit below).
+          if (updates?.installOnQuit()) setTimeout(() => app.exit(0), 10_000);
+          else app.exit(0);
         }
       }
     })();
@@ -801,6 +852,7 @@ function bootstrap(): void {
       projects,
       logFile: () => logFilePath(),
       perf: () => ({ firstTerminalOutputMs }),
+      updates: () => updates,
     };
   }
 }

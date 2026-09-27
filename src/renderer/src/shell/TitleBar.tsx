@@ -4,6 +4,7 @@ import { useHelpStore } from '../features/help/HelpDialogs';
 import { openKeybindingsEditor } from '../features/keybindings/KeybindingsPanel';
 import { openSettingsEditor } from '../features/settings/SettingsPanel';
 import { openPluginsManager } from '../features/plugins/plugin-manager';
+import { checkForUpdates } from '../features/updates/update-store';
 import { currentPlatform } from '../lib/platform';
 
 const menuItem =
@@ -45,6 +46,9 @@ function AppMenu() {
           <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
           <DropdownMenu.Item className={menuItem} onSelect={() => show('notices')}>
             Third-Party Notices
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItem} onSelect={() => void checkForUpdates()}>
+            Check for Updates…
           </DropdownMenu.Item>
           <DropdownMenu.Item className={menuItem} onSelect={() => show('about')}>
             About Oxytocin

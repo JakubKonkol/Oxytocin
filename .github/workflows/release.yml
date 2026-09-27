@@ -129,6 +129,9 @@ jobs:
             release/*.zip
             release/*.AppImage
             release/*.deb
+            release/latest*.yml
+            release/beta*.yml
+            release/*.blockmap
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v5
         if: failure()
@@ -153,4 +156,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           awk -v v="$VERSION" '$0 ~ "^## \\[?"v"\\]?" {p=1; next} /^## / && p {exit} p' CHANGELOG.md > notes.md
-          gh release create "$GITHUB_REF_NAME" dist-packages/* --draft --title "Oxytocin $VERSION" --notes-file notes.md
+          # Pre-release versions (1.2.0-beta.1) are offered only on the beta update channel.
+          PRERELEASE=""
+          case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist-packages/* --draft $PRERELEASE --title "Oxytocin $VERSION" --notes-file notes.md

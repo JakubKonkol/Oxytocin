@@ -20,6 +20,7 @@ import { ProfilePicker } from './features/layout/ProfilePicker';
 import { CommandPalette } from './features/palette/CommandPalette';
 import { ProjectSettingsDialog } from './features/projects/ProjectSettingsDialog';
 import { reportSettingsProblems } from './features/settings/SettingsPanel';
+import { subscribeUpdates } from './features/updates/update-store';
 import { TooltipProvider } from './ui/Tooltip';
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
     subscribeTerminals();
     subscribeProjects();
     subscribeKeybindings();
+    subscribeUpdates();
     ipc.on('notifications:show', showNotification);
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req));

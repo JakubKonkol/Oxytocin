@@ -23,6 +23,7 @@ import { registerKeybindingCommands } from './features/keybindings/KeybindingsPa
 import { registerSettingsCommands } from './features/settings/SettingsPanel';
 import { registerProjectSettingsCommands } from './features/projects/ProjectSettingsDialog';
 import { flushAllWorkspaces } from './features/layout/persistence';
+import { registerUpdateCommands } from './features/updates/update-store';
 
 if (window.oxy.e2e) {
   document.documentElement.dataset['e2e'] = 'true';
@@ -51,6 +52,7 @@ registerPaletteCommands();
 registerKeybindingCommands();
 registerSettingsCommands();
 registerProjectSettingsCommands();
+registerUpdateCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 
