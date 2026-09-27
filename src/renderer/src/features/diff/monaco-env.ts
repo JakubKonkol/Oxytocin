@@ -1,5 +1,5 @@
 // Local Monaco (no CDN): the core editor API, Monarch colouring for ~80 languages and only the editor worker
-// (the diff computation) — no TS/JSON/CSS/HTML language workers (docs/plan/06-git-changes.md §7).
+// (the diff computation) — no TS/JSON/CSS/HTML language workers.
 import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/basic-languages/monaco.contribution';
 // Icon font (fold arrows, "hidden lines" controls).

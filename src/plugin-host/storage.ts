@@ -5,7 +5,7 @@ import type { PluginStorage } from '@oxytocin/plugin-api';
 
 const MAX_BYTES = 1024 * 1024;
 
-/** `userData/plugin-data/<pluginId>/` with a small JSON key/value store (docs/plan/07-plugin-engine.md §6.4). */
+/** `userData/plugin-data/<pluginId>/` with a small JSON key/value store. */
 export function createPluginStorage(userDataDir: string, pluginId: string): PluginStorage {
   const globalDir = join(userDataDir, 'plugin-data', pluginId);
   const file = join(globalDir, 'storage.json');

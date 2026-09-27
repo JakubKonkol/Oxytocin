@@ -41,7 +41,7 @@ export interface CodexState {
 }
 
 /**
- * One rollout line (docs/plan/08-usage-monitor.md §7; format S7): session and model context, and `token_count`
+ * One rollout line (Codex rollout format): session and model context, and `token_count`
  * events turned into deltas of the cumulative totals (duplicates skipped, resets use `last_token_usage`).
  */
 export function parseCodexLine(text: string, state: CodexState, fileId: string): CollectedItem[] {

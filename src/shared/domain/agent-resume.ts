@@ -1,4 +1,4 @@
-/** Resume commands per agent (roadmap M7-T6); `${sessionId}` is replaced. Never run automatically. */
+/** Resume commands per agent; `${sessionId}` is replaced. Never run automatically. */
 const RESUME: Readonly<Record<string, { name: string; template: string }>> = {
   'claude-code': { name: 'Claude Code', template: 'claude --resume ${sessionId}' },
   codex: { name: 'Codex', template: 'codex resume ${sessionId}' },

@@ -23,7 +23,7 @@ export interface GitServiceDeps {
 }
 
 /**
- * Main-side git coordination (docs/plan/06-git-changes.md §1): which projects are watched by the Workspace
+ * Main-side git coordination: which projects are watched by the Workspace
  * Host, the active project's priority, focus and periodic refreshes, and the latest repository info.
  */
 export class GitService implements Disposable {
@@ -210,7 +210,7 @@ export class GitService implements Disposable {
     void this.call('git:refresh', { projectId, reason });
   }
 
-  /** Window focus → refresh the active project (docs/plan/06-git-changes.md §3.3). */
+  /** Window focus → refresh the active project. */
   onWindowFocus(): void {
     const active = this.deps.projects.activeId();
     if (active) this.refresh(active, 'focus');

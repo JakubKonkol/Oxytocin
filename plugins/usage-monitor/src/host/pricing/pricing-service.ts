@@ -48,7 +48,7 @@ function guessProvider(model: string): ModelPrice['provider'] {
 }
 
 /**
- * Pricing layers (docs/plan/08-usage-monitor.md §10.2): user overrides (USD per 1M tokens) > the daily refreshed
+ * Pricing layers: user overrides (USD per 1M tokens) > the daily refreshed
  * cache (when newer than the snapshot) > the build-time snapshot.
  */
 export class PricingService {

@@ -45,7 +45,7 @@ export interface CollectorStats {
 }
 
 /**
- * Discovers, backfills and tails the log files of one source (docs/plan/08-usage-monitor.md §5.2): a scan at start,
+ * Discovers, backfills and tails the log files of one source: a scan at start,
  * `fs.watch` (recursive) for changes, and a rescan every 30 s for robustness.
  */
 export class FileCollector {

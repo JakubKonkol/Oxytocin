@@ -17,7 +17,7 @@ export interface GitResult {
   code: number;
 }
 
-/** Arguments every git call starts with (docs/plan/06-git-changes.md §2). */
+/** Arguments every git call starts with. */
 export const GIT_BASE_ARGS = ['--no-optional-locks', '-c', 'core.quotepath=false', '-c', 'color.ui=false'];
 
 /**

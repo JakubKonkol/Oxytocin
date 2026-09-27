@@ -423,7 +423,7 @@ function SettingsForm({ project, onDone }: { project: Project; onDone: () => voi
   );
 }
 
-/** Project settings dialog (docs/plan/03-projects-workspace.md §8, roadmap M7-T7). */
+/** Project settings dialog. */
 export function ProjectSettingsDialog() {
   const projectId = useProjectSettingsStore((s) => s.projectId);
   const close = useProjectSettingsStore((s) => s.close);

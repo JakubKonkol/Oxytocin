@@ -33,7 +33,7 @@ function forkHost(
 }
 
 /**
- * The utility processes (docs/plan/01-architecture.md §2). Plugins installed by the user or loaded in developer mode
+ * The utility processes. Plugins installed by the user or loaded in developer mode
  * run in a second Plugin Host (ADR-022), started on demand by the plugin engine.
  */
 export class Hosts {

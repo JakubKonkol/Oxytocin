@@ -19,7 +19,7 @@ interface QueueItem {
 
 /**
  * One worker for all repositories: due refreshes wait here and the active project's one goes first
- * (docs/plan/06-git-changes.md §3.2).
+ *.
  */
 export class RefreshQueue {
   private readonly pending = new Map<string, QueueItem>();

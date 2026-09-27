@@ -1,4 +1,4 @@
-/** Performance marks for the budgets in docs/plan/10-quality-testing-release.md §5. */
+/** Performance marks for the start-up and interaction budgets. */
 let switchStart: number | null = null;
 let lastSwitchMs: number | null = null;
 

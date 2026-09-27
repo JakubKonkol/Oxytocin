@@ -65,7 +65,7 @@ async function readHead(input: FileDiffInput, topPath: string): Promise<{ size: 
   return r.code === 0 ? { size: r.stdout.length, data: r.stdout } : null;
 }
 
-/** HEAD and working-tree contents of one changed file (docs/plan/06-git-changes.md §5). */
+/** HEAD and working-tree contents of one changed file. */
 export async function getFileDiff(input: FileDiffInput): Promise<FileDiffContent> {
   const top = (p: string) => (input.pathspec ? `${input.pathspec}/${p}` : p);
   const absolute = join(input.toplevel, ...top(input.path).split('/'));

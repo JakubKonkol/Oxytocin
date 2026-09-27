@@ -58,7 +58,7 @@ const components = {
 
 const initializing = new Set<string>();
 
-/** Marks drags so plugin iframes stop swallowing pointer events (docs/plan/05-layout-center.md §7). */
+/** Marks drags so plugin iframes stop swallowing pointer events. */
 function trackDragging(api: DockviewApi, container: HTMLElement | null): void {
   let safety: ReturnType<typeof setTimeout> | undefined;
   const stop = () => {

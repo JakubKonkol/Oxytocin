@@ -23,7 +23,7 @@ interface SectionDefinition {
   order: number;
 }
 
-/** Core sidebar sections; plugin views are inserted by their `order` (docs/plan/07-plugin-engine.md §8.1). */
+/** Core sidebar sections; plugin views are inserted by their `order`. */
 const CORE_SECTIONS: SectionDefinition[] = [
   { id: 'projects', title: 'PROJECTS', size: 200, order: 0 },
   { id: 'changes', title: 'CHANGES', size: 380, order: 100 },

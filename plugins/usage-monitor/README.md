@@ -1,6 +1,6 @@
 # Usage Monitor
 
-Built-in Oxytocin plugin: token usage and cost of AI coding agents (docs/plan/08-usage-monitor.md).
+Built-in Oxytocin plugin: token usage and cost of AI coding agents.
 
 - Sources: Claude Code transcripts (`~/.claude/projects/**/*.jsonl`), Codex CLI rollouts, Gemini CLI chats and an
   opt-in local OpenTelemetry receiver.

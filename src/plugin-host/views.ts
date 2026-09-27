@@ -29,7 +29,7 @@ interface ViewInstance {
   markResolved: () => void;
 }
 
-/** View instances in the Plugin Host (`PluginView` objects handed to providers, docs/plan/07 §6.4). */
+/** View instances in the Plugin Host (`PluginView` objects handed to providers). */
 export class ViewHost {
   private readonly views = new Map<string, ViewInstance>();
 

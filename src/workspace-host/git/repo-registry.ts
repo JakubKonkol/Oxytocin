@@ -33,7 +33,7 @@ export interface RepoRegistryDeps {
 
 const sameRequest = (a: WatchRepoRequest, b: WatchRepoRequest) => JSON.stringify(a) === JSON.stringify(b);
 
-/** projectId → watched repository with its refresh scheduler (docs/plan/06-git-changes.md §1). */
+/** projectId → watched repository with its refresh scheduler. */
 export class RepoRegistry {
   private readonly entries = new Map<string, RepoEntry>();
   readonly queue = new RefreshQueue();

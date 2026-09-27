@@ -249,7 +249,7 @@ function Row({ row, onEdit }: { row: ShortcutRow; onEdit: (row: ShortcutRow) => 
   );
 }
 
-/** Keyboard shortcut editor (roadmap M7-T2): search, change/remove/reset, conflicts; writes keybindings.json. */
+/** Keyboard shortcut editor: search, change/remove/reset, conflicts; writes keybindings.json. */
 export function KeybindingsPanel(_props: IDockviewPanelProps) {
   const state = useKeybindingsStore((s) => s.state);
   const effective = useSyncExternalStore(onDidChangeKeybindings, effectiveKeybindings);

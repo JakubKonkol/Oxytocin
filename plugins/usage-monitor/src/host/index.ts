@@ -65,7 +65,7 @@ const agentRefs = (agents: AgentSnapshot[]) =>
     state: a.state,
   }));
 
-/** Usage Monitor backend (docs/plan/08-usage-monitor.md §2): runs the ingest worker and feeds it core state. */
+/** Usage Monitor backend: runs the ingest worker and feeds it core state. */
 export async function activate(ctx: PluginContext): Promise<void> {
   const { oxy } = ctx;
   const worker = new Worker(new URL('./workers/ingest-worker.js', import.meta.url), {

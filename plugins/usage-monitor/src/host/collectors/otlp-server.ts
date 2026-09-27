@@ -13,7 +13,7 @@ export interface OtlpServerStats {
 }
 
 /**
- * Local OTLP/HTTP receiver (docs/plan/08-usage-monitor.md §9.2): 127.0.0.1 only, Bearer token, JSON (optionally
+ * Local OTLP/HTTP receiver: 127.0.0.1 only, Bearer token, JSON (optionally
  * gzip); metrics are processed, logs and traces accepted and ignored. Protobuf is answered with 415 (S7: both CLIs
  * send JSON with the settings we inject).
  */

@@ -42,7 +42,7 @@ interface StatusModel {
 const usd = (v: number) => (v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`);
 
 /**
- * The Usage Monitor's UI (docs/plan/08-usage-monitor.md §14): sidebar card, dashboard panel, status bar item and
+ * The Usage Monitor's UI: sidebar card, dashboard panel, status bar item and
  * commands. Views are "dumb": the backend sends ready models and answers their requests from the worker.
  */
 export function registerUi(ctx: PluginContext, client: WorkerClient): void {

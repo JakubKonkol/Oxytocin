@@ -19,7 +19,7 @@ function compact<T extends Record<string, unknown>>(o: T): T | undefined {
   return entries.length > 0 ? (Object.fromEntries(entries) as T) : undefined;
 }
 
-/** One LiteLLM entry → compact per-token rates (docs/plan/08-usage-monitor.md §10.1), or null when not usable. */
+/** One LiteLLM entry → compact per-token rates, or null when not usable. */
 export function toModelPrice(raw: Raw): ModelPrice | null {
   const provider = PROVIDERS[String(raw['litellm_provider'])];
   if (!provider || (raw['mode'] !== 'chat' && raw['mode'] !== 'responses')) return null;

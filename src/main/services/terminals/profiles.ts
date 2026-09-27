@@ -51,7 +51,7 @@ function settingsKeyFor(
   return 'terminal.defaultProfile.linux';
 }
 
-/** Detected + user profiles, the default profile and launch resolution (docs/plan/04-terminals.md §2.1). */
+/** Detected + user profiles, the default profile and launch resolution. */
 export class ProfileService {
   private cache: { at: number; profiles: TerminalProfile[] } | undefined;
   private inflight: Promise<TerminalProfile[]> | undefined;

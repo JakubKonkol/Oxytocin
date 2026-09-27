@@ -15,7 +15,7 @@ import type { TerminalRuntimePatch } from '../terminals/terminal-service';
 import { type AgentRule, classifyTerminal, DEFAULT_AGENT_RULES } from './rules';
 import { type ClaudeRegistry, mapRegistryStatus, type RegistryEntry } from './claude-registry';
 
-/** docs/plan/04-terminals.md §9.4 — higher wins; a lower source may not override a higher one for 10 s. */
+/** higher wins; a lower source may not override a higher one for 10 s. */
 const PRIORITY: Record<AgentStateSource, number> = {
   hook: 5,
   'claude-registry': 4,
@@ -98,7 +98,7 @@ interface Tracked {
 /**
  * Classifies terminals (shell / process / agent) from the PTY Host's process reports and derives each agent's
  * state from the Claude registry, OSC 9;4 progress, bells/notifications and output heuristics
- * (docs/plan/04-terminals.md §9).
+ *.
  */
 export class AgentService implements Disposable {
   private readonly tracked = new Map<string, Tracked>();

@@ -520,7 +520,7 @@ function formatAge(ms: number): string {
   return `${Math.round(h / 24)} days ago`;
 }
 
-/** CHANGES sidebar section (docs/plan/06-git-changes.md §6). */
+/** CHANGES sidebar section. */
 export function ChangesSection() {
   const project = useProjectsStore(activeProject);
   const status = useChangesStore((s) => (project ? s.status[project.id] : undefined));

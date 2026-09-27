@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const RefreshReasonSchema = z.enum(['fs', 'gitdir', 'manual', 'focus', 'periodic', 'initial']);
 
-/** Repository discovery result per project (docs/plan/06-git-changes.md §2). */
+/** Repository discovery result per project. */
 export const RepoInfoSchema = z.object({
   projectId: z.string(),
   state: z.enum(['ok', 'not-a-repo', 'git-missing', 'error']),
@@ -21,7 +21,6 @@ export const GitInstallationSchema = z.object({
 });
 export type GitInstallation = z.infer<typeof GitInstallationSchema>;
 
-/** docs/plan/06-git-changes.md §4.3 */
 export const ChangeStatusSchema = z.enum([
   'added',
   'modified',
@@ -59,7 +58,6 @@ export const BranchInfoSchema = z.object({
 });
 export type BranchInfo = z.infer<typeof BranchInfoSchema>;
 
-/** docs/plan/06-git-changes.md §4.4 */
 export const RepoStatusSchema = z.object({
   projectId: z.string(),
   state: z.enum(['ok', 'not-a-repo', 'git-missing', 'error']),
@@ -76,7 +74,6 @@ export const RepoStatusSchema = z.object({
 });
 export type RepoStatus = z.infer<typeof RepoStatusSchema>;
 
-/** docs/plan/06-git-changes.md §5 */
 export const FileDiffContentSchema = z.object({
   path: z.string(),
   oldPath: z.string().optional(),

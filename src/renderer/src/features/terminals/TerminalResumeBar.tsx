@@ -3,7 +3,7 @@ import type { ResumeInfo } from '@shared/domain/agent-resume';
 import { Button } from '../../ui/Button';
 
 /**
- * Offered under a terminal restored after a restart whose agent session is known (docs/plan/03 §7, M7-T6):
+ * Offered under a terminal restored after a restart whose agent session is known (M7-T6):
  * types the resume command only when the user asks — agents are never started automatically.
  */
 export function TerminalResumeBar({

@@ -1,6 +1,6 @@
 import type { TerminalId } from '../../domain/terminal';
 
-/** Renderer → PTY Host messages on the direct MessagePort (docs/plan/04-terminals.md §4.1). */
+/** Renderer → PTY Host messages on the direct MessagePort. */
 export type RendererToPty =
   | { t: 'attach'; id: TerminalId; cols?: number; rows?: number }
   | { t: 'detach'; id: TerminalId }

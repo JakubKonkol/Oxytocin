@@ -1,4 +1,4 @@
-/** Formatting shared by the Usage views (docs/plan/08-usage-monitor.md §10.4, §14). */
+/** Formatting shared by the Usage views. */
 
 export const AGENT_NAMES: Record<string, string> = {
   'claude-code': 'Claude Code',

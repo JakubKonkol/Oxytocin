@@ -34,7 +34,7 @@ interface LoadedPlugin {
 
 const errorText = (e: unknown) => (e instanceof Error ? (e.stack ?? e.message) : String(e));
 
-/** Loads, activates and isolates plugin backends inside the Plugin Host (docs/plan/07-plugin-engine.md §6). */
+/** Loads, activates and isolates plugin backends inside the Plugin Host. */
 export class PluginRuntime {
   private readonly plugins = new Map<string, LoadedPlugin>();
   private readonly commands = new Map<string, { pluginId: string; handler: (...args: unknown[]) => unknown }>();

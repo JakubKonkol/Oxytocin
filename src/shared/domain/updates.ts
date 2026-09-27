@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Release channels (docs/plan/10-quality-testing-release.md §9): stable only, or also pre-releases. */
+/** Release channels: stable only, or also pre-releases. */
 export const UpdateChannelSchema = z.enum(['latest', 'beta']);
 export type UpdateChannel = z.infer<typeof UpdateChannelSchema>;
 

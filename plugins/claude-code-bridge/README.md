@@ -1,6 +1,6 @@
 # Claude Code Bridge
 
-Built-in Oxytocin plugin (roadmap M9-T5): exact Claude Code states through Claude Code hooks.
+Built-in Oxytocin plugin: exact Claude Code states through Claude Code hooks.
 
 - The backend listens on `127.0.0.1:<claudeBridge.port>` (default 47285) and gives every terminal a secret
   `OXYTOCIN_BRIDGE_TOKEN`.

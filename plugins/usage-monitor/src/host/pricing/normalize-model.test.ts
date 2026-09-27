@@ -4,7 +4,7 @@ import { canonicalModel, resolveModelKey } from './normalize-model';
 const known = new Set(['claude-opus-5-5', 'claude-sonnet-4-5', 'gpt-5', 'gpt-5.3-codex', 'gemini-2.5-pro', 'o3']);
 const resolve = (m: string) => resolveModelKey(m, (k) => known.has(k));
 
-describe('model normalization (docs/plan/08-usage-monitor.md §10.3)', () => {
+describe('model normalization', () => {
   it.each([
     ['claude-opus-5-5', 'claude-opus-5-5'],
     ['Claude-Opus-5-5', 'claude-opus-5-5'],

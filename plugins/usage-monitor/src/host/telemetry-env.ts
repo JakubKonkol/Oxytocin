@@ -11,7 +11,7 @@ export const CLAUDE_PROFILES = ['agent:claude'];
 export const GEMINI_PROFILES = ['agent:gemini'];
 
 /**
- * Variables that point Claude Code / Gemini CLI at the local receiver (docs/plan/08-usage-monitor.md §9.3). Resource
+ * Variables that point Claude Code / Gemini CLI at the local receiver. Resource
  * attributes are appended (comma separator) so a user's own `OTEL_RESOURCE_ATTRIBUTES` survives. Claude Code
  * variables are skipped when the user configured OpenTelemetry themselves.
  */

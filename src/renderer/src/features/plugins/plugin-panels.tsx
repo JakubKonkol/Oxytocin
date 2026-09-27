@@ -25,7 +25,7 @@ const newViewId = () => newPanelId('plg').replace('plg-', 'pv-');
 
 /**
  * Opens a plugin panel (`contributes.panels`) in a project's workspace, honouring `singleton`
- * (docs/plan/07-plugin-engine.md §8.2).
+ *.
  */
 export async function openPluginPanel(
   panelType: string,

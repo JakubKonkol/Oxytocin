@@ -1,5 +1,5 @@
 /**
- * Checks the Electron fuses of a packaged app (release workflow, roadmap M9-T1):
+ * Checks the Electron fuses of a packaged app (release workflow):
  * tsx scripts/verify-fuses.ts <path to the executable or the .app bundle>
  */
 import { FuseState, FuseV1Options, getCurrentFuseWire } from '@electron/fuses';

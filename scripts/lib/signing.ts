@@ -1,5 +1,5 @@
 /**
- * Signing configuration for release builds (roadmap M9-T1, docs/plan/10-quality-testing-release.md §9), derived
+ * Signing configuration for release builds, derived
  * from the CI environment so unsigned builds keep working when no secrets are configured.
  *
  * Windows: Azure Trusted Signing (AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET + AZURE_SIGN_ENDPOINT,

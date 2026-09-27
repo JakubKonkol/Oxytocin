@@ -23,7 +23,7 @@ const TEMPLATE = `// Keyboard shortcuts: entries here override the defaults (lat
 const FORMAT = { formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' } } as const;
 
 /**
- * Owns userData/keybindings.json (JSONC, docs/plan/09-persistence-settings.md §1). A file with syntax errors
+ * Owns userData/keybindings.json (JSONC). A file with syntax errors
  * is never moved aside (the user is editing it): the last valid shortcuts stay active and a problem is reported.
  */
 export class KeybindingsService implements Disposable {

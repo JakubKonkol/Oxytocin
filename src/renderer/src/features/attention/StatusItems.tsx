@@ -10,7 +10,7 @@ import { useWaitingCount } from './attention-badge';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-/** Left side of the status bar: the active project's terminals and agents (docs/plan/02-ui-ux.md §5). */
+/** Left side of the status bar: the active project's terminals and agents. */
 export function ActivityStatusItems() {
   const project = useProjectsStore(activeProject);
   const status = useProjectsStore((s) => (s.activeId ? s.activity[s.activeId] : undefined));

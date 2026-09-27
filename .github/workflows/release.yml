@@ -1,7 +1,7 @@
 name: Release
 
 # Tag v* → packages for Windows (NSIS), macOS and Linux, a packaged smoke test on each, and a draft GitHub Release
-# (docs/plan/10-quality-testing-release.md §7, §9, §11). Signed and notarized when the signing secrets exist
+#. Signed and notarized when the signing secrets exist
 # (docs/RELEASING.md); unsigned otherwise.
 on:
   push:
@@ -159,4 +159,9 @@ jobs:
           # Pre-release versions (1.2.0-beta.1) are offered only on the beta update channel.
           PRERELEASE=""
           case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" dist-packages/* --draft $PRERELEASE --title "Oxytocin $VERSION" --notes-file notes.md
+          # A release created by hand (e.g. with a locally built installer) gets the CI packages added.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist-packages/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist-packages/* --draft $PRERELEASE --title "Oxytocin $VERSION" --notes-file notes.md
+          fi

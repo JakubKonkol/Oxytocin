@@ -1,5 +1,5 @@
 /**
- * Oxytocin plugin backend API, version 0.1 (docs/plan/07-plugin-engine.md §6.4).
+ * Oxytocin plugin backend API, version 0.1.
  * Breaking changes are allowed in 0.x minor versions and are listed in CHANGELOG.md.
  */
 

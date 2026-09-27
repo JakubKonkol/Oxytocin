@@ -53,7 +53,7 @@ export function ignorePatterns(folders: readonly string[]): string[] {
 }
 
 /**
- * Watches a project's working tree and git directory (docs/plan/06-git-changes.md §3.1): working-tree events
+ * Watches a project's working tree and git directory: working-tree events
  * request an `fs` refresh and report touched paths, relevant git-directory events (HEAD, index, refs) a
  * `gitdir` refresh.
  */

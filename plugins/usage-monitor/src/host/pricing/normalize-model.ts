@@ -9,7 +9,7 @@ export function canonicalModel(raw: string): string {
 }
 
 /**
- * Finds the pricing key for a model name (docs/plan/08-usage-monitor.md §10.3): exact → without a date suffix →
+ * Finds the pricing key for a model name: exact → without a date suffix →
  * without `-latest`/`-preview` → the longest known model that is a prefix of the name. Undefined = unknown model.
  */
 export function resolveModelKey(raw: string, known: (key: string) => boolean): string | undefined {

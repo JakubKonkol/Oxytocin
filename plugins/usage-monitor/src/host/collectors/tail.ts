@@ -86,7 +86,7 @@ export function needsRead(info: TailFileInfo, cursor: Cursor | undefined): boole
 }
 
 /**
- * Reads a JSONL file from its cursor to the current end (docs/plan/08-usage-monitor.md §5.2): complete lines only
+ * Reads a JSONL file from its cursor to the current end: complete lines only
  * (an unterminated last line waits for the next read), from the start again when the file shrank or was replaced.
  * `accept` is the fast path: lines it rejects are never decoded.
  */

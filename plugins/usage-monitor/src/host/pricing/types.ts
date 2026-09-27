@@ -8,7 +8,7 @@ const RatesSchema = z.object({
   cacheWrite1h: z.number().nonnegative().optional(),
 });
 
-/** Rates in USD per token (docs/plan/08-usage-monitor.md §10.1). */
+/** Rates in USD per token. */
 export const ModelPriceSchema = z.object({
   provider: z.enum(['anthropic', 'openai', 'google']),
   input: z.number().nonnegative(),

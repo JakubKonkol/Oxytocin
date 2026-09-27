@@ -20,7 +20,7 @@ export interface Keybinding {
   source?: 'user';
 }
 
-/** Default keymap (docs/plan/02-ui-ux.md §7). Bindings for unregistered commands are ignored. */
+/** Default keymap. Bindings for unregistered commands are ignored. */
 export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { key: 'Ctrl+Shift+P', mac: 'Cmd+Shift+P', command: 'workbench.commandPalette' },
   { key: 'Ctrl+Shift+O', mac: 'Cmd+Shift+O', command: 'workbench.quickOpen' },

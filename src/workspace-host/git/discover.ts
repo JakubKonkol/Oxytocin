@@ -15,7 +15,7 @@ export type RepoInfo =
       pathspec: string | null;
     };
 
-/** docs/plan/06-git-changes.md §2 — `rev-parse` in the project root. */
+/** `rev-parse` in the project root. */
 export async function discoverRepo(gitPath: string, rootPath: string): Promise<RepoInfo> {
   const r = await runGit(
     gitPath,

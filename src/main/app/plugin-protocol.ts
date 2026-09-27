@@ -12,7 +12,7 @@ export interface PluginProtocolOptions {
 const notFound = () => new Response('Not found', { status: 404 });
 
 /**
- * `oxy-plugin://<pluginId>/<path>` (docs/plan/07-plugin-engine.md §7.1): files of enabled plugins only, never
+ * `oxy-plugin://<pluginId>/<path>`: files of enabled plugins only, never
  * outside the plugin folder (traversal, encoded separators, absolute paths and symlinks are rejected), with the
  * view CSP on every response.
  */

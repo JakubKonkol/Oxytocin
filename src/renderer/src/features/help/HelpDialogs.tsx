@@ -98,7 +98,7 @@ function Document({ doc }: { doc: 'notices' | 'license' }) {
   );
 }
 
-/** About Oxytocin, the MIT license and the third-party notices (docs/plan/10-quality-testing-release.md §8). */
+/** About Oxytocin, the MIT license and the third-party notices. */
 export function HelpDialogs() {
   const open = useHelpStore((s) => s.open);
   const show = useHelpStore((s) => s.show);

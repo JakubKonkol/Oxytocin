@@ -31,7 +31,7 @@ export interface RegistryEntry {
   waitingFor?: string;
 }
 
-/** Registry status → agent state (docs/plan/04-terminals.md §9.3). */
+/** Registry status → agent state. */
 export function mapRegistryStatus(status: string | undefined): AgentState {
   switch (status) {
     case 'busy':

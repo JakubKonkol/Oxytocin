@@ -13,7 +13,6 @@ export const AgentStateSourceSchema = z.enum([
 ]);
 export type AgentStateSource = z.infer<typeof AgentStateSourceSchema>;
 
-/** docs/plan/04-terminals.md §9.2 */
 export const AgentInfoSchema = z.object({
   agentId: z.string(),
   displayName: z.string(),

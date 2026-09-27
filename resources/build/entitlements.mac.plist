@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Hardened runtime entitlements (docs/plan/10-quality-testing-release.md §9): V8's JIT needs the first two;
+<!-- Hardened runtime entitlements: V8's JIT needs the first two;
      library validation is disabled so node-pty / @parcel/watcher native modules load in the signed app. -->
 <plist version="1.0">
   <dict>

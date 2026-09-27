@@ -18,7 +18,7 @@ const fileName = (path: string) => path.split('/').at(-1) ?? path;
 const diffPanels = (api: DockviewApi) => api.panels.filter((p) => p.api.component === 'diff');
 
 /**
- * Opens a file's diff in the project's workspace (docs/plan/06-git-changes.md §7): an existing panel for the
+ * Opens a file's diff in the project's workspace: an existing panel for the
  * path is focused; otherwise the preview panel is reused, or a new panel is added next to the active one.
  */
 export function openDiff(

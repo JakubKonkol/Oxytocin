@@ -13,7 +13,7 @@ export type WatchFn = (
 ) => Pick<FSWatcher, 'close' | 'on'>;
 
 /**
- * Developer mode (docs/plan/07-plugin-engine.md §10): watches the folders of plugins loaded from `plugins.devPaths`
+ * Developer mode: watches the folders of plugins loaded from `plugins.devPaths`
  * and reloads a plugin 300 ms after its files stop changing.
  */
 export class DevPluginWatcher {

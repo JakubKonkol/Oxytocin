@@ -16,7 +16,7 @@ function isWordStart(text: string, i: number): boolean {
 }
 
 /**
- * Case-insensitive subsequence match (docs/plan/02-ui-ux.md §8). Spaces in the query are ignored, so
+ * Case-insensitive subsequence match. Spaces in the query are ignored, so
  * "term split" matches "Terminal: Split Right". Contiguous runs, word starts and an early first match score
  * higher; a contiguous substring match beats a scattered one. Returns null when the query does not match.
  */

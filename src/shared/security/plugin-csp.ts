@@ -1,4 +1,4 @@
-/** CSP of plugin views (docs/plan/07-plugin-engine.md §7.2): no network, nothing from outside the plugin. */
+/** CSP of plugin views: no network, nothing from outside the plugin. */
 export function buildPluginCsp(pluginId: string, opts: { dev: boolean }): string {
   const self = `oxy-plugin://${pluginId}`;
   const ancestors = opts.dev ? 'app://oxytocin http://localhost:*' : 'app://oxytocin';

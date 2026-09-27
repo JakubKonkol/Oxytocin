@@ -16,7 +16,7 @@ import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
 import { HelpDialogs } from '../features/help/HelpDialogs';
 
-/** "<project> — <active panel> — Oxytocin" (docs/plan/05-layout-center.md §8). */
+/** "<project> — <active panel> — Oxytocin". */
 function useWindowTitle(): string {
   const project = useProjectsStore(activeProject);
   const panel = useTitleStore((s) => s.panel);

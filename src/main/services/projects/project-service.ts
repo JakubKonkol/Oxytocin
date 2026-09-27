@@ -42,7 +42,7 @@ export function migrateProjectsFile(raw: unknown): unknown {
   return raw;
 }
 
-/** Projects (docs/plan/03-projects-workspace.md §2): userData/projects.json + runtime `missing` flags. */
+/** Projects: userData/projects.json + runtime `missing` flags. */
 export class ProjectService implements Disposable {
   private readonly store: JsonFileStore<ProjectsFile>;
   private readonly missing = new Set<string>();

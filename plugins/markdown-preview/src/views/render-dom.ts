@@ -2,7 +2,7 @@ import DOMPurify from 'dompurify';
 
 const HEADING_ID_PREFIX = 'user-content-';
 
-/** Defence in depth: the backend renders trusted-ish HTML, the view still sanitizes it (docs/plan/07 §11). */
+/** Defence in depth: the backend renders trusted-ish HTML, the view still sanitizes it. */
 export function sanitize(html: string): string {
   return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form'] });
 }

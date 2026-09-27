@@ -1,4 +1,4 @@
-/** Claude subscription usage blocks (docs/plan/08-usage-monitor.md §13, as in ccusage). */
+/** Claude subscription usage blocks (as in ccusage). */
 export const BLOCK_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 

@@ -3,7 +3,7 @@ import type { ConfigurationProperty } from './plugin';
 import { CORE_SETTINGS, type CoreSettingKey, defaultSettingValue } from './settings';
 import type { Platform } from './terminal-profile';
 
-/** How a setting is edited in the settings UI (docs/plan/09-persistence-settings.md §3, roadmap M7-T3). */
+/** How a setting is edited in the settings UI. */
 export type SettingControl =
   | 'boolean'
   | 'number'

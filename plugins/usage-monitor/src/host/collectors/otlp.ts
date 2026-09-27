@@ -73,7 +73,7 @@ interface Accumulator {
 }
 
 /**
- * ExportMetricsServiceRequest (JSON) → usage records (docs/plan/08-usage-monitor.md §9.4): Claude
+ * ExportMetricsServiceRequest (JSON) → usage records: Claude
  * `claude_code.token.usage` (type input/output/cacheRead/cacheCreation) and `claude_code.cost.usage`, Gemini
  * `gemini_cli.token.usage` (type input/output/thought/cache/tool; Google semantics as in §8).
  */

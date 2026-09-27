@@ -11,7 +11,7 @@ import type { Logger } from '@shared/logging/logger';
 import { isEngineCompatible, readPlugin } from './discovery';
 import { nodeDiscoveryFs } from './plugin-service';
 
-/** Limits for installed plugins (docs/plan/07-plugin-engine.md §5). */
+/** Limits for installed plugins. */
 export const INSTALL_LIMITS = { maxFiles: 10_000, maxBytes: 200 * 1024 * 1024 };
 
 export interface InstalledPlugin {
@@ -106,8 +106,8 @@ async function findRoot(dir: string): Promise<string> {
 const consentKey = (m: PluginManifest) => JSON.stringify([[...m.permissions].sort(), !!m.main]);
 
 /**
- * Installs user plugins into `userData/plugins/<id>` from a folder or a .zip archive (docs/plan/07-plugin-engine.md
- * §5, M9-T3). The plugin is validated before anything in the plugins folder changes; a previous version is replaced
+ * Installs user plugins into `userData/plugins/<id>` from a folder or a .zip archive.
+ * The plugin is validated before anything in the plugins folder changes; a previous version is replaced
  * only after the new one is complete.
  */
 export class PluginInstaller {

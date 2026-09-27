@@ -72,7 +72,7 @@ function runsScript(args: readonly string[], shellType: ShellType): boolean {
 const sep = (platform: NodeJS.Platform) => (platform === 'win32' ? '\\' : '/');
 
 /**
- * Shell integration injection (docs/plan/04-terminals.md §11): bash `--init-file` (a login shell's `-l` is
+ * Shell integration injection: bash `--init-file` (a login shell's `-l` is
  * emulated by the script), zsh `ZDOTDIR`, fish `XDG_DATA_DIRS`, PowerShell `-NoExit -EncodedCommand`.
  * cmd, Git Bash, WSL and unknown shells run unchanged.
  */

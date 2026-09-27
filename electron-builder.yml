@@ -1,4 +1,4 @@
-# Packaging (docs/plan/01-architecture.md §11, docs/plan/10-quality-testing-release.md §8).
+# Packaging.
 appId: dev.oxytocin.app
 productName: Oxytocin
 copyright: Copyright © 2026 Jakub Konkol
@@ -41,7 +41,7 @@ extraResources:
       - '*/LICENSE'
       - '*/icon.*'
 npmRebuild: false
-# Auto-update (docs/plan/10-quality-testing-release.md §9): electron-updater reads app-update.yml generated from
+# Auto-update: electron-updater reads app-update.yml generated from
 # this section; latest*.yml (beta*.yml for 1.2.0-beta.N versions) and the blockmaps are uploaded to the GitHub
 # Release with the packages. The beta channel = GitHub pre-releases (falls back to latest*.yml for stable ones).
 publish:
@@ -49,7 +49,7 @@ publish:
   owner: JakubKonkol
   repo: Oxytocin
   releaseType: draft
-# Electron fuses (docs/plan/01-architecture.md §5), flipped before signing.
+# Electron fuses, flipped before signing.
 electronFuses:
   runAsNode: false
   enableCookieEncryption: true

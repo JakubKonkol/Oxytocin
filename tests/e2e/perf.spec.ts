@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 import { launchApp, repoRoot } from './helpers/launch';
 import { oxyTest, waitForTerminal } from './helpers/terminal';
 
-/** Records a metric in perf-results.json (CI artifact; docs/plan/10-quality-testing-release.md §5). */
+/** Records a metric in perf-results.json (CI artifact). */
 async function record(name: string, value: number, unit: string, budget?: number): Promise<void> {
   const file = join(repoRoot, 'perf-results.json');
   let results: Record<string, unknown>;

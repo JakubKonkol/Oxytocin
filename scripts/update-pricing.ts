@@ -1,5 +1,5 @@
 /**
- * Refreshes the Usage Monitor pricing snapshot from LiteLLM (docs/plan/08-usage-monitor.md §10.1).
+ * Refreshes the Usage Monitor pricing snapshot from LiteLLM.
  * Usage: `npm run pricing:update [-- --file <local model_prices_and_context_window.json>]`
  */
 import { readFile, writeFile } from 'node:fs/promises';

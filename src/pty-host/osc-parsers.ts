@@ -67,7 +67,7 @@ export function unescapeOsc633(value: string): string {
 }
 
 /**
- * OSC 633 (shell integration, docs/plan/04-terminals.md §11): `A` prompt start, `B` prompt end, `C` command
+ * OSC 633 (shell integration): `A` prompt start, `B` prompt end, `C` command
  * start, `D[;exit]` command end, `E;<command line>`, `P;Cwd=<path>`. Unknown marks are ignored.
  */
 export function parseOsc633(data: string): Osc633 | null {

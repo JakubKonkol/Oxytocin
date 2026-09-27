@@ -4,32 +4,20 @@ Oxytocin is a desktop hub (Electron 44 + TypeScript 6 + React 19) for developers
 projects with activity indicators, terminals (node-pty + xterm.js) with split views, a live git changes panel with diffs against HEAD (Monaco),
 a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Monitor (agent token usage and costs).
 
-## Read first
-- `docs/plan/README.md` — plan index, verified facts, Definition of Done. (The plan documents are written in Polish.)
-- `docs/plan/11-roadmap.md` — the next unchecked task + the implementation journal.
-- The domain document referenced by the task (`docs/plan/0x-*.md`) and the ADRs in `docs/plan/12-decisions-risks.md`.
-- Spike results in `docs/spikes/`.
-
 ## Owner's working rules (mandatory in every session)
 1. **Work directly on `main`.**
 2. **Commit only a working state:** `npm run check` green, the relevant E2E tests green, the app builds and starts.
-   One roadmap task = one commit or several smaller commits — but every commit must satisfy this condition.
-3. **After finishing a task:** tick its checkbox in `docs/plan/11-roadmap.md`, add an English entry to the implementation
-   journal at the end of that file, commit and **push** (`git push origin main`).
-4. **Never wire unfinished features into the visible UI.** If a feature spans several tasks, keep the unfinished parts
-   unwired or behind the `OXYTOCIN_EXPERIMENTAL=1` environment flag.
-5. **If a task is blocked** (e.g. a spike reveals a problem, or something is needed from the owner such as code-signing
-   certificates): describe it in the journal, revert the non-working changes and continue with the next task that does
-   not depend on the blocked one.
-6. Work autonomously through the roadmap in order (M0 → M6 = MVP v0.1, then M7 → M9) without asking for confirmation.
-   Decisions the plan does not settle are made by you and recorded in the journal or as a new ADR in
-   `docs/plan/12-decisions-risks.md`.
-7. Commits: Conventional Commits (`feat(terminals): …`, `fix(git): …`), authored as the repository owner
+3. **Record user-visible changes** in the `## [Unreleased]` section of `CHANGELOG.md`, then commit and **push**
+   (`git push origin main`).
+4. **Never wire unfinished features into the visible UI.** Keep unfinished parts unwired or behind the
+   `OXYTOCIN_EXPERIMENTAL=1` environment flag.
+5. Commits: Conventional Commits (`feat(terminals): …`, `fix(git): …`), authored as the repository owner
    (`git config user.name "Jakub Konkol"`, `git config user.email "jakub.konkol27@gmail.com"`), **without**
    `Co-Authored-By` trailers or "Generated with Claude Code" footers.
+6. Releases: see `docs/RELEASING.md` (bump `version`, move the changelog section, tag `vX.Y.Z`).
 
 ## Language and license
-- **Everything in this repository is in English**: UI text, README, CHANGELOG, code comments, identifiers, log and error messages, test names, commit messages, spike reports, journal entries. No i18n framework. Polish UI texts and comments that appear in the plan describe intent only — use the English labels from `docs/plan/02-ui-ux.md` §13.
+- **Everything in this repository is in English**: UI text, README, CHANGELOG, code comments, identifiers, log and error messages, test names, commit messages, docs. No i18n framework.
 - **License: MIT.** Every `package.json` has `"license": "MIT"`. Only add dependencies with MIT-compatible licenses (`npm run licenses:check`). Files adapted from other projects (e.g. VS Code shell integration scripts) keep their original license header and source attribution.
 
 ## Commands
@@ -75,11 +63,9 @@ a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Moni
 - When Oxytocin is started from a Claude Code session it inherits `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT` etc. — the env composer must strip them for terminals (otherwise `claude` inside a terminal thinks it is nested).
 - `File.path` does not exist in Electron ≥ 32 — get drag-and-drop paths via `webUtils.getPathForFile` in the preload.
 - Node's `URL` gives custom schemes like `app://` an opaque origin (`"null"`) — compare protocol and host instead of `origin`.
-- `SerializeAddon` does not serialize cursor visibility (`?25l`) or the SGR mouse encoding (`?1006h`); the headless mirror appends them (S3).
+- `SerializeAddon` does not serialize cursor visibility (`?25l`) or the SGR mouse encoding (`?1006h`); the headless mirror appends them.
 
 ## Session workflow
-1. Pick the next task from `docs/plan/11-roadmap.md` (check its dependencies).
-2. Implement it following the domain document; record deviations in the journal, and add a new ADR if a decision changes.
-3. Run `npm run check` plus the relevant E2E tests (`xvfb-run -a npm run e2e` on Linux).
-4. Tick the checkbox and add an English entry to the implementation journal.
-5. Commit (Conventional Commits, no trailers) and push to `main`.
+1. Implement the change; add a test (unit/integration) and an E2E test for user-visible features.
+2. Run `npm run check` plus the relevant E2E tests (`xvfb-run -a npm run e2e` on Linux).
+3. Update `CHANGELOG.md`, commit (Conventional Commits, no trailers) and push to `main`.

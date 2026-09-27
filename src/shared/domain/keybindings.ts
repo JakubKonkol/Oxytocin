@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** Where keyboard focus is (docs/plan/02-ui-ux.md §7). */
+/** Where keyboard focus is. */
 export const KEY_CONTEXTS = [
   'terminalFocus',
   'sidebarFocus',

@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** docs/plan/07-plugin-engine.md §9 */
 export const PLUGIN_PERMISSIONS = [
   'projects.read',
   'terminals.read-metadata',
@@ -148,7 +147,7 @@ export const PluginContributesSchema = z.object({
 });
 export type PluginContributes = z.infer<typeof PluginContributesSchema>;
 
-/** The `oxytocin` section of a plugin's package.json (docs/plan/07-plugin-engine.md §4). */
+/** The `oxytocin` section of a plugin's package.json. */
 export const PluginManifestSchema = z.object({
   id: PluginIdSchema,
   displayName: z.string().min(1),

@@ -76,7 +76,7 @@ function toTotals(r: SumRow): Totals {
   return { costUsd: r.cost, unknownCostEvents: r.unknown, tokens, events: r.events, sessions: r.sessions };
 }
 
-/** Totals of a range (docs/plan/08-usage-monitor.md §12). */
+/** Totals of a range. */
 export function summary(db: Database, range: Range, filter?: Filter): Totals {
   const w = where(range, filter);
   return toTotals(db.prepare(`SELECT ${SUMS} FROM usage_events WHERE ${w.sql}`).get(...w.params) as unknown as SumRow);

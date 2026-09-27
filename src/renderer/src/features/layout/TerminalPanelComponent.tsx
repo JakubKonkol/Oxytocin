@@ -16,7 +16,7 @@ export function TerminalPanelComponent(props: IDockviewPanelProps<TerminalPanelP
     const d = api.onDidActiveChange((e) => setActive(e.isActive));
     return () => d.dispose();
   }, [api]);
-  // An error exit counts as seen once the panel was active and on screen for 1 s (docs/plan/03 §5.2).
+  // An error exit counts as seen once the panel was active and on screen for 1 s.
   const visible = useWorkspaceVisible();
   const unseenError = useTerminalsStore((s) => {
     const info = s.terminals[params.terminalId];

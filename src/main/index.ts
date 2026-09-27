@@ -192,13 +192,13 @@ function bootstrap(): void {
     logger: createLogger('terminals'),
   });
 
-  // Claude Code session registry (docs/plan/04-terminals.md §9.3); CLAUDE_CONFIG_DIR may come from the login shell.
+  // Claude Code session registry; CLAUDE_CONFIG_DIR may come from the login shell.
   const claudeRegistry = new ClaudeRegistry({
     dir: join(process.env['CLAUDE_CONFIG_DIR'] ?? join(homedir(), '.claude'), 'sessions'),
     logger: createLogger('agents'),
     cliFallback: claudeAgentsCli(),
   });
-  // Performance budget (docs/plan/10-quality-testing-release.md §5): process start → first terminal output.
+  // Performance budget: process start → first terminal output.
   let firstTerminalOutputMs: number | null = null;
   const firstOutput = hosts.pty.onEvent('terminal:activity', () => {
     if (firstTerminalOutputMs !== null) return;
@@ -331,7 +331,7 @@ function bootstrap(): void {
   });
 
   // Created with the window below; tracks whether the shell document (main frame) has loaded.
-  // Auto-update (docs/plan/10-quality-testing-release.md §9). E2E runs use a scripted backend, never the network.
+  // Auto-update. E2E runs use a scripted backend, never the network.
   let updates: UpdateService | null = null;
   const updatesReady = (async () => {
     const updatesLog = createLogger('updates');
@@ -732,7 +732,7 @@ function bootstrap(): void {
     u.start();
   });
 
-  // Attention system (docs/plan/02-ui-ux.md §9).
+  // Attention system.
   const liveNotifications = new Set<Notification>();
   const reveal = (target: { projectId: string; terminalId: string }) => {
     if (win.isDestroyed()) return;
@@ -809,7 +809,7 @@ function bootstrap(): void {
   terminals.onDidRemove((id) => sendEvent(win.webContents, 'terminals:removed', { id }));
 
   // Terminal I/O flows renderer ⇄ PTY Host over a direct MessagePort; re-created after renderer reloads
-  // and PTY Host restarts (docs/plan/01-architecture.md §4.5).
+  // and PTY Host restarts.
   const link = new PtyPortLink(
     () => hosts.pty.state === 'running',
     () => {
@@ -834,7 +834,7 @@ function bootstrap(): void {
   win.on('closed', () => quickPicks.cancelAll());
   hosts.pty.onDidBecomeReady(() => link.hostDidBecomeReady());
 
-  // Quit sequence (docs/plan/01-architecture.md §7): QuitGuard → flush layouts → scrollback snapshots → hosts.
+  // Quit sequence: QuitGuard → flush layouts → scrollback snapshots → hosts.
   let quitting = false;
   let lastQuitPrompt: { message: string; detail: string } | null = null;
   let quitInProgress = false;

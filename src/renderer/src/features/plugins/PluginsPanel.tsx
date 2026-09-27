@@ -238,7 +238,7 @@ function PluginRow({ plugin, developerMode }: { plugin: PluginDescriptor; develo
   );
 }
 
-/** Minimal plugin manager (docs/plan/07-plugin-engine.md §5, roadmap M5-T7). */
+/** Minimal plugin manager. */
 export function PluginsPanel(_props: IDockviewPanelProps) {
   const plugins = usePluginsStore((s) => s.plugins);
   const developerMode = useSettingsStore((s) => s.settings?.['plugins.developerMode'] ?? false);

@@ -18,7 +18,7 @@ export function scopeMatches(scope: Entry['scope'], target: EnvTarget): boolean 
 const isPathVar = (name: string) => name.toUpperCase() === 'PATH';
 
 /**
- * Environment layers contributed by plugins for one terminal (docs/plan/07-plugin-engine.md §8.7): one layer
+ * Environment layers contributed by plugins for one terminal: one layer
  * per plugin, applied after the project layer. `append`/`prepend` refer to the value composed so far through
  * `${env:NAME}` (the composer expands it); PATH uses the platform separator.
  */

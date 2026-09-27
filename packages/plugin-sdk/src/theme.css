@@ -101,7 +101,7 @@ th {
   color-scheme: light;
 }
 
-/* Scrollbars like the shell's (docs/plan/02-ui-ux.md). */
+/* Scrollbars like the shell's. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;

@@ -1,5 +1,5 @@
 /**
- * Editor command templates (docs/plan/09-persistence-settings.md §4): parsed into argv without a shell,
+ * Editor command templates: parsed into argv without a shell,
  * placeholders substituted per argument, so a file name can never inject commands.
  */
 

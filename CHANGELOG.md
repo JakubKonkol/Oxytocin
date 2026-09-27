@@ -5,35 +5,6 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
-### Added
-
-- **Command palette** (`Ctrl+Shift+P`) and **Quick Open** (`Ctrl+P`: projects, terminals, changed files), also for
-  plugins (`oxy.ui.showQuickPick`).
-- **Keyboard shortcuts editor** and `keybindings.json` overrides with conflict detection.
-- **Settings UI** generated from the settings schema (plugin settings included), with search, `@modified` and
-  `@problems` filters.
-- **Light theme** and "follow the system" (`appearance.theme`), also for plugin views.
-- **Shell integration** for bash, zsh, fish and PowerShell: command start/finish marks, exit codes and
-  "command finished" notifications.
-- **Agent session resume** after a restart, a **project settings** dialog (name, colour, icon, environment, startup
-  terminals, default profile) and **floating panel groups**.
-- **User plugins:** install from a folder or a .zip (Plugins → Install…), a consent dialog with the plugin's
-  permissions before it first runs, uninstall; installed and developer plugins run in their own Plugin Host.
-- **`create-oxytocin-plugin`** (`npm create oxytocin-plugin`): a TypeScript plugin template (vanilla or React) with
-  watch builds and packaging, and a [plugin developer guide](docs/plugins/README.md).
-- **Claude Code Bridge** (built-in plugin): with the user's consent it installs Claude Code `http` hooks that report
-  exact agent states (working, waiting for permission, finished) to Oxytocin; plugin API 0.1.2 adds
-  `oxy.agents.reportState`.
-- **Auto-update** from GitHub Releases (`latest` / `beta` channels): background download, installed when you quit
-  or click *Restart to update* — never an automatic restart.
-- Release pipeline: Windows/macOS code signing and notarization (activated by repository secrets) and hardened
-  Electron fuses.
-
-### Fixed
-
-- Terminals default to a UTF-8 locale when the environment has none.
-- A half-written `settings.json` (external editor) no longer resets the settings or gets moved aside.
-
 ## [0.1.0] - 2026-09-27
 
 First MVP release: a desktop hub for developers who work with AI coding agents in the terminal.
@@ -64,9 +35,29 @@ First MVP release: a desktop hub for developers who work with AI coding agents i
   budgets with notifications, a dashboard with charts, sessions, budgets, pricing (LiteLLM prices, daily refresh,
   your own rates) and data sources. Only usage metadata is stored, locally.
 - About dialog (version, MIT License) and Third-Party Notices.
+- **Command palette** (`Ctrl+Shift+P`) and **Quick Open** (`Ctrl+Shift+O`: projects, terminals, changed files), also for
+  plugins (`oxy.ui.showQuickPick`).
+- **Keyboard shortcuts editor** and `keybindings.json` overrides with conflict detection.
+- **Settings UI** generated from the settings schema (plugin settings included), with search, `@modified` and
+  `@problems` filters.
+- **Light theme** and "follow the system" (`appearance.theme`), also for plugin views.
+- **Shell integration** for bash, zsh, fish and PowerShell: command start/finish marks, exit codes and
+  "command finished" notifications.
+- **Agent session resume** after a restart, a **project settings** dialog (name, colour, icon, environment, startup
+  terminals, default profile) and **floating panel groups**.
+- **User plugins:** install from a folder or a .zip (Plugins → Install…), a consent dialog with the plugin's
+  permissions before it first runs, uninstall; installed and developer plugins run in their own Plugin Host.
+- **`create-oxytocin-plugin`** (`npm create oxytocin-plugin`): a TypeScript plugin template (vanilla or React) with
+  watch builds and packaging, and a [plugin developer guide](docs/plugins/README.md).
+- **Claude Code Bridge** (built-in plugin): with the user's consent it installs Claude Code `http` hooks that report
+  exact agent states (working, waiting for permission, finished) to Oxytocin; plugin API 0.1.2 adds
+  `oxy.agents.reportState`.
+- **Auto-update** from GitHub Releases (`latest` / `beta` channels): background download, installed when you quit
+  or click *Restart to update* — never an automatic restart.
+- Release pipeline: Windows/macOS code signing and notarization (activated by repository secrets) and hardened
+  Electron fuses.
 
 ### Known limitations
 
-- Builds are not code-signed yet (Windows SmartScreen and macOS Gatekeeper warn); auto-update comes later.
-- Dark theme only; the command palette, keyboard shortcut editor and settings UI come with v0.2.
+- Builds are not code-signed yet (Windows SmartScreen and macOS Gatekeeper warn on first start).
 - The Codex CLI log parser follows the documented format and still needs verification against more CLI versions.

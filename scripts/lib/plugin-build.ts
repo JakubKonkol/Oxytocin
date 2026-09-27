@@ -1,5 +1,5 @@
 /**
- * Build of one plugin folder (docs/plan/07-plugin-engine.md §3, roadmap M5-T5):
+ * Build of one plugin folder:
  * - `src/host.ts` (or `src/host/index.ts`) → `dist/host.js` (ESM bundle for the Plugin Host, dependencies bundled),
  * - `src/views/*.html` → `dist/views/` (Vite, relative asset paths so they load from oxy-plugin://),
  * - `oxytocin-checksums.json` with SHA-256 of every shipped file (verified for packaged builds).

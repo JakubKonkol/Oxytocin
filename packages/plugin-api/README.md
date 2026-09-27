@@ -12,4 +12,4 @@ export function activate(ctx: PluginContext): void {
 ```
 
 Methods guarded by a permission throw an error with `code: 'PERMISSION'` when the manifest does not declare it.
-See `docs/plan/07-plugin-engine.md` in the Oxytocin repository for the manifest format.
+See the [plugin developer guide](https://github.com/JakubKonkol/Oxytocin/blob/main/docs/plugins/README.md) for the manifest format.

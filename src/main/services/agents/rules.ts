@@ -11,7 +11,7 @@ export interface AgentRule {
   icon: string;
 }
 
-/** docs/plan/04-terminals.md §9.1 — extensible by plugins (`contributes.agents`, M5). */
+/** extensible by plugins (`contributes.agents`, M5). */
 export const DEFAULT_AGENT_RULES: AgentRule[] = [
   {
     id: 'claude-code',

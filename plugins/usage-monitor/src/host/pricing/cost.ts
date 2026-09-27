@@ -1,6 +1,6 @@
 import type { CostMode, ModelPrice, UsageExtras, UsageTokens } from './types';
 
-/** USD cost of one response (docs/plan/08-usage-monitor.md §10.4). */
+/** USD cost of one response. */
 export function computeCost(tokens: UsageTokens, p: ModelPrice, extras: UsageExtras = {}): number {
   const promptTotal = tokens.input + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h;
   const tier = p.above200k && promptTotal > 200_000 ? { ...p, ...p.above200k } : p;

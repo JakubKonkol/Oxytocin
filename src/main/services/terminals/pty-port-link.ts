@@ -1,5 +1,5 @@
 /**
- * Decides when main hands the renderer a new PTY MessagePort (docs/plan/01-architecture.md §4.5): whenever the
+ * Decides when main hands the renderer a new PTY MessagePort: whenever the
  * shell document finishes loading while the PTY Host runs, and whenever the PTY Host (re)starts while the shell
  * is loaded. "Loaded" tracks the main frame only — `webContents.isLoading()` also reports plugin iframes, and a
  * host that became ready during an iframe load would never get its port (blank terminals).

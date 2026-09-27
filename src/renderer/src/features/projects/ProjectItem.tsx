@@ -28,7 +28,7 @@ export interface ProjectItemProps {
 const menuItem =
   'flex h-7 cursor-default items-center gap-2 rounded-badge px-2 text-ui text-fg outline-none data-[disabled]:text-fg-muted data-[highlighted]:bg-accent-muted';
 
-/** One row of the PROJECTS list (docs/plan/03-projects-workspace.md §4.1). */
+/** One row of the PROJECTS list. */
 export function ProjectItem({ project, active, terminals, onDragStart, onDropOn }: ProjectItemProps) {
   const [renaming, setRenaming] = useState(false);
   const [dropHint, setDropHint] = useState<'before' | 'after' | null>(null);

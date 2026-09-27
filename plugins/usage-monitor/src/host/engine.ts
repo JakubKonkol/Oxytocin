@@ -131,7 +131,7 @@ const RECOMPUTE_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Everything that runs in the ingest worker (docs/plan/08-usage-monitor.md §2): the database, pricing, collectors
+ * Everything that runs in the ingest worker: the database, pricing, collectors
  * and attribution. Kept free of worker APIs so tests drive it directly.
  */
 export class UsageEngine {

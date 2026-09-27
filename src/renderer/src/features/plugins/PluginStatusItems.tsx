@@ -99,7 +99,7 @@ function run(command: StatusBarItemState['command']): void {
   else void ipc.invoke('plugins:executeCommand', { id, args });
 }
 
-/** Declarative status bar items of plugins (docs/plan/07-plugin-engine.md §8.3). */
+/** Declarative status bar items of plugins. */
 export function PluginStatusItems({ alignment }: { alignment: 'left' | 'right' }) {
   useEffect(subscribe, []);
   const all = useStatusStore((s) => s.items);

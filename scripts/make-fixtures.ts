@@ -1,5 +1,5 @@
 /**
- * Anonymizes agent logs into Usage Monitor test fixtures (docs/plan/08-usage-monitor.md §18): keeps only usage
+ * Anonymizes agent logs into Usage Monitor test fixtures: keeps only usage
  * metadata (ids, timestamps, models, token counts, cwd) and drops every message, prompt, tool input/output and
  * thought. Paths are replaced by `/fixture/proj` (or the value of `--cwd`).
  *

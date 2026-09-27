@@ -11,7 +11,7 @@ interface Pending {
 
 const useConsentStore = create<{ pending: Pending | null }>(() => ({ pending: null }));
 
-/** Asks the user before a plugin they installed runs for the first time (docs/plan/07-plugin-engine.md §2). */
+/** Asks the user before a plugin they installed runs for the first time. */
 export function requestPluginConsent(plugin: PluginDescriptor): Promise<boolean> {
   useConsentStore.getState().pending?.resolve(false);
   return new Promise((resolve) => useConsentStore.setState({ pending: { plugin, resolve } }));

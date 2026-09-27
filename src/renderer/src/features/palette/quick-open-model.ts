@@ -3,7 +3,7 @@ import type { Project } from '@shared/domain/project';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { fuzzyMatch } from './fuzzy';
 
-/** Quick Open prefixes (docs/plan/02-ui-ux.md §8): none = everything, `>` commands, `@` terminals, `#` changed files. */
+/** Quick Open prefixes: none = everything, `>` commands, `@` terminals, `#` changed files. */
 export type PaletteMode = 'all' | 'commands' | 'terminals' | 'files';
 
 const PREFIXES: Record<string, PaletteMode> = { '>': 'commands', '@': 'terminals', '#': 'files' };

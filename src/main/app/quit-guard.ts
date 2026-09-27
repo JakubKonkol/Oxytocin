@@ -26,7 +26,7 @@ export function busyTerminals(terminals: readonly TerminalInfo[]): TerminalInfo[
 
 /**
  * "2 terminals have running processes (Claude Code in ‘api’, npm run dev in ‘web’). Quit anyway?"
- * plus one line per terminal (docs/plan/01-architecture.md §7).
+ * plus one line per terminal.
  */
 export function describeQuit(
   busy: readonly TerminalInfo[],

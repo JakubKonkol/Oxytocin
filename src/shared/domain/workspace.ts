@@ -24,7 +24,7 @@ export const PanelDescriptorSchema = z.discriminatedUnion('kind', [
 ]);
 export type PanelDescriptor = z.infer<typeof PanelDescriptorSchema>;
 
-/** userData/workspaces/<projectId>.json (docs/plan/03-projects-workspace.md §7). */
+/** userData/workspaces/<projectId>.json. */
 export const WorkspaceStateSchema = z.object({
   version: z.literal(1),
   projectId: ProjectIdSchema,

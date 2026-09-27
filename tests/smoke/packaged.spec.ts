@@ -7,7 +7,7 @@ import { launchPackaged } from './launch-packaged';
 import { nodeCmd, run, waitForTerminal } from '../e2e/helpers/terminal';
 
 /**
- * Release checklist (docs/plan/10-quality-testing-release.md §11): the packaged app starts, opens a terminal, shows
+ * Release checklist: the packaged app starts, opens a terminal, shows
  * git changes and runs its built-in plugins (loaded from resources/plugins with verified checksums). The release
  * binary has its Electron fuses flipped (no ELECTRON_RUN_AS_NODE, no --inspect, asar only).
  */

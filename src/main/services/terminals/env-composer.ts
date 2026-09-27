@@ -86,7 +86,7 @@ export interface ComposeEnvInput {
   layers: readonly EnvLayer[];
 }
 
-/** Composes a terminal environment (docs/plan/04-terminals.md §2.3). Later layers win; `null` removes. */
+/** Composes a terminal environment. Later layers win; `null` removes. */
 export function composeEnv(input: ComposeEnvInput): Record<string, string> {
   const env = new EnvMap(input.platform === 'win32');
   for (const [key, value] of Object.entries(input.base)) {

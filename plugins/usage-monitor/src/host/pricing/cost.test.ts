@@ -15,7 +15,7 @@ const tokens = (t: Partial<UsageTokens>): UsageTokens => ({
   ...t,
 });
 
-describe('computeCost (golden values, docs/plan/08-usage-monitor.md §18)', () => {
+describe('computeCost (golden values)', () => {
   it('claude-opus-5-5 per token type', () => {
     const p = price('claude-opus-5-5');
     expect(computeCost(tokens({ input: 1_000_000 }), p)).toBeCloseTo(4.0, 10);

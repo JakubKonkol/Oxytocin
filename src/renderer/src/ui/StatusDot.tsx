@@ -20,7 +20,7 @@ export interface StatusDotProps {
   testId?: string;
 }
 
-/** Activity indicator with state-specific animations (docs/plan/02-ui-ux.md §6). */
+/** Activity indicator with state-specific animations. */
 export function StatusDot({ state, size = 8, title, className, testId }: StatusDotProps) {
   const label = title ?? STATUS_DOT_LABELS[state];
   if (state === 'none') {

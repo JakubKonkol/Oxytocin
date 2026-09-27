@@ -37,7 +37,7 @@ export interface PluginServiceDeps {
   verifyBuiltin?: (dir: string) => Promise<string[]>;
 }
 
-/** Discovery, enablement and runtime state of plugins (docs/plan/07-plugin-engine.md §5). */
+/** Discovery, enablement and runtime state of plugins. */
 export class PluginService {
   private plugins: PluginDescriptor[] = [];
   private runtime = new Map<string, { state: Extract<PluginState, 'active' | 'failed'>; error?: string }>();

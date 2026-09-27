@@ -33,7 +33,7 @@ export interface EditorLauncherDeps {
 const dirname = (path: string) => path.replace(/[\\/][^\\/]*$/, '') || path;
 
 /**
- * "Open in editor" (docs/plan/09-persistence-settings.md §4): presets with `auto` detection, custom templates,
+ * "Open in editor": presets with `auto` detection, custom templates,
  * editors running in a new terminal panel, and the system default application. Never uses a shell for
  * spawning; `.cmd` launchers on Windows go through `cmd.exe` with strict quoting.
  */

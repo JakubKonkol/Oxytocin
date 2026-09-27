@@ -1,6 +1,6 @@
 export interface Command {
   id: string;
-  /** "Category: Title" (docs/plan/02-ui-ux.md §12). */
+  /** "Category: Title". */
   title: string;
   run: (...args: unknown[]) => unknown;
   /** Hidden from the command palette (internal commands). */

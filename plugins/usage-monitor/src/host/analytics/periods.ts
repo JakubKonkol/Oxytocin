@@ -1,4 +1,4 @@
-/** Calendar periods in the system's local time zone (docs/plan/08-usage-monitor.md §12). */
+/** Calendar periods in the system's local time zone. */
 export type Period = 'day' | 'week' | 'month' | 'block5h';
 export type WeekStart = 'monday' | 'sunday';
 

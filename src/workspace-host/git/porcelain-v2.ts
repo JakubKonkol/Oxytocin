@@ -26,7 +26,7 @@ function fields(line: string, count: number): string[] {
   return out;
 }
 
-/** Parses `git status --porcelain=v2 -z --branch` (docs/plan/06-git-changes.md §4.2). */
+/** Parses `git status --porcelain=v2 -z --branch`. */
 export function parsePorcelainV2(output: string): PorcelainStatus {
   const branch: BranchInfo = { head: null, detached: false, ahead: 0, behind: 0 };
   const records: PorcelainRecord[] = [];
@@ -82,7 +82,7 @@ export function parsePorcelainV2(output: string): PorcelainStatus {
   return { branch, records };
 }
 
-/** Status of a record relative to HEAD, staged and unstaged combined (docs/plan/06-git-changes.md §4.3). */
+/** Status of a record relative to HEAD, staged and unstaged combined. */
 export function statusVsHead(rec: PorcelainRecord): ChangeStatus | null {
   if (rec.type === 'u') return 'conflicted';
   if (rec.type === '?') return 'untracked';

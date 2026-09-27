@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 
 const NODE_BUILTINS = ['fs', 'path', 'os', 'child_process', 'crypto', 'events', 'stream', 'util', 'url'];
 
-/** Directory boundaries from docs/plan/01-architecture.md §3. */
+/** Directory boundaries between processes. */
 const boundary = (files, patterns, message, paths = []) => ({
   files,
   rules: {

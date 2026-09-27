@@ -31,7 +31,7 @@ export interface PluginLogEntry {
   message: string;
 }
 
-/** Messages between a view (SDK) and its backend, routed renderer ⇄ main ⇄ host (docs/plan/07 §7.5). */
+/** Messages between a view (SDK) and its backend, routed renderer ⇄ main ⇄ host. */
 export type ViewEnvelope =
   | { kind: 'msg'; payload: unknown }
   | { kind: 'req'; id: number; method: string; payload: unknown }

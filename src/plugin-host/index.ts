@@ -9,7 +9,7 @@ import type { PortRpc, RpcEvents } from '@shared/rpc/port-rpc';
 import { PluginRuntime } from './runtime';
 import { ViewHost } from './views';
 
-// Utility process entry: the Plugin Host (backends of all plugins, docs/plan/07-plugin-engine.md §6).
+// Utility process entry: the Plugin Host (backends of all plugins).
 const parentPort = process.parentPort;
 
 type Impl<M> = {

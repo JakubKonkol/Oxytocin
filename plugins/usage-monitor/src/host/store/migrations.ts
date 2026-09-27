@@ -1,5 +1,5 @@
 /**
- * Schema migrations (docs/plan/08-usage-monitor.md §11). Kept as TypeScript strings instead of `.sql` files so the
+ * Schema migrations. Kept as TypeScript strings instead of `.sql` files so the
  * plugin bundles into one worker file; append new migrations, never edit released ones.
  */
 export const MIGRATIONS: { version: number; name: string; sql: string }[] = [

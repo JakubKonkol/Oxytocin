@@ -13,7 +13,7 @@ const obj = (v: unknown): Json | undefined =>
   typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Json) : undefined;
 const int = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
 
-/** One transcript line → usage record (docs/plan/08-usage-monitor.md §5.3), or null. */
+/** One transcript line → usage record, or null. */
 export function parseClaudeLine(text: string, filePath: string): UsageRecord | null {
   let o: Json;
   try {

@@ -16,7 +16,7 @@ function agentDotState(agent: AgentInfo): StatusDotState {
   }
 }
 
-/** Status dot for a single terminal (docs/plan/02-ui-ux.md §6). */
+/** Status dot for a single terminal. */
 export function terminalDotState(info: TerminalInfo): StatusDotState {
   if (info.state === 'failed') return 'error';
   if (info.state === 'exited') return (info.exitCode ?? 0) === 0 ? 'idle' : 'error';

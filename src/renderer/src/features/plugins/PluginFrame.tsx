@@ -38,7 +38,7 @@ type ViewMessage =
   | { t: 'key'; code: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean };
 
 /**
- * A plugin view in a sandboxed iframe (docs/plan/07-plugin-engine.md §7.3–7.8): handshake over a
+ * A plugin view in a sandboxed iframe: handshake over a
  * MessageChannel, shell operations handled locally, everything else routed to the plugin backend.
  */
 export function PluginFrame(props: PluginFrameProps) {

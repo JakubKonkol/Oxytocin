@@ -306,7 +306,7 @@ function SettingRow({
   );
 }
 
-/** Settings UI (roadmap M7-T3): forms generated from the core and plugin schemas; writes settings.json. */
+/** Settings UI: forms generated from the core and plugin schemas; writes settings.json. */
 export function SettingsPanel(_props: IDockviewPanelProps) {
   const settings = useSettingsStore((s) => s.settings) as Record<string, unknown> | null;
   const configurations = usePluginConfigurations();

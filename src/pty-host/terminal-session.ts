@@ -29,7 +29,7 @@ const INITIAL_COMMAND_FALLBACK_MS = 300;
 /** With shell integration the initial command waits for the first prompt, at most this long. */
 const INITIAL_COMMAND_PROMPT_TIMEOUT_MS = 5000;
 
-/** A PTY process + its headless mirror, batching, sequencing and flow control (docs/plan/04 §3). */
+/** A PTY process + its headless mirror, batching, sequencing and flow control. */
 export class TerminalSession {
   readonly id: string;
   readonly pty: IPty;

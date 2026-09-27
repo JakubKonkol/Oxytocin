@@ -7,7 +7,7 @@ export interface ProjectRef {
   name?: string;
 }
 
-/** `cwd` → Oxytocin project by the longest matching root (docs/plan/08-usage-monitor.md §6). */
+/** `cwd` → Oxytocin project by the longest matching root. */
 export class ProjectAttribution {
   private projects: ProjectRef[] = [];
   private readonly cache = new Map<string, string | null>();

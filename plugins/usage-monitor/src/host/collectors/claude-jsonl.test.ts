@@ -17,7 +17,7 @@ const assistant = (usage: Record<string, unknown>, extra: Record<string, unknown
     ...extra,
   });
 
-describe('Claude transcript parser (docs/plan/08-usage-monitor.md §5.3)', () => {
+describe('Claude transcript parser', () => {
   it('maps usage fields', () => {
     const r = parseClaudeLine(
       assistant({

@@ -9,7 +9,6 @@ export interface ContextMenuItem {
   separator?: boolean;
 }
 
-/** docs/plan/07-plugin-engine.md §7.9 */
 export interface OxyView<Params = unknown, State = unknown> {
   readonly viewId: string;
   readonly kind: 'view' | 'panel';
@@ -74,7 +73,7 @@ function chord(e: KeyboardEvent): string | null {
 }
 
 /**
- * Connects the view to the shell: `oxy:hello` → `oxy:init` with a MessagePort (docs/plan/07 §7.4). Resolves with
+ * Connects the view to the shell: `oxy:hello` → `oxy:init` with a MessagePort. Resolves with
  * the view API; rejects when the shell does not answer (e.g. the page was opened outside Oxytocin).
  */
 export function connect<P = unknown, S = unknown>(opts: { timeoutMs?: number } = {}): Promise<OxyView<P, S>> {

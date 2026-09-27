@@ -34,7 +34,7 @@ const DEFAULT_IGNORED_FOLDERS = [
   'coverage',
 ];
 
-/** Core settings schema (docs/plan/09-persistence-settings.md §3.2). Keys are flat, dotted, like VS Code. */
+/** Core settings schema. Keys are flat, dotted, like VS Code. */
 export const CORE_SETTINGS = {
   'appearance.theme': def(
     z.enum(['dark', 'light', 'system']),

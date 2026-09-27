@@ -59,7 +59,7 @@ function toProjectPath(path: string, pathspec: string | null): string | null {
 }
 
 /**
- * Changes of the working tree + index relative to HEAD (docs/plan/06-git-changes.md §4): porcelain v2 status,
+ * Changes of the working tree + index relative to HEAD: porcelain v2 status,
  * numstat line counts and counted lines of untracked files.
  */
 export async function computeStatus(input: ComputeStatusInput): Promise<RepoStatus> {

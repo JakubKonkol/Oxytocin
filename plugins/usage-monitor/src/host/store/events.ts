@@ -78,7 +78,7 @@ export class EventWriter {
 
   /**
    * Inserts or merges a record: every token field keeps its maximum (one API response is written as several lines,
-   * sometimes with placeholder counts first — docs/plan/08-usage-monitor.md §5.3), then the cost is recomputed.
+   * sometimes with placeholder counts first), then the cost is recomputed.
    * Returns true when the stored row changed.
    */
   write(r: UsageRecord, ctx: IngestContext): boolean {

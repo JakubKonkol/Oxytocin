@@ -15,7 +15,7 @@ export interface PluginPaneParams {
 export const sidebarViewInstanceId = (pluginId: string, viewId: string) =>
   `sv-${pluginId}-${viewId}`.replace(/[^\w.-]/g, '-');
 
-/** A plugin view in a sidebar pane (docs/plan/07-plugin-engine.md §8.1); mounted on first expansion. */
+/** A plugin view in a sidebar pane; mounted on first expansion. */
 export function PluginSidebarView(props: IPaneviewPanelProps<PluginPaneParams>) {
   const { pluginId, viewId } = props.params;
   const contribution = usePluginsStore((s) =>

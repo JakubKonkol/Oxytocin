@@ -1,4 +1,4 @@
-/** Wire format between a plugin view (SDK) and the shell over the MessagePort (docs/plan/07 §7.4–7.6). */
+/** Wire format between a plugin view (SDK) and the shell over the MessagePort. */
 export const SDK_PROTOCOL_VERSION = 1;
 
 export interface InitMessage {

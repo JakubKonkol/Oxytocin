@@ -1,7 +1,7 @@
 # Markdown Preview
 
 Built-in Oxytocin plugin: a live preview of Markdown files (plans, reports, READMEs written by agents) in a panel next
-to the terminal (docs/plan/07-plugin-engine.md §11).
+to the terminal.
 
 - Open it from the CHANGES context menu (**Open Preview**) or with the `markdown.openPreview` command (argument: an
   absolute path; without one it previews the active project's `README.md`).

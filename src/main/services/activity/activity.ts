@@ -3,7 +3,7 @@ import type { TerminalInfo } from '@shared/domain/terminal';
 
 const isError = (t: TerminalInfo) => t.state === 'failed' || (t.state === 'exited' && (t.exitCode ?? 0) !== 0);
 
-/** Project activity, highest priority first (docs/plan/03-projects-workspace.md §5.2). */
+/** Project activity, highest priority first. */
 export function deriveActivity(ts: readonly TerminalInfo[], seen: ReadonlySet<string>): ProjectActivity {
   if (ts.length === 0) return 'none';
   if (ts.some((t) => t.state === 'running' && t.agent?.state === 'waiting')) return 'attention';

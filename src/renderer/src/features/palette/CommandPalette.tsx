@@ -137,7 +137,7 @@ function ItemIcon({ item }: { item: PaletteItem }) {
 }
 
 /**
- * Command palette and Quick Open (docs/plan/02-ui-ux.md §8): one dialog, the input prefix picks the source —
+ * Command palette and Quick Open: one dialog, the input prefix picks the source —
  * none = projects + terminals + changed files, `>` commands, `@` terminals, `#` changed files. Plugin quick
  * picks (`oxy.ui.showQuickPick`) reuse the same dialog.
  */

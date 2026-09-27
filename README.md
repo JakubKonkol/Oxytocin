@@ -5,52 +5,144 @@
   </picture>
 </p>
 
-# Oxytocin
+<p align="center">
+  <strong>An IDE for the terminal and AI.</strong><br />
+  A desktop hub for developers who run AI coding agents in the terminal.
+</p>
 
-> **Status: v0.1 — first preview release.** Expect rough edges; see the [changelog](CHANGELOG.md).
+<p align="center">
+  <a href="https://github.com/JakubKonkol/Oxytocin/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/JakubKonkol/Oxytocin?label=release" /></a>
+  <a href="https://github.com/JakubKonkol/Oxytocin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JakubKonkol/Oxytocin/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue" /></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />
+</p>
 
-Oxytocin is an "IDE for the terminal and AI": a desktop hub (Electron + TypeScript + React) for developers who
-run AI coding agents (Claude Code, Codex CLI, Gemini CLI, Aider, …) in terminals. It is **not** a code editor —
-keep using the editor you like. Oxytocin organizes everything around it:
+<p align="center">
+  <img alt="Oxytocin — Usage Monitor dashboard next to the project sidebar" src="docs/images/usage-monitor.png" width="900" />
+</p>
 
-- **Projects** with live activity indicators (agent working, waiting for you, process running, error) and instant
-  switching that never kills your processes.
-- **Terminals** (node-pty + xterm.js) with tabs, splits and drag and drop, AI agent detection and notifications.
-- **Changes**: a live tree of files changed since `HEAD` with line counts and a read-only diff viewer.
-- **Plugins** written in HTML/JS/CSS that dock into the sidebar, the center area and the status bar.
-- **Usage Monitor**: tokens and USD cost per session, project and model, read from your agents' local logs.
+---
 
-## Requirements
+You run Claude Code in one terminal, Codex in another, a dev server in a third — across four projects. Which agent
+is waiting for your answer? What did it just change? How much has it cost today?
 
-- Windows 11 (primary platform); macOS and Linux are supported on a best-effort basis.
-- Node.js 24 (see `.nvmrc`) and npm 11.
-- `git` 2.30 or newer on `PATH`.
+**Oxytocin** puts all of that in one window. It is **not** a code editor — keep using the editor you like. It is the
+place where your projects, agent terminals, live git changes and token usage live side by side.
+
+## Features
+
+### 🗂️ Projects with live activity
+
+Every folder is a project with its own colour, icon and workspace layout. Status dots show at a glance whether an
+agent is **working**, **waiting for you**, a process is running or something failed. Switching projects is instant
+and never kills a process; layouts and terminal scrollback are restored after a restart.
+
+### 🖥️ Terminals built for agents
+
+- node-pty + xterm.js (WebGL) with tabs, splits, drag and drop and **floating groups**.
+- Shell detection (PowerShell, cmd, Git Bash, WSL, bash, zsh, fish) and launch profiles for agents.
+- **Shift+Enter** inserts a newline in Claude Code, image pastes are forwarded to agents, clickable file links,
+  search and shell integration (command marks, exit codes, "command finished" notifications).
+- **Agent detection** for Claude Code, Codex CLI, Gemini CLI, Aider and more — with OS notifications, an attention
+  badge and `Ctrl+Shift+J` to jump straight to the agent that is waiting for you.
+- Offers to **resume agent sessions** after a restart (never automatically).
+
+### 🔍 Live changes
+
+A live tree of every file changed since `HEAD`, with line counts, and a Monaco diff viewer that updates while the
+agent writes. One click opens the file in VS Code, Cursor, Windsurf, Zed, JetBrains IDEs, Sublime Text or a
+terminal editor.
+
+<p align="center">
+  <img alt="Changes panel with a side-by-side diff in the light theme" src="docs/images/changes-diff-light.png" width="800" />
+</p>
+
+### 📊 Usage Monitor
+
+Tokens and USD cost per session, project and model — read from your agents' **local logs** (Claude Code, Codex CLI,
+Gemini CLI), with an optional local OTLP receiver. Daily charts, burn rate, 5-hour subscription blocks, budgets with
+alerts and a status bar counter. Nothing leaves your machine.
+
+### 🧩 Plugins
+
+Plugins are plain HTML/JS/CSS: views run in sandboxed iframes, backends in a separate Plugin Host process. They can
+add sidebar views, center panels, status bar items, commands, terminal profiles and agent rules. Built-in plugins:
+
+| Plugin | What it does |
+|---|---|
+| **Usage Monitor** | Token usage and cost dashboard |
+| **Markdown Preview** | Live preview of plans and reports your agents write |
+| **Claude Code Bridge** | Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks |
+
+Start your own with `npm create oxytocin-plugin` — see the [plugin developer guide](docs/plugins/README.md).
+
+### ⌨️ Keyboard first
+
+A **command palette** (`Ctrl+Shift+P`), **Quick Open** for projects, terminals and changed files (`Ctrl+Shift+O`),
+a keyboard shortcut editor, a settings UI generated from the settings schema, and dark, light and system themes.
+
+<table>
+  <tr>
+    <td><img alt="Command palette" src="docs/images/command-palette.png" /></td>
+    <td><img alt="Settings" src="docs/images/settings.png" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Command palette</sub></td>
+    <td align="center"><sub>Settings</sub></td>
+  </tr>
+</table>
 
 ## Installation
 
-Download the installer for your platform from the GitHub releases (Windows `.exe`, macOS `.dmg`, Linux `.AppImage` /
-`.deb`). The builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper show a warning.
+Download the latest installer from **[Releases](https://github.com/JakubKonkol/Oxytocin/releases/latest)**:
+
+| Platform | Package |
+|---|---|
+| Windows 10/11 (primary platform) | `Oxytocin-Setup-x.y.z.exe` |
+| macOS | `.dmg` |
+| Linux | `.AppImage` / `.deb` |
+
+The builds are not code-signed yet, so Windows SmartScreen ("More info → Run anyway") and macOS Gatekeeper show a
+warning on first start. Installed apps update themselves from GitHub Releases.
+
+**Requirements:** `git` 2.30 or newer on `PATH` for the Changes panel.
 
 ## Development
 
+Requires Node.js 24 (see `.nvmrc`) and npm 11.
+
 ```sh
-npm install        # install dependencies (npm workspaces)
-npm run dev        # run the app in development mode
-npm run build      # production build into out/
-npm run check      # typecheck + lint + unit tests + license check
-npm run e2e        # end-to-end tests (Playwright + Electron)
+npm install           # install dependencies (npm workspaces)
+npm run dev           # run the app in development mode (renderer HMR)
+npm run build         # production build into out/
+npm run check         # typecheck + lint + unit/integration tests + license check
+npm run e2e           # end-to-end tests (Playwright + Electron)
 npm run package:win   # Windows installer into release/ (also package:mac, package:linux)
 ```
 
-## Documentation
+### Architecture
 
-- [Writing plugins](docs/plugins/README.md) — the manifest, the backend API, views, debugging and distribution;
-  start a plugin with `npm create oxytocin-plugin` ([`packages/create-oxytocin-plugin`](packages/create-oxytocin-plugin)).
+```
+src/main            Electron main process — orchestrates windows, IPC and the utility hosts
+src/pty-host        utility process: node-pty terminals + headless xterm mirrors
+src/workspace-host  utility process: file watching (@parcel/watcher) and git
+src/plugin-host     utility process: plugin backends
+src/renderer        React 19 UI (dockview, xterm.js, Monaco)
+src/preload         contextBridge API (window.oxy)
+src/shared          pure TypeScript: domain types, IPC/RPC contracts, zod schemas
+packages/           plugin API types, view SDK and the create-oxytocin-plugin template
+plugins/            built-in plugins (they use the public plugin API only)
+```
+
+Terminal data flows directly between the renderer and the PTY Host over a MessagePort with sequence numbers and
+ACK-based flow control, so busy agents never block the UI.
+
+### Further reading
+
+- [Writing plugins](docs/plugins/README.md) — manifest, backend API, views, debugging and distribution.
 - [Releasing](docs/RELEASING.md) — packaging, code signing and auto-update.
-
-The implementation plan lives in [`docs/plan/`](docs/plan/README.md). Note: the plan documents are written in
-Polish; everything else in this repository (code, UI, comments, commits) is in English.
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-[MIT](LICENSE) © 2026 Jakub Konkol
+[MIT](LICENSE) © 2026 Jakub Konkol. Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** docs/plan/03-projects-workspace.md §1, §5 */
 export const ProjectActivitySchema = z.enum(['none', 'idle', 'running', 'agent-working', 'attention', 'error']);
 export type ProjectActivity = z.infer<typeof ProjectActivitySchema>;
 

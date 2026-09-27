@@ -98,7 +98,7 @@ export interface PluginHostServiceDeps {
   logger: Logger;
 }
 
-/** Core commands plugins may execute (docs/plan/07-plugin-engine.md §6.4). */
+/** Core commands plugins may execute. */
 const CORE_COMMANDS = new Set([
   'oxytocin.terminal.new',
   'oxytocin.terminal.focus',
@@ -111,7 +111,6 @@ const CORE_COMMANDS = new Set([
 const MAX_HANG_INCIDENTS = 2;
 /** New terminals wait at most this long after start-up for plugin environments (07 §8.7). */
 const ENV_BARRIER_MS = 2000;
-/** docs/plan/07-plugin-engine.md §7.5 */
 const MAX_VIEW_MESSAGE_BYTES = 1024 * 1024;
 const MAX_VIEW_MESSAGES_PER_SECOND = 200;
 
@@ -160,7 +159,7 @@ function toHostInfo(p: PluginDescriptor): HostPluginInfo | null {
 }
 
 /**
- * Main side of the plugin engine (docs/plan/07-plugin-engine.md §6): loads enabled plugins into the Plugin Host,
+ * Main side of the plugin engine: loads enabled plugins into the Plugin Host,
  * fires activation events, serves the plugin API (`api:call`, permissions checked again here), forwards core
  * events and attributes hangs to the plugin that was running.
  */
@@ -334,7 +333,7 @@ export class PluginHostService implements Disposable {
     });
   }
 
-  // ── views (docs/plan/07-plugin-engine.md §7.5) ──
+  // ── views ──
 
   private hasBackend(pluginId: string): boolean {
     return !!this.deps.plugins.get(pluginId)?.manifest?.main;

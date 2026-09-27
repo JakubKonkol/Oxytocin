@@ -72,7 +72,7 @@ const ready = UsageEngine.create({
     }),
 }).then((e) => {
   engine = e;
-  // Throttled change notifications (docs/plan/08-usage-monitor.md §2: `usage:update` at most once per second).
+  // Throttled change notifications (`usage:update` at most once per second).
   let pending = false;
   e.onDidChange(() => {
     if (pending) return;

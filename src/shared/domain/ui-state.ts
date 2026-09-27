@@ -28,7 +28,7 @@ export const PaneviewStateSchema = z.object({
 });
 export type PaneviewState = z.infer<typeof PaneviewStateSchema>;
 
-/** userData/ui-state.json (docs/plan/09-persistence-settings.md §7). */
+/** userData/ui-state.json. */
 export const UiStateSchema = z.object({
   version: z.literal(1),
   window: WindowStateSchema,
@@ -36,7 +36,7 @@ export const UiStateSchema = z.object({
   paneview: PaneviewStateSchema,
   pluginViewState: z.record(z.string(), z.unknown()),
   dismissedHints: z.array(z.string()),
-  /** Command ids run from the command palette, most recent first (docs/plan/02-ui-ux.md §8). */
+  /** Command ids run from the command palette, most recent first. */
   recentCommands: z.array(z.string()).max(50).default([]),
 });
 export type UiState = z.infer<typeof UiStateSchema>;

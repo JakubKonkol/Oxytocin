@@ -43,7 +43,7 @@ function Toggle({
   return <IconButton label={label} icon={icon} active={active} aria-pressed={active} onClick={onClick} />;
 }
 
-/** Center panel with the diff of one file against HEAD (docs/plan/06-git-changes.md §7). */
+/** Center panel with the diff of one file against HEAD. */
 export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) {
   const { projectId, path, oldPath } = props.params;
   const panelId = props.api.id;

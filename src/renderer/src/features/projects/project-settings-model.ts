@@ -15,7 +15,7 @@ export interface StartupRow {
   placement: 'tab' | 'right' | 'below';
 }
 
-/** Editable copy of a project's settings (docs/plan/03-projects-workspace.md §8). */
+/** Editable copy of a project's settings. */
 export interface ProjectDraft {
   name: string;
   color: number;

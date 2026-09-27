@@ -34,7 +34,7 @@ export const FIRST_CHECK_DELAY_MS = 15_000;
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Auto-update (docs/plan/10-quality-testing-release.md §9): checks at start and every 6 hours, downloads in the
+ * Auto-update: checks at start and every 6 hours, downloads in the
  * background and installs only when the user quits or clicks "Restart" — never an automatic restart, since
  * terminals may be running agents. A restart goes through the same QuitGuard as quitting.
  */

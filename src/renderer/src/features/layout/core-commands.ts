@@ -27,7 +27,7 @@ export async function openPluginTerminal(req: {
   }
 }
 
-/** Core commands plugins may run (`oxytocin.*`, docs/plan/07-plugin-engine.md §6.4). */
+/** Core commands plugins may run (`oxytocin.*`). */
 export function runCoreCommand(id: string, args: unknown[]): void {
   switch (id) {
     case 'oxytocin.terminal.new':

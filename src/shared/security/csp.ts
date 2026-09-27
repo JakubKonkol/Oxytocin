@@ -1,4 +1,4 @@
-/** Content Security Policy of the shell renderer (docs/plan/01-architecture.md §5). */
+/** Content Security Policy of the shell renderer. */
 export const SHELL_CSP_DIRECTIVES: Readonly<Record<string, string>> = {
   'default-src': "'self'",
   'script-src': "'self'",

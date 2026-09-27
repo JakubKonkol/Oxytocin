@@ -1,5 +1,5 @@
 {
- "_comment": "Reference values for the Usage Monitor fixtures (docs/plan/08-usage-monitor.md \u00a718), computed independently by the M6-T1/T2 spike scripts. costUsdCalculated uses the pricing snapshot and usage.costMode = calculate; costUsdAuto prefers costs reported by the source.",
+ "_comment": "Reference values for the Usage Monitor fixtures computed independently by the M6-T1/T2 spike scripts. costUsdCalculated uses the pricing snapshot and usage.costMode = calculate; costUsdAuto prefers costs reported by the source.",
  "sources": {
   "claude-jsonl": {
    "events": 27,

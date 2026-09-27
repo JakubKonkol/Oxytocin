@@ -3,7 +3,7 @@ import type { UsageExtras, UsageTokens } from './pricing/types';
 export type UsageSource =
   'claude-jsonl' | 'claude-otel' | 'codex-rollout' | 'gemini-chat' | 'gemini-otel' | 'output-parser';
 
-/** A normalized usage record (docs/plan/08-usage-monitor.md §4) as produced by collectors. */
+/** A normalized usage record as produced by collectors. */
 export interface UsageRecord {
   /** Deduplication key, e.g. "claude:msg_…:req_…". */
   id: string;

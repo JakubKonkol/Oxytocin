@@ -1,7 +1,7 @@
 import { join, resolve } from 'node:path';
 import { app } from 'electron';
 
-/** Runtime paths — always resolve them here (docs/plan/01-architecture.md §11). */
+/** Runtime paths — always resolve them here. */
 export const appPaths = {
   /** Directory of the built main bundle (out/main). Utility process entries live next to it. */
   mainDir: __dirname,

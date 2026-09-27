@@ -10,7 +10,6 @@ export interface EditorPreset {
   args: string[];
 }
 
-/** docs/plan/09-persistence-settings.md §4 */
 export const EDITOR_PRESETS: EditorPreset[] = [
   { id: 'vscode', name: 'VS Code', launchers: ['code'], args: ['--goto', '${file}:${line}:${column}'] },
   { id: 'cursor', name: 'Cursor', launchers: ['cursor'], args: ['--goto', '${file}:${line}:${column}'] },

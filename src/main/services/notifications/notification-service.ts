@@ -35,7 +35,7 @@ interface Last {
   workingSince?: number;
 }
 
-/** Attention system (docs/plan/02-ui-ux.md §9): toasts, OS notifications and taskbar flashing on transitions. */
+/** Attention system: toasts, OS notifications and taskbar flashing on transitions. */
 export class NotificationService implements Disposable {
   private readonly last = new Map<string, Last>();
   private readonly store = new DisposableStore();
