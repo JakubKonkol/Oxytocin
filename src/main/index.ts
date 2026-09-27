@@ -385,6 +385,10 @@ function bootstrap(): void {
       homeDir: homedir(),
       userDataDir: app.getPath('userData'),
     },
+    // E2E runs on slow CI machines can lengthen the start-up barrier for terminal environments (test-only).
+    ...(e2e && process.env['OXYTOCIN_E2E_ENV_BARRIER_MS']
+      ? { envBarrierMs: Number(process.env['OXYTOCIN_E2E_ENV_BARRIER_MS']) }
+      : {}),
     core: {
       projects: {
         list: () => projects.list(),

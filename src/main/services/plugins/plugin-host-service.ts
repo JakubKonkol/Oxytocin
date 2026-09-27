@@ -96,6 +96,8 @@ export interface PluginHostServiceDeps {
   core: PluginCorePort;
   env: HostApiEnv;
   logger: Logger;
+  /** How long new terminals wait for plugin environments after start-up (default `ENV_BARRIER_MS`). */
+  envBarrierMs?: number;
 }
 
 /** Core commands plugins may execute. */
@@ -305,8 +307,12 @@ export class PluginHostService implements Disposable {
 
   // ── start-up barrier for terminal environments (07 §8.7) ──
 
+  private get barrierMs(): number {
+    return this.deps.envBarrierMs ?? ENV_BARRIER_MS;
+  }
+
   private barrierOpen(): boolean {
-    if (Date.now() - this.startedAt >= ENV_BARRIER_MS) return true;
+    if (Date.now() - this.startedAt >= this.barrierMs) return true;
     const waiting = this.deps.plugins.enabled().filter((p) => {
       const m = p.manifest;
       if (!m?.permissions.includes('terminals.env')) return false;
@@ -323,13 +329,13 @@ export class PluginHostService implements Disposable {
 
   /**
    * Resolves when every enabled `onStartup` plugin with `terminals.env` has declared its environment ready
-   * (or finished activating) — at most 2 s after start-up.
+   * (or finished activating) — at most 2 s after start-up (`envBarrierMs`).
    */
   envBarrier(): Promise<void> {
     if (this.barrierOpen()) return Promise.resolve();
     return new Promise((resolve) => {
       this.barrierWaiters.push(resolve);
-      setTimeout(() => this.checkBarrier(), Math.max(0, ENV_BARRIER_MS - (Date.now() - this.startedAt)) + 5);
+      setTimeout(() => this.checkBarrier(), Math.max(0, this.barrierMs - (Date.now() - this.startedAt)) + 5);
     });
   }
 

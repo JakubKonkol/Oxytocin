@@ -141,7 +141,12 @@ test('plugin views: handshake, messages, requests, isolation and moving without 
 
 test('slots: status bar items, terminal environment with ⟳ on change, and sidebar views', async () => {
   const userData = await userDataWithPlugins(['echo', 'views']);
-  const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
+  const { app, win } = await launchApp({
+    userData,
+    project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')),
+    // The barrier gives up after 2 s; starting the Plugin Host alone can take longer on a CI runner.
+    env: { OXYTOCIN_E2E_ENV_BARRIER_MS: '20000' },
+  });
   try {
     const { oxyTest, run, nodeCmd, waitForTerminal } = await import('./helpers/terminal');
     const id = await waitForTerminal(win);

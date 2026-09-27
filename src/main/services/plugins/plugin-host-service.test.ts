@@ -22,7 +22,7 @@ const descriptor = (id: string, manifest: Record<string, unknown> = {}): PluginD
   }),
 });
 
-function setup() {
+function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) {
   const ready = new Emitter<{ pid: number; restarted: boolean }>();
   const events = new Map<string, (p: unknown) => void>();
   let served: Record<string, (p: never) => unknown> = {};
@@ -44,7 +44,7 @@ function setup() {
     },
     onDidBecomeReady: ready.event,
   };
-  const list = [descriptor('a.one', { permissions: ['projects.read'] }), descriptor('b.two')];
+  const list = opts.list ?? [descriptor('a.one', { permissions: ['projects.read'] }), descriptor('b.two')];
   const runtime = new Map<string, string>();
   const plugins = {
     enabled: () => list.filter((p) => runtime.get(p.id) !== 'failed'),
@@ -83,6 +83,7 @@ function setup() {
     core,
     env: { appVersion: '1', platform: 'linux', locale: 'en', homeDir: '/h', userDataDir: '/u' },
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    ...(opts.envBarrierMs !== undefined ? { envBarrierMs: opts.envBarrierMs } : {}),
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
@@ -90,6 +91,36 @@ function setup() {
 }
 
 describe('PluginHostService', () => {
+  describe('start-up barrier for terminal environments', () => {
+    const envPlugin = () => descriptor('env.one', { permissions: ['terminals.env'], activationEvents: ['onStartup'] });
+
+    it('waits until an onStartup plugin with terminals.env declares its environment ready', async () => {
+      const s = setup({ list: [envPlugin()] });
+      let open = false;
+      void s.service.envBarrier().then(() => (open = true));
+      await Promise.resolve();
+      expect(open).toBe(false);
+      await s.api('env.one', 'terminals.environmentReady');
+      await Promise.resolve();
+      expect(open).toBe(true);
+    });
+
+    it('gives up after envBarrierMs (2 s by default)', async () => {
+      vi.useFakeTimers();
+      try {
+        const s = setup({ list: [envPlugin()], envBarrierMs: 5000 });
+        let open = false;
+        void s.service.envBarrier().then(() => (open = true));
+        await vi.advanceTimersByTimeAsync(2500);
+        expect(open).toBe(false);
+        await vi.advanceTimersByTimeAsync(2600);
+        expect(open).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('loads enabled plugins and fires onStartup', async () => {
     const s = setup();
     await s.service.reload();
