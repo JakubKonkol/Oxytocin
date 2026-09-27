@@ -12,6 +12,7 @@ import { terminalRegistry } from '../terminals/terminal-registry';
 import { EmptyWorkspace } from './EmptyWorkspace';
 import { MissingPanel } from './MissingPanel';
 import { PluginsPanel } from '../plugins/PluginsPanel';
+import { KeybindingsPanel } from '../keybindings/KeybindingsPanel';
 import { openDefaultLayout, restoreWorkspace, trackWorkspacePersistence } from './persistence';
 import { GroupActions } from './GroupActions';
 import { OxyTab } from './OxyTab';
@@ -43,6 +44,7 @@ const components = {
   plugin: PluginPanelComponent,
   missing: MissingPanel,
   plugins: PluginsPanel,
+  keybindings: KeybindingsPanel,
 };
 
 const initializing = new Set<string>();

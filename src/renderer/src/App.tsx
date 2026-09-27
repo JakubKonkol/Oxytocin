@@ -6,6 +6,7 @@ import { useUiStore } from './stores/ui-store';
 import { subscribeProjects, useProjectsStore } from './stores/projects-store';
 import { subscribeChanges } from './stores/changes-store';
 import { subscribePlugins, usePluginsStore } from './stores/plugins-store';
+import { subscribeKeybindings, useKeybindingsStore } from './features/keybindings/keybindings-store';
 import { ViewContextMenuHost } from './features/plugins/view-context-menu';
 import { showNotification } from './features/attention/attention';
 import { revealTerminal } from './features/attention/reveal';
@@ -29,6 +30,7 @@ export function App() {
     subscribePlugins();
     subscribeTerminals();
     subscribeProjects();
+    subscribeKeybindings();
     ipc.on('notifications:show', showNotification);
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req));
@@ -41,6 +43,7 @@ export function App() {
       useTerminalsStore.getState().load(),
       useProjectsStore.getState().load(),
       usePluginsStore.getState().load(),
+      useKeybindingsStore.getState().load(),
     ])
       .then(() => setLoaded(true))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));

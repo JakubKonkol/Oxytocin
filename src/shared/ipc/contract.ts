@@ -14,6 +14,7 @@ import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
 import { QuickPickResultSchema } from '../domain/quick-pick';
+import { KeybindingsStateSchema, UserKeybindingSchema } from '../domain/keybindings';
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { TerminalProfileSchema } from '../domain/terminal-profile';
 import { AddProjectResultSchema, ProjectPatchSchema, ProjectSchema } from '../domain/project';
@@ -39,6 +40,15 @@ export const invokeContract = {
   'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
   /** The renderer answers a `ui:quickPick` request (plugin `oxy.ui.showQuickPick`). */
   'ui:quickPickResult': { req: QuickPickResultSchema, res: z.void() },
+  /** User overrides from keybindings.json (M7-T2). */
+  'keybindings:get': { req: z.null().optional(), res: KeybindingsStateSchema },
+  /** Replaces the user entries of one command (empty = back to the defaults), keeping comments. */
+  'keybindings:setForCommand': {
+    req: z.object({ command: z.string().min(1).max(200), entries: z.array(UserKeybindingSchema).max(20) }),
+    res: KeybindingsStateSchema,
+  },
+  /** Opens keybindings.json in the configured editor (created from a template when missing). */
+  'keybindings:openFile': { req: z.null().optional(), res: z.void() },
   'projects:list': { req: z.null().optional(), res: z.array(ProjectSchema) },
   'projects:getActive': { req: z.null().optional(), res: z.object({ id: ProjectIdSchema.nullable() }) },
   'projects:add': { req: z.object({ path: z.string().min(1) }), res: AddProjectResultSchema },

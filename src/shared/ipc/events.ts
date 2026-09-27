@@ -14,6 +14,7 @@ import { SettingsSchema } from '../domain/settings';
 import { ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { ProjectSchema } from '../domain/project';
 import { QuickPickRequestSchema } from '../domain/quick-pick';
+import { KeybindingsStateSchema } from '../domain/keybindings';
 import type { EventChannel } from './channels';
 
 /** In-app toast requested by main. */
@@ -73,6 +74,8 @@ export const eventContract = {
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),
   /** Show a plugin's quick pick in the command palette; answered with `ui:quickPickResult`. */
   'ui:quickPick': QuickPickRequestSchema,
+  /** keybindings.json changed (editor or external edit). */
+  'keybindings:changed': KeybindingsStateSchema,
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

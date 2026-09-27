@@ -1,7 +1,7 @@
+import { KEY_CONTEXTS, type KeyContext, parseWhen, type UserKeybinding } from '@shared/domain/keybindings';
 import type { UiPlatform } from './platform';
 
-export type KeyContext =
-  'terminalFocus' | 'sidebarFocus' | 'changesFocus' | 'diffFocus' | 'pluginViewFocus' | 'inputFocus' | 'global';
+export type { KeyContext };
 
 export interface Keybinding {
   /** Windows/Linux chord, e.g. "Ctrl+Shift+B". */
@@ -16,6 +16,8 @@ export interface Keybinding {
   notWhen?: KeyContext[];
   /** Also intercept in terminals although the chord is not in the terminal-safe set. */
   allowInTerminal?: boolean;
+  /** Set on entries from keybindings.json. */
+  source?: 'user';
 }
 
 /** Default keymap (docs/plan/02-ui-ux.md §7). Bindings for unregistered commands are ignored. */
@@ -31,10 +33,10 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { key: 'Alt+Right', mac: 'Alt+Cmd+Right', command: 'panel.focusRight', allowInTerminal: true },
   { key: 'Alt+Up', mac: 'Alt+Cmd+Up', command: 'panel.focusUp', allowInTerminal: true },
   { key: 'Alt+Down', mac: 'Alt+Cmd+Down', command: 'panel.focusDown', allowInTerminal: true },
-  { key: 'Alt+Shift+Left', mac: 'Ctrl+Cmd+Left', command: 'panel.resizeLeft' },
-  { key: 'Alt+Shift+Right', mac: 'Ctrl+Cmd+Right', command: 'panel.resizeRight' },
-  { key: 'Alt+Shift+Up', mac: 'Ctrl+Cmd+Up', command: 'panel.resizeUp' },
-  { key: 'Alt+Shift+Down', mac: 'Ctrl+Cmd+Down', command: 'panel.resizeDown' },
+  { key: 'Alt+Shift+Left', mac: 'Ctrl+Shift+Cmd+Left', command: 'panel.resizeLeft' },
+  { key: 'Alt+Shift+Right', mac: 'Ctrl+Shift+Cmd+Right', command: 'panel.resizeRight' },
+  { key: 'Alt+Shift+Up', mac: 'Ctrl+Shift+Cmd+Up', command: 'panel.resizeUp' },
+  { key: 'Alt+Shift+Down', mac: 'Ctrl+Shift+Cmd+Down', command: 'panel.resizeDown' },
   { key: 'Ctrl+Shift+Enter', mac: 'Cmd+Shift+Enter', command: 'panel.toggleMaximize' },
   { key: 'Ctrl+Tab', mac: 'Ctrl+Tab', command: 'panel.nextTab' },
   { key: 'Ctrl+Shift+Tab', mac: 'Ctrl+Shift+Tab', command: 'panel.previousTab' },
@@ -167,12 +169,12 @@ export class KeybindingResolver {
   private readonly byChord = new Map<string, Keybinding[]>();
 
   constructor(
-    bindings: readonly Keybinding[],
+    private readonly bindings: readonly Keybinding[],
     private readonly platform: UiPlatform,
     private readonly isAvailable: (command: string) => boolean = () => true,
   ) {
     for (const b of bindings) {
-      const chord = normalizeChord(platform === 'darwin' ? (b.mac ?? b.key) : b.key);
+      const chord = chordOf(b, platform);
       const list = this.byChord.get(chord) ?? [];
       list.push(b);
       this.byChord.set(chord, list);
@@ -211,11 +213,80 @@ export class KeybindingResolver {
     return out;
   }
 
-  /** The display chord of the first binding for a command (tooltips, menus). */
+  /** The display chord of a command (tooltips, menus, palette): its user binding if any, else its first default. */
   shortcutFor(command: string): string | undefined {
-    for (const [chord, list] of this.byChord) {
-      if (list.some((b) => b.command === command)) return chord;
-    }
-    return undefined;
+    const own = this.bindings.filter((b) => b.command === command);
+    const pick = own.findLast((b) => b.source === 'user') ?? own[0];
+    return pick ? chordOf(pick, this.platform) : undefined;
   }
+}
+
+/** The chord of a binding on a platform, normalized ("ctrl+shift+t"). */
+export function chordOf(b: Pick<Keybinding, 'key' | 'mac'>, platform: UiPlatform): string {
+  return normalizeChord(platform === 'darwin' ? (b.mac ?? b.key) : b.key);
+}
+
+/**
+ * Applies keybindings.json (M7-T2) to the defaults: `-command` entries remove that command's default bindings
+ * (all of them, or only the one with the given key); other entries are appended, so they win over defaults.
+ * User chords are written for the current machine and apply as-is on every platform.
+ */
+export function applyUserKeybindings(
+  defaults: readonly Keybinding[],
+  user: readonly UserKeybinding[],
+  platform: UiPlatform,
+): Keybinding[] {
+  let result = [...defaults];
+  for (const entry of user) {
+    if (entry.command.startsWith('-')) {
+      const command = entry.command.slice(1);
+      const chord = entry.key ? normalizeChord(entry.key) : null;
+      result = result.filter((b) => b.command !== command || (chord !== null && chordOf(b, platform) !== chord));
+      continue;
+    }
+    if (!entry.key) continue;
+    const when = parseWhen(entry.when);
+    if ('error' in when) continue;
+    result.push({
+      key: entry.key,
+      mac: entry.key,
+      command: entry.command,
+      ...(entry.args ? { args: entry.args } : {}),
+      ...when,
+      source: 'user',
+    });
+  }
+  return result;
+}
+
+/** Whether two bindings can both apply in some focus context. */
+function contextsOverlap(a: Keybinding, b: Keybinding): boolean {
+  const applies = (k: Keybinding, c: KeyContext) => (!k.when || k.when.includes(c)) && !k.notWhen?.includes(c);
+  return KEY_CONTEXTS.some((c) => applies(a, c) && applies(b, c));
+}
+
+export interface KeybindingConflict {
+  chord: string;
+  /** Bindings for different commands sharing the chord in an overlapping context, in precedence order (last wins). */
+  bindings: Keybinding[];
+}
+
+/** Chords bound to more than one command where the contexts overlap (shown in the shortcut editor). */
+export function findConflicts(
+  bindings: readonly Keybinding[],
+  platform: UiPlatform,
+  isAvailable: (command: string) => boolean = () => true,
+): KeybindingConflict[] {
+  const byChord = new Map<string, Keybinding[]>();
+  for (const b of bindings) {
+    if (!isAvailable(b.command)) continue;
+    const chord = chordOf(b, platform);
+    byChord.set(chord, [...(byChord.get(chord) ?? []), b]);
+  }
+  const conflicts: KeybindingConflict[] = [];
+  for (const [chord, list] of byChord) {
+    const involved = list.filter((b) => list.some((o) => o !== b && o.command !== b.command && contextsOverlap(b, o)));
+    if (involved.length > 1) conflicts.push({ chord, bindings: involved });
+  }
+  return conflicts;
 }

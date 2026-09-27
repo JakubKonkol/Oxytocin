@@ -14,7 +14,7 @@ import { useProjectsStore } from '../../stores/projects-store';
 import { changesUi, useChangesStore } from '../../stores/changes-store';
 import { usePluginsStore } from '../../stores/plugins-store';
 
-const KNOWN_COMPONENTS = new Set(['terminal', 'diff', 'plugin', 'missing', 'plugins']);
+const KNOWN_COMPONENTS = new Set(['terminal', 'diff', 'plugin', 'missing', 'plugins', 'keybindings']);
 const SAVE_DEBOUNCE_MS = 1000;
 
 /** Builds the persisted state: dockview JSON + a descriptor per panel (enough to revive terminals). */

@@ -16,6 +16,7 @@ import { syncPluginCommands } from './features/plugins/plugin-commands';
 import { registerPluginManagerCommands } from './features/plugins/plugin-manager';
 import { registerHelpCommands } from './features/help/HelpDialogs';
 import { registerPaletteCommands } from './features/palette/palette-store';
+import { registerKeybindingCommands } from './features/keybindings/KeybindingsPanel';
 import { flushAllWorkspaces } from './features/layout/persistence';
 
 if (window.oxy.e2e) {
@@ -34,6 +35,7 @@ syncPluginCommands();
 registerPluginManagerCommands();
 registerHelpCommands();
 registerPaletteCommands();
+registerKeybindingCommands();
 installGlobalKeybindings();
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
 

@@ -27,6 +27,7 @@ import { busyTerminals, describeQuit } from './app/quit-guard';
 import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
 import { QuickPickBroker } from './services/ui/quick-pick-broker';
+import { KeybindingsService } from './services/settings/keybindings-service';
 import { PtyPortLink } from './services/terminals/pty-port-link';
 import { createLogger, initLogging, logFilePath, setLogLevel } from './logging/log';
 import { SettingsService } from './services/settings/settings-service';
@@ -92,6 +93,11 @@ function bootstrap(): void {
   );
   setLogLevel(settings.loadSync()['diagnostics.logLevel']);
   settings.watch();
+  const keybindings = new KeybindingsService(
+    join(app.getPath('userData'), 'keybindings.json'),
+    createLogger('keybindings'),
+  );
+  const keybindingsReady = keybindings.load().then(() => keybindings.watch());
 
   const uiState = new UiStateService(join(app.getPath('userData'), 'ui-state.json'), createLogger('ui-state'));
   const initialUi = uiState.loadSync();
@@ -512,6 +518,14 @@ function bootstrap(): void {
       'terminals:clearBell': ({ id }) => terminals.clearBell(id),
       'fs:statMany': ({ baseDirs, paths }) => statMany(baseDirs, paths),
       'editor:open': (req) => editor.open(req),
+      'keybindings:get': async () => {
+        await keybindingsReady;
+        return keybindings.state;
+      },
+      'keybindings:setForCommand': ({ command, entries }) => keybindings.setForCommand(command, entries),
+      'keybindings:openFile': async () => {
+        await editor.open({ path: await keybindings.ensureFile() });
+      },
       'shell:revealInFolder': ({ path }) => {
         if (e2e) return;
         shell.showItemInFolder(path);
@@ -539,6 +553,7 @@ function bootstrap(): void {
     setLogLevel(s['diagnostics.logLevel']);
     sendEvent(win.webContents, 'settings:changed', s);
   });
+  keybindings.onDidChange((state) => sendEvent(win.webContents, 'keybindings:changed', state));
   hosts.onDidChangeStatus((status) => sendEvent(win.webContents, 'hosts:status', status));
   terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
   agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));

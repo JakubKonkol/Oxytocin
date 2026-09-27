@@ -193,7 +193,7 @@ Lewa strona (rdzeń): `⎇ main ↑2` (klik → fokus Zmian) · `7 changes` · `
 | Podziel w dół | Alt+Shift+- (Alt+Shift+Minus) | ⌘⇧D |
 | Zamknij panel | Ctrl+Shift+W | ⌘W |
 | Przenieś fokus między panelami | Alt+←/→/↑/↓ | ⌥⌘←/→/↑/↓ |
-| Zmień rozmiar panelu | Alt+Shift+←/→/↑/↓ | ⌃⌘←/→/↑/↓ |
+| Zmień rozmiar panelu | Alt+Shift+←/→/↑/↓ | ⌃⇧⌘←/→/↑/↓ (M7-T2: ⌃⌘↑/↓ należą do przełączania projektów) |
 | Maksymalizuj / przywróć panel | Ctrl+Shift+Enter | ⌘⇧Enter |
 | Następny / poprzedni tab w grupie | Ctrl+Tab / Ctrl+Shift+Tab | ⌃Tab / ⌃⇧Tab |
 | Projekt 1–9 | Ctrl+Alt+1…9 | ⌃⌘1…9 |

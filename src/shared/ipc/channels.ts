@@ -55,6 +55,9 @@ export const INVOKE_CHANNELS = [
   'plugins:viewMessage',
   'fs:statMany',
   'editor:open',
+  'keybindings:get',
+  'keybindings:setForCommand',
+  'keybindings:openFile',
   'workspace:load',
   'workspace:save',
 ] as const;
@@ -83,6 +86,7 @@ export const EVENT_CHANNELS = [
   'plugins:statusBar',
   'plugins:openPanel',
   'ui:quickPick',
+  'keybindings:changed',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

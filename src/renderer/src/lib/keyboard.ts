@@ -1,12 +1,40 @@
 import { executeCommand, hasCommand } from './commands';
-import { DEFAULT_KEYBINDINGS, type KeyContext, KeybindingResolver, type KeyEventLike } from './keybindings';
+import type { UserKeybinding } from '@shared/domain/keybindings';
+import {
+  applyUserKeybindings,
+  DEFAULT_KEYBINDINGS,
+  type KeyContext,
+  type Keybinding,
+  KeybindingResolver,
+  type KeyEventLike,
+} from './keybindings';
 import { currentPlatform } from './platform';
 
 let resolver: KeybindingResolver | null = null;
+let effective: Keybinding[] = [...DEFAULT_KEYBINDINGS];
+const listeners = new Set<() => void>();
 
 function getResolver(): KeybindingResolver {
-  resolver ??= new KeybindingResolver(DEFAULT_KEYBINDINGS, currentPlatform(), hasCommand);
+  resolver ??= new KeybindingResolver(effective, currentPlatform(), hasCommand);
   return resolver;
+}
+
+/** Applies the entries of keybindings.json on top of the defaults. */
+export function setUserKeybindings(entries: readonly UserKeybinding[]): void {
+  effective = applyUserKeybindings(DEFAULT_KEYBINDINGS, entries, currentPlatform());
+  resolver = null;
+  for (const l of listeners) l();
+}
+
+/** The bindings in effect (defaults + user overrides, later entries win). */
+export function effectiveKeybindings(): readonly Keybinding[] {
+  return effective;
+}
+
+/** Subscribes to keybinding changes (useSyncExternalStore-compatible). */
+export function onDidChangeKeybindings(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 /** Tries to run a keybinding for the event; returns true when a command handled it. */
@@ -26,8 +54,10 @@ export function shortcutFor(command: string): string | undefined {
   return getResolver().shortcutFor(command);
 }
 
-function contextOf(target: EventTarget | null): KeyContext | 'terminal' {
+function contextOf(target: EventTarget | null): KeyContext | 'terminal' | 'none' {
   const el = target instanceof Element ? target : null;
+  // Shortcut recorder: every chord is captured, none is dispatched.
+  if (el?.closest('[data-no-keybindings]')) return 'none';
   if (el?.closest('.xterm')) return 'terminal';
   // Monaco's hidden textarea lives inside the diff panel: treat it as the diff, not as a text input.
   if (el?.closest('[data-keycontext="diff"] .monaco-editor')) return 'diffFocus';
@@ -49,7 +79,7 @@ export function installGlobalKeybindings(target: Window = window): void {
     (e) => {
       if (e.defaultPrevented || e.isComposing) return;
       const context = contextOf(e.target);
-      if (context === 'terminal') return;
+      if (context === 'terminal' || context === 'none') return;
       if (dispatchKeybinding(e, context)) {
         e.preventDefault();
         e.stopPropagation();
