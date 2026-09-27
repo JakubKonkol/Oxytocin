@@ -153,6 +153,15 @@ export interface AgentsApi {
   onDidChange: Event<AgentSnapshot[]>;
   /** agents.annotate — a session id found by the plugin (e.g. by correlating Codex/Gemini session files). */
   reportSession(terminalId: string, info: { sessionId: string; source: string }): void;
+  /**
+   * agents.annotate — the agent's state as reported by the agent itself (e.g. Claude Code hooks). It has the highest
+   * priority: other sources cannot override it for 10 s. Ignored when the terminal runs no detected agent.
+   * Since API 0.1.2.
+   */
+  reportState(
+    terminalId: string,
+    report: { state: 'working' | 'idle' | 'waiting'; waitingFor?: string; sessionId?: string },
+  ): void;
 }
 
 // ── Git ─────────────────────────────────────────────────── (git.read)

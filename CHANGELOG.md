@@ -21,6 +21,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   permissions before it first runs, uninstall; installed and developer plugins run in their own Plugin Host.
 - **`create-oxytocin-plugin`** (`npm create oxytocin-plugin`): a TypeScript plugin template (vanilla or React) with
   watch builds and packaging, and a [plugin developer guide](docs/plugins/README.md).
+- **Claude Code Bridge** (built-in plugin): with the user's consent it installs Claude Code `http` hooks that report
+  exact agent states (working, waiting for permission, finished) to Oxytocin; plugin API 0.1.2 adds
+  `oxy.agents.reportState`.
 - **Auto-update** from GitHub Releases (`latest` / `beta` channels): background download, installed when you quit
   or click *Restart to update* — never an automatic restart.
 - Release pipeline: Windows/macOS code signing and notarization (activated by repository secrets) and hardened

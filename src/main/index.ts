@@ -395,7 +395,11 @@ function bootstrap(): void {
         create: (req) => terminals.create(req),
         write: (id, data) => hosts.pty.call('write', { id, data }),
       },
-      agents: { list: () => agents.list(), reportSession: (id, sessionId) => agents.reportSession(id, sessionId) },
+      agents: {
+        list: () => agents.list(),
+        reportSession: (id, sessionId) => agents.reportSession(id, sessionId),
+        reportState: (id, report) => agents.reportState(id, report),
+      },
       git: { status: (id) => git.status(id) },
       settings: () => settings.get(),
       updateSettings: (patch) => settings.update(patch),

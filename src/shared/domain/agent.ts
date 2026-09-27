@@ -29,6 +29,14 @@ export const AgentInfoSchema = z.object({
 });
 export type AgentInfo = z.infer<typeof AgentInfoSchema>;
 
+/** A state reported by the agent itself through a plugin (`oxy.agents.reportState`, source `hook`). */
+export const AgentStateReportSchema = z.object({
+  state: z.enum(['working', 'idle', 'waiting']),
+  waitingFor: z.string().max(200).optional(),
+  sessionId: z.string().max(200).optional(),
+});
+export type AgentStateReport = z.infer<typeof AgentStateReportSchema>;
+
 export const AgentInfoWithTerminalSchema = AgentInfoSchema.extend({ terminalId: z.string(), projectId: z.string() });
 export type AgentInfoWithTerminal = z.infer<typeof AgentInfoWithTerminalSchema>;
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { AgentInfoWithTerminal } from '@shared/domain/agent';
+import { type AgentInfoWithTerminal, type AgentStateReport, AgentStateReportSchema } from '@shared/domain/agent';
 import type { RepoStatus } from '@shared/domain/git';
 import { type PluginDescriptor, type PluginPermission } from '@shared/domain/plugin';
 import { type Project, PROJECT_COLOR_VALUES } from '@shared/domain/project';
@@ -67,7 +67,11 @@ export interface PluginCorePort {
     }): Promise<TerminalInfo>;
     write(id: string, data: string): Promise<void>;
   };
-  agents: { list(): AgentInfoWithTerminal[]; reportSession(terminalId: string, sessionId: string): void };
+  agents: {
+    list(): AgentInfoWithTerminal[];
+    reportSession(terminalId: string, sessionId: string): void;
+    reportState(terminalId: string, report: AgentStateReport): void;
+  };
   git: { status(projectId: string): RepoStatus | null };
   settings(): Settings;
   updateSettings(patch: Record<string, unknown>): Promise<unknown>;
@@ -603,6 +607,14 @@ export class PluginHostService implements Disposable {
       case 'agents.list':
         this.permission(plugin, 'agents.read');
         return core.agents.list().map((a) => this.agentSnapshot(a));
+      case 'agents.reportState': {
+        this.permission(plugin, 'agents.annotate');
+        const parsed = AgentStateReportSchema.extend({ terminalId: z.string().min(1) }).safeParse(p);
+        if (!parsed.success) throw new OxyError('INVALID', 'Invalid agent state report');
+        const { terminalId, ...report } = parsed.data;
+        core.agents.reportState(terminalId, report);
+        return undefined;
+      }
       case 'agents.reportSession':
         this.permission(plugin, 'agents.annotate');
         core.agents.reportSession(String(p['terminalId']), String(p['sessionId']));

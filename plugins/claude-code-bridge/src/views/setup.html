@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Claude Code Bridge</title>
+  </head>
+  <body>
+    <main>
+      <h1>Claude Code Bridge</h1>
+      <p>
+        Claude Code can tell Oxytocin exactly what it is doing — working, waiting for your permission or finished —
+        through <a href="https://code.claude.com/docs/en/hooks" id="docs">hooks</a>. Without them Oxytocin infers the
+        state from Claude Code's session files and terminal output.
+      </p>
+      <h2>What installing does</h2>
+      <ul>
+        <li>
+          Adds the <code>oxytocin-bridge</code> plugin (from a local marketplace named <code>oxytocin</code>) to your
+          Claude Code user settings with <code id="cli-preview">claude plugin install</code>.
+        </li>
+        <li>
+          Its hooks send prompt submissions, tool completions, permission requests, notifications and turn ends to
+          <code id="endpoint">http://127.0.0.1</code> on this computer. Oxytocin reads only the event type, the session
+          id and the notification type; it stores nothing.
+        </li>
+        <li>
+          Only terminals opened in Oxytocin carry the secret token the endpoint requires. Claude Code sessions started
+          elsewhere try the address too and ignore the failed request.
+        </li>
+      </ul>
+      <section class="status" aria-live="polite">
+        <div><span class="label">Endpoint</span> <span id="status-endpoint">…</span></div>
+        <div><span class="label">Claude Code</span> <span id="status-installed">…</span></div>
+        <div><span class="label">Events</span> <span id="status-events">…</span></div>
+      </section>
+      <div class="actions">
+        <button id="install" type="button" class="primary" disabled>Install in Claude Code</button>
+        <button id="uninstall" type="button" disabled>Remove from Claude Code</button>
+        <button id="refresh" type="button" disabled>Refresh</button>
+      </div>
+      <pre id="output" hidden></pre>
+      <p class="note">Restart running Claude Code sessions after installing or removing the hooks.</p>
+    </main>
+    <script type="module" src="./setup.ts"></script>
+  </body>
+</html>

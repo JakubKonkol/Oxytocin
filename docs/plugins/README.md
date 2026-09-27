@@ -5,7 +5,7 @@ environment variables. A plugin is a folder with a `package.json` (whose `oxytoc
 optional **backend** (JavaScript that runs in Oxytocin's Plugin Host, a Node.js process) and optional **views**
 (web pages shown in sandboxed iframes).
 
-Plugin API version: **0.1.1** (`packages/plugin-api/CHANGELOG.md`). Until 1.0, minor versions may contain breaking
+Plugin API version: **0.1.2** (`packages/plugin-api/CHANGELOG.md`). Until 1.0, minor versions may contain breaking
 changes; declare the versions you support with `engine`.
 
 ## Quick start
@@ -52,7 +52,7 @@ Oxytocin only needs `package.json` and the files the manifest points to (`dist/`
     "displayName": "My Plugin",
     "description": "What it does.",
     "publisher": "acme",
-    "engine": "^0.1.1",                  // Oxytocin plugin API versions this plugin supports (semver range)
+    "engine": "^0.1.2",                  // Oxytocin plugin API versions this plugin supports (semver range)
     "main": "dist/host.js",              // backend entry; omit for view-only plugins
     "activationEvents": ["onStartup"],
     "permissions": ["projects.read"],
@@ -103,7 +103,7 @@ use.
 | `terminals.write` | `oxy.terminals.sendText` |
 | `terminals.read-output` | Raw terminal output (sensitive) |
 | `terminals.env` | `oxy.terminals.environment` |
-| `agents.read` / `agents.annotate` | `oxy.agents.list/onDidChange` / `reportSession` |
+| `agents.read` / `agents.annotate` | `oxy.agents.list/onDidChange` / `reportSession`, `reportState` |
 | `git.read` | `oxy.git.*` |
 | `notifications.os` | `showNotification({ os: true })` |
 | `fs.read-project`, `fs.read-home`, `net.listen-local`, `net.fetch` | Informational: declare what the backend does with Node APIs |

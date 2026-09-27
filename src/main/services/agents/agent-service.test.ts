@@ -175,6 +175,25 @@ describe('AgentService', () => {
     expect(s.info().agent).toBeUndefined();
   });
 
+  it('hook reports (Claude Code Bridge) win over the registry for 10 s and set the session id', () => {
+    const s = setup();
+    s.regEntries.set(200, { pid: 200, status: 'idle', sessionId: 'from-registry' });
+    s.emit('terminal:process', { id: 't1', descendants: [s.claude] });
+    expect(s.info().agent).toMatchObject({ state: 'idle', stateSource: 'claude-registry' });
+    s.service.reportState('t1', { state: 'working', sessionId: 'from-hook' });
+    expect(s.info().agent).toMatchObject({ state: 'working', stateSource: 'hook', sessionId: 'from-hook' });
+    // The registry lags behind: ignored inside the window.
+    s.regChanged.fire();
+    expect(s.info().agent).toMatchObject({ state: 'working', stateSource: 'hook' });
+    s.service.reportState('t1', { state: 'waiting', waitingFor: 'tool permission' });
+    expect(s.info().agent).toMatchObject({ state: 'waiting', waitingFor: 'tool permission' });
+    s.advance(10_001);
+    s.regChanged.fire();
+    expect(s.info().agent).toMatchObject({ state: 'idle', stateSource: 'claude-registry' });
+    // No agent in the terminal: nothing happens.
+    s.service.reportState('nope', { state: 'working' });
+  });
+
   it('follows the Claude registry by pid', () => {
     const s = setup();
     s.regEntries.set(200, { pid: 200, status: 'busy', sessionId: 's1', name: 'Fix tests' });

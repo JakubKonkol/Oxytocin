@@ -1,0 +1,66 @@
+{
+  "name": "@oxytocin/claude-code-bridge",
+  "version": "0.1.0",
+  "description": "Exact Claude Code states in Oxytocin through Claude Code hooks",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "oxytocin": {
+    "id": "oxytocin.claude-code-bridge",
+    "displayName": "Claude Code Bridge",
+    "description": "Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks.",
+    "publisher": "oxytocin",
+    "engine": "^0.1.2",
+    "main": "dist/host.js",
+    "activationEvents": [
+      "onStartup"
+    ],
+    "permissions": [
+      "agents.read",
+      "agents.annotate",
+      "terminals.env",
+      "net.listen-local",
+      "fs.read-home"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "type": "claudeBridge.setup",
+          "title": "Claude Code Bridge",
+          "entry": "dist/views/setup.html",
+          "singleton": "global"
+        }
+      ],
+      "commands": [
+        {
+          "id": "claudeBridge.setup",
+          "title": "Claude Code Bridge: Set Up"
+        }
+      ],
+      "configuration": {
+        "prefix": "claudeBridge",
+        "properties": {
+          "claudeBridge.port": {
+            "type": "integer",
+            "default": 47285,
+            "minimum": 1024,
+            "maximum": 65535,
+            "description": "Local port (127.0.0.1) that Claude Code hooks send events to. Changing it rewrites the hooks; restart running Claude Code sessions."
+          },
+          "claudeBridge.claudeCommand": {
+            "type": "string",
+            "default": "claude",
+            "description": "The Claude Code command used to install and remove the hooks (a name on PATH or a full path)."
+          }
+        }
+      },
+      "statusBarItems": [
+        {
+          "id": "claudeBridge.hint",
+          "alignment": "right",
+          "priority": 5
+        }
+      ]
+    }
+  }
+}

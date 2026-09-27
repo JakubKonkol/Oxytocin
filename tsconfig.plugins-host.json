@@ -5,5 +5,5 @@
     "lib": ["ES2024"],
     "types": ["node"]
   },
-  "include": ["plugins/*/src/host/**/*"]
+  "include": ["plugins/*/src/host/**/*", "plugins/*/src/shared/**/*"]
 }

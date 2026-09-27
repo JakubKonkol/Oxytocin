@@ -202,6 +202,12 @@ export function createApi(deps: ApiDeps): OxytocinApi {
         return call<AgentSnapshot[]>('agents.list');
       },
       onDidChange: event<AgentSnapshot[]>('agents.changed', 'agents.read'),
+      reportState: (terminalId, report) => {
+        require('agents.annotate');
+        void call('agents.reportState', { terminalId, ...report }).catch((e: unknown) =>
+          deps.reportError('reportState', e),
+        );
+      },
       reportSession: (terminalId, info) => {
         require('agents.annotate');
         void call('agents.reportSession', { terminalId, ...info }).catch((e: unknown) =>

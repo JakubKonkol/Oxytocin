@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- `oxy.agents.reportState(terminalId, { state, waitingFor?, sessionId? })` (`agents.annotate`): agent states reported
+  by the agent itself (the `hook` source, highest priority).
+
 ## 0.1.1
 
 - `oxy.ui.showQuickPick(items, { placeholder })`: a fuzzy-filtered pick in the command palette.

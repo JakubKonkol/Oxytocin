@@ -1,4 +1,10 @@
-import type { AgentInfo, AgentInfoWithTerminal, AgentState, AgentStateSource } from '@shared/domain/agent';
+import type {
+  AgentInfo,
+  AgentInfoWithTerminal,
+  AgentState,
+  AgentStateReport,
+  AgentStateSource,
+} from '@shared/domain/agent';
 import type { ProcInfo, TerminalInfo } from '@shared/domain/terminal';
 import type { Logger } from '@shared/logging/logger';
 import type { PtyHostEvents, PtyHostMethods } from '@shared/rpc/contracts/pty-host';
@@ -370,6 +376,22 @@ export class AgentService implements Disposable {
 
   private fireAgents(): void {
     this.emitter.fire(this.list());
+  }
+
+  /**
+   * A state reported by the agent itself (Claude Code hooks through the Bridge plugin): source `hook`, which wins
+   * over every other source for 10 s. Its session id is authoritative.
+   */
+  reportState(terminalId: string, report: AgentStateReport): void {
+    const t = this.tracked.get(terminalId);
+    if (!t?.agent) return;
+    let changed = false;
+    if (report.sessionId && report.sessionId !== t.agent.sessionId) {
+      t.agent = { ...t.agent, sessionId: report.sessionId };
+      changed = true;
+    }
+    changed = this.propose(t, 'hook', report.state, report.waitingFor) || changed;
+    if (changed) this.publish(t, { agent: t.agent });
   }
 
   /** A session id reported by a plugin (agents.annotate) — kept unless the registry already knows one. */
