@@ -67,14 +67,20 @@ export class ProfileService {
   private async detect(): Promise<TerminalProfile[]> {
     if (this.cache && this.now() - this.cache.at < CACHE_MS) return this.cache.profiles;
     this.inflight ??= (async () => {
-      const shells =
-        this.deps.platform === 'win32' ? await detectWindowsProfiles(this.deps) : await detectPosixProfiles(this.deps);
-      const agents = await detectAgentProfiles(this.deps);
+      const [shells, agents] = await Promise.all([
+        this.deps.platform === 'win32' ? detectWindowsProfiles(this.deps) : detectPosixProfiles(this.deps),
+        detectAgentProfiles(this.deps),
+      ]);
       const profiles = [...shells, ...agents];
       this.cache = { at: this.now(), profiles };
       return profiles;
     })().finally(() => (this.inflight = undefined));
     return this.inflight;
+  }
+
+  /** Starts detection in the background so the first terminal does not wait for it. */
+  warmUp(): void {
+    void this.detect().catch(() => undefined);
   }
 
   refresh(): void {

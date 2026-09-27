@@ -65,15 +65,15 @@ export async function which(name: string, deps: DetectDeps): Promise<string | nu
       ? ['']
       : (envGet(deps.env, 'PATHEXT', true) ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)
     : [''];
-  for (const dir of dirs) {
-    for (const ext of exts) {
-      const candidate = win
-        ? `${dir.replace(/[\\/]+$/, '')}\\${name}${ext.toLowerCase()}`
-        : posix.join(dir, name + ext);
-      if (await deps.isFile(candidate)) return candidate;
-    }
-  }
-  return null;
+  const candidates = dirs.flatMap((dir) =>
+    exts.map((ext) =>
+      win ? `${dir.replace(/[\\/]+$/, '')}\\${name}${ext.toLowerCase()}` : posix.join(dir, name + ext),
+    ),
+  );
+  // All candidates are checked concurrently (hundreds of sequential stats with a long PATH × PATHEXT on
+  // Windows); the first match in PATH order wins.
+  const found = await Promise.all(candidates.map((c) => deps.isFile(c)));
+  return candidates[found.indexOf(true)] ?? null;
 }
 
 export function envValue(deps: DetectDeps, name: string): string | undefined {

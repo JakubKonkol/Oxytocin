@@ -73,6 +73,26 @@ describe('Windows profile detection', () => {
     expect(await which('claude', deps)).toBe('C:\\Users\\me\\.local\\bin\\claude.exe');
     expect(await which('codex', deps)).toBeNull();
   });
+
+  it('checks PATH candidates concurrently but returns the first match in PATH order', async () => {
+    const first = '/first/node';
+    const second = '/second/node';
+    let pending = 0;
+    let maxPending = 0;
+    const deps = {
+      ...fakeDeps({ platform: 'linux', env: { PATH: '/first:/second' }, files: [] }),
+      isFile: async (p: string) => {
+        pending++;
+        maxPending = Math.max(maxPending, pending);
+        // The earlier PATH entry answers last.
+        await new Promise((r) => setTimeout(r, p === first ? 20 : 0));
+        pending--;
+        return p === first || p === second;
+      },
+    };
+    expect(await which('node', deps)).toBe(first);
+    expect(maxPending).toBe(2);
+  });
 });
 
 describe('POSIX profile detection', () => {

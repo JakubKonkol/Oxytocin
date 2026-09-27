@@ -11,9 +11,10 @@ export const AGENT_COMMANDS = [
 
 /** Built-in agent profiles, only for agents found on PATH. They run as "default shell + typed command". */
 export async function detectAgentProfiles(deps: DetectDeps): Promise<TerminalProfile[]> {
+  const found = await Promise.all(AGENT_COMMANDS.map((agent) => which(agent.command, deps)));
   const out: TerminalProfile[] = [];
-  for (const agent of AGENT_COMMANDS) {
-    if (await which(agent.command, deps)) {
+  for (const [i, agent] of AGENT_COMMANDS.entries()) {
+    if (found[i]) {
       out.push({
         id: agent.id,
         name: agent.name,

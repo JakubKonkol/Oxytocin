@@ -1,8 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { descendantsOf, ProcessMonitor } from './index';
+import { busySampleMs, descendantsOf, ProcessMonitor } from './index';
 import { descendantPids, parseCimCommandLines, parsePsArgs, parsePsComm } from './sources';
 
 const row = (pid: number, ppid: number, name: string, commandLine = name) => ({ pid, ppid, name, commandLine });
+
+describe('busySampleMs', () => {
+  it('samples busy terminals less often on Windows, where each sample spawns a process', () => {
+    expect(busySampleMs('win32')).toBe(2000);
+    expect(busySampleMs('linux')).toBe(1000);
+    expect(busySampleMs('darwin')).toBe(1000);
+  });
+});
 
 describe('process tree parsing', () => {
   it('parses ps output including paths with spaces', () => {

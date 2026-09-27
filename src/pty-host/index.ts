@@ -6,7 +6,7 @@ import { SpawnOptionsSchema } from '@shared/domain/terminal';
 import { toDisposable } from '@shared/utils/disposable';
 import type { Logger } from '@shared/logging/logger';
 import { type RendererPort, TerminalManager } from './terminal-manager';
-import { ProcessMonitor } from './process-monitor';
+import { busySampleMs, ProcessMonitor } from './process-monitor';
 
 // Utility process entry: the PTY Host (node-pty + headless mirrors).
 const parentPort = process.parentPort;
@@ -21,7 +21,7 @@ const manager = new TerminalManager({
   emit: (name, payload) => {
     // A command usually starts with Enter; output resuming after a quiet period also hints at new processes.
     if (name === 'terminal:userInput') monitorRef.nudge?.(300);
-    else if (name === 'terminal:activity') monitorRef.nudge?.(1000);
+    else if (name === 'terminal:activity') monitorRef.nudge?.(busySampleMs());
     ref.emit?.(name, payload);
   },
   logger: {

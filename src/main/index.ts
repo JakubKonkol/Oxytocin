@@ -130,6 +130,9 @@ function bootstrap(): void {
     // Plugins are discovered later in bootstrap; profiles are only listed afterwards.
     () => pluginTerminalProfiles(plugins.contributions()),
   );
+  // Shell/agent detection (PATH lookups, `reg`, `wsl -l`) runs while the window loads, not when the first
+  // terminal is requested.
+  void shellEnvReady.then(() => profiles.warmUp());
   const projects = new ProjectService({
     file: join(app.getPath('userData'), 'projects.json'),
     fs: {

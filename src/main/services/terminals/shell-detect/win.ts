@@ -26,12 +26,30 @@ export async function detectWindowsProfiles(deps: DetectDeps): Promise<TerminalP
   const profiles: TerminalProfile[] = [];
   const programFiles = envValue(deps, 'ProgramFiles') ?? 'C:\\Program Files';
   const systemRoot = envValue(deps, 'SystemRoot') ?? 'C:\\Windows';
+  const powershell = `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+  const comSpec = envValue(deps, 'ComSpec') ?? `${systemRoot}\\System32\\cmd.exe`;
+  const wslExe = `${systemRoot}\\System32\\wsl.exe`;
 
-  const pwsh =
-    (await which('pwsh.exe', deps)) ??
-    ((await deps.isFile(`${programFiles}\\PowerShell\\7\\pwsh.exe`))
-      ? `${programFiles}\\PowerShell\\7\\pwsh.exe`
-      : null);
+  // Independent probes run concurrently: each `reg` / `wsl.exe` spawn costs tens of milliseconds on Windows.
+  const [pwsh, hasPowershell, hasCmd, gitBash, wslList] = await Promise.all([
+    (async () =>
+      (await which('pwsh.exe', deps)) ??
+      ((await deps.isFile(`${programFiles}\\PowerShell\\7\\pwsh.exe`))
+        ? `${programFiles}\\PowerShell\\7\\pwsh.exe`
+        : null))(),
+    deps.isFile(powershell),
+    deps.isFile(comSpec),
+    (async () => {
+      const candidates = [`${programFiles}\\Git\\bin\\bash.exe`];
+      const reg = await deps.exec('reg', ['query', 'HKLM\\SOFTWARE\\GitForWindows', '/v', 'InstallPath']);
+      const installPath = reg ? parseRegQueryValue(reg.toString('utf8'), 'InstallPath') : null;
+      if (installPath) candidates.unshift(`${installPath}\\bin\\bash.exe`);
+      for (const candidate of candidates) if (await deps.isFile(candidate)) return candidate;
+      return null;
+    })(),
+    (async () => ((await deps.isFile(wslExe)) ? await deps.exec(wslExe, ['-l', '-q']) : null))(),
+  ]);
+
   if (pwsh) {
     profiles.push({
       id: 'pwsh',
@@ -43,9 +61,7 @@ export async function detectWindowsProfiles(deps: DetectDeps): Promise<TerminalP
       source: 'detected',
     });
   }
-
-  const powershell = `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
-  if (await deps.isFile(powershell)) {
+  if (hasPowershell) {
     profiles.push({
       id: 'powershell',
       name: 'Windows PowerShell',
@@ -56,9 +72,7 @@ export async function detectWindowsProfiles(deps: DetectDeps): Promise<TerminalP
       source: 'detected',
     });
   }
-
-  const comSpec = envValue(deps, 'ComSpec') ?? `${systemRoot}\\System32\\cmd.exe`;
-  if (await deps.isFile(comSpec)) {
+  if (hasCmd) {
     profiles.push({
       id: 'cmd',
       name: 'Command Prompt',
@@ -69,40 +83,27 @@ export async function detectWindowsProfiles(deps: DetectDeps): Promise<TerminalP
       source: 'detected',
     });
   }
-
-  const gitCandidates = [`${programFiles}\\Git\\bin\\bash.exe`];
-  const reg = await deps.exec('reg', ['query', 'HKLM\\SOFTWARE\\GitForWindows', '/v', 'InstallPath']);
-  const installPath = reg ? parseRegQueryValue(reg.toString('utf8'), 'InstallPath') : null;
-  if (installPath) gitCandidates.unshift(`${installPath}\\bin\\bash.exe`);
-  for (const candidate of gitCandidates) {
-    if (await deps.isFile(candidate)) {
-      profiles.push({
-        id: 'git-bash',
-        name: 'Git Bash',
-        kind: 'shell',
-        file: candidate,
-        args: ['--login', '-i'],
-        icon: 'terminal-git-bash',
-        source: 'detected',
-      });
-      break;
-    }
+  if (gitBash) {
+    profiles.push({
+      id: 'git-bash',
+      name: 'Git Bash',
+      kind: 'shell',
+      file: gitBash,
+      args: ['--login', '-i'],
+      icon: 'terminal-git-bash',
+      source: 'detected',
+    });
   }
-
-  const wslExe = `${systemRoot}\\System32\\wsl.exe`;
-  if (await deps.isFile(wslExe)) {
-    const list = await deps.exec(wslExe, ['-l', '-q']);
-    for (const distro of list ? decodeWslList(list) : []) {
-      profiles.push({
-        id: `wsl:${distro}`,
-        name: `WSL: ${distro}`,
-        kind: 'shell',
-        file: wslExe,
-        args: ['-d', distro],
-        icon: 'terminal-linux',
-        source: 'detected',
-      });
-    }
+  for (const distro of wslList ? decodeWslList(wslList) : []) {
+    profiles.push({
+      id: `wsl:${distro}`,
+      name: `WSL: ${distro}`,
+      kind: 'shell',
+      file: wslExe,
+      args: ['-d', distro],
+      icon: 'terminal-linux',
+      source: 'detected',
+    });
   }
   return profiles;
 }

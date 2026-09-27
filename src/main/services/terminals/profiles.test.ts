@@ -58,6 +58,15 @@ describe('ProfileService', () => {
     now = 61 * 60 * 1000;
     expect((await svc.list()).map((p) => p.id)).toEqual(['bash', 'zsh']);
   });
+
+  it('warms the detection cache up front', async () => {
+    const files = ['/bin/bash'];
+    const svc = new ProfileService(deps(files), () => settings());
+    svc.warmUp();
+    await new Promise((r) => setTimeout(r, 0));
+    files.push('/usr/bin/zsh');
+    expect((await svc.list()).map((p) => p.id)).toEqual(['bash']);
+  });
 });
 
 describe('shellTypeOf', () => {

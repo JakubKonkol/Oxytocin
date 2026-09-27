@@ -41,6 +41,14 @@ export function descendantsOf(root: number, rows: readonly ProcRow[]): ProcInfo[
   return out;
 }
 
+/**
+ * Sampling interval while terminals produce output. Each Windows sample spawns `fastlist.exe` (~40 ms of CPU),
+ * and agents print continuously (spinners), so Windows samples every 2 s instead of every second.
+ */
+export function busySampleMs(platform: NodeJS.Platform = process.platform): number {
+  return platform === 'win32' ? 2000 : 1000;
+}
+
 export interface ProcessMonitorOptions {
   source?: ProcessSource;
   terminals: () => MonitoredTerminal[];
@@ -54,7 +62,7 @@ export interface ProcessMonitorOptions {
 
 /**
  * Samples the process table (one query for all terminals) and reports each terminal's descendants when they
- * change. Every 1 s while any terminal produced output in the last 5 s, otherwise every 5 s; slow cycles
+ * change. Every `busySampleMs()` (1 s, 2 s on Windows) while any terminal produced output in the last 5 s, otherwise every 5 s; slow cycles
  * (> 250 ms) back off up to 10 s.
  */
 export class ProcessMonitor {
@@ -130,7 +138,7 @@ export class ProcessMonitor {
     const cost = this.now() - started;
     this.backoff = cost > 250 ? Math.min(this.backoff * 2, 10) : 1;
     const busy = terminals.some((t) => this.now() - t.lastOutputAt < 5000);
-    const base = busy ? (this.o.fastMs ?? 1000) : (this.o.slowMs ?? 5000);
+    const base = busy ? (this.o.fastMs ?? busySampleMs()) : (this.o.slowMs ?? 5000);
     this.schedule(Math.min(base * this.backoff, this.o.maxMs ?? 10_000));
   }
 
