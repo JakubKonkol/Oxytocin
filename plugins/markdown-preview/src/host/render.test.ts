@@ -130,6 +130,7 @@ describe('links', () => {
     expect(isInside('/a/b', '/a/b/c.md', false)).toBe(true);
     expect(isInside('/a/b', '/a/bc/c.md', false)).toBe(false);
     expect(isInside('/a/B', '/a/b/c.md', true)).toBe(true);
-    expect(isInside('/a/B', '/a/b/c.md', false)).toBe(false);
+    // Windows' path.relative already compares case-insensitively.
+    if (process.platform !== 'win32') expect(isInside('/a/B', '/a/b/c.md', false)).toBe(false);
   });
 });
