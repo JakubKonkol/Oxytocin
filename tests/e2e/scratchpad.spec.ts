@@ -8,7 +8,7 @@ import { oxyTest, run, waitForTerminal } from './helpers/terminal';
 const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js');
 
 test('the title bar opens settings and toggles the right sidebar', async () => {
-  const { app, win } = await launchApp();
+  const { app, win } = await launchApp({ secondarySidebar: true });
   try {
     await waitForTerminal(win);
     await win.getByTestId('open-settings').click();
@@ -33,7 +33,7 @@ test('the title bar opens settings and toggles the right sidebar', async () => {
 
 test('the scratchpad persists notes and sends them to the running agent', async () => {
   const claudeDir = await mkdtemp(join(tmpdir(), 'oxy-e2e-claude-'));
-  const { app, win } = await launchApp({ env: { CLAUDE_CONFIG_DIR: claudeDir } });
+  const { app, win } = await launchApp({ env: { CLAUDE_CONFIG_DIR: claudeDir }, secondarySidebar: true });
   try {
     const id = await waitForTerminal(win);
     const input = win.getByTestId('scratchpad-input');

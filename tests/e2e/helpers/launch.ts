@@ -1,7 +1,8 @@
-import { mkdtemp } from 'node:fs/promises';
+import { access, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { defaultUiState } from '../../../src/shared/domain/ui-state';
 
 export interface LaunchOptions {
   userData?: string;
@@ -12,6 +13,11 @@ export interface LaunchOptions {
   project?: string | null;
   env?: Record<string, string>;
   args?: string[];
+  /**
+   * Opens the right sidebar (scratchpad) on a fresh profile. Off by default: CI screens are small (1024×768 on
+   * Windows runners) and the extra column would narrow the terminals until prompts and commands wrap.
+   */
+  secondarySidebar?: boolean;
 }
 
 export interface LaunchedApp {
@@ -32,6 +38,17 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
       : opts.userData
         ? null
         : await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
+  const uiStateFile = join(userData, 'ui-state.json');
+  if (
+    !(await access(uiStateFile).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    const ui = defaultUiState();
+    ui.secondarySidebar.collapsed = !opts.secondarySidebar;
+    await writeFile(uiStateFile, JSON.stringify(ui));
+  }
   // Chromium's OS-level sandbox is unavailable in Linux containers/CI runners (root, AppArmor userns).
   const platformArgs = process.platform === 'linux' ? ['--no-sandbox'] : [];
   // Packaged smoke tests run the installed/unpacked app instead of out/ (OXYTOCIN_EXECUTABLE).
