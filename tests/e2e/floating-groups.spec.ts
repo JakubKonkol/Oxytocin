@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { nodeCmd, oxyTest, run, waitForPrompt, waitForTerminal } from './helpers/terminal';
 
 test('floating groups: move a panel out and back, keep its terminal, survive a restart', async () => {
   const first = await launchApp();
@@ -13,6 +13,7 @@ test('floating groups: move a panel out and back, keep its terminal, survive a r
     await expect.poll(async () => (await t.workspace())?.panels.length).toBe(2);
     const second = (await t.workspace())!.panels.find((p) => p.terminalId !== term)!;
     floatingPanel = second.id;
+    await waitForPrompt(first.win, second.terminalId!);
     await first.win.getByTestId(`terminal-view-${second.terminalId}`).click();
     await run(first.win, nodeCmd("console.log('float-' + 'me')"));
     await expect.poll(() => t.text(second.terminalId!)).toContain('float-me');

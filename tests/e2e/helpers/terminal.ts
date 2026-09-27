@@ -77,6 +77,13 @@ export async function run(page: Page, command: string): Promise<void> {
 
 const PROMPT_END = /[>$#%]\s*$/;
 
+/** Waits until the terminal shows a shell prompt (keys typed earlier may be echoed twice or lost). */
+export async function waitForPrompt(page: Page, id: string): Promise<void> {
+  await expect
+    .poll(async () => PROMPT_END.test((await oxyTest(page).text(id)).trimEnd()), { timeout: 15_000 })
+    .toBe(true);
+}
+
 /**
  * Presses Ctrl+C and waits for the shell's next prompt: PowerShell (PSReadLine) drops keys typed before it
  * redraws the prompt after an interrupt.

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { waitForTerminal } from './helpers/terminal';
+import { oxyTest, waitForTerminal } from './helpers/terminal';
 
 const row = (win: Page, key: string) => win.locator(`[data-testid="setting-row"][data-key="${key}"]`);
 
@@ -17,7 +17,14 @@ test('settings UI: problems, generated controls, plugin settings, reset and exte
   await writeFile(file, '{\n  // my settings\n  "terminal.fontSize": 99,\n  "git.periodicRefreshSeconds": 20\n}\n');
   const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
   try {
-    const terminal = await waitForTerminal(win);
+    // Start-up toast for the invalid value (shown for 10 s: checked before waiting for the terminal, which can take
+    // that long on Windows CI) → Settings filtered to problems.
+    const toast = win.locator('[data-sonner-toast]').filter({ hasText: 'settings.json has 1 invalid value' });
+    await expect(toast).toBeVisible();
+    await toast.getByRole('button', { name: 'Open Settings' }).click();
+    // The terminal tab is behind the Settings tab now: take its id from the test hooks.
+    await expect.poll(async () => (await oxyTest(win).terminalIds()).length, { timeout: 15_000 }).toBeGreaterThan(0);
+    const terminal = (await oxyTest(win).terminalIds())[0]!;
     const termOptions = () =>
       win.evaluate(
         (id) =>
@@ -29,10 +36,6 @@ test('settings UI: problems, generated controls, plugin settings, reset and exte
         terminal,
       );
 
-    // Start-up toast for the invalid value → Settings filtered to problems.
-    const toast = win.locator('[data-sonner-toast]').filter({ hasText: 'settings.json has 1 invalid value' });
-    await expect(toast).toBeVisible();
-    await toast.getByRole('button', { name: 'Open Settings' }).click();
     await expect(win.getByTestId('settings-panel')).toBeVisible();
     await expect(win.getByTestId('settings-search')).toHaveValue('@problems');
     await expect(win.getByTestId('setting-row')).toHaveCount(1);
