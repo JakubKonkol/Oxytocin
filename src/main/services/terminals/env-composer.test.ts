@@ -54,6 +54,9 @@ describe('composeEnv', () => {
       TERM: 'xterm-256color',
     });
     expect(compose({ platform: 'darwin' })['LANG']).toBe('en_US.UTF-8');
+    expect(compose({ platform: 'linux' })['LANG']).toBe('C.UTF-8');
+    expect(compose({ platform: 'linux', base: { LC_ALL: 'pl_PL.UTF-8' } })['LANG']).toBeUndefined();
+    expect(compose({ platform: 'win32' })['LANG']).toBeUndefined();
     expect(compose({ platform: 'win32' })['TERM']).toBeUndefined();
   });
 

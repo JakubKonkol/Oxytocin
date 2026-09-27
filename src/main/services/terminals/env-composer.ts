@@ -102,7 +102,9 @@ export function composeEnv(input: ComposeEnvInput): Record<string, string> {
   env.set('OXYTOCIN_TERMINAL_ID', input.terminalId);
   if (input.platform !== 'win32') {
     env.set('TERM', 'xterm-256color');
-    if (input.platform === 'darwin' && !env.get('LANG')) env.set('LANG', 'en_US.UTF-8');
+    // Without any locale, shells treat input as 8-bit and mangle UTF-8 (e.g. a minimal Linux session).
+    if (!env.get('LANG') && !env.get('LC_ALL') && !env.get('LC_CTYPE'))
+      env.set('LANG', input.platform === 'darwin' ? 'en_US.UTF-8' : 'C.UTF-8');
   }
   for (const layer of input.layers) {
     for (const [key, value] of Object.entries(layer)) {
