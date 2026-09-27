@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOsc7, parseOsc777, parseOsc9 } from './osc-parsers';
+import { parseOsc633, parseOsc7, parseOsc777, parseOsc9, unescapeOsc633 } from './osc-parsers';
 
 describe('parseOsc9', () => {
   it('parses progress sequences', () => {
@@ -30,5 +30,30 @@ describe('parseOsc7', () => {
     expect(parseOsc7('file://host/home/me/my%20dir')).toBe('/home/me/my dir');
     expect(parseOsc7('file://host/C:/Users/me')).toBe('C:/Users/me');
     expect(parseOsc7('http://x/y')).toBeNull();
+  });
+});
+
+describe('parseOsc633', () => {
+  it('parses prompt and command marks', () => {
+    expect(parseOsc633('A')).toEqual({ kind: 'promptStart' });
+    expect(parseOsc633('B')).toEqual({ kind: 'promptEnd' });
+    expect(parseOsc633('C')).toEqual({ kind: 'commandStart' });
+    expect(parseOsc633('D;0')).toEqual({ kind: 'commandEnd', exitCode: 0 });
+    expect(parseOsc633('D;127')).toEqual({ kind: 'commandEnd', exitCode: 127 });
+    expect(parseOsc633('D')).toEqual({ kind: 'commandEnd' });
+    expect(parseOsc633('D;x')).toEqual({ kind: 'commandEnd' });
+    expect(parseOsc633('Z;1')).toBeNull();
+  });
+
+  it('unescapes command lines and cwd values', () => {
+    expect(parseOsc633('E;echo a\\x3b b\\\\c\\x0anext')).toEqual({
+      kind: 'commandLine',
+      commandLine: 'echo a; b\\c\nnext',
+    });
+    expect(parseOsc633('E;ls;nonce123')).toEqual({ kind: 'commandLine', commandLine: 'ls' });
+    expect(parseOsc633('P;Cwd=C:\\\\Users\\\\me')).toEqual({ kind: 'cwd', cwd: 'C:\\Users\\me' });
+    expect(parseOsc633('P;Cwd=')).toBeNull();
+    expect(parseOsc633('P;Other=1')).toBeNull();
+    expect(unescapeOsc633('\\x1b[0m')).toBe('\x1b[0m');
   });
 });

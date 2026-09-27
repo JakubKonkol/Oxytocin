@@ -6,6 +6,7 @@ import type { Logger } from '@shared/logging/logger';
 import { DataBatcher } from './data-batcher';
 import { FlowController } from './flow-control';
 import { HeadlessMirror } from './headless-mirror';
+import type { Osc633 } from './osc-parsers';
 import { isAlive, killProcessTree } from './process-tree';
 
 export type SpawnPty = (file: string, args: string[], options: IPtyForkOptions | IWindowsPtyForkOptions) => IPty;
@@ -25,6 +26,8 @@ export interface TerminalSessionDeps {
 }
 
 const INITIAL_COMMAND_FALLBACK_MS = 300;
+/** With shell integration the initial command waits for the first prompt, at most this long. */
+const INITIAL_COMMAND_PROMPT_TIMEOUT_MS = 5000;
 
 /** A PTY process + its headless mirror, batching, sequencing and flow control (docs/plan/04 §3). */
 export class TerminalSession {
@@ -49,6 +52,10 @@ export class TerminalSession {
   private initialCommand: string | undefined;
   private initialCommandTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly platform: NodeJS.Platform;
+  private readonly shellIntegration: boolean;
+  /** Shell integration: the command line announced by OSC 633;E and the running command. */
+  private pendingCommandLine: string | undefined;
+  private runningCommand: { commandLine?: string; startedAt: number } | undefined;
 
   constructor(
     opts: SpawnOptions,
@@ -70,6 +77,7 @@ export class TerminalSession {
       onNotification: (body, title) =>
         emit('terminal:notification', title === undefined ? { id: this.id, body } : { id: this.id, title, body }),
       onCwd: (cwd) => emit('terminal:cwd', { id: this.id, cwd }),
+      onShellMark: (mark) => this.onShellMark(mark),
     });
     if (opts.restoreData) this.mirror.write(opts.restoreData);
     this.batcher = new DataBatcher((data) => this.broadcastData(data));
@@ -93,9 +101,13 @@ export class TerminalSession {
       resume: () => this.pty.resume(),
       onTimeout: () => deps.logger.warn(`Terminal ${this.id}: no ACK for 5 s while paused; resuming`),
     });
+    this.shellIntegration = opts.shellIntegration ?? false;
     this.initialCommand = opts.initialCommand;
     if (this.initialCommand) {
-      this.initialCommandTimer = setTimeout(() => this.sendInitialCommand(), INITIAL_COMMAND_FALLBACK_MS);
+      this.initialCommandTimer = setTimeout(
+        () => this.sendInitialCommand(),
+        this.shellIntegration ? INITIAL_COMMAND_PROMPT_TIMEOUT_MS : INITIAL_COMMAND_FALLBACK_MS,
+      );
     }
     this.pty.onData((data) => this.onPtyData(data));
     this.pty.onExit(({ exitCode, signal }) => this.onPtyExit(exitCode, signal));
@@ -122,7 +134,45 @@ export class TerminalSession {
     }
     this.mirror.write(data);
     this.batcher.push(data);
-    if (this.initialCommand) this.sendInitialCommand();
+    // Without shell integration the first output stands in for "the shell is ready".
+    if (this.initialCommand && !this.shellIntegration) this.sendInitialCommand();
+  }
+
+  /** OSC 633 marks (parsed by the mirror, in output order). */
+  private onShellMark(mark: Exclude<Osc633, { kind: 'cwd' }>): void {
+    const emit = this.deps.emit;
+    switch (mark.kind) {
+      case 'promptStart':
+        emit('terminal:command', { id: this.id, phase: 'prompt' });
+        return;
+      case 'promptEnd':
+        if (this.initialCommand) this.sendInitialCommand();
+        return;
+      case 'commandLine':
+        this.pendingCommandLine = mark.commandLine;
+        return;
+      case 'commandStart': {
+        const commandLine = this.pendingCommandLine?.trim() || undefined;
+        this.pendingCommandLine = undefined;
+        this.runningCommand = { startedAt: Date.now(), ...(commandLine ? { commandLine } : {}) };
+        emit('terminal:command', { id: this.id, phase: 'start', ...(commandLine ? { commandLine } : {}) });
+        return;
+      }
+      case 'commandEnd': {
+        const running = this.runningCommand;
+        this.runningCommand = undefined;
+        this.pendingCommandLine = undefined;
+        if (!running) return;
+        emit('terminal:command', {
+          id: this.id,
+          phase: 'end',
+          ...(running.commandLine ? { commandLine: running.commandLine } : {}),
+          ...(mark.exitCode !== undefined ? { exitCode: mark.exitCode } : {}),
+          durationMs: Date.now() - running.startedAt,
+        });
+        return;
+      }
+    }
   }
 
   private sendInitialCommand(): void {

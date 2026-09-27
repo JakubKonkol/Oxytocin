@@ -7,6 +7,7 @@ const signals = () => ({
   onProgress: vi.fn(),
   onNotification: vi.fn(),
   onCwd: vi.fn(),
+  onShellMark: vi.fn(),
 });
 
 const written = (m: HeadlessMirror, data: string) => new Promise<void>((r) => m.write(data, r));

@@ -30,6 +30,8 @@ export const SpawnOptionsSchema = z.object({
   restoreData: z.string().optional(),
   /** Typed into the shell after its first output (agent profiles, startup commands). */
   initialCommand: z.string().optional(),
+  /** Shell integration scripts were injected: the initial command waits for the first prompt (OSC 633;B). */
+  shellIntegration: z.boolean().optional(),
 });
 export type SpawnOptions = z.infer<typeof SpawnOptionsSchema>;
 
@@ -75,6 +77,19 @@ export const TerminalInfoSchema = z.object({
   /** Nearest non-shell descendant (e.g. `node` of `npm run dev`). */
   foreground: z.object({ pid: z.number(), name: z.string(), commandLine: z.string() }).optional(),
   agent: AgentInfoSchema.optional(),
+  /** Shell integration reported a prompt (OSC 633): command boundaries, exit codes and cwd are exact. */
+  shellIntegration: z.boolean().optional(),
+  /** The command running now (shell integration). */
+  command: z.object({ commandLine: z.string().optional(), startedAt: z.number() }).optional(),
+  /** The last finished command (shell integration). */
+  lastCommand: z
+    .object({
+      commandLine: z.string().optional(),
+      exitCode: z.number().optional(),
+      durationMs: z.number(),
+      finishedAt: z.number(),
+    })
+    .optional(),
 });
 export type TerminalInfo = z.infer<typeof TerminalInfoSchema>;
 

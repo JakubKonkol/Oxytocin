@@ -2,7 +2,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { Terminal } from '@xterm/headless';
 import type { ProgressState } from '@shared/domain/terminal';
 import { type Disposable, DisposableStore, toDisposable } from '@shared/utils/disposable';
-import { parseOsc7, parseOsc777, parseOsc9 } from './osc-parsers';
+import { type Osc633, parseOsc633, parseOsc7, parseOsc777, parseOsc9 } from './osc-parsers';
 
 export interface MirrorSignals {
   onTitle(title: string): void;
@@ -10,6 +10,8 @@ export interface MirrorSignals {
   onProgress(state: ProgressState, value?: number): void;
   onNotification(body: string, title?: string): void;
   onCwd(cwd: string): void;
+  /** OSC 633 shell integration marks (cwd marks also go to `onCwd`). */
+  onShellMark(mark: Exclude<Osc633, { kind: 'cwd' }>): void;
 }
 
 const MOUSE_ENCODINGS = [1005, 1006, 1015] as const;
@@ -70,6 +72,14 @@ export class HeadlessMirror implements Disposable {
       parser.registerOscHandler(7, (data) => {
         const cwd = parseOsc7(data);
         if (cwd) signals.onCwd(cwd);
+        return false;
+      }),
+    );
+    this.store.add(
+      parser.registerOscHandler(633, (data) => {
+        const mark = parseOsc633(data);
+        if (mark?.kind === 'cwd') signals.onCwd(mark.cwd);
+        else if (mark) signals.onShellMark(mark);
         return false;
       }),
     );

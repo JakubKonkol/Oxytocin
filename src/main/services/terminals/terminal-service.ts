@@ -12,6 +12,7 @@ import type { UtilityHost } from '../../hosts/utility-host';
 import { composeEnv, type EnvLayer } from './env-composer';
 import { withSeparator } from './scrollback-format';
 import type { ProfileService } from './profiles';
+import { injectShellIntegration, type ShellIntegrationScripts } from './shell-integration';
 
 /** Runtime classification from the AgentService; `undefined` removes a field. */
 export interface TerminalRuntimePatch {
@@ -35,6 +36,8 @@ export interface TerminalServiceDeps {
   readScrollback?: (projectId: string, panelId: string) => Promise<string | null>;
   /** Environment contributions from plugins (M5); applied after project env. */
   pluginEnv?: (ctx: { projectId: string; profileId: string }) => EnvLayer[];
+  /** Installed shell integration scripts (M7-T5); null when unavailable. */
+  shellIntegration?: () => Promise<ShellIntegrationScripts | null>;
   /** Awaited before spawning (plugin environments at start-up, max 2 s). */
   beforeSpawn?: () => Promise<void>;
   appVersion: string;
@@ -70,6 +73,7 @@ export class TerminalService implements Disposable {
     this.store.add(pty.onEvent('terminal:title', (e) => this.patch(e.id, { oscTitle: e.title })));
     this.store.add(pty.onEvent('terminal:bell', (e) => this.patch(e.id, { bell: true })));
     this.store.add(pty.onEvent('terminal:cwd', (e) => this.patch(e.id, { cwd: e.cwd })));
+    this.store.add(pty.onEvent('terminal:command', (e) => this.onCommand(e)));
     this.store.add(
       pty.onEvent('terminal:progress', (e) =>
         this.patch(e.id, { progress: e.value === undefined ? { state: e.state } : { state: e.state, value: e.value } }),
@@ -89,6 +93,40 @@ export class TerminalService implements Disposable {
 
   private withTitle(info: TerminalInfo): TerminalInfo {
     return { ...info, title: info.userTitle ?? info.oscTitle ?? info.profileName };
+  }
+
+  /** Shell integration events: running command, last command (exit code, duration). */
+  private onCommand(e: PtyHostEvents['terminal:command']): void {
+    const current = this.terminals.get(e.id);
+    if (!current) return;
+    const { command: _running, ...rest } = current;
+    if (e.phase === 'prompt') {
+      if (current.shellIntegration && !current.command) return;
+      this.replace({ ...rest, shellIntegration: true });
+    } else if (e.phase === 'start') {
+      this.replace({
+        ...rest,
+        shellIntegration: true,
+        command: { startedAt: Date.now(), ...(e.commandLine ? { commandLine: e.commandLine } : {}) },
+      });
+    } else {
+      this.replace({
+        ...rest,
+        shellIntegration: true,
+        lastCommand: {
+          ...(e.commandLine ? { commandLine: e.commandLine } : {}),
+          ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),
+          durationMs: e.durationMs ?? 0,
+          finishedAt: Date.now(),
+        },
+      });
+    }
+  }
+
+  private replace(next: TerminalInfo): void {
+    const info = this.withTitle(next);
+    this.terminals.set(info.id, info);
+    this.updatedEmitter.fire(info);
   }
 
   private patch(id: string, patch: Partial<TerminalInfo>): void {
@@ -142,6 +180,23 @@ export class TerminalService implements Disposable {
       ],
     });
     const initialCommand = req.initialCommand ?? launch.initialCommand;
+    // Shell integration (04 §11): scripts injected into bash/zsh/fish/PowerShell.
+    let args = launch.args;
+    let spawnEnv = env;
+    let shellIntegration = false;
+    if (settings['terminal.shellIntegration'] && this.deps.shellIntegration) {
+      const scripts = await this.deps.shellIntegration().catch(() => null);
+      if (scripts) {
+        const injection = injectShellIntegration({
+          shellType: launch.shellType,
+          args: launch.args,
+          env,
+          scripts,
+          platform: this.deps.platform,
+        });
+        ({ args, env: spawnEnv, injected: shellIntegration } = injection);
+      }
+    }
     const restoreData =
       restoreOverride ??
       (req.restoreScrollback && this.deps.readScrollback
@@ -150,15 +205,16 @@ export class TerminalService implements Disposable {
     const { pid } = await this.deps.ptyHost.call('spawn', {
       id,
       file: launch.file,
-      args: launch.args,
+      args,
       cwd,
-      env,
+      env: spawnEnv,
       cols: req.cols ?? DEFAULT_COLS,
       rows: req.rows ?? DEFAULT_ROWS,
       scrollback: settings['terminal.scrollback'],
       useConptyDll: settings['terminal.windows.useBundledConpty'],
       ...(restoreData ? { restoreData } : {}),
       ...(initialCommand ? { initialCommand } : {}),
+      ...(shellIntegration ? { shellIntegration } : {}),
     });
     const info = this.withTitle({
       id,

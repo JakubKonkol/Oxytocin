@@ -22,6 +22,7 @@ asarUnpack:
   - '**/node_modules/ps-list/vendor/**'
 extraResources:
   - { from: resources/icons, to: icons }
+  - { from: resources/shell-integration, to: shell-integration }
   - { from: LICENSE, to: LICENSE }
   - { from: THIRD_PARTY_NOTICES.md, to: THIRD_PARTY_NOTICES.md }
   # Built-in plugins (npm run build:plugins): manifest, bundles and checksums only.

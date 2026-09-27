@@ -221,6 +221,16 @@ export const CORE_SETTINGS = {
     30,
     'Minimum task length (seconds) for a "finished" notification.',
   ),
+  'notifications.commandFinished': def(
+    z.boolean(),
+    true,
+    'Notifies when a long command finishes in a terminal you are not looking at (needs shell integration).',
+  ),
+  'notifications.commandFinishedMinSeconds': def(
+    z.number().min(0),
+    30,
+    'Minimum command length (seconds) for a "command finished" notification.',
+  ),
   'notifications.processError': def(z.boolean(), true, 'Notifies when a process exits with an error.'),
   'notifications.flashTaskbar': def(
     z.boolean(),

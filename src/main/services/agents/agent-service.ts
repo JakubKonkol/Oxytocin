@@ -24,6 +24,20 @@ const OUTPUT_WORKING_MS = 2_000;
 const OUTPUT_IDLE_MS = 8_000;
 /** A plain process must live this long before a shell is shown as PROCESS. */
 const PROCESS_CONFIRM_MS = 1_000;
+const SHELL_NAMES = new Set([
+  'bash',
+  'zsh',
+  'fish',
+  'sh',
+  'dash',
+  'pwsh',
+  'powershell',
+  'cmd',
+  'bash.exe',
+  'pwsh.exe',
+  'powershell.exe',
+  'cmd.exe',
+]);
 
 /** Built-in agent profiles (`agent:<name>`) → detection rule ids. */
 const PROFILE_RULES: Record<string, string> = {
@@ -71,6 +85,8 @@ interface Tracked {
   kind: 'shell' | 'process' | 'agent';
   /** A new foreground process waiting to prove it is not a short-lived helper (shell start-up, prompt hooks). */
   pendingProcess?: { pid: number; since: number };
+  /** Shell integration (M7-T5): a command is running; undefined without integration. */
+  commandRunning?: boolean;
 }
 
 /**
@@ -96,6 +112,7 @@ export class AgentService implements Disposable {
     this.store.add(pty.onEvent('terminal:bell', (e) => this.signal(e.id, 'bell', 'waiting')));
     this.store.add(pty.onEvent('terminal:notification', (e) => this.signal(e.id, 'bell', 'waiting')));
     this.store.add(pty.onEvent('terminal:userInput', (e) => this.onUserInput(e.id)));
+    this.store.add(pty.onEvent('terminal:command', (e) => this.onCommand(e.id, e.phase)));
     this.store.add(pty.onEvent('terminal:exit', (e) => this.onExit(e.id)));
     this.store.add(
       pty.onEvent('terminal:activity', (e) => {
@@ -166,6 +183,17 @@ export class AgentService implements Disposable {
     if (hadAgent) this.fireAgents();
   }
 
+  /** Shell integration command boundaries (OSC 633 C / D and prompts). */
+  private onCommand(id: string, phase: 'prompt' | 'start' | 'end'): void {
+    const t = this.tracked.get(id);
+    if (!t) return;
+    t.commandRunning = phase === 'start';
+    // The next process report classifies the command (the current descendants may predate it).
+    if (phase === 'start') return;
+    t.pendingProcess = undefined;
+    if (t.kind === 'process') this.publish(t, { kind: 'shell', foreground: undefined });
+  }
+
   private onProcesses(id: string, descendants: ProcInfo[]): void {
     const t = this.tracked.get(id);
     if (!t) return;
@@ -211,6 +239,15 @@ export class AgentService implements Disposable {
     if (t.startingUntil !== undefined && this.now() < t.startingUntil) return;
     t.startingUntil = undefined;
     if (c.kind === 'process' && t.kind === 'shell') {
+      // With shell integration the boundaries are exact: at the prompt, descendants are prompt helpers
+      // (e.g. `git status` in PS1); while a command runs, no confirmation delay is needed.
+      if (t.commandRunning === false) return;
+    }
+    // A shell-named foreground may be a subshell of the shell's own hooks sampled just before the command ran:
+    // it gets the normal confirmation delay even while a command runs.
+    const instant =
+      t.commandRunning === true && !SHELL_NAMES.has(c.kind === 'process' ? c.foreground.name.toLowerCase() : '');
+    if (c.kind === 'process' && t.kind === 'shell' && !instant) {
       const pending = t.pendingProcess;
       if (!pending || pending.pid !== c.foreground.pid) t.pendingProcess = { pid: c.foreground.pid, since: this.now() };
       if (this.now() - t.pendingProcess!.since < PROCESS_CONFIRM_MS) return;

@@ -30,6 +30,7 @@ export interface NotificationServiceDeps {
 
 interface Last {
   state: TerminalInfo['state'];
+  lastCommandAt?: number;
   agentState?: string;
   workingSince?: number;
 }
@@ -54,7 +55,11 @@ export class NotificationService implements Disposable {
   private onUpdate(info: TerminalInfo): void {
     const prev = this.last.get(info.id);
     const agentState = info.agent?.state;
-    const next: Last = { state: info.state, ...(agentState ? { agentState } : {}) };
+    const next: Last = {
+      state: info.state,
+      ...(agentState ? { agentState } : {}),
+      ...(info.lastCommand ? { lastCommandAt: info.lastCommand.finishedAt } : {}),
+    };
     if (agentState === 'working') next.workingSince = prev?.agentState === 'working' ? prev.workingSince : this.now();
     this.last.set(info.id, next);
     if (!prev) return;
@@ -78,6 +83,27 @@ export class NotificationService implements Disposable {
     ) {
       this.deps.toast({ kind: 'success', message: `${name} finished`, description: where, target, onlyIfHidden: true });
       if (s['notifications.agentFinished']) this.attention(`${name} finished`, where, target, false);
+      return;
+    }
+    const cmd = info.lastCommand;
+    if (
+      cmd &&
+      cmd.finishedAt !== prev.lastCommandAt &&
+      info.kind !== 'agent' &&
+      s['notifications.commandFinished'] &&
+      cmd.durationMs >= s['notifications.commandFinishedMinSeconds'] * 1000
+    ) {
+      const failed = cmd.exitCode !== undefined && cmd.exitCode !== 0;
+      const title = failed ? `Command failed (exit ${cmd.exitCode})` : 'Command finished';
+      const body = [cmd.commandLine, where].filter(Boolean).join(' · ');
+      this.deps.toast({
+        kind: failed ? 'error' : 'success',
+        message: title,
+        description: body,
+        target,
+        onlyIfHidden: true,
+      });
+      this.attention(title, body, target, false);
       return;
     }
     if (

@@ -28,6 +28,7 @@ import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
 import { QuickPickBroker } from './services/ui/quick-pick-broker';
 import { KeybindingsService } from './services/settings/keybindings-service';
+import { installShellIntegration } from './services/terminals/shell-integration';
 import { PtyPortLink } from './services/terminals/pty-port-link';
 import { createLogger, initLogging, logFilePath, setLogLevel } from './logging/log';
 import { SettingsService } from './services/settings/settings-service';
@@ -144,9 +145,18 @@ function bootstrap(): void {
     createLogger('workspace'),
   );
 
+  // Shell integration scripts are copied to userData (dotfiles for zsh, no asar/space issues) once per start.
+  const shellScripts = installShellIntegration(
+    join(appPaths.resourcesDir(), 'shell-integration'),
+    join(app.getPath('userData'), 'shell-integration'),
+  ).catch((e: unknown) => {
+    log.warn('Shell integration scripts could not be installed', e);
+    return null;
+  });
   const terminals: TerminalService = new TerminalService({
     ptyHost: hosts.pty,
     profiles,
+    shellIntegration: () => shellScripts,
     settings: () => settings.get(),
     resolveProject: (projectId) => {
       const project = projects.get(projectId);

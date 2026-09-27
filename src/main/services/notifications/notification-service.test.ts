@@ -126,4 +126,41 @@ describe('NotificationService', () => {
     s.fire({ state: 'exited', exitCode: 0 });
     expect(s.toast).toHaveBeenCalledTimes(1);
   });
+
+  it('reports long commands finishing (shell integration), once, with the exit status', () => {
+    const s = setup();
+    s.fire({ kind: 'shell' });
+    s.fire({ kind: 'shell', lastCommand: { commandLine: 'ls', exitCode: 0, durationMs: 400, finishedAt: 1 } });
+    expect(s.toast).not.toHaveBeenCalled();
+    s.fire({ kind: 'shell', lastCommand: { commandLine: 'npm test', exitCode: 1, durationMs: 45_000, finishedAt: 2 } });
+    expect(s.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'error',
+        message: 'Command failed (exit 1)',
+        description: 'npm test · api · bash',
+        onlyIfHidden: true,
+      }),
+    );
+    expect(s.osNotify).toHaveBeenCalledWith(expect.objectContaining({ title: 'Command failed (exit 1)' }));
+    // The same command reported again (another update of the terminal) is not repeated.
+    s.fire({
+      kind: 'shell',
+      bell: true,
+      lastCommand: { commandLine: 'npm test', exitCode: 1, durationMs: 45_000, finishedAt: 2 },
+    });
+    expect(s.toast).toHaveBeenCalledTimes(1);
+    s.fire({ kind: 'shell', lastCommand: { commandLine: 'make', exitCode: 0, durationMs: 60_000, finishedAt: 3 } });
+    expect(s.toast).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'success', message: 'Command finished' }));
+  });
+
+  it('can turn command notifications off or change the threshold', () => {
+    const off = setup({ 'notifications.commandFinished': false });
+    off.fire({ kind: 'shell' });
+    off.fire({ kind: 'shell', lastCommand: { durationMs: 99_000, finishedAt: 1 } });
+    expect(off.toast).not.toHaveBeenCalled();
+    const quick = setup({ 'notifications.commandFinishedMinSeconds': 1 });
+    quick.fire({ kind: 'shell' });
+    quick.fire({ kind: 'shell', lastCommand: { durationMs: 1_500, finishedAt: 1 } });
+    expect(quick.toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'Command finished' }));
+  });
 });

@@ -30,6 +30,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npm run licenses:check
       - run: npx vitest run --project unit-node --project unit-web
+      - name: Shells for the shell integration tests (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y -q zsh fish
       - run: npx vitest run --project integration
 
   e2e:

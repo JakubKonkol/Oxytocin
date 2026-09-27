@@ -29,6 +29,17 @@ export type PtyHostEvents = HostBaseEvents & {
   'terminal:progress': { id: TerminalId; state: ProgressState; value?: number };
   'terminal:notification': { id: TerminalId; title?: string; body: string };
   'terminal:cwd': { id: TerminalId; cwd: string };
+  /**
+   * Shell integration (OSC 633, 04 §11): `prompt` at each prompt, `start` when a command runs, `end` when it
+   * finished (exit code when the shell reported one).
+   */
+  'terminal:command': {
+    id: TerminalId;
+    phase: 'prompt' | 'start' | 'end';
+    commandLine?: string;
+    exitCode?: number;
+    durationMs?: number;
+  };
   'terminal:activity': { id: TerminalId; lastOutputAt: number };
   'terminal:process': { id: TerminalId; descendants: ProcInfo[]; foreground?: ProcInfo };
   /** The user submitted input (Enter) — used to move an agent out of "waiting". Throttled to 1/s. */

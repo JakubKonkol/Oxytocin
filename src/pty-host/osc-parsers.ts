@@ -50,3 +50,52 @@ export function parseOsc7(data: string): string | null {
   if (/^\/[A-Za-z]:[\\/]/.test(path)) path = path.slice(1);
   return path || null;
 }
+
+export type Osc633 =
+  | { kind: 'promptStart' }
+  | { kind: 'promptEnd' }
+  | { kind: 'commandStart' }
+  | { kind: 'commandLine'; commandLine: string }
+  | { kind: 'commandEnd'; exitCode?: number }
+  | { kind: 'cwd'; cwd: string };
+
+/** Reverses the OSC 633 value escaping (`\\` → `\`, `\xNN` → the character). */
+export function unescapeOsc633(value: string): string {
+  return value.replace(/\\(\\|x([0-9a-fA-F]{2}))/g, (_m, all: string, hex: string | undefined) =>
+    hex ? String.fromCharCode(parseInt(hex, 16)) : all,
+  );
+}
+
+/**
+ * OSC 633 (shell integration, docs/plan/04-terminals.md §11): `A` prompt start, `B` prompt end, `C` command
+ * start, `D[;exit]` command end, `E;<command line>`, `P;Cwd=<path>`. Unknown marks are ignored.
+ */
+export function parseOsc633(data: string): Osc633 | null {
+  const sep = data.indexOf(';');
+  const mark = sep < 0 ? data : data.slice(0, sep);
+  const rest = sep < 0 ? '' : data.slice(sep + 1);
+  switch (mark) {
+    case 'A':
+      return { kind: 'promptStart' };
+    case 'B':
+      return { kind: 'promptEnd' };
+    case 'C':
+      return { kind: 'commandStart' };
+    case 'D': {
+      const code = rest === '' ? NaN : Number(rest.split(';')[0]);
+      return Number.isInteger(code) ? { kind: 'commandEnd', exitCode: code } : { kind: 'commandEnd' };
+    }
+    case 'E': {
+      // A nonce may follow the command line (`E;<line>;<nonce>`); escaped `;` never appears raw in the line.
+      const line = rest.split(';')[0] ?? '';
+      return { kind: 'commandLine', commandLine: unescapeOsc633(line) };
+    }
+    case 'P': {
+      if (!rest.startsWith('Cwd=')) return null;
+      const cwd = unescapeOsc633(rest.slice(4));
+      return cwd ? { kind: 'cwd', cwd } : null;
+    }
+    default:
+      return null;
+  }
+}

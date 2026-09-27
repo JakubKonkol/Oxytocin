@@ -128,6 +128,43 @@ describe('AgentService', () => {
     expect(s.info().kind).toBe('shell');
   });
 
+  it('uses shell integration command boundaries: immediate PROCESS, prompt helpers ignored', () => {
+    const s = setup();
+    const npm = { pid: 150, ppid: 100, name: 'npm', commandLine: 'npm test' };
+    // At the prompt: a helper run by the prompt never makes the terminal a PROCESS.
+    s.emit('terminal:command', { id: 't1', phase: 'prompt' });
+    s.emit('terminal:process', { id: 't1', descendants: [{ ...npm, name: 'git', commandLine: 'git status' }] });
+    s.advance(2_000);
+    expect(s.info().kind).toBe('shell');
+    // A command started: PROCESS without the 1 s confirmation.
+    s.emit('terminal:command', { id: 't1', phase: 'start', commandLine: 'npm test' });
+    s.emit('terminal:process', { id: 't1', descendants: [npm] });
+    expect(s.info().kind).toBe('process');
+    expect(s.info().foreground?.name).toBe('npm');
+    // It ended: back to SHELL at once, even if the process report lags behind.
+    s.emit('terminal:command', { id: 't1', phase: 'end', exitCode: 0, durationMs: 10 });
+    expect(s.info().kind).toBe('shell');
+    expect(s.info().foreground).toBeUndefined();
+    s.emit('terminal:process', { id: 't1', descendants: [npm] });
+    s.advance(2_000);
+    expect(s.info().kind).toBe('shell');
+    // A subshell of the shell's hooks sampled at the command start is not confirmed instantly.
+    s.emit('terminal:command', { id: 't1', phase: 'start', commandLine: 'make' });
+    s.emit('terminal:process', {
+      id: 't1',
+      descendants: [{ ...npm, pid: 160, name: 'bash', commandLine: 'bash --init-file x' }],
+    });
+    expect(s.info().kind).toBe('shell');
+    s.emit('terminal:process', { id: 't1', descendants: [{ ...npm, pid: 170, name: 'make', commandLine: 'make' }] });
+    expect(s.info().kind).toBe('process');
+    expect(s.info().foreground?.name).toBe('make');
+    s.emit('terminal:command', { id: 't1', phase: 'end', exitCode: 0, durationMs: 10 });
+    // Agents are still detected while a command runs.
+    s.emit('terminal:command', { id: 't1', phase: 'start', commandLine: 'claude' });
+    s.emit('terminal:process', { id: 't1', descendants: [s.claude] });
+    expect(s.info().kind).toBe('agent');
+  });
+
   it('keeps agent-profile terminals "starting" until detection, at most 10 s', () => {
     const s = setup({ kind: 'agent', profileId: 'agent:claude', profileName: 'Claude Code' });
     expect(s.info().agent).toMatchObject({ agentId: 'claude-code', state: 'starting' });
