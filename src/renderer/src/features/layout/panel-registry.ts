@@ -3,6 +3,8 @@ export type PanelKind = 'terminal' | 'diff' | 'plugin' | 'plugins' | 'keybinding
 
 export interface TerminalPanelParams {
   terminalId: string;
+  /** Agent session that ran here before the restart: offered by the "Resume session" bar (M7-T6). */
+  resume?: { agentId: string; sessionId: string };
 }
 
 export interface MissingPanelParams {

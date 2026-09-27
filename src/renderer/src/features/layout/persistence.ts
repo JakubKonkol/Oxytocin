@@ -1,4 +1,5 @@
 import type { DockviewApi, SerializedDockview } from 'dockview-react';
+import { resumeInfo } from '@shared/domain/agent-resume';
 import type { PanelDescriptor, WorkspaceState } from '@shared/domain/workspace';
 import { OxyError } from '@shared/errors';
 import { ipc } from '../../lib/ipc-client';
@@ -23,15 +24,20 @@ export function buildWorkspaceState(api: DockviewApi, projectId: string): Worksp
   const panels: Record<string, PanelDescriptor> = {};
   for (const panel of api.panels) {
     if (panel.api.component === 'terminal') {
-      const terminalId = (panel.params as TerminalPanelParams | undefined)?.terminalId;
-      const info = terminalId ? terminals[terminalId] : undefined;
+      const params = panel.params as TerminalPanelParams | undefined;
+      const info = params?.terminalId ? terminals[params.terminalId] : undefined;
       if (!info) continue;
+      // The live agent session, or the one still offered for resuming since the last restart.
+      const agent = info.agent?.sessionId
+        ? { agentId: info.agent.agentId, sessionId: info.agent.sessionId }
+        : params?.resume;
       panels[panel.id] = {
         kind: 'terminal',
         terminalId: info.id,
         profileId: info.profileId,
         cwd: info.cwd,
         ...(info.userTitle ? { userTitle: info.userTitle } : {}),
+        ...(agent ? { agent } : {}),
       };
     } else if (panel.api.component === 'diff') {
       const p = panel.params as DiffPanelParams | undefined;
@@ -156,6 +162,8 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
         cwd: descriptor.cwd,
         ...(descriptor.userTitle ? { userTitle: descriptor.userTitle } : {}),
         ...(descriptor.scrollbackFile ? { restoreScrollback: { panelId } } : {}),
+        // Agents are never started again by themselves: the shell starts, the session is offered for resuming.
+        skipInitialCommand: true,
       };
       let info;
       try {
@@ -168,7 +176,11 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
       }
       useTerminalsStore.getState().upsert(info);
       used.add(info.id);
-      panel.params = { ...panel.params, terminalId: info.id };
+      const resume =
+        descriptor.agent?.sessionId && resumeInfo(descriptor.agent.agentId, descriptor.agent.sessionId)
+          ? { agentId: descriptor.agent.agentId, sessionId: descriptor.agent.sessionId }
+          : undefined;
+      panel.params = { ...panel.params, terminalId: info.id, ...(resume ? { resume } : {}) };
     } else if (component === 'plugin') {
       const available =
         descriptor?.kind === 'plugin' &&

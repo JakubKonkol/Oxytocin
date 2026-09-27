@@ -101,6 +101,8 @@ export const CreateTerminalRequestSchema = z.object({
   rows: z.number().int().min(1).max(500).optional(),
   userTitle: z.string().max(80).optional(),
   initialCommand: z.string().max(10_000).optional(),
+  /** Start the profile's shell without its agent command (restored agent terminals are never run again). */
+  skipInitialCommand: z.boolean().optional(),
   /** Restores the scrollback snapshot saved for this panel at the last quit (read by main). */
   restoreScrollback: z.object({ panelId: z.string().regex(/^[a-z]+-[a-z0-9]+$/) }).optional(),
 });

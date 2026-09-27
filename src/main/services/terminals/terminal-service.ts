@@ -179,7 +179,7 @@ export class TerminalService implements Disposable {
         launch.env,
       ],
     });
-    const initialCommand = req.initialCommand ?? launch.initialCommand;
+    const initialCommand = req.initialCommand ?? (req.skipInitialCommand ? undefined : launch.initialCommand);
     // Shell integration (04 §11): scripts injected into bash/zsh/fish/PowerShell.
     let args = launch.args;
     let spawnEnv = env;
@@ -226,7 +226,8 @@ export class TerminalService implements Disposable {
       pid,
       cwd,
       shellType: launch.shellType,
-      kind: launch.profile.kind === 'agent' ? 'agent' : 'shell',
+      // A restored agent terminal (no agent command typed) starts as a plain shell.
+      kind: launch.profile.kind === 'agent' && initialCommand ? 'agent' : 'shell',
       state: 'running',
       createdAt: Date.now(),
       envStale: false,

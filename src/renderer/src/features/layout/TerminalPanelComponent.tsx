@@ -1,5 +1,6 @@
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useCallback, useEffect, useState } from 'react';
+import { resumeInfo } from '@shared/domain/agent-resume';
 import { ipc } from '../../lib/ipc-client';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { TerminalPanel } from '../terminals/TerminalPanel';
@@ -29,6 +30,11 @@ export function TerminalPanelComponent(props: IDockviewPanelProps<TerminalPanelP
     return () => clearTimeout(timer);
   }, [unseenError, active, visible, params.terminalId]);
   const onRestart = useCallback(() => void restartTerminalPanel(containerApi, api.id), [containerApi, api]);
+  const resume = params.resume ? resumeInfo(params.resume.agentId, params.resume.sessionId) : null;
+  const clearResume = useCallback(() => {
+    const { resume: _done, ...rest } = api.getParameters<TerminalPanelParams>() ?? params;
+    api.updateParameters({ ...rest, resume: undefined });
+  }, [api, params]);
   const onClose = useCallback(
     () => void requestClosePanel(containerApi, api.id, { skipConfirm: true }),
     [containerApi, api],
@@ -49,6 +55,7 @@ export function TerminalPanelComponent(props: IDockviewPanelProps<TerminalPanelP
         autoFocus={active}
         onRestart={onRestart}
         onClose={onClose}
+        {...(resume ? { resume, onResumeDone: clearResume } : {})}
       />
     </div>
   );
