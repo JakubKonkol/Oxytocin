@@ -44,6 +44,10 @@ npm run package:win   # Windows installer into release/ (also package:mac, packa
 
 ## Documentation
 
+- [Writing plugins](docs/plugins/README.md) — the manifest, the backend API, views, debugging and distribution;
+  start a plugin with `npm create oxytocin-plugin` ([`packages/create-oxytocin-plugin`](packages/create-oxytocin-plugin)).
+- [Releasing](docs/RELEASING.md) — packaging, code signing and auto-update.
+
 The implementation plan lives in [`docs/plan/`](docs/plan/README.md). Note: the plan documents are written in
 Polish; everything else in this repository (code, UI, comments, commits) is in English.
 

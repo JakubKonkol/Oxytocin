@@ -1,0 +1,24 @@
+{
+  "name": "create-oxytocin-plugin",
+  "version": "0.1.0",
+  "description": "Scaffolds an Oxytocin plugin (backend + view, TypeScript, vanilla or React)",
+  "license": "MIT",
+  "author": "Jakub Konkol",
+  "type": "module",
+  "bin": {
+    "create-oxytocin-plugin": "index.js"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "template",
+    "vendor",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepack": "node lib/vendor.js"
+  }
+}

@@ -29,6 +29,9 @@ export default tseslint.config(
       'docs/**',
       '**/dist/**',
       'spikes/**',
+      // Plugin templates contain {{placeholders}}; they are checked by building generated projects (tests).
+      'packages/create-oxytocin-plugin/template/**',
+      'packages/create-oxytocin-plugin/vendor/**',
       // Generated copies of the view SDK used by E2E fixture plugins.
       'tests/fixtures/plugins/*/oxy-sdk.js',
     ],
@@ -117,7 +120,13 @@ export default tseslint.config(
     ['electron'],
   ),
   {
-    files: ['scripts/**/*.ts', 'tests/**/*.ts', '**/*.test.{ts,tsx}', '*.config.{ts,mjs}'],
+    files: [
+      'scripts/**/*.ts',
+      'tests/**/*.ts',
+      '**/*.test.{ts,tsx}',
+      '*.config.{ts,mjs}',
+      'packages/create-oxytocin-plugin/**/*.js',
+    ],
     rules: { 'no-console': 'off' },
   },
 );

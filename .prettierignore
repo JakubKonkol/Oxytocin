@@ -12,3 +12,6 @@ THIRD_PARTY_NOTICES.md
 tests/fixtures/plugins/*/oxy-sdk.js
 tests/fixtures/plugins/*/oxy-theme.css
 tests/fixtures/usage/
+# Templates with {{placeholders}}; the generated project is formatted by its author.
+packages/create-oxytocin-plugin/template/
+packages/create-oxytocin-plugin/vendor/
