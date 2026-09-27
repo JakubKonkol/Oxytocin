@@ -36,6 +36,19 @@ extraResources:
       - '*/LICENSE'
       - '*/icon.*'
 npmRebuild: false
+# Electron fuses (docs/plan/01-architecture.md §5), flipped before signing.
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+  # Unsigned macOS builds need a fresh ad-hoc signature after the binary changed (Apple silicon).
+  resetAdHocDarwinSignature: true
+# Signing and notarization are switched on by the release workflow when the secrets exist (docs/RELEASING.md;
+# scripts/signing-args.ts). Without them the packages are unsigned.
 win:
   target: [nsis]
   icon: resources/build/icon.ico
@@ -49,6 +62,11 @@ mac:
   target: [dmg, zip]
   category: public.app-category.developer-tools
   icon: resources/build/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: resources/build/entitlements.mac.plist
+  entitlementsInherit: resources/build/entitlements.mac.plist
+  notarize: false
 linux:
   target: [AppImage, deb]
   category: Development

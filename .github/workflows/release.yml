@@ -1,7 +1,8 @@
 name: Release
 
 # Tag v* → packages for Windows (NSIS), macOS and Linux, a packaged smoke test on each, and a draft GitHub Release
-# (docs/plan/10-quality-testing-release.md §7, §11). Unsigned until M9.
+# (docs/plan/10-quality-testing-release.md §7, §9, §11). Signed and notarized when the signing secrets exist
+# (docs/RELEASING.md); unsigned otherwise.
 on:
   push:
     tags: ['v*']
@@ -18,13 +19,21 @@ jobs:
         include:
           - os: windows-latest
             target: --win
+            platform: win
           - os: macos-latest
             target: --mac
+            platform: mac
           - os: ubuntu-latest
             target: --linux
+            platform: linux
     runs-on: ${{ matrix.os }}
     env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Azure Trusted Signing (Windows) and notarization (macOS) read these while electron-builder runs.
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -34,7 +43,55 @@ jobs:
       - run: npm ci
       - run: npm run licenses:notices
       - run: npm run build
-      - run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Signing setup
+        id: signing
+        shell: bash
+        env:
+          AZURE_SIGN_ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          AZURE_SIGN_ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          AZURE_SIGN_PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+          AZURE_SIGN_PUBLISHER: ${{ secrets.AZURE_SIGN_PUBLISHER }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          if [ -n "$APPLE_API_KEY_P8" ]; then
+            mkdir -p "$RUNNER_TEMP/apple"
+            printf '%s' "$APPLE_API_KEY_P8" > "$RUNNER_TEMP/apple/AuthKey.p8"
+            export APPLE_API_KEY="$RUNNER_TEMP/apple/AuthKey.p8"
+            echo "APPLE_API_KEY=$APPLE_API_KEY" >> "$GITHUB_ENV"
+          fi
+          npx tsx scripts/signing-args.ts ${{ matrix.platform }}
+      - run: npx electron-builder ${{ matrix.target }} ${{ steps.signing.outputs.args }} --publish never
+      - name: Verify Electron fuses
+        shell: bash
+        run: |
+          case "${{ matrix.platform }}" in
+            linux) APP=release/linux-unpacked/oxytocin ;;
+            mac) APP=$(ls -d release/mac*/Oxytocin.app | head -n 1) ;;
+            win) APP=release/win-unpacked/Oxytocin.exe ;;
+          esac
+          npx tsx scripts/verify-fuses.ts "$APP"
+      - name: Verify signatures (macOS)
+        if: runner.os == 'macOS' && steps.signing.outputs.signed == 'true'
+        run: |
+          APP=$(ls -d release/mac*/Oxytocin.app | head -n 1)
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          if [ "${{ steps.signing.outputs.notarized }}" = "true" ]; then
+            xcrun stapler validate "$APP"
+            spctl --assess --type execute --verbose=2 "$APP"
+          fi
+      - name: Verify signatures (Windows)
+        if: runner.os == 'Windows' && steps.signing.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          foreach ($file in @((Get-ChildItem release -Filter '*Setup*.exe' | Select-Object -First 1).FullName, 'release\win-unpacked\Oxytocin.exe')) {
+            $sig = Get-AuthenticodeSignature $file
+            Write-Host "$file : $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "Not validly signed: $file" }
+          }
       - name: Install system dependencies for Electron (Linux)
         if: runner.os == 'Linux'
         run: npx playwright install-deps chromium
