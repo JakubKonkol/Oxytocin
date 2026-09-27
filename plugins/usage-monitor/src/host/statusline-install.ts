@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { dirname, join, win32 } from 'node:path';
 import { STATUSLINE_DATA_FILE } from './collectors/claude-statusline';
 
 /** Folder (inside the Claude configuration folder) with the status line script, its data and the backup. */
@@ -38,19 +38,21 @@ const exists = (path: string) =>
 /**
  * Whether Claude Code on Windows runs status line commands through Git Bash (it does when Git Bash is installed,
  * otherwise PowerShell): `CLAUDE_CODE_GIT_BASH_PATH`, Git on PATH or the default Git folders.
+ * Always uses Windows paths, so it behaves the same when tested on Linux or macOS.
  */
 export async function findGitBash(env: NodeJS.ProcessEnv, isFile = exists): Promise<string | null> {
   const candidates: string[] = [];
   if (env['CLAUDE_CODE_GIT_BASH_PATH']) candidates.push(env['CLAUDE_CODE_GIT_BASH_PATH']);
-  for (const dir of (env['PATH'] ?? env['Path'] ?? '').split(delimiter).filter(Boolean)) {
-    if (await isFile(join(dir, 'git.exe'))) candidates.push(join(dir, '..', 'bin', 'bash.exe'), join(dir, 'bash.exe'));
+  for (const dir of (env['PATH'] ?? env['Path'] ?? '').split(win32.delimiter).filter(Boolean)) {
+    if (await isFile(win32.join(dir, 'git.exe')))
+      candidates.push(win32.join(dir, '..', 'bin', 'bash.exe'), win32.join(dir, 'bash.exe'));
   }
   for (const root of [
     env['ProgramFiles'],
     env['ProgramFiles(x86)'],
-    env['LOCALAPPDATA'] && join(env['LOCALAPPDATA'], 'Programs'),
+    env['LOCALAPPDATA'] && win32.join(env['LOCALAPPDATA'], 'Programs'),
   ])
-    if (root) candidates.push(join(root, 'Git', 'bin', 'bash.exe'));
+    if (root) candidates.push(win32.join(root, 'Git', 'bin', 'bash.exe'));
   for (const c of candidates) if (await isFile(c)) return c;
   return null;
 }

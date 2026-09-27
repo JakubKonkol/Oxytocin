@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseStatusLineInput, STATUSLINE_DATA_FILE } from './collectors/claude-statusline';
 import {
@@ -87,9 +87,11 @@ describe('Claude Code status line setup', () => {
   });
 
   it('finds Git Bash from CLAUDE_CODE_GIT_BASH_PATH, Git on PATH or the default folders', async () => {
-    const files = new Set([join('C:\\Git\\cmd', 'git.exe'), join('C:\\Git\\cmd', '..', 'bin', 'bash.exe')]);
+    const files = new Set([win32.join('C:\\Git\\cmd', 'git.exe'), win32.join('C:\\Git\\cmd', '..', 'bin', 'bash.exe')]);
     const isFile = (p: string) => Promise.resolve(files.has(p));
-    expect(await findGitBash({ PATH: 'C:\\Git\\cmd' }, isFile)).toBe(join('C:\\Git\\cmd', '..', 'bin', 'bash.exe'));
+    expect(await findGitBash({ PATH: 'C:\\Git\\cmd' }, isFile)).toBe(
+      win32.join('C:\\Git\\cmd', '..', 'bin', 'bash.exe'),
+    );
     expect(await findGitBash({ PATH: '' }, isFile)).toBeNull();
     files.add('D:\\bash.exe');
     expect(await findGitBash({ CLAUDE_CODE_GIT_BASH_PATH: 'D:\\bash.exe' }, isFile)).toBe('D:\\bash.exe');
