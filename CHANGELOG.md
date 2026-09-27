@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-27
+
 ### Added
 
 - **Usage Monitor: Claude subscription limits.** An opt-in setting (Usage dashboard → Pricing → Claude
