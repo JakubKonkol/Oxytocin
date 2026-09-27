@@ -38,6 +38,8 @@ beforeAll(async () => {
   await writeFile(join(home, '.bashrc'), 'PS1="bashrc> "\nexport FROM_BASHRC=1\n');
   await writeFile(join(home, '.bash_profile'), '. "$HOME/.bashrc"\nexport FROM_LOGIN=1\n');
   await writeFile(join(home, '.zshrc'), 'PS1="zshrc> "\nexport FROM_ZSHRC=1\n');
+  // Debian/Ubuntu's global zshrc runs compinit, which asks about "insecure directories" on some CI images.
+  await writeFile(join(home, '.zshenv'), 'skip_global_compinit=1\nexport FROM_ZSHENV=1\n');
   await mkdir(join(home, '.config/fish'), { recursive: true });
   await writeFile(join(home, '.config/fish/config.fish'), 'set -gx FROM_FISH_CONFIG 1\n');
 });
@@ -135,9 +137,9 @@ describe.skipIf(!has('bash'))('shell integration: bash', () => {
 
 describe.skipIf(!has('zsh'))('shell integration: zsh', () => {
   it('reports prompts, commands, exit codes and cwd through ZDOTDIR', async () => {
-    const id = start('zsh', 'zsh', ['-l'], 'echo zsh-$FROM_ZSHRC-ok');
+    const id = start('zsh', 'zsh', ['-l'], 'echo zsh-$FROM_ZSHENV-$FROM_ZSHRC-ok');
     await waitFor(() => commands().some((c) => c.phase === 'end'), 'the initial command');
-    expect(await manager!.getText(id)).toContain('zsh-1-ok');
+    expect(await manager!.getText(id)).toContain('zsh-1-1-ok');
     manager!.write(id, 'echo marker-zsh\r');
     await exercise(id, 'marker-zsh');
     manager!.write(id, 'echo "zdotdir=[$ZDOTDIR]"\r');
