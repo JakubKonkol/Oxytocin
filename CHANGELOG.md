@@ -3,6 +3,34 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [0.5.1] - 2026-09-28
+
+### Fixed
+
+- **Project Runner on Windows:** agents' working directories are recognised in any spelling — 8.3 short names
+  (`C:\Users\RUNNER~1`), symlinks and junctions, Git Bash (`/c/work/app`) and WSL (`/mnt/c/…`) paths — so the MCP
+  tools find the project. The Run view no longer misses the active project when the app starts slowly.
+- **Listening ports on localized Windows** (the state column of `netstat` is translated, e.g. *NASŁUCHIWANIE*) and on
+  IPv6 (Vite listening on `::1`): the Run view shows the app's port again.
+- **Runs are sturdier:** a double click or an agent starting an app that is already starting no longer opens a
+  second terminal; *Stop* during start-up cancels it; the terminal is only reused while its shell is in the app's
+  folder; apps that keep running are taken over again after the plugin restarts (a Plugin Host restart, reloading
+  or re-enabling the plugin). Errors of Run/Stop/Restart are shown in the Run view.
+- **File Preview** renders in a worker thread: previewing a large file no longer freezes the other built-in plugins
+  (Usage Monitor, Project Runner), and a render that takes too long is cancelled.
+- **Usage Monitor:** turning on the Claude subscription limits right after start-up is no longer lost.
+- The *Connect Claude Code* state checks the registered port, and the `claude` CLI is only asked when a Run view
+  opens (not at every start of Oxytocin).
+- Terminal links resolve to real paths (symlinks, short names), so previews open for files of symlinked projects.
+
+### Security
+
+- The MCP server rejects requests whose `Host` is not a loopback name (DNS rebinding).
+- Web links behind OSC 8 hyperlinks in terminals (their target is hidden behind the text) open with
+  `Ctrl/⌘+click` only, like file links.
+- A stray promise rejection no longer takes down the PTY Host (every terminal) or shows Electron's error dialog; it is
+  logged.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added
