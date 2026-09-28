@@ -169,6 +169,25 @@ export const CORE_SETTINGS = {
   ),
   'workspace.restoreOnStartup': def(z.boolean(), true, 'Restores layouts and terminals when Oxytocin starts.'),
   'workspace.openLastProject': def(z.boolean(), true, 'Opens the last active project at start-up.'),
+  'scratchpad.fontFamily': def(
+    z.enum(['mono', 'sans', 'serif']),
+    'mono',
+    'Font of the scratchpad: monospace (like the terminal), sans-serif (like the interface) or serif.',
+  ),
+  'scratchpad.fontSize': def(z.number().int().min(9).max(28), 12, 'Font size of the scratchpad in pixels.'),
+  'scratchpad.lineHeight': def(z.number().min(1).max(2.5), 1.5, 'Line height of the scratchpad (1–2.5).'),
+  'scratchpad.wordWrap': def(z.boolean(), true, 'Wraps long lines in the scratchpad instead of scrolling sideways.'),
+  'scratchpad.formattingToolbar': def(
+    z.boolean(),
+    true,
+    'Shows the Markdown formatting toolbar (bold, italic, code, lists…) above the scratchpad.',
+  ),
+  'scratchpad.continueLists': def(
+    z.boolean(),
+    true,
+    'Enter at the end of a list item starts the next item ("- ", "2. ", "- [ ] ").',
+  ),
+  'scratchpad.spellCheck': def(z.boolean(), false, 'Underlines spelling mistakes in the scratchpad.'),
   'git.enabled': def(z.boolean(), true, 'Shows repository changes in the CHANGES section.'),
   'git.path': def(z.string().nullable(), null, 'Path to the git executable. Empty = found automatically.'),
   'git.ignoredFolders': def(

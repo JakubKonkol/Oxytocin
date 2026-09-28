@@ -38,6 +38,7 @@ const SECTION_NAMES: Record<string, string> = {
   appearance: 'Appearance',
   terminal: 'Terminal',
   workspace: 'Workspace',
+  scratchpad: 'Scratchpad',
   git: 'Git',
   editor: 'Editor',
   notifications: 'Notifications',

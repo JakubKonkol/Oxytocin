@@ -80,6 +80,7 @@
   /* Typography */
   --font-ui: 'Inter Variable', 'Inter', system-ui, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Georgia, 'Times New Roman', serif;
   --font-size-ui: 13px;
   --font-size-small: 11px;
 
