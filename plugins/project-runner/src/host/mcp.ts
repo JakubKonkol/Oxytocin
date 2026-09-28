@@ -38,6 +38,16 @@ const sameSecret = (a: string, b: string) => {
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
+/**
+ * DNS rebinding guard: a remote page whose name resolves to 127.0.0.1 sends its own name as Host. Only loopback
+ * names are accepted (clients connect to 127.0.0.1 or localhost).
+ */
+export function isAllowedHost(host: string | undefined): boolean {
+  if (!host) return false;
+  const name = host.replace(/:\d+$/, '').toLowerCase();
+  return name === '127.0.0.1' || name === 'localhost' || name === '[::1]';
+}
+
 /** Browsers send an Origin; only local pages may talk to the server (a remote page could rebind DNS to 127.0.0.1). */
 export function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return true;
@@ -109,7 +119,7 @@ export class McpServer {
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const path = (req.url ?? '').split('?')[0];
     if (path !== MCP_PATH) return this.send(res, 404);
-    if (!isAllowedOrigin(req.headers.origin)) return this.send(res, 403);
+    if (!isAllowedOrigin(req.headers.origin) || !isAllowedHost(req.headers.host)) return this.send(res, 403);
     if (!sameSecret(String(req.headers['authorization'] ?? ''), `Bearer ${this.token()}`))
       return this.send(res, 401, { error: 'unauthorized' });
     // No server-initiated stream (GET) and no session to delete.

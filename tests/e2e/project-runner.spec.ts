@@ -25,8 +25,12 @@ async function fakeClaude(dir: string): Promise<{ command: string; log: string }
     `const fs = require('fs');
 const args = process.argv.slice(2);
 fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
-const added = fs.readFileSync(${JSON.stringify(log)}, 'utf8').includes('"add"');
-if (args[0] === 'mcp' && args[1] === 'get' && !added) { console.error('No MCP server found with name: oxytocin-runner'); process.exit(1); }
+const added = fs.readFileSync(${JSON.stringify(log)}, 'utf8').split('\\n').filter((l) => l.includes('"add"')).pop();
+if (args[0] === 'mcp' && args[1] === 'get') {
+  if (!added) { console.error('No MCP server found with name: oxytocin-runner'); process.exit(1); }
+  console.log('oxytocin-runner:\\n  Type: http\\n  URL: ' + JSON.parse(added)[7]);
+  process.exit(0);
+}
 console.log('ok');
 `,
   );
@@ -58,7 +62,7 @@ async function runnerFrame(win: Page): Promise<Frame> {
         }
         return !!found;
       },
-      { timeout: 20_000 },
+      { timeout: 30_000 },
     )
     .toBe(true);
   return found!;
@@ -212,6 +216,8 @@ test('Project Runner: detects apps, runs them in background terminals, edits pro
     await expect(again.win.getByTestId('app-ready')).toBeVisible({ timeout: 30_000 });
     const frame = await runnerFrame(again.win);
     await expect(frame.locator('[data-testid="runner-profile"]').filter({ hasText: 'worker' })).toBeVisible();
+    // Claude Code still has the server at this port.
+    await expect(frame.getByTestId('runner-mcp')).toContainText('Claude Code ✓');
     await expect(frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]')).toHaveAttribute(
       'data-status',
       'idle',

@@ -95,6 +95,8 @@ function bootstrap(): void {
   initLogging();
   const log = createLogger('main');
   log.info(`Oxytocin ${appVersion} starting (Electron ${process.versions.electron}, ${process.platform})`);
+  // A forgotten rejection must not surface as Electron's blocking "JavaScript error" dialog: log it.
+  process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection', reason));
 
   const settings = new SettingsService(
     join(app.getPath('userData'), 'settings.json'),

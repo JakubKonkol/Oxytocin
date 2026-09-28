@@ -17,6 +17,20 @@ describe('listening ports', () => {
     ]);
   });
 
+  it('recognises listening sockets on localized Windows by their foreign address', () => {
+    const out = [
+      '  Protokół  Adres lokalny          Obcy adres             Stan            Identyfikator procesu',
+      '  TCP    127.0.0.1:3000         0.0.0.0:0              NASŁUCHIWANIE   812',
+      '  TCP    [::1]:5173             [::]:0                 ABHÖREN         77',
+      '  TCP    127.0.0.1:3000         127.0.0.1:52100        USTANOWIONO     812',
+      '  UDP    0.0.0.0:5353           *:*                                    900',
+    ].join('\r\n');
+    expect(parseNetstat(out)).toEqual([
+      { pid: 812, port: 3000 },
+      { pid: 77, port: 5173 },
+    ]);
+  });
+
   it('parses lsof -F output', () => {
     expect(parseLsof('p10\nf20\nn*:3000\nn[::1]:3001\np11\nf5\nn127.0.0.1:4200\n')).toEqual([
       { pid: 10, port: 3000 },

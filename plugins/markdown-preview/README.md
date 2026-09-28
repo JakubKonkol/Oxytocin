@@ -17,7 +17,7 @@ sidebar.
   ≤ 20 MB per document). The view sanitizes the HTML again with DOMPurify.
 - **Code** (TypeScript, JavaScript, C#, Python, Go, Rust, Java, JSON, YAML, XML/csproj, SQL, shell, … and plain text
   such as logs) is highlighted with `shiki` and shown with line numbers. Files over 2 MB and binary files are not
-  previewed; files over 512 KB are shown without highlighting.
+  previewed; files over 256 KB or 8000 lines are shown without highlighting; rendering runs in a worker thread.
 - The file is watched and re-rendered 150 ms after a change; the scroll position is kept proportionally.
 - Links in Markdown: `http(s)` opens in the browser, relative files of the project open in another preview (or the
   editor for other types), `#anchors` scroll.

@@ -27,14 +27,21 @@ function portOf(address: string): number | null {
   return port > 0 && port < 65536 ? port : null;
 }
 
-/** Windows `netstat -ano -p TCP` / `netstat -ano`: `TCP  0.0.0.0:5173  0.0.0.0:0  LISTENING  1234`. */
+/**
+ * Windows `netstat -ano` (IPv4 and IPv6): `TCP  0.0.0.0:5173  0.0.0.0:0  LISTENING  1234`. The state column is
+ * translated on localized Windows ("ABHÖREN", "NASŁUCHIWANIE"), so listening sockets are recognised by their foreign
+ * address instead: `0.0.0.0:0` / `[::]:0` (connections always have a remote port).
+ */
 export function parseNetstat(stdout: string): ListeningSocket[] {
   const out: ListeningSocket[] = [];
   for (const line of stdout.split(/\r?\n/)) {
     const cols = line.trim().split(/\s+/);
-    if (cols.length < 5 || cols[0]?.toUpperCase() !== 'TCP' || !/^LISTEN/i.test(cols[3] ?? '')) continue;
+    if (cols.length < 5 || cols[0]?.toUpperCase() !== 'TCP') continue;
+    const foreign = cols[2] ?? '';
+    const listening = /^(0\.0\.0\.0|\[::\]|\*):(0|\*)$/.test(foreign) || /^LISTEN/i.test(cols[3] ?? '');
+    if (!listening) continue;
     const port = portOf(cols[1]!);
-    const pid = Number(cols[4]);
+    const pid = Number(cols.at(-1));
     if (port !== null && Number.isInteger(pid) && pid > 0) out.push({ pid, port });
   }
   return out;
@@ -83,7 +90,7 @@ async function processRows(platform: NodeJS.Platform): Promise<PidRow[]> {
 }
 
 async function listeningSockets(platform: NodeJS.Platform): Promise<ListeningSocket[]> {
-  if (platform === 'win32') return parseNetstat(await run('netstat', ['-ano', '-p', 'TCP']));
+  if (platform === 'win32') return parseNetstat(await run('netstat', ['-ano']));
   if (platform === 'linux') {
     try {
       return parseSs(await run('ss', ['-ltnpH']));
@@ -94,8 +101,26 @@ async function listeningSockets(platform: NodeJS.Platform): Promise<ListeningSoc
   return parseLsof(await run('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN', '-Fpn'], true));
 }
 
+const SNAPSHOT_TTL_MS = 1500;
+let snapshot: { at: number; data: Promise<[PidRow[], ListeningSocket[]]> } | undefined;
+
+/**
+ * Processes and listening sockets, shared by the requests of the next 1.5 s: several running apps polling their
+ * ports at once cost one `ps`/`netstat` run.
+ */
+function systemSnapshot(platform: NodeJS.Platform, now = Date.now()): Promise<[PidRow[], ListeningSocket[]]> {
+  if (snapshot && now - snapshot.at < SNAPSHOT_TTL_MS) return snapshot.data;
+  const data = Promise.all([processRows(platform), listeningSockets(platform)]);
+  snapshot = { at: now, data };
+  // A failed snapshot is not reused.
+  data.catch(() => {
+    if (snapshot?.data === data) snapshot = undefined;
+  });
+  return data;
+}
+
 /** TCP ports that the process tree of `pid` listens on. */
 export async function listeningPortsOf(pid: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
-  const [rows, sockets] = await Promise.all([processRows(platform), listeningSockets(platform)]);
+  const [rows, sockets] = await systemSnapshot(platform);
   return portsOfTree(pid, rows, sockets);
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { isAllowedOrigin, McpServer } from './mcp';
+import { isAllowedHost, isAllowedOrigin, McpServer } from './mcp';
 import { addArgs, addCommandLine, mcpConfigJson } from './claude';
 
 const servers: McpServer[] = [];
@@ -110,6 +110,10 @@ describe('McpServer', () => {
     await expect(other.start(port)).rejects.toThrow();
     expect(other.error).toMatch(/in use/);
     expect(isAllowedOrigin(undefined)).toBe(true);
+    expect(isAllowedHost('127.0.0.1:47286')).toBe(true);
+    expect(isAllowedHost('localhost')).toBe(true);
+    expect(isAllowedHost('evil.example:47286')).toBe(false);
+    expect(isAllowedHost(undefined)).toBe(false);
     expect(isAllowedOrigin('null')).toBe(false);
   });
 });

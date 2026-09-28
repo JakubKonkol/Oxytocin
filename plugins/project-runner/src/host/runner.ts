@@ -4,6 +4,14 @@ import type { RunProfile, RunSnapshot, RunStatus, StartedBy } from '../shared/ty
 
 export type { RunSnapshot, RunStatus, StartedBy };
 
+/** A run's terminal as the plugin remembers it. */
+export interface TerminalLink {
+  terminalId: string;
+  projectId: string;
+  profileId: string;
+  setup?: string;
+}
+
 interface Run {
   projectId: string;
   profileId: string;
@@ -19,6 +27,8 @@ interface Run {
   ports: number[];
   log: LogBuffer;
   output?: Disposable;
+  /** Delays unsubscribing after the command ended (its last lines arrive with or after the end mark). */
+  outputLinger?: ReturnType<typeof setTimeout>;
   /** The command was seen running (shell integration) or a process ran in the terminal (fallback). */
   sawStart: boolean;
   stopRequested: boolean;
@@ -47,6 +57,17 @@ const keyOf = (projectId: string, profileId: string) => `${projectId}\u0000${pro
 const PORT_POLL_FAST_MS = 2000;
 const PORT_POLL_SLOW_MS = 10_000;
 const FAST_POLL_WINDOW_MS = 60_000;
+
+const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
+
+/** Whether two absolute folders are the same (separators, trailing slashes and case on Windows/macOS ignored). */
+export function samePath(a: string, b: string, insensitive = caseInsensitive): boolean {
+  const norm = (p: string) => {
+    const n = p.replace(/\\/g, '/').replace(/\/+$/, '');
+    return insensitive ? n.toLowerCase() : n;
+  };
+  return norm(a) === norm(b);
+}
 
 /** Absolute folder of a profile. */
 export function profileFolder(rootPath: string, cwd: string): string {
@@ -108,6 +129,7 @@ export class RunManager implements Disposable {
     if (!run) return { profileId, status: 'idle', ports: [] };
     return {
       profileId,
+      name: run.profile.name,
       status: run.status,
       ports: run.ports,
       ...(run.url ? { url: run.url } : {}),
@@ -153,18 +175,9 @@ export class RunManager implements Disposable {
     const run = this.run(projectId, profile);
     if (run.status === 'starting' || run.status === 'running') return this.snapshot(projectId, profile.id);
     if (run.status === 'stopping') throw new Error(`${profile.name} is still stopping.`);
-    const cwd = profileFolder(rootPath, profile.cwd);
-    const setup = JSON.stringify([cwd, profile.env ?? {}]);
-    const existing = await this.terminal(run);
-    const idle =
-      existing &&
-      existing.status === 'running' &&
-      !existing.command &&
-      existing.kind !== 'process' &&
-      run.terminalSetup === setup;
+    // Claimed before the first await: a second start (double click, the UI and an agent) is a no-op.
     this.clearTimers(run);
-    run.output?.dispose();
-    run.output = undefined;
+    this.stopOutput(run);
     run.log.clear();
     run.status = 'starting';
     run.startedAt = this.now();
@@ -175,7 +188,19 @@ export class RunManager implements Disposable {
     delete run.url;
     delete run.exitCode;
     this.changed(run);
+    const cwd = profileFolder(rootPath, profile.cwd);
+    const setup = JSON.stringify([cwd, profile.env ?? {}]);
     try {
+      const existing = await this.terminal(run);
+      // Reused only while its shell is idle in the profile's folder (the user may have `cd`-ed elsewhere).
+      const idle =
+        existing &&
+        existing.status === 'running' &&
+        !existing.command &&
+        existing.kind !== 'process' &&
+        run.terminalSetup === setup &&
+        (!existing.cwd || samePath(existing.cwd, cwd));
+      if (run.stopRequested) return this.cancelStart(run);
       if (idle && existing) {
         this.watchOutput(run, existing.id);
         await this.deps.terminals.sendText(existing.id, profile.command);
@@ -192,6 +217,11 @@ export class RunManager implements Disposable {
         });
         run.terminalId = meta.id;
         run.terminalSetup = setup;
+        // Stopped while the terminal was being created: it never gets the command running for long.
+        if (run.stopRequested) {
+          await this.deps.terminals.close(meta.id).catch(() => undefined);
+          return this.cancelStart(run);
+        }
         this.watchOutput(run, meta.id);
       }
     } catch (e) {
@@ -208,6 +238,18 @@ export class RunManager implements Disposable {
     );
     this.schedulePortPoll(run, 1000);
     return this.snapshot(projectId, profile.id);
+  }
+
+  private cancelStart(run: Run): RunSnapshot {
+    this.finish(run, undefined);
+    return this.snapshot(run.projectId, run.profileId);
+  }
+
+  private stopOutput(run: Run): void {
+    if (run.outputLinger) clearTimeout(run.outputLinger);
+    run.outputLinger = undefined;
+    run.output?.dispose();
+    run.output = undefined;
   }
 
   private watchOutput(run: Run, terminalId: string): void {
@@ -296,13 +338,13 @@ export class RunManager implements Disposable {
     if (!run) return;
     delete run.terminalId;
     delete run.terminalSetup;
-    run.output?.dispose();
-    run.output = undefined;
+    this.stopOutput(run);
     if (run.status === 'starting' || run.status === 'running' || run.status === 'stopping') this.finish(run, undefined);
   }
 
   private finish(run: Run, exitCode: number | undefined): void {
     this.clearTimers(run);
+    if (run.output && !run.outputLinger) run.outputLinger = setTimeout(() => this.stopOutput(run), 1500);
     const requested = run.stopRequested;
     run.stopRequested = false;
     run.ports = [];
@@ -315,8 +357,13 @@ export class RunManager implements Disposable {
   /** Ctrl+C, a second Ctrl+C, then a forced kill of the terminal's process tree. */
   async stop(projectId: string, profileId: string): Promise<RunSnapshot> {
     const run = this.find(projectId, profileId);
-    if (!run || !run.terminalId || (run.status !== 'starting' && run.status !== 'running'))
+    if (!run || (run.status !== 'starting' && run.status !== 'running')) return this.snapshot(projectId, profileId);
+    if (!run.terminalId || (run.status === 'starting' && !run.output)) {
+      // Still being set up: start() sees the request and cancels.
+      run.stopRequested = true;
+      this.setStatus(run, 'stopping');
       return this.snapshot(projectId, profileId);
+    }
     const terminalId = run.terminalId;
     run.stopRequested = true;
     this.setStatus(run, 'stopping');
@@ -377,6 +424,36 @@ export class RunManager implements Disposable {
     return this.start(rootPath, projectId, profile, startedBy);
   }
 
+  /** Terminals of the runs, for adopting them again after the plugin restarted (host crash, reload, re-enable). */
+  terminalLinks(): TerminalLink[] {
+    return [...this.runs.values()]
+      .filter((r) => r.terminalId)
+      .map((r) => ({
+        terminalId: r.terminalId!,
+        projectId: r.projectId,
+        profileId: r.profileId,
+        ...(r.terminalSetup ? { setup: r.terminalSetup } : {}),
+      }));
+  }
+
+  /**
+   * Takes a profile's terminal over from a previous instance of the plugin: its output is followed again and the
+   * run shows as running when a command or a process still runs in it.
+   */
+  adopt(projectId: string, profile: RunProfile, meta: TerminalMeta, setup?: string): void {
+    const run = this.run(projectId, profile);
+    if (run.terminalId || meta.status !== 'running') return;
+    run.terminalId = meta.id;
+    if (setup) run.terminalSetup = setup;
+    const busy = !!meta.command || meta.kind === 'process';
+    run.status = busy ? 'running' : 'stopped';
+    run.sawStart = busy;
+    run.startedAt = meta.command?.startedAt ?? this.now();
+    this.watchOutput(run, meta.id);
+    if (busy) this.schedulePortPoll(run, 0);
+    this.changed(run);
+  }
+
   /** Shows the profile's terminal (its logs); false when it never ran. */
   async showLogs(projectId: string, profileId: string, preserveFocus = false): Promise<boolean> {
     const run = this.find(projectId, profileId);
@@ -391,7 +468,7 @@ export class RunManager implements Disposable {
       if (run.projectId !== projectId || profileIds.has(run.profileId)) continue;
       if (run.status === 'starting' || run.status === 'running' || run.status === 'stopping') continue;
       this.clearTimers(run);
-      run.output?.dispose();
+      this.stopOutput(run);
       this.runs.delete(key);
     }
   }
@@ -399,7 +476,7 @@ export class RunManager implements Disposable {
   dispose(): void {
     for (const run of this.runs.values()) {
       this.clearTimers(run);
-      run.output?.dispose();
+      this.stopOutput(run);
     }
     this.runs.clear();
     this.listeners.clear();

@@ -183,13 +183,14 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
       openLink,
     );
     // OSC 8 hyperlinks (agents print file paths as `file://` links): files like path links, web pages in the browser.
+    // Their target is hidden behind the text, so both need Ctrl/⌘+click (a plain click only selects).
     term.options.linkHandler = {
       allowNonHttpProtocols: true,
       activate: (event, uri) => {
+        if (!(event.ctrlKey || event.metaKey)) return;
         const file = fileUriToPath(uri);
-        if (file) {
-          if (event.ctrlKey || event.metaKey) openLink(file, event);
-        } else if (/^https?:\/\//i.test(uri)) void ipc.invoke('shell:openExternal', { url: uri });
+        if (file) openLink(file, event);
+        else if (/^https?:\/\//i.test(uri)) void ipc.invoke('shell:openExternal', { url: uri });
       },
     };
 

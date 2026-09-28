@@ -27,6 +27,8 @@ export type StartedBy = 'user' | 'agent';
 /** What the UI and the MCP tools show about a profile's run. */
 export interface RunSnapshot {
   profileId: string;
+  /** The profile's name when it ran (for lists outside the view, e.g. the status bar). */
+  name?: string;
   status: RunStatus;
   url?: string;
   ports: number[];

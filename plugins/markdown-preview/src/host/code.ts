@@ -4,9 +4,9 @@ import { highlightLines } from './highlight';
 
 /** Files larger than this are not previewed (the editor is the better tool). */
 export const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
-/** Above this size (or line count) code is shown as plain text: highlighting would stall the Plugin Host. */
-export const MAX_HIGHLIGHT_BYTES = 512 * 1024;
-export const MAX_HIGHLIGHT_LINES = 20_000;
+/** Above this size (or line count) code is shown as plain text: highlighting it would take several seconds. */
+export const MAX_HIGHLIGHT_BYTES = 256 * 1024;
+export const MAX_HIGHLIGHT_LINES = 8000;
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdx'];
 

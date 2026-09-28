@@ -2,9 +2,9 @@ import { type FSWatcher, watch } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Logger, OxytocinApi, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
-import { renderFile } from './render';
 import { listMarkdownFiles } from './files';
-import { MARKDOWN_EXTENSIONS, PreviewError, previewKind, readPreviewText, renderCodeToHtml } from './code';
+import { MARKDOWN_EXTENSIONS, previewKind } from './code';
+import { RenderError, RenderPool } from './render-pool';
 
 export const PANEL_TYPE = 'markdown.preview';
 const WATCH_DEBOUNCE_MS = 150;
@@ -69,6 +69,7 @@ class Preview {
     private readonly log: Logger,
     private readonly project: ProjectInfo,
     private readonly filePath: string,
+    private readonly renderer: RenderPool,
   ) {}
 
   start(): void {
@@ -110,12 +111,8 @@ class Preview {
   private async render(live: boolean): Promise<PreviewMessage | undefined> {
     const seq = ++this.seq;
     let msg: PreviewMessage;
-    const kind = previewKind(this.filePath) ?? { kind: 'code' as const, language: null };
     try {
-      const html =
-        kind.kind === 'markdown'
-          ? await renderFile(this.filePath, this.project.rootPath)
-          : renderCodeToHtml(await readPreviewText(this.filePath), kind.language);
+      const { html, kind } = await this.renderer.render(this.filePath, this.project.rootPath);
       if (live && html === this.lastHtml) return undefined;
       this.lastHtml = html;
       msg = {
@@ -123,18 +120,19 @@ class Preview {
         html,
         path: relative(this.project.rootPath, this.filePath),
         changed: live,
-        kind: kind.kind,
+        kind,
       };
     } catch (e) {
       this.lastHtml = undefined;
-      const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
+      const failure = e instanceof RenderError ? e.failure : { message: String(e) };
       msg = {
         type: 'error',
-        message: missing
-          ? 'File not found — it was deleted or moved.'
-          : e instanceof PreviewError
-            ? e.message
-            : `Could not render the file: ${String(e)}`,
+        message:
+          failure.code === 'ENOENT'
+            ? 'File not found — it was deleted or moved.'
+            : failure.expected
+              ? failure.message
+              : `Could not render the file: ${failure.message}`,
       };
     }
     if (seq !== this.seq) return live ? undefined : msg;
@@ -189,6 +187,9 @@ async function findProject(oxy: OxytocinApi, params: PreviewParams, fallbackId?:
 
 export function activate(ctx: PluginContext): void {
   const { oxy, log } = ctx;
+  // One renderer thread for every preview of the plugin.
+  const renderer = new RenderPool();
+  ctx.subscriptions.push({ dispose: () => renderer.dispose() });
 
   ctx.subscriptions.push(
     oxy.ui.registerPanelProvider(PANEL_TYPE, {
@@ -204,7 +205,7 @@ export function activate(ctx: PluginContext): void {
           view.onRequest('load', (): PreviewMessage => ({ type: 'error', message: problem ?? 'No file to preview.' }));
           return;
         }
-        new Preview(view, oxy, log, project, params.path).start();
+        new Preview(view, oxy, log, project, params.path, renderer).start();
       },
     }),
   );

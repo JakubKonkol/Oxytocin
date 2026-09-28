@@ -13,6 +13,7 @@ import {
 } from './claude';
 import { type DetectedProfile, type DetectFs, detectProfiles } from './detect';
 import { McpServer } from './mcp';
+import { fromShellPath, pathCandidates } from './paths';
 import { buildTools, type RunnerTools } from './tools';
 import {
   emptyConfig,
@@ -26,7 +27,7 @@ import {
   validateProfileInput,
 } from './profiles';
 import type { RunnerState } from '../shared/types';
-import { RunManager, type RunSnapshot, type StartedBy } from './runner';
+import { RunManager, type RunSnapshot, type StartedBy, type TerminalLink } from './runner';
 
 export const PANEL_TYPE = 'projectRunner.panel';
 export const VIEW_ID = 'projectRunner.sidebar';
@@ -66,8 +67,13 @@ class RunnerService {
   private readonly detected = new Map<string, { at: number; profiles: DetectedProfile[] }>();
   private readonly scanning = new Map<string, Promise<DetectedProfile[]>>();
   private active: ProjectInfo | undefined;
+  /** Bumped by project events: a list fetched before an event must not overwrite what the event said. */
+  private projectEvents = 0;
   private projects: ProjectInfo[] = [];
+  /** Resolves when the service knows the projects (views and tools wait for it). */
+  ready: Promise<void> = Promise.resolve();
   private claudeConnected: boolean | null = null;
+  private claudeChecked: Promise<boolean | null> | undefined;
   private readonly cli: RunCli;
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -96,18 +102,24 @@ class RunnerService {
 
   // ── lifecycle ──
 
-  async init(): Promise<void> {
+  init(): Promise<void> {
+    this.ready = this.initialize();
+    return this.ready;
+  }
+
+  private async initialize(): Promise<void> {
     const { oxy } = this;
-    this.projects = await oxy.projects.list();
-    this.active = await oxy.projects.getActive();
     const subs = this.ctx.subscriptions;
+    // Subscribe first: a project activated while the lists are fetched (start-up) must not be missed.
     subs.push(
       oxy.projects.onDidChange((list) => {
+        this.projectEvents++;
         this.projects = list;
         for (const id of [...this.detected.keys()]) if (!list.some((p) => p.id === id)) this.detected.delete(id);
         this.pushAll();
       }),
       oxy.projects.onDidChangeActive((p) => {
+        this.projectEvents++;
         this.active = p;
         this.pushAll();
       }),
@@ -116,13 +128,47 @@ class RunnerService {
       this.runs.onDidChange((projectId) => {
         this.push(projectId);
         this.scheduleStatus();
+        this.scheduleSaveLinks();
       }),
       oxy.settings.onDidChange('projectRunner.mcp', () => void this.applyMcpSettings()),
       this.runs,
       { dispose: () => void this.mcp.stop() },
     );
+    const before = this.projectEvents;
+    const [projects, active] = await Promise.all([oxy.projects.list(), oxy.projects.getActive()]);
+    if (this.projectEvents === before) {
+      this.projects = projects;
+      this.active = active;
+    }
+    await this.adoptTerminals().catch((e: unknown) => this.ctx.log.warn('Adopting running apps failed', e));
     await this.applyMcpSettings();
     this.updateStatus();
+  }
+
+  private linksTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Remembers which terminal runs which profile (debounced). */
+  private scheduleSaveLinks(): void {
+    clearTimeout(this.linksTimer);
+    this.linksTimer = setTimeout(() => {
+      void this.ctx.storage
+        .set('terminals', this.runs.terminalLinks())
+        .catch((e: unknown) => this.ctx.log.warn('Saving the run terminals failed', e));
+    }, 200);
+  }
+
+  /** Apps started before the plugin (re)started — a Plugin Host restart, a reload, re-enabling it — are taken over. */
+  private async adoptTerminals(): Promise<void> {
+    const links = this.ctx.storage.get<TerminalLink[]>('terminals');
+    if (!Array.isArray(links) || links.length === 0) return;
+    const alive = new Map((await this.oxy.terminals.list()).map((t) => [t.id, t]));
+    for (const link of links) {
+      const meta = alive.get(link?.terminalId);
+      const project = meta ? this.project(link.projectId) : undefined;
+      if (!meta || !project) continue;
+      const profile = (await this.profiles(project)).find((p) => p.id === link.profileId);
+      if (profile) this.runs.adopt(project.id, profile, meta, link.setup);
+    }
   }
 
   private token(): string {
@@ -138,16 +184,22 @@ class RunnerService {
     return this.oxy.settings.get<number>('projectRunner.mcp.port') || 47286;
   }
 
-  async applyMcpSettings(): Promise<void> {
-    const enabled = this.oxy.settings.get<boolean>('projectRunner.mcp.enabled') !== false;
-    if (!enabled) await this.mcp.stop();
-    else if (this.mcp.port !== this.mcpPort()) {
-      this.token();
-      await this.mcp
-        .start(this.mcpPort())
-        .catch((e: unknown) => this.ctx.log.warn(`MCP server could not start: ${this.mcp.error ?? String(e)}`));
-    }
-    this.pushAll();
+  private mcpQueue: Promise<void> = Promise.resolve();
+
+  /** Starts, moves or stops the MCP server per the settings; serialized (quick toggles must not overlap). */
+  applyMcpSettings(): Promise<void> {
+    this.mcpQueue = this.mcpQueue.then(async () => {
+      const enabled = this.oxy.settings.get<boolean>('projectRunner.mcp.enabled') !== false;
+      if (!enabled) await this.mcp.stop();
+      else if (this.mcp.port !== this.mcpPort()) {
+        this.token();
+        await this.mcp
+          .start(this.mcpPort())
+          .catch((e: unknown) => this.ctx.log.warn(`MCP server could not start: ${this.mcp.error ?? String(e)}`));
+      }
+      this.pushAll();
+    });
+    return this.mcpQueue;
   }
 
   // ── projects and profiles ──
@@ -157,8 +209,14 @@ class RunnerService {
   }
 
   /** The project a view shows: its own (a workspace panel) or the active one (sidebars). */
-  private projectOf(view: PluginView): ProjectInfo | undefined {
-    return (view.projectId ? this.project(view.projectId) : undefined) ?? this.active;
+  private async projectOf(view: PluginView): Promise<ProjectInfo | undefined> {
+    await this.ready;
+    if (view.projectId) {
+      if (!this.project(view.projectId)) this.projects = await this.oxy.projects.list();
+      const own = this.project(view.projectId);
+      if (own) return own;
+    }
+    return this.active ?? (this.active = await this.oxy.projects.getActive());
   }
 
   private config(projectId: string): ProjectRunConfig {
@@ -280,27 +338,37 @@ class RunnerService {
     };
   }
 
-  private push(projectId: string): void {
-    for (const view of this.views) {
-      if (this.projectOf(view)?.id !== projectId) continue;
-      void this.state(this.projectOf(view)).then((s) => view.postMessage(s));
+  /** Sends a view its current state (failures are logged: the view keeps its last state). */
+  private async send(view: PluginView, onlyProject?: string): Promise<void> {
+    try {
+      const project = await this.projectOf(view);
+      if (onlyProject !== undefined && project?.id !== onlyProject) return;
+      await view.postMessage(await this.state(project));
+    } catch (e) {
+      this.ctx.log.warn('Updating a Run view failed', e);
     }
   }
 
-  private pushAll(): void {
-    for (const view of this.views) void this.state(this.projectOf(view)).then((s) => view.postMessage(s));
+  private push(projectId: string): void {
+    for (const view of this.views) void this.send(view, projectId);
   }
 
-  private withProject<T>(view: PluginView, run: (project: ProjectInfo) => Promise<T>): Promise<T> {
-    const project = this.projectOf(view);
-    if (!project) return Promise.reject(new Error('Open a project first.'));
+  private pushAll(): void {
+    for (const view of this.views) void this.send(view);
+  }
+
+  private async withProject<T>(view: PluginView, run: (project: ProjectInfo) => Promise<T>): Promise<T> {
+    const project = await this.projectOf(view);
+    if (!project) throw new Error('Open a project first.');
     return run(project);
   }
 
   attach(view: PluginView): void {
     this.views.add(view);
+    // Asked once, when a Run view first shows (it runs the `claude` CLI).
+    this.claudeChecked ??= this.checkClaude().catch(() => null);
     view.onDidDispose(() => this.views.delete(view));
-    view.onRequest('load', () => this.state(this.projectOf(view)));
+    view.onRequest('load', async () => this.state(await this.projectOf(view)));
     view.onRequest<{ profileId: string }, RunSnapshot>('start', ({ profileId }) =>
       this.withProject(view, async (p) => this.start(p, await this.profileOrThrow(p, profileId), 'user')),
     );
@@ -345,12 +413,12 @@ class RunnerService {
       json: mcpConfigJson(this.mcpPort(), this.token()),
     }));
     view.onDidChangeVisibility((visible) => {
-      if (visible) void this.state(this.projectOf(view)).then((s) => view.postMessage(s));
+      if (visible) void this.send(view);
     });
   }
 
   async checkClaude(): Promise<boolean | null> {
-    this.claudeConnected = await isConnectedToClaude(this.cli);
+    this.claudeConnected = await isConnectedToClaude(this.cli, this.mcpPort());
     this.pushAll();
     return this.claudeConnected;
   }
@@ -382,13 +450,14 @@ class RunnerService {
       item.hide();
       return;
     }
-    const failedStart = active.some((r) => r.status === 'starting');
+    // Amber while an app is still starting or stopping.
+    const settling = active.some((r) => r.status !== 'running');
     item.text = `$(play) ${active.length} running`;
-    item.color = failedStart ? 'warning' : 'success';
+    item.color = settling ? 'warning' : 'success';
     item.tooltip = active
       .map((r) => {
         const project = this.project(r.projectId);
-        return `${project ? `${project.name}: ` : ''}${r.profileId.replace(/^\w+:/, '')} — ${r.status}${r.url ? ` (${r.url})` : ''}`;
+        return `${project ? `${project.name}: ` : ''}${r.name ?? r.profileId} — ${r.status}${r.url ? ` (${r.url})` : ''}`;
       })
       .join('\n');
     item.command = 'projectRunner.show';
@@ -397,13 +466,24 @@ class RunnerService {
 
   // ── MCP tools ──
 
+  /** The project containing a path an agent reported (any spelling: short names, symlinks, Git Bash paths). */
+  private async findByPath(path: string): Promise<ProjectInfo | undefined> {
+    for (const candidate of await pathCandidates(path, this.oxy.env.platform)) {
+      const found = await this.oxy.projects.findByPath(candidate);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
   private toolsPort(): RunnerTools {
     return {
       resolveProject: async ({ project, cwd }) => {
         const projects = (this.projects = await this.oxy.projects.list());
         if (typeof project === 'string' && project.trim()) {
           const wanted = project.trim();
-          const byPath = isAbsolute(wanted) ? await this.oxy.projects.findByPath(wanted) : undefined;
+          const byPath = isAbsolute(fromShellPath(wanted, this.oxy.env.platform))
+            ? await this.findByPath(wanted)
+            : undefined;
           const found =
             byPath ??
             projects.find((p) => p.id === wanted) ??
@@ -413,7 +493,7 @@ class RunnerService {
           return found;
         }
         if (typeof cwd === 'string' && cwd.trim()) {
-          const found = await this.oxy.projects.findByPath(cwd.trim());
+          const found = await this.findByPath(cwd);
           if (found) return found;
           throw new Error(
             `${cwd} is not inside a project open in Oxytocin. Open projects: ${projects.map((p) => `${p.name} (${p.rootPath})`).join(', ') || 'none'}.`,
@@ -443,6 +523,8 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const { oxy } = ctx;
   service = new RunnerService(ctx);
   const s = service;
+  // Started before the providers exist: views resolved meanwhile wait for it (`ready`).
+  const initialized = s.init();
   const provider = { resolve: (view: PluginView) => s.attach(view) };
   ctx.subscriptions.push(
     oxy.ui.registerPanelProvider(PANEL_TYPE, provider),
@@ -489,8 +571,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
       });
     }),
   );
-  await s.init();
-  void s.checkClaude();
+  await initialized;
 }
 
 export function deactivate(): void {

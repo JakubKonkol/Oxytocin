@@ -59,4 +59,8 @@ const { rpc, log } = startHostRuntime<WorkspaceHostEvents>({
 ref.emit = (name, payload) => rpc.emit(name, payload as never);
 logRef.log = log;
 
+// A stray rejected promise must not take the host down (for the PTY Host: every terminal). Logged instead;
+// uncaught exceptions still end the process, which the supervisor restarts.
+process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection in the Workspace Host', reason));
+
 log.info('Workspace Host started');

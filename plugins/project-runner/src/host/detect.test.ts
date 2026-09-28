@@ -149,7 +149,7 @@ describe('detectProfiles', () => {
     );
     expect(django).toEqual([
       expect.objectContaining({
-        command: '.venv\\Scripts\\python.exe manage.py runserver',
+        command: '.\\.venv\\Scripts\\python.exe manage.py runserver',
         framework: 'Django',
         url: 'http://localhost:8000',
       }),

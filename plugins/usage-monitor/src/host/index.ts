@@ -114,7 +114,10 @@ export async function activate(ctx: PluginContext): Promise<void> {
   // Claude subscription limits (opt-in): our status line script in Claude Code's settings saves its input.
   const statusLine = statusLinePaths(process.env);
   let statusLineError: string | null = null;
-  const configureStatusLine = async () => {
+  // Serialized: quick toggles must not install and remove the script concurrently.
+  let statusLineQueue: Promise<void> = Promise.resolve();
+  const configureStatusLine = () => (statusLineQueue = statusLineQueue.then(applyStatusLine, applyStatusLine));
+  const applyStatusLine = async () => {
     const enabled = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
     try {
       if (enabled) {
@@ -144,6 +147,32 @@ export async function activate(ctx: PluginContext): Promise<void> {
   await configureStatusLine();
   registerUi(ctx, client, { statusLineStatus });
 
+  // Listening from here on: the UI can change settings while collectors and telemetry still start (their keys are
+  // null until then, and their start reads the settings of that moment).
+  let telemetryKey: string | null = null;
+  let collectorKey: string | null = null;
+  // Assigned below, once the functions exist; settings changes before that are picked up by the initial start.
+  let configureTelemetryRef: (() => Promise<void>) | null = null;
+  ctx.subscriptions.push(
+    oxy.settings.onDidChange('usage.', () => {
+      void client.request('setSettings', readSettings(ctx));
+      const statusLineEnabled = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
+      if (statusLineEnabled !== statusLineKey) {
+        statusLineKey = statusLineEnabled;
+        void configureStatusLine();
+      }
+      const telemetry = JSON.stringify(readTelemetrySettings(ctx));
+      if (telemetryKey !== null && configureTelemetryRef && telemetry !== telemetryKey) {
+        telemetryKey = telemetry;
+        void configureTelemetryRef();
+      }
+      const next = readCollectorSettings(ctx);
+      if (collectorKey === null || JSON.stringify(next) === collectorKey) return;
+      collectorKey = JSON.stringify(next);
+      void client.request('startCollectors', next);
+    }),
+  );
+
   const pushProjects = async () =>
     client.request(
       'setProjects',
@@ -152,8 +181,9 @@ export async function activate(ctx: PluginContext): Promise<void> {
   await pushProjects();
   await client.request('setActiveProject', (await oxy.projects.getActive())?.id ?? null);
   await client.request('setAgents', agentRefs(await oxy.agents.list()));
-  let collectorKey = JSON.stringify(readCollectorSettings(ctx));
-  await client.request('startCollectors', readCollectorSettings(ctx));
+  const collectors = readCollectorSettings(ctx);
+  collectorKey = JSON.stringify(collectors);
+  await client.request('startCollectors', collectors);
 
   // Live telemetry (opt-in): the receiver runs in the worker, the variables go through the environment collection.
   const configureTelemetry = async () => {
@@ -166,29 +196,13 @@ export async function activate(ctx: PluginContext): Promise<void> {
       ctx.log.warn(`Your OpenTelemetry configuration was detected (${userConfig}) — live mode for Claude Code is off.`);
     applyTelemetryEnv(oxy.terminals.environment, endpoint, telemetry, userConfig);
   };
-  let telemetryKey = JSON.stringify(readTelemetrySettings(ctx));
+  telemetryKey = JSON.stringify(readTelemetrySettings(ctx));
+  configureTelemetryRef = configureTelemetry;
   await configureTelemetry();
 
   ctx.subscriptions.push(
     oxy.projects.onDidChange(() => void pushProjects()),
     oxy.projects.onDidChangeActive((p) => void client.request('setActiveProject', p?.id ?? null)),
     oxy.agents.onDidChange((agents) => void client.request('setAgents', agentRefs(agents))),
-    oxy.settings.onDidChange('usage.', () => {
-      void client.request('setSettings', readSettings(ctx));
-      const statusLineEnabled = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
-      if (statusLineEnabled !== statusLineKey) {
-        statusLineKey = statusLineEnabled;
-        void configureStatusLine();
-      }
-      const telemetry = JSON.stringify(readTelemetrySettings(ctx));
-      if (telemetry !== telemetryKey) {
-        telemetryKey = telemetry;
-        void configureTelemetry();
-      }
-      const next = readCollectorSettings(ctx);
-      if (JSON.stringify(next) === collectorKey) return;
-      collectorKey = JSON.stringify(next);
-      void client.request('startCollectors', next);
-    }),
   );
 }

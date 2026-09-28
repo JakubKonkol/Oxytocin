@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
 
 export interface StatManyResult {
@@ -9,7 +9,8 @@ export interface StatManyResult {
 
 /**
  * Resolves candidate paths (from terminal file links) against base directories: absolute paths as-is,
- * relative ones against each base dir in order. Only existence information is returned.
+ * relative ones against each base dir in order. Only existence information is returned. `resolved` is the real path
+ * (Windows 8.3 short names such as `RUNNER~1`, symlinks and junctions resolved), so it compares with project roots.
  */
 export async function statMany(baseDirs: readonly string[], paths: readonly string[]): Promise<StatManyResult[]> {
   return Promise.all(
@@ -18,7 +19,8 @@ export async function statMany(baseDirs: readonly string[], paths: readonly stri
       for (const candidate of candidates) {
         try {
           const s = await stat(candidate);
-          return { path, resolved: candidate, isFile: s.isFile() };
+          const real = await realpath(candidate).catch(() => candidate);
+          return { path, resolved: real, isFile: s.isFile() };
         } catch {
           // try the next base dir
         }

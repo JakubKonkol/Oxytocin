@@ -296,7 +296,7 @@ async function pythonLauncher(fs: DetectFs, dir: string, root: DetectEntry[], pl
   for (const venv of ['.venv', 'venv', 'env']) {
     if (!names.has(venv)) continue;
     if ((await fs.readText(join(dir, `${venv}/pyvenv.cfg`))) === null) continue;
-    return platform === 'win32' ? `${venv}\\Scripts\\python.exe` : `${venv}/bin/python`;
+    return platform === 'win32' ? `.\\${venv}\\Scripts\\python.exe` : `${venv}/bin/python`;
   }
   return platform === 'win32' ? 'python' : 'python3';
 }

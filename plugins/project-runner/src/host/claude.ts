@@ -95,9 +95,12 @@ export function disconnectClaude(run: RunCli): Promise<CliResult> {
   return run(['mcp', 'remove', '--scope', 'user', MCP_SERVER_NAME]);
 }
 
-/** Whether Claude Code knows the server (null = could not tell, e.g. Claude Code is not installed). */
-export async function isConnectedToClaude(run: RunCli): Promise<boolean | null> {
+/**
+ * Whether Claude Code knows the server at the current address (null = could not tell, e.g. Claude Code is not
+ * installed). A registration with another port (the setting changed) counts as not connected.
+ */
+export async function isConnectedToClaude(run: RunCli, port: number): Promise<boolean | null> {
   const r = await run(['mcp', 'get', MCP_SERVER_NAME]);
-  if (r.ok) return true;
+  if (r.ok) return r.output.includes(mcpUrl(port));
   return /not found|no mcp server/i.test(r.output) ? false : null;
 }

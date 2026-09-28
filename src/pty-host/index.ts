@@ -98,4 +98,8 @@ rpc.onEvent('renderer-port', (payload, ports) => {
   manager.addConnection(payload.windowId, toRendererPort(port));
 });
 
+// A stray rejected promise must not take the host down (for the PTY Host: every terminal). Logged instead;
+// uncaught exceptions still end the process, which the supervisor restarts.
+process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection in the PTY Host', reason));
+
 log.info('PTY Host started');
