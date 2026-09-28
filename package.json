@@ -112,6 +112,7 @@
     "package:win": "npm run licenses:notices && npm run build && electron-builder --win --publish never",
     "package:mac": "npm run licenses:notices && npm run build && electron-builder --mac --publish never",
     "package:linux": "npm run licenses:notices && npm run build && electron-builder --linux --publish never",
-    "smoke:packaged": "playwright test -c tests/smoke"
+    "smoke:packaged": "playwright test -c tests/smoke",
+    "screenshots": "playwright test -c tests/screenshots/playwright.config.ts"
   }
 }

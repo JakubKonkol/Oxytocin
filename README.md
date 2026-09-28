@@ -7,7 +7,7 @@
 
 <p align="center">
   <strong>An IDE for the terminal and AI.</strong><br />
-  A desktop hub for developers who run AI coding agents in the terminal.
+  One window for your projects, AI agent terminals, live git changes and token usage.
 </p>
 
 <p align="center">
@@ -18,16 +18,20 @@
 </p>
 
 <p align="center">
-  <img alt="Oxytocin — Usage Monitor dashboard next to the project sidebar" src="docs/images/usage-monitor.png" width="900" />
+  <img alt="Oxytocin: Claude Code working in a terminal, the project's live changes and usage on the left, a to-do list in the scratchpad on the right" src="docs/images/overview.png" width="960" />
 </p>
 
 ---
 
-You run Claude Code in one terminal, Codex in another, a dev server in a third — across four projects. Which agent
+You run Claude Code in one terminal, Codex in another and a dev server in a third — across four projects. Which agent
 is waiting for your answer? What did it just change? How much has it cost today?
 
 **Oxytocin** puts all of that in one window. It is **not** a code editor — keep using the editor you like. It is the
 place where your projects, agent terminals, live git changes and token usage live side by side.
+
+<p align="center">
+  <a href="https://github.com/JakubKonkol/Oxytocin/releases/latest"><strong>Download for Windows, macOS or Linux →</strong></a>
+</p>
 
 ## Features
 
@@ -35,51 +39,58 @@ place where your projects, agent terminals, live git changes and token usage liv
 
 Every folder is a project with its own colour, icon and workspace layout. Status dots show at a glance whether an
 agent is **working**, **waiting for you**, a process is running or something failed. Switching projects is instant
-and never kills a process; layouts and terminal scrollback are restored after a restart.
+and never kills a process; layouts and terminal scrollback come back after a restart.
 
 ### 🖥️ Terminals built for agents
 
 - node-pty + xterm.js (WebGL) with tabs, splits, drag and drop and **floating groups**.
 - Shell detection (PowerShell, cmd, Git Bash, WSL, bash, zsh, fish) and launch profiles for agents.
-- **Shift+Enter** inserts a newline in Claude Code, image pastes are forwarded to agents, clickable file links,
-  search and shell integration (command marks, exit codes, "command finished" notifications).
+- **Shift+Enter** inserts a newline in Claude Code, image pastes reach the agent, file paths are clickable, plus search
+  and shell integration (command marks, exit codes, "command finished" notifications).
 - **Agent detection** for Claude Code, Codex CLI, Gemini CLI, Aider and more — with OS notifications, an attention
   badge and `Ctrl+Shift+J` to jump straight to the agent that is waiting for you.
 - Offers to **resume agent sessions** after a restart (never automatically).
 
-### 🧰 Modular workspace
+### 🧰 A modular workspace
 
-The **+** of every tab group opens a new terminal (any profile) or a **tool**: the scratchpad, the JSON Formatter or
-any plugin panel. Tools split, stack and float like terminals, and move into the **right sidebar** (drag a tab onto it,
-or *Move to right sidebar*) — and back. The right sidebar starts with the **scratchpad** for notes and prompt drafts
-(Markdown formatting, fonts, *Send to agent*); close it, reorder tools or add others with **Add tool**.
+The **+** of every tab group opens a new terminal (with any profile) or a **tool**: the scratchpad, the JSON Formatter
+or any plugin panel. Tools split, stack and float exactly like terminals. Drag one onto the **right sidebar** to keep
+it next to you in every project, and drag it back whenever you like.
+
+<p align="center">
+  <img alt="Claude Code next to a dev server and a JSON Formatter, with the + menu listing terminals and tools" src="docs/images/modular-workspace.png" width="960" />
+</p>
+
+The right sidebar starts with the **scratchpad** — notes, to-do lists and prompt drafts with a Markdown toolbar,
+lists that continue on Enter and your choice of font. **Send to agent** (`Ctrl+Enter`) pastes the text into a running
+agent without submitting it. Close the scratchpad, reorder the sections or add other tools with **Add tool**.
 
 ### 🔍 Live changes
 
 A live tree of every file changed since `HEAD`, with line counts, and a Monaco diff viewer that updates while the
-agent writes. One click opens the file in VS Code, Cursor, Windsurf, Zed, JetBrains IDEs, Sublime Text or a
-terminal editor.
-
-<p align="center">
-  <img alt="Changes panel with a side-by-side diff in the light theme" src="docs/images/changes-diff-light.png" width="800" />
-</p>
+agent writes. One click opens the file in VS Code, Cursor, Windsurf, Zed, JetBrains IDEs, Sublime Text or a terminal
+editor.
 
 ### 📊 Usage Monitor
 
-Tokens and USD cost per session, project and model — read from your agents' **local logs** (Claude Code, Codex CLI,
-Gemini CLI), with an optional local OTLP receiver. Daily charts, burn rate, 5-hour subscription blocks, budgets with
-alerts and a status bar counter. On a Claude subscription it shows your plan's 5-hour and weekly limits instead of
-API-equivalent costs; the gear in the Usage card opens its settings. Nothing leaves your machine.
+Tokens and cost per session, project and model — read from your agents' **local logs** (Claude Code, Codex CLI,
+Gemini CLI), with an optional local OTLP receiver. Daily charts, burn rate, budgets with alerts and a status bar
+counter. On a Claude Pro/Max plan it shows the real **5-hour and weekly limits** instead of API-equivalent costs. The
+gear in the Usage card opens its settings. Nothing leaves your machine.
+
+<p align="center">
+  <img alt="Usage dashboard: daily cost over the last 30 days, tokens, projects and models" src="docs/images/usage-dashboard.png" width="960" />
+</p>
 
 ### 🧩 Plugins
 
-Plugins are plain HTML/JS/CSS: views run in sandboxed iframes, backends in a separate Plugin Host process. They can
-add sidebar views, center panels, status bar items, commands, terminal profiles and agent rules. Built-in plugins:
+Plugins are plain HTML/JS/CSS: views run in sandboxed iframes, backends in a separate Plugin Host process. They add
+sidebar views, panels and tools, status bar items, commands, settings, terminal profiles and agent rules.
 
-| Plugin | What it does |
+| Built-in plugin | What it does |
 |---|---|
-| **Usage Monitor** | Token usage and cost dashboard |
-| **Markdown Preview** | Live preview of plans and reports your agents write |
+| **Usage Monitor** | Token usage, costs, budgets and Claude subscription limits |
+| **Markdown Preview** | Live preview of the plans and reports your agents write |
 | **Claude Code Bridge** | Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks |
 | **JSON Formatter** | Format, minify and validate JSON next to the terminal or in the right sidebar |
 
@@ -87,19 +98,8 @@ Start your own with `npm create oxytocin-plugin` — see the [plugin developer g
 
 ### ⌨️ Keyboard first
 
-A **command palette** (`Ctrl+Shift+P`), **Quick Open** for projects, terminals and changed files (`Ctrl+Shift+O`),
-a keyboard shortcut editor, a settings UI generated from the settings schema, and dark, light and system themes.
-
-<table>
-  <tr>
-    <td><img alt="Command palette" src="docs/images/command-palette.png" /></td>
-    <td><img alt="Settings" src="docs/images/settings.png" /></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Command palette</sub></td>
-    <td align="center"><sub>Settings</sub></td>
-  </tr>
-</table>
+A **command palette** (`Ctrl+Shift+P`), **Quick Open** for projects, terminals and changed files (`Ctrl+Shift+O`), a
+keyboard shortcut editor, a settings UI generated from the settings schema, and dark, light and system themes.
 
 ## Installation
 
@@ -126,6 +126,7 @@ npm run dev           # run the app in development mode (renderer HMR)
 npm run build         # production build into out/
 npm run check         # typecheck + lint + unit/integration tests + license check
 npm run e2e           # end-to-end tests (Playwright + Electron)
+npm run screenshots   # regenerate the README screenshots from a demo setup (after npm run build)
 npm run package:win   # Windows installer into release/ (also package:mac, package:linux)
 ```
 
