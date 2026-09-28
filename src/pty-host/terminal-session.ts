@@ -56,6 +56,8 @@ export class TerminalSession {
   /** Shell integration: the command line announced by OSC 633;E and the running command. */
   private pendingCommandLine: string | undefined;
   private runningCommand: { commandLine?: string; startedAt: number } | undefined;
+  /** Output is also emitted as `terminal:output` (plugins with `terminals.read-output`). */
+  private outputWatched = false;
 
   constructor(
     opts: SpawnOptions,
@@ -192,6 +194,7 @@ export class TerminalSession {
   }
 
   private broadcastData(data: string): void {
+    if (this.outputWatched) this.deps.emit('terminal:output', { id: this.id, data });
     const message: PtyToRenderer = { t: 'data', id: this.id, seq: ++this.seq, data };
     for (const queue of this.pending.values()) queue.push(message);
     if (this.subscribers.size === 0) return;
@@ -253,6 +256,11 @@ export class TerminalSession {
 
   hasSubscriber(sub: Subscriber): boolean {
     return this.subscribers.has(sub) || this.pending.has(sub);
+  }
+
+  /** Starts or stops emitting the output as `terminal:output` events (batched like renderer data). */
+  setOutputWatched(watched: boolean): void {
+    this.outputWatched = watched;
   }
 
   ack(chars: number): void {

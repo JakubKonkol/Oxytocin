@@ -88,6 +88,7 @@ export const EVENT_CHANNELS = [
   'plugins:contributionsChanged',
   'plugins:reloaded',
   'terminals:openPanel',
+  'terminals:closePanel',
   'commands:run',
   'plugins:viewMessage',
   'plugins:viewMeta',

@@ -7,6 +7,7 @@ import { toDisposable } from '@shared/utils/disposable';
 import type { Logger } from '@shared/logging/logger';
 import { type RendererPort, TerminalManager } from './terminal-manager';
 import { busySampleMs, ProcessMonitor } from './process-monitor';
+import { listeningPortsOf } from './ports';
 
 // Utility process entry: the PTY Host (node-pty + headless mirrors).
 const parentPort = process.parentPort;
@@ -49,6 +50,11 @@ const { rpc, log } = startHostRuntime<PtyHostEvents, PtyHostInboundEvents>({
     serialize: (o: { id: string; scrollback?: number }) => manager.serialize(o.id, o.scrollback),
     setScrollback: (o: { scrollback: number }) => manager.setScrollback(o.scrollback),
     getText: (o: { id: string }) => manager.getText(o.id),
+    watchOutput: (o: { id: string; watch: boolean }) => manager.watchOutput(o.id, o.watch),
+    listeningPorts: async (o: { id: string }) => {
+      const pid = manager.pidOf(o.id);
+      return pid === null ? [] : listeningPortsOf(pid);
+    },
   },
   onShutdown: () => {
     monitor.stop();

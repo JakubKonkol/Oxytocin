@@ -25,6 +25,7 @@ export type ApiEventName =
   | 'terminals.open'
   | 'terminals.change'
   | 'terminals.close'
+  | 'terminals.output'
   | 'agents.changed'
   | 'git.status'
   | 'settings.changed';
@@ -150,6 +151,8 @@ export function createApi(deps: ApiDeps): OxytocinApi {
   };
 
   const statusItems = new Map<string, StatusBarItem>();
+  /** `onDidWriteData` listeners per terminal; main streams a terminal's output while the count is positive. */
+  const outputWatchers = new Map<string, number>();
   const commands: CommandsApi = {
     register: (id, handler) => deps.registerCommand(id, handler),
     execute: <T>(id: string, ...args: unknown[]) => deps.executeCommand(id, args) as Promise<T>,
@@ -193,6 +196,50 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       sendText: async (id, text, opts) => {
         require('terminals.write');
         await call('terminals.sendText', { id, text, addNewLine: opts?.addNewLine ?? true });
+      },
+      show: async (id, o) => {
+        require('terminals.read-metadata');
+        await call('terminals.show', { id, ...(o ?? {}) });
+      },
+      kill: async (id, o) => {
+        require('terminals.write');
+        await call('terminals.kill', { id, force: o?.force ?? false });
+      },
+      close: async (id) => {
+        require('terminals.write');
+        await call('terminals.close', { id });
+      },
+      getListeningPorts: async (id) => {
+        require('terminals.read-metadata');
+        return call<number[]>('terminals.listeningPorts', { id });
+      },
+      onDidWriteData: (id, listener) => {
+        require('terminals.read-output');
+        const count = outputWatchers.get(id) ?? 0;
+        outputWatchers.set(id, count + 1);
+        if (count === 0)
+          void call('terminals.watchOutput', { id, watch: true }).catch((e: unknown) =>
+            deps.reportError('onDidWriteData', e),
+          );
+        const sub = event<{ id: string; data: string }>('terminals.output')((e) => {
+          if (e.id === id) return listener(e.data);
+          return undefined;
+        });
+        let disposed = false;
+        return deps.track(
+          toDisposable(() => {
+            if (disposed) return;
+            disposed = true;
+            sub.dispose();
+            const left = (outputWatchers.get(id) ?? 1) - 1;
+            if (left > 0) {
+              outputWatchers.set(id, left);
+              return;
+            }
+            outputWatchers.delete(id);
+            void call('terminals.watchOutput', { id, watch: false }).catch(() => undefined);
+          }),
+        );
       },
       environment,
     },

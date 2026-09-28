@@ -19,12 +19,13 @@ export interface FileLinkTarget {
 
 /**
  * Terminal file links: candidates found in a line are verified in batch through `fs:statMany`
- * (relative to the terminal cwd, then the project root) and activated with Ctrl/⌘+click.
+ * (relative to the terminal cwd, then the project root) and activated with Ctrl/⌘+click (Shift+Ctrl/⌘+click is
+ * passed on through the event).
  */
 export function registerFileLinkProvider(
   term: Terminal,
   getBaseDirs: () => string[],
-  onActivate: (target: FileLinkTarget) => void,
+  onActivate: (target: FileLinkTarget, event: MouseEvent) => void,
 ): IDisposable {
   const cache = new Map<string, CacheEntry>();
   const modifier = currentPlatform() === 'darwin' ? 'metaKey' : 'ctrlKey';
@@ -60,11 +61,14 @@ export function registerFileLinkProvider(
               decorations: { underline: true, pointerCursor: true },
               activate: (event) => {
                 if (!event[modifier]) return;
-                onActivate({
-                  path: resolved,
-                  ...(m.line ? { line: m.line } : {}),
-                  ...(m.column ? { column: m.column } : {}),
-                });
+                onActivate(
+                  {
+                    path: resolved,
+                    ...(m.line ? { line: m.line } : {}),
+                    ...(m.column ? { column: m.column } : {}),
+                  },
+                  event,
+                );
               },
             });
           }

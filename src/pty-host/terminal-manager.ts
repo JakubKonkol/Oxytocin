@@ -183,6 +183,16 @@ export class TerminalManager {
     return this.require(id).getText();
   }
 
+  watchOutput(id: string, watch: boolean): void {
+    this.sessions.get(id)?.setOutputWatched(watch);
+  }
+
+  /** Pid of a terminal's shell (null when unknown or exited). */
+  pidOf(id: string): number | null {
+    const s = this.sessions.get(id);
+    return s?.alive ? s.pid : null;
+  }
+
   /** Registers a renderer window port, replacing (and closing) the window's previous port (renderer reload). */
   addConnection(windowId: number, port: RendererPort): void {
     this.connections.get(windowId)?.dispose();

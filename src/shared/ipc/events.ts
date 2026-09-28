@@ -54,7 +54,11 @@ export const eventContract = {
     terminalId: TerminalIdSchema,
     projectId: ProjectIdSchema,
     placement: z.enum(['active-group', 'right', 'below']),
+    /** Reveal (activate the project and the panel) and focus it; an existing panel is only revealed with this. */
+    focus: z.boolean().optional(),
   }),
+  /** A plugin closed a terminal: its panel goes away too. */
+  'terminals:closePanel': z.object({ terminalId: TerminalIdSchema, projectId: ProjectIdSchema }),
   /** A core command requested by a plugin (oxytocin.*). */
   'commands:run': z.object({ id: z.string(), args: z.array(z.unknown()) }),
   /** Backend → plugin view. */

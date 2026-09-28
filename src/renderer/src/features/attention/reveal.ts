@@ -1,5 +1,7 @@
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { useProjectsStore } from '../../stores/projects-store';
+import { useTerminalsStore } from '../../stores/terminals-store';
+import { addExistingTerminalPanel } from '../layout/workspace-actions';
 import type { TerminalPanelParams } from '../layout/panel-registry';
 import { getWorkspaceApi } from '../layout/workspace-registry';
 import { activateProject } from '../projects/project-actions';
@@ -33,12 +35,18 @@ export async function workspaceFor(projectId: string): Promise<DockviewApi | nul
   return null;
 }
 
-/** Activates the terminal's project and focuses its panel (notification click, "Jump to waiting agent"). */
+/**
+ * Activates the terminal's project and focuses its panel (notification click, "Jump to waiting agent"). A terminal
+ * started in the background by a plugin gets a panel first.
+ */
 export async function revealTerminal(projectId: string, terminalId: string): Promise<boolean> {
   activateProject(projectId);
   const deadline = performance.now() + 3000;
   while (performance.now() < deadline) {
     const api = getWorkspaceApi(projectId);
+    const info = useTerminalsStore.getState().terminals[terminalId];
+    if (api && info?.background && !findTerminalPanel(api, terminalId))
+      addExistingTerminalPanel(api, terminalId, info.title);
     const panel = api && findTerminalPanel(api, terminalId);
     if (panel) {
       if (api.hasMaximizedGroup() && !panel.api.isMaximized()) api.exitMaximizedGroup();

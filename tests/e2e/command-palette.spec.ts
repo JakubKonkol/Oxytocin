@@ -104,7 +104,7 @@ test('plugins show quick picks in the palette (Markdown: Open Preview)', async (
     await win.keyboard.press('Enter');
 
     await expect(palette(win)).toHaveAttribute('data-mode', 'pick');
-    await expect(palette(win).getByTestId('command-palette-source')).toHaveText('Markdown Preview');
+    await expect(palette(win).getByTestId('command-palette-source')).toHaveText('File Preview');
     await expect(input(win)).toHaveAttribute('placeholder', 'Open a Markdown preview');
     await expect(items(win)).toHaveCount(2);
     await expect(items(win).first()).toContainText('README.md');

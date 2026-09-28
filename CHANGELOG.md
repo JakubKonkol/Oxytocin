@@ -3,6 +3,36 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Previews from terminal links.** `Ctrl+click` (`⌘+click`) a file path in a terminal — `CLAUDE.md`, `src/app.ts:42`,
+  a `file://` hyperlink — to open it in a **preview tab**: Markdown rendered, code highlighted with line numbers and
+  scrolled to the line. A file that is already open is revealed instead of opened twice. Like every tool, a preview
+  moves into the right sidebar by drag and drop and comes back after a restart. `Ctrl+Shift+click` opens the editor;
+  the new `terminal.fileLinks.open` setting swaps the two.
+- **Project Runner** (built-in plugin): detects the runnable apps of a project — Node.js scripts with their framework
+  (Next.js, Vite, Angular, NestJS, …), .NET web/worker/console projects with their launch URLs, Django, FastAPI, Flask,
+  Streamlit, Go, Rust, Spring Boot, Laravel, Rails, Deno, Docker Compose and Makefile targets — and runs them with one
+  click from the new **Run** section (also a tool for the workspace and the right sidebar). Each app shows its status,
+  the URL it serves (from its output or its listening ports) and its exit code; **Show logs** opens its terminal,
+  **Stop** interrupts it. Edit detected apps or add your own **run profiles** (command, folder, environment) per
+  project; they are kept across restarts. The status bar counts running apps.
+- **MCP server for agents** in the Project Runner: Claude Code (or any MCP client) lists, starts, restarts and stops
+  run profiles and reads their logs through a local, token-protected server; **Connect Claude Code** registers it.
+  Apps started by an agent are marked in the Run section. Turn it off with `projectRunner.mcp.enabled`.
+- Plugin API 0.1.4: background terminals (`create({ reveal: false, env })`, `show`), `kill`, `close`,
+  `onDidWriteData`, `getListeningPorts`, richer `TerminalMeta` (cwd, running and last command) and line positions for
+  file openers.
+
+### Changed
+
+- **Markdown Preview is now File Preview:** it also previews code and text files, and every code file gets **Open
+  Preview** in the Changes list.
+- Terminal file links also resolve paths relative to the project root, and typographic quotes („…”, “…”) around a
+  file name no longer hide the link.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added

@@ -1,5 +1,4 @@
 import '@xterm/xterm/css/xterm.css';
-import { fileOpenersFor, openWithOpener } from '../plugins/plugin-commands';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { SearchAddon } from '@xterm/addon-search';
 import type { Terminal } from '@xterm/xterm';
@@ -8,7 +7,9 @@ import { useEffect, useRef, useState } from 'react';
 import { formatShortcut } from '../../ui/Kbd';
 import { isDialogOpen } from '../../lib/focus';
 import { shortcutFor } from '../../lib/keyboard';
-import { registerFileLinkProvider } from './link-provider';
+import { openFileLink } from './file-link-open';
+import { fileUriToPath } from './file-links';
+import { type FileLinkTarget, registerFileLinkProvider } from './link-provider';
 import { TerminalSearch } from './TerminalSearch';
 import { useWorkspaceVisible } from '../layout/workspace-visibility';
 import { ipc } from '../../lib/ipc-client';
@@ -16,6 +17,7 @@ import { currentPlatform } from '../../lib/platform';
 import { useAppInfo } from '../../stores/app-store';
 import { confirmDialog } from '../../stores/dialog-store';
 import { getSettings, useSettingsStore } from '../../stores/settings-store';
+import { useProjectsStore } from '../../stores/projects-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { createTerminalKeyHandler } from './key-handler';
 import { formatDroppedPaths, type ShellType } from './path-quoting';
@@ -165,20 +167,31 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
     container.addEventListener('dragover', onDragOver);
     container.addEventListener('drop', onDrop);
 
+    // Ctrl/⌘+click on a file: a preview tab or the editor (`terminal.fileLinks.open`, Shift inverts it).
+    const openLink = (target: FileLinkTarget, event: MouseEvent) => {
+      const preview = (getSettings()['terminal.fileLinks.open'] === 'preview') !== event.shiftKey;
+      const projectId = useTerminalsStore.getState().terminals[terminalId]?.projectId;
+      void openFileLink(target, { projectId, preview });
+    };
     const linkSub = registerFileLinkProvider(
       term,
       () => {
         const info = useTerminalsStore.getState().terminals[terminalId];
-        return info ? [info.cwd] : [];
+        const root = useProjectsStore.getState().projects.find((p) => p.id === info?.projectId)?.rootPath;
+        return [...new Set([info?.cwd, root].filter((d): d is string => !!d))];
       },
-      (target) => {
-        // A plugin opener marked `default` for the extension wins over the editor (e.g. Markdown Preview).
-        const opener = fileOpenersFor(target.path).find((o) => o.default);
-        const projectId = useTerminalsStore.getState().terminals[terminalId]?.projectId;
-        if (opener && projectId) void openWithOpener(opener, projectId, target.path);
-        else void ipc.invoke('editor:open', target);
-      },
+      openLink,
     );
+    // OSC 8 hyperlinks (agents print file paths as `file://` links): files like path links, web pages in the browser.
+    term.options.linkHandler = {
+      allowNonHttpProtocols: true,
+      activate: (event, uri) => {
+        const file = fileUriToPath(uri);
+        if (file) {
+          if (event.ctrlKey || event.metaKey) openLink(file, event);
+        } else if (/^https?:\/\//i.test(uri)) void ipc.invoke('shell:openExternal', { url: uri });
+      },
+    };
 
     const onFocus = () => {
       setActiveTerminal(terminalId);

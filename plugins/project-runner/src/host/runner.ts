@@ -1,0 +1,407 @@
+import type { Disposable, TerminalMeta, TerminalsApi } from '@oxytocin/plugin-api';
+import { findListeningPort, findLocalUrls, LogBuffer, stripAnsi, TERMINATE_BATCH_PROMPT } from './output';
+import type { RunProfile, RunSnapshot, RunStatus, StartedBy } from '../shared/types';
+
+export type { RunSnapshot, RunStatus, StartedBy };
+
+interface Run {
+  projectId: string;
+  profileId: string;
+  profile: RunProfile;
+  status: RunStatus;
+  terminalId?: string;
+  /** Folder and environment the terminal was created with (a different profile setup needs a new terminal). */
+  terminalSetup?: string;
+  startedAt?: number;
+  startedBy?: StartedBy;
+  exitCode?: number;
+  url?: string;
+  ports: number[];
+  log: LogBuffer;
+  output?: Disposable;
+  /** The command was seen running (shell integration) or a process ran in the terminal (fallback). */
+  sawStart: boolean;
+  stopRequested: boolean;
+  timers: ReturnType<typeof setTimeout>[];
+  portPoll?: ReturnType<typeof setTimeout>;
+}
+
+export interface RunnerDeps {
+  terminals: Pick<
+    TerminalsApi,
+    'list' | 'create' | 'sendText' | 'show' | 'kill' | 'close' | 'getListeningPorts' | 'onDidWriteData'
+  >;
+  now?: () => number;
+  /** Delays of the stop escalation: a second Ctrl+C, then a forced kill (ms). */
+  stopDelays?: { interrupt: number; kill: number };
+  /** Without a URL, a command that keeps running this long counts as running (ms). */
+  settleMs?: number;
+  log?: (message: string, error?: unknown) => void;
+}
+
+const isActive = (s: RunStatus) => s === 'starting' || s === 'running' || s === 'stopping';
+/** Exit codes of an interrupt (Ctrl+C in bash/zsh, SIGTERM, STATUS_CONTROL_C_EXIT on Windows): a stop, not a failure. */
+const INTERRUPTED = new Set([130, 143, -1073741510, 3221225786]);
+
+const keyOf = (projectId: string, profileId: string) => `${projectId}\u0000${profileId}`;
+const PORT_POLL_FAST_MS = 2000;
+const PORT_POLL_SLOW_MS = 10_000;
+const FAST_POLL_WINDOW_MS = 60_000;
+
+/** Absolute folder of a profile. */
+export function profileFolder(rootPath: string, cwd: string): string {
+  if (!cwd) return rootPath;
+  const sep = rootPath.includes('\\') ? '\\' : '/';
+  return `${rootPath.replace(/[\\/]+$/, '')}${sep}${cwd.split('/').join(sep)}`;
+}
+
+/**
+ * Runs profiles in terminals: one terminal per profile (started in the background, shown on demand), reused while
+ * its shell is idle. Tracks the status from shell integration (command start/end, exit code) or the terminal's
+ * foreground process, the URL from the output and the listening ports of the process tree.
+ */
+export class RunManager implements Disposable {
+  private readonly runs = new Map<string, Run>();
+  private readonly listeners = new Set<(projectId: string) => void>();
+  private readonly now: () => number;
+
+  constructor(private readonly deps: RunnerDeps) {
+    this.now = deps.now ?? Date.now;
+  }
+
+  onDidChange(listener: (projectId: string) => void): Disposable {
+    this.listeners.add(listener);
+    return { dispose: () => this.listeners.delete(listener) };
+  }
+
+  private changed(run: Run): void {
+    for (const l of [...this.listeners]) l(run.projectId);
+  }
+
+  private run(projectId: string, profile: RunProfile): Run {
+    const key = keyOf(projectId, profile.id);
+    let run = this.runs.get(key);
+    if (!run) {
+      run = {
+        projectId,
+        profileId: profile.id,
+        profile,
+        status: 'idle',
+        ports: [],
+        log: new LogBuffer(),
+        sawStart: false,
+        stopRequested: false,
+        timers: [],
+      };
+      this.runs.set(key, run);
+    }
+    run.profile = profile;
+    return run;
+  }
+
+  private find(projectId: string, profileId: string): Run | undefined {
+    return this.runs.get(keyOf(projectId, profileId));
+  }
+
+  snapshot(projectId: string, profileId: string): RunSnapshot {
+    const run = this.find(projectId, profileId);
+    if (!run) return { profileId, status: 'idle', ports: [] };
+    return {
+      profileId,
+      status: run.status,
+      ports: run.ports,
+      ...(run.url ? { url: run.url } : {}),
+      ...(run.startedAt ? { startedAt: run.startedAt } : {}),
+      ...(run.startedBy ? { startedBy: run.startedBy } : {}),
+      ...(run.exitCode !== undefined ? { exitCode: run.exitCode } : {}),
+      ...(run.terminalId ? { terminalId: run.terminalId } : {}),
+    };
+  }
+
+  /** Runs whose app is starting, running or stopping. */
+  active(): (RunSnapshot & { projectId: string })[] {
+    return [...this.runs.values()]
+      .filter((r) => isActive(r.status))
+      .map((r) => ({ ...this.snapshot(r.projectId, r.profileId), projectId: r.projectId }));
+  }
+
+  activeIn(projectId: string): RunSnapshot[] {
+    return [...this.runs.values()]
+      .filter((r) => r.projectId === projectId && isActive(r.status))
+      .map((r) => this.snapshot(r.projectId, r.profileId));
+  }
+
+  logs(projectId: string, profileId: string, lines: number): string[] {
+    return this.find(projectId, profileId)?.log.tail(lines) ?? [];
+  }
+
+  private async terminal(run: Run): Promise<TerminalMeta | undefined> {
+    if (!run.terminalId) return undefined;
+    const list = await this.deps.terminals.list({ projectId: run.projectId });
+    return list.find((t) => t.id === run.terminalId);
+  }
+
+  private clearTimers(run: Run): void {
+    for (const t of run.timers) clearTimeout(t);
+    run.timers = [];
+    if (run.portPoll) clearTimeout(run.portPoll);
+    run.portPoll = undefined;
+  }
+
+  /** Starts a profile (no-op while it is already starting or running). */
+  async start(rootPath: string, projectId: string, profile: RunProfile, startedBy: StartedBy): Promise<RunSnapshot> {
+    const run = this.run(projectId, profile);
+    if (run.status === 'starting' || run.status === 'running') return this.snapshot(projectId, profile.id);
+    if (run.status === 'stopping') throw new Error(`${profile.name} is still stopping.`);
+    const cwd = profileFolder(rootPath, profile.cwd);
+    const setup = JSON.stringify([cwd, profile.env ?? {}]);
+    const existing = await this.terminal(run);
+    const idle =
+      existing &&
+      existing.status === 'running' &&
+      !existing.command &&
+      existing.kind !== 'process' &&
+      run.terminalSetup === setup;
+    this.clearTimers(run);
+    run.output?.dispose();
+    run.output = undefined;
+    run.log.clear();
+    run.status = 'starting';
+    run.startedAt = this.now();
+    run.startedBy = startedBy;
+    run.stopRequested = false;
+    run.sawStart = false;
+    run.ports = [];
+    delete run.url;
+    delete run.exitCode;
+    this.changed(run);
+    try {
+      if (idle && existing) {
+        this.watchOutput(run, existing.id);
+        await this.deps.terminals.sendText(existing.id, profile.command);
+      } else {
+        // A finished background terminal is replaced; one the user opened stays where it is.
+        if (existing?.background) await this.deps.terminals.close(existing.id).catch(() => undefined);
+        const meta = await this.deps.terminals.create({
+          projectId,
+          cwd,
+          title: profile.name,
+          command: profile.command,
+          ...(profile.env ? { env: profile.env } : {}),
+          reveal: false,
+        });
+        run.terminalId = meta.id;
+        run.terminalSetup = setup;
+        this.watchOutput(run, meta.id);
+      }
+    } catch (e) {
+      run.status = 'failed';
+      run.log.push(`Could not start: ${e instanceof Error ? e.message : String(e)}\n`);
+      this.changed(run);
+      throw e;
+    }
+    // Apps without a URL (workers, console apps): running once the command kept going for a moment.
+    run.timers.push(
+      setTimeout(() => {
+        if (run.status === 'starting' && run.sawStart) this.setStatus(run, 'running');
+      }, this.deps.settleMs ?? 4000),
+    );
+    this.schedulePortPoll(run, 1000);
+    return this.snapshot(projectId, profile.id);
+  }
+
+  private watchOutput(run: Run, terminalId: string): void {
+    run.output = this.deps.terminals.onDidWriteData(terminalId, (data) => this.onOutput(run, data));
+  }
+
+  private onOutput(run: Run, data: string): void {
+    const lines = run.log.push(data);
+    if (run.stopRequested && TERMINATE_BATCH_PROMPT.test(stripAnsi(data)) && run.terminalId)
+      void this.deps.terminals.sendText(run.terminalId, 'Y').catch(() => undefined);
+    if (run.status !== 'starting' && run.status !== 'running') return;
+    let changed = false;
+    for (const line of lines) {
+      if (!run.url) {
+        const url = findLocalUrls(line)[0];
+        const port = url ? undefined : findListeningPort(line);
+        if (url) run.url = url;
+        else if (port) run.url = `http://localhost:${port}`;
+        if (run.url) changed = true;
+      }
+    }
+    if (run.url && run.status === 'starting') {
+      run.sawStart = true;
+      this.setStatus(run, 'running');
+    } else if (changed) this.changed(run);
+  }
+
+  private setStatus(run: Run, status: RunStatus): void {
+    if (run.status === status) return;
+    run.status = status;
+    this.changed(run);
+  }
+
+  private schedulePortPoll(run: Run, delay: number): void {
+    if (run.portPoll) clearTimeout(run.portPoll);
+    run.portPoll = setTimeout(() => void this.pollPorts(run), delay);
+  }
+
+  private async pollPorts(run: Run): Promise<void> {
+    run.portPoll = undefined;
+    if (!run.terminalId || (run.status !== 'starting' && run.status !== 'running')) return;
+    try {
+      const ports = await this.deps.terminals.getListeningPorts(run.terminalId);
+      if (JSON.stringify(ports) !== JSON.stringify(run.ports)) {
+        run.ports = ports;
+        if (!run.url && ports.length > 0) {
+          const expected = Number(/:(\d+)/.exec(run.profile.url ?? '')?.[1]);
+          const port = ports.includes(expected) ? expected : ports[0]!;
+          run.url = `${run.profile.url?.startsWith('https:') && port === expected ? 'https' : 'http'}://localhost:${port}`;
+        }
+        if (ports.length > 0 && run.status === 'starting') {
+          run.sawStart = true;
+          run.status = 'running';
+        }
+        this.changed(run);
+      }
+    } catch (e) {
+      this.deps.log?.(`Listening ports of ${run.terminalId} failed`, e);
+    }
+    if (run.status !== 'starting' && run.status !== 'running') return;
+    const fast = this.now() - (run.startedAt ?? 0) < FAST_POLL_WINDOW_MS;
+    this.schedulePortPoll(run, fast ? PORT_POLL_FAST_MS : PORT_POLL_SLOW_MS);
+  }
+
+  /** Terminal metadata changed (`onDidChange`): command start/end, exit, foreground process. */
+  onTerminalChange(meta: TerminalMeta): void {
+    const run = [...this.runs.values()].find((r) => r.terminalId === meta.id);
+    if (!run || run.status === 'idle' || !run.startedAt) return;
+    const active = run.status === 'starting' || run.status === 'running' || run.status === 'stopping';
+    if (!active) return;
+    if (meta.status === 'exited') {
+      this.finish(run, meta.exitCode);
+      return;
+    }
+    if (meta.shellIntegration) {
+      if (meta.command && meta.command.startedAt >= run.startedAt - 1000) run.sawStart = true;
+      const last = meta.lastCommand;
+      if (run.sawStart && !meta.command && last && last.finishedAt >= run.startedAt) this.finish(run, last.exitCode);
+    } else if (meta.kind === 'process') run.sawStart = true;
+    else if (run.sawStart && meta.kind === 'shell') this.finish(run, undefined);
+  }
+
+  /** The terminal was closed (by the user or a stop that had to kill it). */
+  onTerminalClose(id: string): void {
+    const run = [...this.runs.values()].find((r) => r.terminalId === id);
+    if (!run) return;
+    delete run.terminalId;
+    delete run.terminalSetup;
+    run.output?.dispose();
+    run.output = undefined;
+    if (run.status === 'starting' || run.status === 'running' || run.status === 'stopping') this.finish(run, undefined);
+  }
+
+  private finish(run: Run, exitCode: number | undefined): void {
+    this.clearTimers(run);
+    const requested = run.stopRequested;
+    run.stopRequested = false;
+    run.ports = [];
+    if (exitCode !== undefined) run.exitCode = exitCode;
+    run.status =
+      requested || exitCode === undefined || exitCode === 0 || INTERRUPTED.has(exitCode) ? 'stopped' : 'failed';
+    this.changed(run);
+  }
+
+  /** Ctrl+C, a second Ctrl+C, then a forced kill of the terminal's process tree. */
+  async stop(projectId: string, profileId: string): Promise<RunSnapshot> {
+    const run = this.find(projectId, profileId);
+    if (!run || !run.terminalId || (run.status !== 'starting' && run.status !== 'running'))
+      return this.snapshot(projectId, profileId);
+    const terminalId = run.terminalId;
+    run.stopRequested = true;
+    this.setStatus(run, 'stopping');
+    const stillStopping = () => run.status === 'stopping' && run.terminalId === terminalId;
+    const delays = this.deps.stopDelays ?? { interrupt: 3000, kill: 8000 };
+    await this.deps.terminals.sendText(terminalId, '\x03', { addNewLine: false }).catch(() => undefined);
+    run.timers.push(
+      setTimeout(() => {
+        if (stillStopping())
+          void this.deps.terminals.sendText(terminalId, '\x03', { addNewLine: false }).catch(() => undefined);
+      }, delays.interrupt),
+      setTimeout(() => {
+        if (!stillStopping()) return;
+        void this.deps.terminals
+          .kill(terminalId, { force: true })
+          .catch(() => undefined)
+          .then(() => {
+            if (stillStopping()) this.finish(run, undefined);
+          });
+      }, delays.kill),
+    );
+    return this.snapshot(projectId, profileId);
+  }
+
+  /** Resolves when the profile left `stopping` (at most `timeoutMs`). */
+  waitForStop(projectId: string, profileId: string, timeoutMs = 12_000): Promise<RunSnapshot> {
+    return this.waitFor(projectId, profileId, (s) => s.status !== 'stopping', timeoutMs);
+  }
+
+  /** Resolves with the first snapshot matching `done` (or the current one after `timeoutMs`). */
+  waitFor(
+    projectId: string,
+    profileId: string,
+    done: (s: RunSnapshot) => boolean,
+    timeoutMs: number,
+  ): Promise<RunSnapshot> {
+    const current = this.snapshot(projectId, profileId);
+    if (done(current)) return Promise.resolve(current);
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timer);
+        sub.dispose();
+        resolve(this.snapshot(projectId, profileId));
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      const sub = this.onDidChange((id) => {
+        if (id === projectId && done(this.snapshot(projectId, profileId))) finish();
+      });
+    });
+  }
+
+  async restart(rootPath: string, projectId: string, profile: RunProfile, startedBy: StartedBy): Promise<RunSnapshot> {
+    const current = this.snapshot(projectId, profile.id);
+    if (current.status === 'starting' || current.status === 'running') {
+      await this.stop(projectId, profile.id);
+      await this.waitForStop(projectId, profile.id);
+    } else if (current.status === 'stopping') await this.waitForStop(projectId, profile.id);
+    return this.start(rootPath, projectId, profile, startedBy);
+  }
+
+  /** Shows the profile's terminal (its logs); false when it never ran. */
+  async showLogs(projectId: string, profileId: string, preserveFocus = false): Promise<boolean> {
+    const run = this.find(projectId, profileId);
+    if (!run?.terminalId) return false;
+    await this.deps.terminals.show(run.terminalId, { preserveFocus });
+    return true;
+  }
+
+  /** Forgets runs of profiles that no longer exist (their terminals keep running until stopped by the user). */
+  forgetMissing(projectId: string, profileIds: Set<string>): void {
+    for (const [key, run] of [...this.runs]) {
+      if (run.projectId !== projectId || profileIds.has(run.profileId)) continue;
+      if (run.status === 'starting' || run.status === 'running' || run.status === 'stopping') continue;
+      this.clearTimers(run);
+      run.output?.dispose();
+      this.runs.delete(key);
+    }
+  }
+
+  dispose(): void {
+    for (const run of this.runs.values()) {
+      this.clearTimers(run);
+      run.output?.dispose();
+    }
+    this.runs.clear();
+    this.listeners.clear();
+  }
+}

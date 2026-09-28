@@ -1,4 +1,4 @@
-/* Markdown Preview styles; colours come from the shell's theme tokens (ADR-014). */
+/* File Preview styles (Markdown and code); colours come from the shell's theme tokens (ADR-014). */
 :root {
   --shiki-foreground: var(--text-primary);
   --shiki-background: var(--bg-input);
@@ -154,4 +154,47 @@ body {
 }
 .markdown-body .front-matter pre {
   border-style: dashed;
+}
+
+/* Code files: line numbers from a CSS counter, the revealed line highlighted. */
+.code-body {
+  padding: 0 0 48px;
+}
+.code-view {
+  margin: 0;
+  padding: 8px 0;
+  background: transparent;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  counter-reset: line;
+  tab-size: 4;
+  overflow-x: auto;
+}
+.code-view code {
+  display: block;
+  min-width: max-content;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+}
+.code-view .line {
+  display: inline-block;
+  width: 100%;
+  padding-right: 16px;
+  white-space: pre;
+}
+.code-view .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 5ch;
+  margin-right: 16px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+}
+.code-view .line-highlight {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }

@@ -2,7 +2,13 @@ import { registerCommand } from '../../lib/commands';
 import { ipc } from '../../lib/ipc-client';
 import { usePluginsStore } from '../../stores/plugins-store';
 import { notify } from '../../ui/Toast';
-import { openPluginPanel } from './plugin-panels';
+import { currentPlatform } from '../../lib/platform';
+import { useUiStore } from '../../stores/ui-store';
+import { workspaceFor } from '../attention/reveal';
+import { isInsideRoot } from '../terminals/file-links';
+import { revealSidebarTool } from '../tools/tools';
+import { openPluginPanel, type PluginPanelParams } from './plugin-panels';
+import { postToView } from './view-bridge';
 
 const registered = new Map<string, () => void>();
 
@@ -55,7 +61,58 @@ export function fileOpenersFor(path: string) {
     .contributions.fileOpeners.filter((o) => o.extensions.some((ext) => lower.endsWith(ext.toLowerCase())));
 }
 
-/** Opens a file with a plugin opener: its panel type with `{ projectId, path }` (absolute path). */
-export function openWithOpener(opener: { panelType: string }, projectId: string, absolutePath: string): Promise<void> {
-  return openPluginPanel(opener.panelType, { projectId, params: { projectId, path: absolutePath } });
+/** A file position from a terminal link (`src/app.ts:42:7`). */
+export interface FilePosition {
+  line?: number;
+  column?: number;
+}
+
+const caseInsensitivePaths = () => currentPlatform() !== 'linux';
+const samePath = (a: unknown, b: string) =>
+  typeof a === 'string' && isInsideRoot(a, b, caseInsensitivePaths()) && isInsideRoot(b, a, caseInsensitivePaths());
+const pathParam = (params: unknown) => (params as { path?: unknown } | undefined)?.path;
+
+/**
+ * Opens a file with a plugin opener: its panel type with `{ projectId, path, line?, column? }` (absolute path). A
+ * panel of that type already showing the file (in the workspace or the right sidebar) is revealed instead, and its
+ * view receives `{ type: 'oxy:reveal', line, column }` for the new position.
+ */
+export async function openWithOpener(
+  opener: { panelType: string },
+  projectId: string,
+  absolutePath: string,
+  position: FilePosition = {},
+): Promise<void> {
+  const reveal = (viewId: string) => {
+    if (position.line) requestAnimationFrame(() => postToView(viewId, { type: 'oxy:reveal', ...position }));
+  };
+  const tool = useUiStore
+    .getState()
+    .state.secondaryTools.find(
+      (t) => t.kind === 'plugin' && t.panelType === opener.panelType && samePath(pathParam(t.params), absolutePath),
+    );
+  if (tool?.kind === 'plugin') {
+    revealSidebarTool(tool.id);
+    reveal(tool.viewId);
+    return;
+  }
+  const api = await workspaceFor(projectId);
+  const panel = api?.panels.find((p) => {
+    const params = p.params as Partial<PluginPanelParams> | undefined;
+    return (
+      p.api.component === 'plugin' &&
+      params?.panelType === opener.panelType &&
+      samePath(pathParam(params.params), absolutePath)
+    );
+  });
+  if (panel) {
+    panel.api.setActive();
+    reveal((panel.params as PluginPanelParams).viewId);
+    return;
+  }
+  const at = {
+    ...(position.line ? { line: position.line } : {}),
+    ...(position.column ? { column: position.column } : {}),
+  };
+  await openPluginPanel(opener.panelType, { projectId, params: { projectId, path: absolutePath, ...at } });
 }

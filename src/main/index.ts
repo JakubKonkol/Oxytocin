@@ -401,6 +401,12 @@ function bootstrap(): void {
         get: (id) => terminals.get(id),
         create: (req) => terminals.create(req),
         write: (id, data) => hosts.pty.call('write', { id, data }),
+        markShown: (id) => terminals.markShown(id),
+        kill: (id, force) => terminals.kill(id, force),
+        close: (id) => terminals.close(id),
+        watchOutput: (id, owner, watch) => terminals.watchOutput(id, owner, watch),
+        unwatchAllOutput: (owner) => terminals.unwatchAllOutput(owner),
+        listeningPorts: (id) => terminals.listeningPorts(id),
       },
       agents: {
         list: () => agents.list(),
@@ -418,6 +424,7 @@ function bootstrap(): void {
         if (!wc) return;
         if (event === 'toast') sendEvent(wc, 'notifications:show', payload as never);
         else if (event === 'openTerminalPanel') sendEvent(wc, 'terminals:openPanel', payload as never);
+        else if (event === 'closeTerminalPanel') sendEvent(wc, 'terminals:closePanel', payload as never);
         else if (event === 'viewMessage') sendEvent(wc, 'plugins:viewMessage', payload as never);
         else if (event === 'viewMeta') sendEvent(wc, 'plugins:viewMeta', payload as never);
         else if (event === 'openPanel') sendEvent(wc, 'plugins:openPanel', payload as never);
@@ -492,6 +499,7 @@ function bootstrap(): void {
   projects.onDidChangeActive((id) => pluginHost.notifyActiveProject(id));
   terminals.onDidUpdate((info) => pluginHost.notifyTerminal(info));
   terminals.onDidRemove((id) => pluginHost.notifyTerminalRemoved(id));
+  terminals.onDidOutput(({ id, data }) => pluginHost.notifyTerminalOutput(id, data));
   agents.onDidUpdate((list) => pluginHost.notifyAgents(list));
   git.onDidChangeStatus((status) => pluginHost.notifyGitStatus(status));
   settings.onDidChange((s) => pluginHost.notifySettings(s));

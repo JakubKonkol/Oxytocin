@@ -64,8 +64,18 @@ export interface PluginCorePort {
       cwd?: string;
       userTitle?: string;
       initialCommand?: string;
+      env?: Record<string, string | null>;
+      background?: boolean;
     }): Promise<TerminalInfo>;
     write(id: string, data: string): Promise<void>;
+    /** A background terminal is about to get a panel. */
+    markShown(id: string): void;
+    kill(id: string, force: boolean): Promise<void>;
+    /** Kills (if needed) and forgets the terminal. */
+    close(id: string): Promise<void>;
+    watchOutput(id: string, owner: string, watch: boolean): Promise<void>;
+    unwatchAllOutput(owner: string): Promise<void>;
+    listeningPorts(id: string): Promise<number[]>;
   };
   agents: {
     list(): AgentInfoWithTerminal[];
@@ -81,7 +91,15 @@ export interface PluginCorePort {
   quickPick(items: QuickPickItem[], options: { placeholder?: string; source?: string }): Promise<number | null>;
   /** Renderer-side effects (toasts, panels, core commands). */
   toRenderer(
-    event: 'toast' | 'openTerminalPanel' | 'runCommand' | 'viewMessage' | 'viewMeta' | 'openPanel' | 'pluginReloaded',
+    event:
+      | 'toast'
+      | 'openTerminalPanel'
+      | 'closeTerminalPanel'
+      | 'runCommand'
+      | 'viewMessage'
+      | 'viewMeta'
+      | 'openPanel'
+      | 'pluginReloaded',
     payload: unknown,
   ): void;
   osNotify(title: string, body: string): void;
@@ -128,8 +146,26 @@ export function toTerminalMeta(t: TerminalInfo) {
     kind: t.kind,
     ...(t.agent ? { agentId: t.agent.agentId } : {}),
     createdAt: t.createdAt,
+    cwd: t.cwd,
+    ...(t.background ? { background: true } : {}),
+    ...(t.foreground ? { foreground: t.foreground } : {}),
+    ...(t.shellIntegration ? { shellIntegration: true } : {}),
+    ...(t.command ? { command: t.command } : {}),
+    ...(t.lastCommand ? { lastCommand: t.lastCommand } : {}),
   };
 }
+
+const PlacementSchema = z.enum(['active-group', 'right', 'below']);
+const TerminalCreateParamsSchema = z.object({
+  projectId: z.string().min(1),
+  profileId: z.string().optional(),
+  cwd: z.string().optional(),
+  title: z.string().max(80).optional(),
+  command: z.string().max(10_000).optional(),
+  placement: PlacementSchema.optional(),
+  env: z.record(z.string(), z.string().nullable()).optional(),
+  reveal: z.boolean().optional(),
+});
 
 export function toProjectInfo(p: Project) {
   return {
@@ -174,6 +210,8 @@ export class PluginHostService implements Disposable {
   private loading: Promise<void> = Promise.resolve();
   private lastSettings: Record<string, unknown> = {};
   private readonly knownTerminals = new Set<string>();
+  /** Terminal id → plugins of this host that watch its output. */
+  private readonly outputWatches = new Map<string, Set<string>>();
   readonly statusBarItems = new Map<string, StatusBarItemState>();
   private readonly statusEmitter = new Emitter<StatusBarItemState[]>();
   readonly onDidChangeStatusBar = this.statusEmitter.event;
@@ -442,7 +480,13 @@ export class PluginHostService implements Disposable {
 
   notifyTerminalRemoved(id: string): void {
     this.knownTerminals.delete(id);
+    this.outputWatches.delete(id);
     this.emitApi('terminals.close', { id });
+  }
+
+  /** Output of a terminal that plugins of this host watch (`onDidWriteData`). */
+  notifyTerminalOutput(id: string, data: string): void {
+    if (this.outputWatches.has(id)) this.emitApi('terminals.output', { id, data });
   }
 
   private seenAgents = new Set<string>();
@@ -509,6 +553,7 @@ export class PluginHostService implements Disposable {
   // ── plugin UI state (rendered by the renderer, M5-T4) ──
 
   private clearPluginUi(pluginId: string): void {
+    this.stopOutputWatches(pluginId);
     let changed = false;
     for (const [key, item] of [...this.statusBarItems]) {
       if (item.pluginId === pluginId) {
@@ -520,6 +565,16 @@ export class PluginHostService implements Disposable {
     this.setEnvironment(pluginId, null);
   }
 
+  private stopOutputWatches(pluginId: string): void {
+    let watched = false;
+    for (const [id, owners] of [...this.outputWatches]) {
+      if (!owners.delete(pluginId)) continue;
+      watched = true;
+      if (owners.size === 0) this.outputWatches.delete(id);
+    }
+    if (watched) void this.deps.core.terminals.unwatchAllOutput(`plugin:${pluginId}`).catch(() => undefined);
+  }
+
   private setEnvironment(pluginId: string, contribution: EnvContribution | null): void {
     if (contribution) this.environments.set(pluginId, contribution);
     else if (!this.environments.delete(pluginId)) return;
@@ -527,6 +582,13 @@ export class PluginHostService implements Disposable {
   }
 
   // ── API ──
+
+  private terminal(p: Record<string, unknown>): TerminalInfo {
+    const id = String(p['id']);
+    const info = this.deps.core.terminals.get(id);
+    if (!info) throw new OxyError('NOT_FOUND', `Terminal ${id} not found`);
+    return info;
+  }
 
   private permission(plugin: PluginDescriptor, permission: PluginPermission): void {
     if (!plugin.manifest?.permissions.includes(permission))
@@ -573,19 +635,65 @@ export class PluginHostService implements Disposable {
         return core.terminals.list(typeof p['projectId'] === 'string' ? p['projectId'] : undefined).map(toTerminalMeta);
       case 'terminals.create': {
         this.permission(plugin, 'terminals.create');
+        const parsed = TerminalCreateParamsSchema.safeParse(p);
+        if (!parsed.success) throw new OxyError('INVALID', `Invalid terminal options: ${parsed.error.message}`);
+        const o = parsed.data;
+        const reveal = o.reveal !== false;
         const info = await core.terminals.create({
-          projectId: String(p['projectId']),
-          ...(typeof p['profileId'] === 'string' ? { profileId: p['profileId'] } : {}),
-          ...(typeof p['cwd'] === 'string' ? { cwd: p['cwd'] } : {}),
-          ...(typeof p['title'] === 'string' ? { userTitle: p['title'] } : {}),
-          ...(typeof p['command'] === 'string' ? { initialCommand: p['command'] } : {}),
+          projectId: o.projectId,
+          ...(o.profileId !== undefined ? { profileId: o.profileId } : {}),
+          ...(o.cwd !== undefined ? { cwd: o.cwd } : {}),
+          ...(o.title !== undefined ? { userTitle: o.title } : {}),
+          ...(o.command !== undefined ? { initialCommand: o.command } : {}),
+          ...(o.env ? { env: o.env } : {}),
+          ...(reveal ? {} : { background: true }),
         });
+        if (reveal)
+          core.toRenderer('openTerminalPanel', {
+            terminalId: info.id,
+            projectId: info.projectId,
+            placement: o.placement ?? 'active-group',
+          });
+        return toTerminalMeta(info);
+      }
+      case 'terminals.show': {
+        this.permission(plugin, 'terminals.read-metadata');
+        const info = this.terminal(p);
+        core.terminals.markShown(info.id);
+        const placement = PlacementSchema.safeParse(p['placement']);
         core.toRenderer('openTerminalPanel', {
           terminalId: info.id,
           projectId: info.projectId,
-          placement: p['placement'] ?? 'active-group',
+          placement: placement.success ? placement.data : 'active-group',
+          focus: p['preserveFocus'] !== true,
         });
-        return toTerminalMeta(info);
+        return undefined;
+      }
+      case 'terminals.kill':
+        this.permission(plugin, 'terminals.write');
+        await core.terminals.kill(this.terminal(p).id, p['force'] === true);
+        return undefined;
+      case 'terminals.close': {
+        this.permission(plugin, 'terminals.write');
+        const info = this.terminal(p);
+        core.toRenderer('closeTerminalPanel', { terminalId: info.id, projectId: info.projectId });
+        await core.terminals.close(info.id);
+        return undefined;
+      }
+      case 'terminals.listeningPorts':
+        this.permission(plugin, 'terminals.read-metadata');
+        return core.terminals.listeningPorts(this.terminal(p).id);
+      case 'terminals.watchOutput': {
+        this.permission(plugin, 'terminals.read-output');
+        const id = this.terminal(p).id;
+        const watch = p['watch'] === true;
+        const owned = this.outputWatches.get(id) ?? new Set<string>();
+        if (watch) owned.add(pluginId);
+        else owned.delete(pluginId);
+        if (owned.size > 0) this.outputWatches.set(id, owned);
+        else this.outputWatches.delete(id);
+        await core.terminals.watchOutput(id, `plugin:${pluginId}`, watch);
+        return undefined;
       }
       case 'terminals.sendText': {
         this.permission(plugin, 'terminals.write');

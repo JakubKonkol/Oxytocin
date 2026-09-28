@@ -5,7 +5,7 @@ environment variables. A plugin is a folder with a `package.json` (whose `oxytoc
 optional **backend** (JavaScript that runs in Oxytocin's Plugin Host, a Node.js process) and optional **views**
 (web pages shown in sandboxed iframes).
 
-Plugin API version: **0.1.2** (`packages/plugin-api/CHANGELOG.md`). Until 1.0, minor versions may contain breaking
+Plugin API version: **0.1.4** (`packages/plugin-api/CHANGELOG.md`). Until 1.0, minor versions may contain breaking
 changes; declare the versions you support with `engine`.
 
 ## Quick start
@@ -52,7 +52,7 @@ Oxytocin only needs `package.json` and the files the manifest points to (`dist/`
     "displayName": "My Plugin",
     "description": "What it does.",
     "publisher": "acme",
-    "engine": "^0.1.2",                  // Oxytocin plugin API versions this plugin supports (semver range)
+    "engine": "^0.1.4",                  // Oxytocin plugin API versions this plugin supports (semver range)
     "main": "dist/host.js",              // backend entry; omit for view-only plugins
     "activationEvents": ["onStartup"],
     "permissions": ["projects.read"],
@@ -82,7 +82,7 @@ The backend is imported and `activate(ctx)` runs on the first matching event:
 | `statusBarItems` | `{ id, alignment?: "left" \| "right", priority? }` — text and visibility are set by the backend |
 | `commands` | `{ id, title, icon? }` — listed in the command palette (`Ctrl+Shift+P`) |
 | `configuration` | `{ prefix, properties }` — settings shown in **Settings**; every key starts with `<prefix>.` |
-| `fileOpeners` | `{ id, extensions, panelType, title, default? }` — opens files from the Changes list in a panel |
+| `fileOpeners` | `{ id, extensions, panelType, title, default? }` — opens files from the Changes list and terminal links in a panel (see [File openers](#file-openers)) |
 | `terminalProfiles` | `{ id, name, kind?: "shell" \| "agent", command?, args?, env?, icon? }` |
 | `agents` | Agent detection rules: `{ id, displayName, provider?, processNames?, commandLinePatterns?, icon? }` |
 
@@ -98,10 +98,10 @@ use.
 | Permission | Allows |
 |---|---|
 | `projects.read` | `oxy.projects.*` |
-| `terminals.read-metadata` | `oxy.terminals.list`, `onDidOpen/Close/Change` |
+| `terminals.read-metadata` | `oxy.terminals.list`, `onDidOpen/Close/Change`, `show`, `getListeningPorts` |
 | `terminals.create` | `oxy.terminals.create` |
-| `terminals.write` | `oxy.terminals.sendText` |
-| `terminals.read-output` | Raw terminal output (sensitive) |
+| `terminals.write` | `oxy.terminals.sendText`, `kill`, `close` |
+| `terminals.read-output` | `oxy.terminals.onDidWriteData` — raw terminal output (sensitive) |
 | `terminals.env` | `oxy.terminals.environment` |
 | `agents.read` / `agents.annotate` | `oxy.agents.list/onDidChange` / `reportSession`, `reportState` |
 | `git.read` | `oxy.git.*` |
@@ -162,6 +162,48 @@ oxy.terminals.environment.ready(); // new terminals wait up to 2 s at start-up f
 
 Running terminals are marked as out of date (⟳) when the environment changes.
 
+### Running commands in terminals
+
+A plugin can run a command in a terminal of a project, keep it in the background and follow what it does (the
+built-in Project Runner is built this way):
+
+```ts
+const t = await oxy.terminals.create({
+  projectId,
+  cwd: '/work/shop/web',
+  title: 'web',
+  command: 'npm run dev',          // typed into the shell once it is ready
+  env: { PORT: '4000' },           // this terminal only; null removes a variable
+  reveal: false,                   // no panel until show() — the terminal runs in the background
+});
+
+const output = oxy.terminals.onDidWriteData(t.id, (data) => parse(data));   // terminals.read-output
+ctx.subscriptions.push(output);
+
+oxy.terminals.onDidChange((meta) => {
+  // Shell integration (bash, zsh, fish, PowerShell): the running command and the last one with its exit code.
+  if (meta.id === t.id && !meta.command && meta.lastCommand) finished(meta.lastCommand.exitCode);
+});
+
+await oxy.terminals.getListeningPorts(t.id);   // e.g. [5173] — ports of the shell and its child processes
+await oxy.terminals.show(t.id, { preserveFocus: true });   // opens its panel (logs) when the user asks
+await oxy.terminals.sendText(t.id, '\x03', { addNewLine: false });   // Ctrl+C
+await oxy.terminals.kill(t.id, { force: true });   // or end the process tree; close() also removes the terminal
+```
+
+`TerminalMeta` carries `cwd`, `background`, `foreground` (the nearest non-shell process, e.g. `node`),
+`shellIntegration`, `command` and `lastCommand`. Output is only streamed to the Plugin Host while a listener is
+registered; dispose it when you no longer need it.
+
+### File openers
+
+`contributes.fileOpeners` connect file extensions to a panel type. The panel opens with the params
+`{ projectId, path, line?, column? }` (an absolute path inside the project) when the user picks **Open Preview** in the
+Changes list or `Ctrl+click`s a file path in a terminal (the `terminal.fileLinks.open` setting chooses between previews
+and the editor; an opener with `default: true` wins when several match). When a panel of that type already shows the
+file — in the workspace or the right sidebar — it is revealed instead, and its view receives the message
+`{ type: 'oxy:reveal', line?, column? }` (`view.onMessage`) to scroll to the new position.
+
 ## Views
 
 A view is an HTML page served from `oxy-plugin://<id>/…` in a sandboxed iframe. It has no Node.js, no access to the
@@ -199,6 +241,9 @@ With React, `useOxyView()`, `useOxyMessage()` and `useOxyTheme()` come from `@ox
 - **Keyboard:** Oxytocin's shortcuts keep working while a view has focus.
 - **Limits:** messages up to 1 MB and 200 per second per view.
 - Views stay loaded when they are moved between groups; they are recreated after a restart (use `setState`).
+- Every panel can be dragged into the right sidebar (and back). A panel in the right sidebar is not tied to a project:
+  `view.projectId` is empty there, so follow the active project (`oxy.projects.getActive/onDidChangeActive`) or keep
+  the project in the panel's params.
 
 ## Debugging
 

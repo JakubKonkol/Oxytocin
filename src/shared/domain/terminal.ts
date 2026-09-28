@@ -73,6 +73,8 @@ export const TerminalInfoSchema = z.object({
   createdAt: z.number(),
   envStale: z.boolean(),
   bell: z.boolean(),
+  /** Started in the background (a plugin's `reveal: false`) and not shown yet: no panel opens for it by itself. */
+  background: z.boolean().optional(),
   progress: z.object({ state: z.number().int().min(0).max(4), value: z.number().optional() }).optional(),
   /** Nearest non-shell descendant (e.g. `node` of `npm run dev`). */
   foreground: z.object({ pid: z.number(), name: z.string(), commandLine: z.string() }).optional(),
@@ -103,6 +105,10 @@ export const CreateTerminalRequestSchema = z.object({
   initialCommand: z.string().max(10_000).optional(),
   /** Start the profile's shell without its agent command (restored agent terminals are never run again). */
   skipInitialCommand: z.boolean().optional(),
+  /** Extra environment variables for this terminal (null removes a variable); applied last. */
+  env: z.record(z.string(), z.string().nullable()).optional(),
+  /** No panel is opened for the terminal until it is shown (`TerminalInfo.background`). */
+  background: z.boolean().optional(),
   /** Restores the scrollback snapshot saved for this panel at the last quit (read by main). */
   restoreScrollback: z.object({ panelId: z.string().regex(/^[a-z]+-[a-z0-9]+$/) }).optional(),
 });

@@ -90,6 +90,18 @@ export interface TerminalMeta {
   kind: 'shell' | 'process' | 'agent';
   agentId?: string;
   createdAt: number;
+  /** Current working directory (tracked through shell integration). Since API 0.1.4. */
+  cwd?: string;
+  /** Started with `reveal: false` and not shown yet (it has no panel). Since API 0.1.4. */
+  background?: boolean;
+  /** Nearest non-shell process, e.g. `node` of `npm run dev`. Since API 0.1.4. */
+  foreground?: { pid: number; name: string; commandLine: string };
+  /** Shell integration reports command boundaries and exit codes for this terminal. Since API 0.1.4. */
+  shellIntegration?: boolean;
+  /** The command running now (shell integration). Since API 0.1.4. */
+  command?: { commandLine?: string; startedAt: number };
+  /** The last finished command (shell integration). Since API 0.1.4. */
+  lastCommand?: { commandLine?: string; exitCode?: number; durationMs: number; finishedAt: number };
 }
 export interface TerminalsApi {
   /** terminals.read-metadata */
@@ -97,7 +109,11 @@ export interface TerminalsApi {
   onDidOpen: Event<TerminalMeta>;
   onDidClose: Event<{ id: string }>;
   onDidChange: Event<TerminalMeta>;
-  /** terminals.create — opens a terminal panel in the project's workspace. */
+  /**
+   * terminals.create — starts a terminal (the profile's shell; `command` is typed into it once the shell is ready)
+   * and opens its panel in the project's workspace. With `reveal: false` it runs in the background without a panel
+   * until `show` is called (API 0.1.4). `env` adds variables for this terminal only; `null` removes one (API 0.1.4).
+   */
   create(o: {
     projectId: string;
     profileId?: string;
@@ -105,9 +121,33 @@ export interface TerminalsApi {
     title?: string;
     command?: string;
     placement?: 'active-group' | 'right' | 'below';
+    env?: Record<string, string | null>;
+    reveal?: boolean;
   }): Promise<TerminalMeta>;
   /** terminals.write */
   sendText(id: string, text: string, opts?: { addNewLine?: boolean }): Promise<void>;
+  /**
+   * terminals.read-metadata — shows a terminal: activates its project and its panel, opening one (at `placement`)
+   * for a background terminal. `preserveFocus` keeps the keyboard focus where it is. Since API 0.1.4.
+   */
+  show(id: string, o?: { preserveFocus?: boolean; placement?: 'active-group' | 'right' | 'below' }): Promise<void>;
+  /**
+   * terminals.write — ends the terminal's process: a graceful kill whose process tree is killed after 3 s, or at
+   * once with `force`. The terminal stays (status `exited`) until it is closed. Since API 0.1.4.
+   */
+  kill(id: string, o?: { force?: boolean }): Promise<void>;
+  /** terminals.write — kills the terminal if needed and removes it together with its panel. Since API 0.1.4. */
+  close(id: string): Promise<void>;
+  /**
+   * terminals.read-metadata — TCP ports that the terminal's shell and its descendant processes listen on (e.g. the
+   * port of a dev server), ascending. Empty for exited terminals. Since API 0.1.4.
+   */
+  getListeningPorts(id: string): Promise<number[]>;
+  /**
+   * terminals.read-output — the raw output of one terminal (VT sequences included), in batches, from the moment of
+   * subscribing. Output is streamed to the Plugin Host only while someone listens. Since API 0.1.4.
+   */
+  onDidWriteData(id: string, listener: (data: string) => void): Disposable;
   /** terminals.env */
   readonly environment: EnvironmentCollection;
 }

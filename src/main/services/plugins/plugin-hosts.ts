@@ -47,6 +47,7 @@ type HostService = Pick<
   | 'notifyActiveProject'
   | 'notifyTerminal'
   | 'notifyTerminalRemoved'
+  | 'notifyTerminalOutput'
   | 'notifyAgents'
   | 'notifyGitStatus'
   | 'notifySettings'
@@ -155,6 +156,10 @@ export class PluginHosts implements Disposable {
 
   notifyTerminalRemoved(id: string): void {
     for (const h of this.all()) h.notifyTerminalRemoved(id);
+  }
+
+  notifyTerminalOutput(id: string, data: string): void {
+    for (const h of this.all()) h.notifyTerminalOutput(id, data);
   }
 
   notifyAgents(list: AgentInfoWithTerminal[]): void {

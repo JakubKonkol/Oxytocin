@@ -162,6 +162,11 @@ export const CORE_SETTINGS = {
     'Injects shell integration (current folder, command boundaries) into supported shells (applies to new terminals).',
   ),
   'terminal.images': def(z.boolean(), false, 'Shows inline images (Sixel, iTerm2 protocol) in terminals.'),
+  'terminal.fileLinks.open': def(
+    z.enum(['preview', 'editor']),
+    'preview',
+    'Where Ctrl/⌘+click on a file path in a terminal opens it: a preview tab (Markdown rendered, code highlighted) or the editor. Shift inverts the choice.',
+  ),
   'workspace.keepAliveProjects': def(
     z.number().int().min(1).max(10),
     4,

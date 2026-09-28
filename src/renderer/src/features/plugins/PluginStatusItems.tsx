@@ -11,7 +11,9 @@ import {
   Gauge,
   Info,
   type LucideIcon,
+  Play,
   RefreshCw,
+  Square,
   XCircle,
   Zap,
 } from 'lucide-react';
@@ -43,6 +45,10 @@ const ICONS: Record<string, LucideIcon> = {
   'circle-filled': Circle,
   'debug-stackframe-dot': Circle,
   coin: DollarSign,
+  play: Play,
+  run: Play,
+  'debug-start': Play,
+  'debug-stop': Square,
 };
 
 const COLORS: Record<NonNullable<StatusBarItemState['color']>, string> = {

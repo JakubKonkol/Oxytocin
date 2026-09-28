@@ -45,8 +45,10 @@ and never kills a process; layouts and terminal scrollback come back after a res
 
 - node-pty + xterm.js (WebGL) with tabs, splits, drag and drop and **floating groups**.
 - Shell detection (PowerShell, cmd, Git Bash, WSL, bash, zsh, fish) and launch profiles for agents.
-- **Shift+Enter** inserts a newline in Claude Code, image pastes reach the agent, file paths are clickable, plus search
-  and shell integration (command marks, exit codes, "command finished" notifications).
+- **Shift+Enter** inserts a newline in Claude Code, image pastes reach the agent, plus search and shell integration
+  (command marks, exit codes, "command finished" notifications).
+- **Clickable file paths:** `Ctrl+click` a file an agent mentions (`CLAUDE.md`, `src/app.ts:42`) to open it in a
+  **preview tab** — Markdown rendered, code highlighted and scrolled to the line. `Ctrl+Shift+click` opens your editor.
 - **Agent detection** for Claude Code, Codex CLI, Gemini CLI, Aider and more — with OS notifications, an attention
   badge and `Ctrl+Shift+J` to jump straight to the agent that is waiting for you.
 - Offers to **resume agent sessions** after a restart (never automatically).
@@ -64,6 +66,16 @@ it next to you in every project, and drag it back whenever you like.
 The right sidebar starts with the **scratchpad** — notes, to-do lists and prompt drafts with a Markdown toolbar,
 lists that continue on Enter and your choice of font. **Send to agent** (`Ctrl+Enter`) pastes the text into a running
 agent without submitting it. Close the scratchpad, reorder the sections or add other tools with **Add tool**.
+
+### ▶️ Run your apps
+
+The **Project Runner** finds what a project can run — `package.json` scripts (Next.js, Vite, Angular, …), .NET
+projects with their launch URLs, Django/FastAPI/Flask apps, Go, Rust, Spring Boot, Laravel, Rails, Docker Compose —
+and starts it with one click. The **Run** section shows every app's status and the URL it serves; its output stays in
+a terminal you can open at any time. Add your own run profiles (command, folder, environment) per project.
+
+Agents can use it too: the runner is an **MCP server** (`Connect Claude Code` in the Run section), so Claude Code can
+list, start, restart and stop your apps and read their logs — and you see in the Run section what the agent started.
 
 ### 🔍 Live changes
 
@@ -90,7 +102,8 @@ sidebar views, panels and tools, status bar items, commands, settings, terminal 
 | Built-in plugin | What it does |
 |---|---|
 | **Usage Monitor** | Token usage, costs, budgets and Claude subscription limits |
-| **Markdown Preview** | Live preview of the plans and reports your agents write |
+| **File Preview** | Live preview of Markdown (rendered) and code (highlighted) — from terminal links and the Changes list |
+| **Project Runner** | Detects runnable apps, runs them with status, URLs and logs, and lets agents run them over MCP |
 | **Claude Code Bridge** | Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks |
 | **JSON Formatter** | Format, minify and validate JSON next to the terminal or in the right sidebar |
 

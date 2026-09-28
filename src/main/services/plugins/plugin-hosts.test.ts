@@ -34,6 +34,7 @@ function fakeHost(views: string[] = []) {
     notifyActiveProject: vi.fn(),
     notifyTerminal: vi.fn(),
     notifyTerminalRemoved: vi.fn(),
+    notifyTerminalOutput: vi.fn(),
     notifyAgents: vi.fn(),
     notifyGitStatus: vi.fn(),
     notifySettings: vi.fn(),

@@ -38,6 +38,7 @@ test('packaged app: start, terminal, git changes and built-in plugins', async ()
       'oxytocin.usage-monitor',
       'oxytocin.claude-code-bridge',
       'oxytocin.json-formatter',
+      'oxytocin.project-runner',
     ]) {
       const p = plugins.find((x) => x.id === id);
       expect(p, id).toMatchObject({ source: 'builtin' });

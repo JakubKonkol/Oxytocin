@@ -1,0 +1,226 @@
+/* Project Runner view (left sidebar section, workspace panel or right sidebar tool); colours from theme tokens. */
+body {
+  overflow: hidden;
+  font-size: 12px;
+}
+.muted {
+  color: var(--text-muted);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.error {
+  color: var(--danger);
+}
+.spacer {
+  flex: 1;
+}
+.runner {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 2px 10px;
+  min-width: 0;
+}
+.header .project {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+.empty {
+  flex: 1;
+  padding: 8px 10px;
+}
+button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+button.icon:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+button.icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+button.icon[data-tone='run'] {
+  color: var(--success);
+}
+button.icon[data-tone='stop'] {
+  color: var(--danger);
+}
+button.link {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+}
+button.link:hover {
+  text-decoration: underline;
+  background: transparent;
+}
+button.primary {
+  color: var(--text-on-accent, #fff);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 6px;
+  border-radius: 6px;
+  min-width: 0;
+}
+.profile:hover {
+  background: var(--bg-card-hover);
+}
+.profile .actions {
+  display: flex;
+  flex: none;
+  gap: 1px;
+}
+.profile .main {
+  flex: 1;
+  min-width: 0;
+}
+.title,
+.detail {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.title .name {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+}
+.framework {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.agent {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--agent, var(--accent));
+  border-radius: 4px;
+  color: var(--agent, var(--accent));
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.detail {
+  font-size: 11px;
+}
+.detail .command,
+.detail a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.status-text {
+  flex: none;
+  color: var(--text-muted);
+}
+.profile[data-status='failed'] .status-text {
+  color: var(--danger);
+}
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-default);
+}
+.dot[data-status='running'] {
+  background: var(--success);
+}
+.dot[data-status='starting'],
+.dot[data-status='stopping'] {
+  background: var(--warning);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.dot[data-status='failed'] {
+  background: var(--danger);
+}
+.dot[data-status='stopped'] {
+  background: var(--text-muted);
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none !important;
+  }
+}
+.form {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+}
+.form-title {
+  font-weight: 600;
+}
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-secondary);
+}
+.form input,
+.form textarea {
+  width: 100%;
+  resize: vertical;
+}
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 4px 10px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+}
+.footer-message {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}

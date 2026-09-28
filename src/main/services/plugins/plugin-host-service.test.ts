@@ -56,7 +56,36 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
     setRuntimeState: vi.fn((id: string, state: string) => runtime.set(id, state)),
   };
   const toRenderer = vi.fn();
+  const terminal = {
+    id: 't1',
+    projectId: 'p',
+    profileId: 'bash',
+    profileName: 'bash',
+    title: 'web',
+    pid: 42,
+    cwd: '/p',
+    shellType: 'bash',
+    kind: 'process',
+    state: 'running',
+    createdAt: 1,
+    envStale: false,
+    bell: false,
+    background: true,
+    lastCommand: { commandLine: 'npm run dev', exitCode: 1, durationMs: 5, finishedAt: 9 },
+  };
   const quickPick = vi.fn(() => Promise.resolve(1));
+  const terms = {
+    list: () => [],
+    get: (id: string) => (id === 't1' ? terminal : undefined),
+    create: vi.fn(() => Promise.resolve(terminal)),
+    write: vi.fn(),
+    markShown: vi.fn(),
+    kill: vi.fn(() => Promise.resolve()),
+    close: vi.fn(() => Promise.resolve()),
+    watchOutput: vi.fn(() => Promise.resolve()),
+    unwatchAllOutput: vi.fn(() => Promise.resolve()),
+    listeningPorts: vi.fn(() => Promise.resolve([5173])),
+  };
   const core = {
     projects: {
       list: () => [
@@ -66,7 +95,7 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
       activeId: () => null,
       findByPath: () => undefined,
     },
-    terminals: { list: () => [], get: () => undefined, create: vi.fn(), write: vi.fn() },
+    terminals: terms,
     agents: { list: () => [], reportSession: vi.fn() },
     git: { status: () => null },
     settings: () => resolveSettings({}, 'linux').settings,
@@ -87,7 +116,7 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
-  return { service, api, calls, events, ready, plugins, core, toRenderer, quickPick };
+  return { service, api, calls, events, ready, plugins, core, terms, toRenderer, quickPick };
 }
 
 describe('PluginHostService', () => {
@@ -234,6 +263,72 @@ describe('PluginHostService views', () => {
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(5);
     await expect(s.service.viewMessage('unknown', { kind: 'msg', payload: 1 })).rejects.toMatchObject({
       code: 'NOT_FOUND',
+    });
+  });
+
+  describe('terminals API (0.1.4)', () => {
+    const runner = () =>
+      descriptor('run.ner', {
+        permissions: ['terminals.create', 'terminals.write', 'terminals.read-metadata', 'terminals.read-output'],
+      });
+
+    it('creates background terminals without opening a panel and passes env', async () => {
+      const s = setup({ list: [runner()] });
+      const meta = await s.api('run.ner', 'terminals.create', {
+        projectId: 'p',
+        command: 'npm run dev',
+        env: { PORT: '4000' },
+        reveal: false,
+      });
+      expect(s.terms.create).toHaveBeenCalledWith({
+        projectId: 'p',
+        initialCommand: 'npm run dev',
+        env: { PORT: '4000' },
+        background: true,
+      });
+      expect(s.toRenderer).not.toHaveBeenCalledWith('openTerminalPanel', expect.anything());
+      expect(meta).toMatchObject({ id: 't1', cwd: '/p', background: true, lastCommand: { exitCode: 1 } });
+      await expect(s.api('run.ner', 'terminals.create', { projectId: 'p', env: { A: 1 } })).rejects.toMatchObject({
+        code: 'INVALID',
+      });
+    });
+
+    it('shows, kills and closes terminals and reports listening ports', async () => {
+      const s = setup({ list: [runner(), descriptor('b.two')] });
+      await s.api('run.ner', 'terminals.show', { id: 't1', preserveFocus: true, placement: 'below' });
+      expect(s.terms.markShown).toHaveBeenCalledWith('t1');
+      expect(s.toRenderer).toHaveBeenCalledWith('openTerminalPanel', {
+        terminalId: 't1',
+        projectId: 'p',
+        placement: 'below',
+        focus: false,
+      });
+      await s.api('run.ner', 'terminals.kill', { id: 't1', force: true });
+      expect(s.terms.kill).toHaveBeenCalledWith('t1', true);
+      await s.api('run.ner', 'terminals.close', { id: 't1' });
+      expect(s.toRenderer).toHaveBeenCalledWith('closeTerminalPanel', { terminalId: 't1', projectId: 'p' });
+      expect(s.terms.close).toHaveBeenCalledWith('t1');
+      expect(await s.api('run.ner', 'terminals.listeningPorts', { id: 't1' })).toEqual([5173]);
+      await expect(s.api('run.ner', 'terminals.kill', { id: 'nope' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(s.api('b.two', 'terminals.kill', { id: 't1' })).rejects.toMatchObject({ code: 'PERMISSION' });
+    });
+
+    it('forwards output only for watched terminals and stops watching when the plugin goes inactive', async () => {
+      const s = setup({ list: [runner()] });
+      s.service.notifyTerminalOutput('t1', 'before');
+      await s.api('run.ner', 'terminals.watchOutput', { id: 't1', watch: true });
+      expect(s.terms.watchOutput).toHaveBeenCalledWith('t1', 'plugin:run.ner', true);
+      s.service.notifyTerminalOutput('t1', 'Local: http://localhost:5173/');
+      s.events.get('plugin:state')?.({ id: 'run.ner', state: 'inactive' });
+      s.service.notifyTerminalOutput('t1', 'after');
+      const host = (s.service as unknown as { deps: { host: { emit: ReturnType<typeof vi.fn> } } }).deps.host;
+      const outputs = host.emit.mock.calls.filter(
+        (c: unknown[]) => (c[1] as { name: string }).name === 'terminals.output',
+      );
+      expect(outputs.map((c: unknown[]) => (c[1] as { payload: { data: string } }).payload.data)).toEqual([
+        'Local: http://localhost:5173/',
+      ]);
+      expect(s.terms.unwatchAllOutput).toHaveBeenCalledWith('plugin:run.ner');
     });
   });
 });

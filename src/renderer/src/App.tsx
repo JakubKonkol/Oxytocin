@@ -11,7 +11,7 @@ import { ViewContextMenuHost } from './features/plugins/view-context-menu';
 import { showNotification } from './features/attention/attention';
 import { revealTerminal } from './features/attention/reveal';
 import { openEditorInTerminal } from './features/layout/editor-terminal';
-import { openPluginTerminal, runCoreCommand } from './features/layout/core-commands';
+import { closePluginTerminalPanel, openPluginTerminal, runCoreCommand } from './features/layout/core-commands';
 import { ipc } from './lib/ipc-client';
 import { AppLayout } from './shell/AppLayout';
 import { Toaster } from './ui/Toast';
@@ -40,6 +40,7 @@ export function App() {
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req));
     ipc.on('terminals:openPanel', (req) => void openPluginTerminal(req));
+    ipc.on('terminals:closePanel', (req) => closePluginTerminalPanel(req));
     ipc.on('commands:run', ({ id, args }) => runCoreCommand(id, args));
     Promise.all([
       useUiStore.getState().load(),

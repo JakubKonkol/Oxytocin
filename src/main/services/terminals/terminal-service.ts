@@ -68,6 +68,11 @@ export class TerminalService implements Disposable {
   readonly onDidUpdate = this.updatedEmitter.event;
   private readonly removedEmitter = new Emitter<string>();
   readonly onDidRemove = this.removedEmitter.event;
+  private readonly outputEmitter = new Emitter<{ id: string; data: string }>();
+  /** Output of terminals watched through `watchOutput`. */
+  readonly onDidOutput = this.outputEmitter.event;
+  /** Output watchers per terminal (e.g. `plugin:<id>`); the PTY Host emits output while a set is non-empty. */
+  private readonly outputWatchers = new Map<string, Set<string>>();
 
   constructor(private readonly deps: TerminalServiceDeps) {
     const pty = deps.ptyHost;
@@ -76,6 +81,7 @@ export class TerminalService implements Disposable {
     this.store.add(pty.onEvent('terminal:bell', (e) => this.patch(e.id, { bell: true })));
     this.store.add(pty.onEvent('terminal:cwd', (e) => this.patch(e.id, { cwd: e.cwd })));
     this.store.add(pty.onEvent('terminal:command', (e) => this.onCommand(e)));
+    this.store.add(pty.onEvent('terminal:output', (e) => this.outputEmitter.fire(e)));
     this.store.add(
       pty.onEvent('terminal:progress', (e) =>
         this.patch(e.id, { progress: e.value === undefined ? { state: e.state } : { state: e.state, value: e.value } }),
@@ -187,6 +193,7 @@ export class TerminalService implements Disposable {
         project.env ?? {},
         ...(this.deps.pluginEnv?.({ projectId: req.projectId, profileId: launch.profile.id }) ?? []),
         launch.env,
+        req.env ?? {},
       ],
     });
     const initialCommand = req.initialCommand ?? (req.skipInitialCommand ? undefined : launch.initialCommand);
@@ -242,6 +249,7 @@ export class TerminalService implements Disposable {
       createdAt: Date.now(),
       envStale: false,
       bell: false,
+      ...(req.background ? { background: true } : {}),
     });
     this.terminals.set(id, info);
     this.requests.set(id, { ...req, cwd });
@@ -284,6 +292,54 @@ export class TerminalService implements Disposable {
       },
       previous ? withSeparator(previous, 'Restarted') : undefined,
     );
+  }
+
+  /** A background terminal was shown: from now on it is an ordinary terminal with a panel. */
+  markShown(id: string): void {
+    const current = this.require(id);
+    if (!current.background) return;
+    const { background: _b, ...rest } = current;
+    const req = this.requests.get(id);
+    if (req) {
+      const { background: _rb, ...request } = req;
+      this.requests.set(id, request);
+    }
+    this.replace(rest);
+  }
+
+  /**
+   * Adds or removes an output watcher (`owner` names it, e.g. `plugin:<id>`). The PTY Host emits the terminal's
+   * output (`onDidOutput`) while at least one watcher is registered.
+   */
+  async watchOutput(id: string, owner: string, watch: boolean): Promise<void> {
+    const info = this.require(id);
+    let owners = this.outputWatchers.get(id);
+    const before = (owners?.size ?? 0) > 0;
+    if (watch) {
+      owners ??= new Set();
+      owners.add(owner);
+      this.outputWatchers.set(id, owners);
+    } else if (owners) {
+      owners.delete(owner);
+      if (owners.size === 0) this.outputWatchers.delete(id);
+    }
+    const after = (this.outputWatchers.get(id)?.size ?? 0) > 0;
+    if (before !== after && info.state === 'running') await this.deps.ptyHost.call('watchOutput', { id, watch: after });
+  }
+
+  /** Drops every output watcher of `owner` (a plugin was unloaded). */
+  async unwatchAllOutput(owner: string): Promise<void> {
+    for (const id of [...this.outputWatchers.keys()]) {
+      if (this.outputWatchers.get(id)?.has(owner) && this.terminals.has(id))
+        await this.watchOutput(id, owner, false).catch(() => undefined);
+    }
+  }
+
+  /** TCP ports the terminal's processes listen on (empty for exited terminals). */
+  async listeningPorts(id: string): Promise<number[]> {
+    const info = this.require(id);
+    if (info.state !== 'running') return [];
+    return this.deps.ptyHost.call('listeningPorts', { id });
   }
 
   rename(id: string, title: string): void {
@@ -330,6 +386,7 @@ export class TerminalService implements Disposable {
     if (!info) return;
     this.terminals.delete(id);
     this.requests.delete(id);
+    this.outputWatchers.delete(id);
     try {
       if (info.state === 'running') await this.deps.ptyHost.call('kill', { id, force: false });
       await this.deps.ptyHost.call('dispose', { id });
@@ -343,5 +400,6 @@ export class TerminalService implements Disposable {
     this.store.dispose();
     this.updatedEmitter.dispose();
     this.removedEmitter.dispose();
+    this.outputEmitter.dispose();
   }
 }

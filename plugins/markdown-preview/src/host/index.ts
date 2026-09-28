@@ -4,20 +4,24 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import type { Logger, OxytocinApi, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
 import { renderFile } from './render';
 import { listMarkdownFiles } from './files';
+import { MARKDOWN_EXTENSIONS, PreviewError, previewKind, readPreviewText, renderCodeToHtml } from './code';
 
 export const PANEL_TYPE = 'markdown.preview';
-const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdx'];
 const WATCH_DEBOUNCE_MS = 150;
 const CHANGED_BADGE_MS = 3000;
 
 /** Backend → view messages (also the response of the view's `load` request). */
 export type PreviewMessage =
-  { type: 'render'; html: string; path: string; changed: boolean } | { type: 'error'; message: string };
+  | { type: 'render'; html: string; path: string; changed: boolean; kind: 'markdown' | 'code' }
+  | { type: 'error'; message: string };
 
 export interface PreviewParams {
   projectId?: string;
-  /** Absolute path of the Markdown file. */
+  /** Absolute path of the previewed file. */
   path?: string;
+  /** 1-based line to scroll to (code files), e.g. from a `src/app.ts:42` terminal link. */
+  line?: number;
+  column?: number;
 }
 
 const caseInsensitive = process.platform === 'win32' || process.platform === 'darwin';
@@ -106,17 +110,31 @@ class Preview {
   private async render(live: boolean): Promise<PreviewMessage | undefined> {
     const seq = ++this.seq;
     let msg: PreviewMessage;
+    const kind = previewKind(this.filePath) ?? { kind: 'code' as const, language: null };
     try {
-      const html = await renderFile(this.filePath, this.project.rootPath);
+      const html =
+        kind.kind === 'markdown'
+          ? await renderFile(this.filePath, this.project.rootPath)
+          : renderCodeToHtml(await readPreviewText(this.filePath), kind.language);
       if (live && html === this.lastHtml) return undefined;
       this.lastHtml = html;
-      msg = { type: 'render', html, path: relative(this.project.rootPath, this.filePath), changed: live };
+      msg = {
+        type: 'render',
+        html,
+        path: relative(this.project.rootPath, this.filePath),
+        changed: live,
+        kind: kind.kind,
+      };
     } catch (e) {
       this.lastHtml = undefined;
       const missing = (e as NodeJS.ErrnoException).code === 'ENOENT';
       msg = {
         type: 'error',
-        message: missing ? 'File not found — it was deleted or moved.' : `Could not render the file: ${String(e)}`,
+        message: missing
+          ? 'File not found — it was deleted or moved.'
+          : e instanceof PreviewError
+            ? e.message
+            : `Could not render the file: ${String(e)}`,
       };
     }
     if (seq !== this.seq) return live ? undefined : msg;
@@ -146,7 +164,7 @@ class Preview {
       });
       return false;
     }
-    if (isMarkdown(target.path)) await openPreview(this.oxy, this.project, target.path);
+    if (previewKind(target.path)) await openPreview(this.oxy, this.project, target.path);
     else await this.oxy.ui.openInEditor(target.path);
     return true;
   }
@@ -181,6 +199,7 @@ export function activate(ctx: PluginContext): void {
         if (!project) problem = 'The project of this preview is not open.';
         else if (typeof params.path !== 'string' || !isAbsolute(params.path)) problem = 'No file to preview.';
         else if (!isInside(project.rootPath, params.path)) problem = 'The file is outside the project folder.';
+        else if (!previewKind(params.path)) problem = 'This type of file cannot be previewed. Open it in the editor.';
         if (problem || !project || !params.path) {
           view.onRequest('load', (): PreviewMessage => ({ type: 'error', message: problem ?? 'No file to preview.' }));
           return;

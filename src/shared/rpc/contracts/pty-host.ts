@@ -20,6 +20,10 @@ export type PtyHostMethods = HostBaseMethods & {
   setScrollback: (o: { scrollback: number }) => void;
   /** Plain text of the mirror (diagnostics and E2E tests). */
   getText: (o: { id: TerminalId }) => string;
+  /** Emits the terminal's output as `terminal:output` events while `watch` is on. */
+  watchOutput: (o: { id: TerminalId; watch: boolean }) => void;
+  /** TCP ports the terminal's processes (the shell and its descendants) listen on, ascending. */
+  listeningPorts: (o: { id: TerminalId }) => number[];
 };
 
 export type PtyHostEvents = HostBaseEvents & {
@@ -44,6 +48,8 @@ export type PtyHostEvents = HostBaseEvents & {
   'terminal:process': { id: TerminalId; descendants: ProcInfo[]; foreground?: ProcInfo };
   /** The user submitted input (Enter) — used to move an agent out of "waiting". Throttled to 1/s. */
   'terminal:userInput': { id: TerminalId };
+  /** Output of a watched terminal (`watchOutput`), in the renderer's batches. */
+  'terminal:output': { id: TerminalId; data: string };
 };
 
 /** Events main sends to the PTY Host. */

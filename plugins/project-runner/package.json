@@ -1,0 +1,109 @@
+{
+  "name": "@oxytocin/project-runner",
+  "version": "0.1.0",
+  "description": "Detects the apps of a project and runs them in terminals, with status, URLs and an MCP server for agents",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "oxytocin": {
+    "id": "oxytocin.project-runner",
+    "displayName": "Project Runner",
+    "description": "Detects runnable apps (Node.js, .NET, Python, Go, Rust, Java, …), runs them with one click, shows their status, URL and logs, and lets AI agents run them through MCP.",
+    "publisher": "oxytocin",
+    "engine": "^0.1.4",
+    "main": "dist/host.js",
+    "activationEvents": [
+      "onStartup",
+      "onView:projectRunner.sidebar",
+      "onPanel:projectRunner.panel",
+      "onCommand:projectRunner.show",
+      "onCommand:projectRunner.run"
+    ],
+    "permissions": [
+      "projects.read",
+      "terminals.read-metadata",
+      "terminals.create",
+      "terminals.write",
+      "terminals.read-output",
+      "fs.read-project",
+      "fs.read-home",
+      "net.listen-local"
+    ],
+    "contributes": {
+      "views": [
+        {
+          "id": "projectRunner.sidebar",
+          "slot": "sidebar",
+          "title": "Run",
+          "entry": "dist/views/runner.html",
+          "order": 250,
+          "initialHeight": 200,
+          "minHeight": 110
+        }
+      ],
+      "panels": [
+        {
+          "type": "projectRunner.panel",
+          "title": "Run",
+          "entry": "dist/views/runner.html",
+          "singleton": "project",
+          "showInAddMenu": true
+        }
+      ],
+      "statusBarItems": [
+        {
+          "id": "projectRunner.status",
+          "alignment": "left",
+          "priority": 20
+        }
+      ],
+      "commands": [
+        {
+          "id": "projectRunner.run",
+          "title": "Run: Start an App…"
+        },
+        {
+          "id": "projectRunner.stopAll",
+          "title": "Run: Stop All Apps"
+        },
+        {
+          "id": "projectRunner.show",
+          "title": "Run: Show Run Panel"
+        },
+        {
+          "id": "projectRunner.connectClaude",
+          "title": "Run: Connect Claude Code (MCP)"
+        }
+      ],
+      "configuration": {
+        "prefix": "projectRunner",
+        "properties": {
+          "projectRunner.mcp.enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Runs a local MCP server (127.0.0.1, token protected) through which AI agents such as Claude Code list, start, stop and read the logs of your run profiles."
+          },
+          "projectRunner.mcp.port": {
+            "type": "integer",
+            "default": 47286,
+            "minimum": 1024,
+            "maximum": 65535,
+            "description": "Local port of the MCP server. After changing it, connect Claude Code again from the Run panel."
+          },
+          "projectRunner.claudeCommand": {
+            "type": "string",
+            "default": "claude",
+            "description": "The Claude Code command used to register the MCP server (a name on PATH or a full path)."
+          },
+          "projectRunner.scanDepth": {
+            "type": "integer",
+            "default": 3,
+            "minimum": 0,
+            "maximum": 6,
+            "description": "How many folder levels below the project root are searched for apps."
+          }
+        }
+      }
+    }
+  }
+}

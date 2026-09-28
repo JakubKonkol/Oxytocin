@@ -24,6 +24,13 @@ export function registerViewTarget(viewId: string, target: BridgeTarget): () => 
   };
 }
 
+/** Posts a message from the shell to a mounted view (`onMessage` in the view); false when it is not mounted. */
+export function postToView(viewId: string, payload: unknown): boolean {
+  const target = targets.get(viewId);
+  target?.deliver({ kind: 'msg', payload });
+  return !!target;
+}
+
 const reloadListeners = new Set<(pluginId: string) => void>();
 let reloadInstalled = false;
 

@@ -91,3 +91,34 @@ export function highlightCode(code: string, lang: string): string | undefined {
     return undefined;
   }
 }
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * A whole file highlighted line by line: the inner HTML of each line (coloured `<span>`s), or undefined for unknown
+ * languages.
+ */
+export function highlightLines(code: string, lang: string): string[] | undefined {
+  const h = get();
+  const resolved = EXTRA_ALIASES[lang] ?? lang;
+  if (!h.getLoadedLanguages().includes(resolved)) return undefined;
+  try {
+    const { tokens } = h.codeToTokens(code, { lang: resolved, theme: 'oxytocin' });
+    return tokens.map((line) =>
+      line
+        .map((t) => {
+          const styles = [
+            t.color ? `color:${t.color}` : '',
+            t.fontStyle && t.fontStyle & 1 ? 'font-style:italic' : '',
+            t.fontStyle && t.fontStyle & 2 ? 'font-weight:bold' : '',
+            t.fontStyle && t.fontStyle & 4 ? 'text-decoration:underline' : '',
+          ].filter(Boolean);
+          const text = escapeHtml(t.content);
+          return styles.length ? `<span style="${styles.join(';')}">${text}</span>` : text;
+        })
+        .join(''),
+    );
+  } catch {
+    return undefined;
+  }
+}

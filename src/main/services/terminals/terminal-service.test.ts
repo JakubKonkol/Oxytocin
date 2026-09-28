@@ -161,4 +161,35 @@ describe('TerminalService', () => {
     const spawns = calls.filter((c) => c.method === 'spawn').map((c) => c.params as { initialCommand?: string });
     expect(spawns.map((s) => s.initialCommand)).toEqual(['fake-agent', undefined]);
   });
+
+  it('starts background terminals with extra env and keeps them background until shown', async () => {
+    const { svc, calls } = setup();
+    const info = await svc.create({ projectId: 'p1', background: true, env: { PORT: '4000', FROM_PROJECT: null } });
+    expect(info.background).toBe(true);
+    const env = (calls.find((c) => c.method === 'spawn')!.params as { env: Record<string, string> }).env;
+    expect(env['PORT']).toBe('4000');
+    expect(env['FROM_PROJECT']).toBeUndefined();
+    svc.markShown(info.id);
+    expect(svc.get(info.id)?.background).toBeUndefined();
+    const restarted = await svc.restart(info.id);
+    expect(restarted.background).toBeUndefined();
+  });
+
+  it('asks the PTY host for output while at least one watcher is registered', async () => {
+    const { svc, calls, emit } = setup();
+    const info = await svc.create({ projectId: 'p1' });
+    const seen: string[] = [];
+    svc.onDidOutput((e) => seen.push(e.data));
+    await svc.watchOutput(info.id, 'plugin:a', true);
+    await svc.watchOutput(info.id, 'plugin:b', true);
+    emit('terminal:output', { id: info.id, data: 'ready on :5173' });
+    await svc.watchOutput(info.id, 'plugin:a', false);
+    await svc.unwatchAllOutput('plugin:b');
+    const watches = calls.filter((c) => c.method === 'watchOutput').map((c) => c.params);
+    expect(watches).toEqual([
+      { id: info.id, watch: true },
+      { id: info.id, watch: false },
+    ]);
+    expect(seen).toEqual(['ready on :5173']);
+  });
 });

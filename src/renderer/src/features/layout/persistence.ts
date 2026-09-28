@@ -225,7 +225,7 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
   if (state.activePanelId) api.getPanel(state.activePanelId)?.api.setActive();
   // Terminals alive in main but absent from the saved layout (e.g. created right before a reload).
   for (const t of Object.values(useTerminalsStore.getState().terminals)) {
-    if (t.projectId === projectId && !used.has(t.id)) addExistingTerminalPanel(api, t.id, t.title);
+    if (t.projectId === projectId && !used.has(t.id) && !t.background) addExistingTerminalPanel(api, t.id, t.title);
   }
   return api.panels.length > 0;
 }
@@ -235,7 +235,9 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
  * (`settings.startupTerminals`), else one terminal with the project's default profile.
  */
 export async function openDefaultLayout(api: DockviewApi, projectId: string): Promise<void> {
-  const existing = Object.values(useTerminalsStore.getState().terminals).filter((t) => t.projectId === projectId);
+  const existing = Object.values(useTerminalsStore.getState().terminals).filter(
+    (t) => t.projectId === projectId && !t.background,
+  );
   if (existing.length > 0) {
     for (const t of existing) addExistingTerminalPanel(api, t.id, t.title);
     return;
