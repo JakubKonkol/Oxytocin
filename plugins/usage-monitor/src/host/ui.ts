@@ -39,6 +39,8 @@ interface StatusModel {
   activeSession: { costUsd: number; agent: string } | null;
   busy: boolean;
   subscriptionLimits?: { window: string; percent: number; resetsAt: number | null }[];
+  subscriptionOnly?: boolean;
+  tokens?: { today: number; week: number; month: number };
 }
 
 /** State of the Claude subscription limits (Pricing tab). */
@@ -57,6 +59,19 @@ export interface UiExtras {
 }
 
 const usd = (v: number) => (v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`);
+
+/** 1.24M tokens · 412k tokens · 950 tokens */
+function tokenCount(n: number): string {
+  const text =
+    n >= 1_000_000
+      ? `${(n / 1_000_000).toFixed(2)}M`
+      : n >= 10_000
+        ? `${Math.round(n / 1000)}k`
+        : n >= 1000
+          ? `${(n / 1000).toFixed(1)}k`
+          : String(Math.round(n));
+  return `${text} tokens`;
+}
 
 const WINDOW_SHORT: Record<string, string> = { five_hour: '5h', seven_day: 'week', spend_limit: 'spend' };
 const WINDOW_LONG: Record<string, string> = {
@@ -98,11 +113,15 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
     const approx = m.approximate ? '≈' : '';
     const value = mode === 'activeSession' && m.activeSession ? m.activeSession.costUsd : m.todayUsd;
     const limits = m.subscriptionLimits ?? [];
+    // Subscription billing only: API-equivalent costs mean nothing, tokens are shown instead.
+    const costs = !(m.subscriptionOnly && m.tokens);
     // With a Claude subscription its limits matter more than the API-equivalent cost.
     const main =
       limits.length > 0
         ? limits.map((l) => `${WINDOW_SHORT[l.window] ?? l.window} ${l.percent}%`).join(' · ')
-        : `${approx}${usd(value)}`;
+        : costs
+          ? `${approx}${usd(value)}`
+          : tokenCount(m.tokens!.today);
     status.text = `$(graph) ${main}${m.busy ? ' $(sync~spin)' : ''}`;
     const now = Date.now();
     status.tooltip = [
@@ -111,10 +130,18 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
           `Claude ${(WINDOW_LONG[l.window] ?? l.window).toLowerCase()}: ${l.percent}%${l.resetsAt ? `, resets in ${inTime(l.resetsAt - now)}` : ''}`,
       ),
       ...(limits.length > 0 ? [''] : []),
-      `Today: ${approx}${usd(m.todayUsd)}`,
-      `This week: ${approx}${usd(m.weekUsd)}`,
-      `This month: ${approx}${usd(m.monthUsd)}`,
-      ...(m.topProjects.length > 0 ? ['', ...m.topProjects.map((p) => `${p.name}: ${usd(p.usd)}`)] : []),
+      ...(costs
+        ? [
+            `Today: ${approx}${usd(m.todayUsd)}`,
+            `This week: ${approx}${usd(m.weekUsd)}`,
+            `This month: ${approx}${usd(m.monthUsd)}`,
+            ...(m.topProjects.length > 0 ? ['', ...m.topProjects.map((p) => `${p.name}: ${usd(p.usd)}`)] : []),
+          ]
+        : [
+            `Today: ${tokenCount(m.tokens!.today)}`,
+            `This week: ${tokenCount(m.tokens!.week)}`,
+            `This month: ${tokenCount(m.tokens!.month)}`,
+          ]),
     ].join('\n');
     status.show();
   };

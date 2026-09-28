@@ -46,7 +46,17 @@ function useHeight(): number {
   return height;
 }
 
-function Session({ s, now, onOpen }: { s: LiveSession; now: number; onOpen: (s: LiveSession) => void }) {
+function Session({
+  s,
+  now,
+  onOpen,
+  showCost,
+}: {
+  s: LiveSession;
+  now: number;
+  onOpen: (s: LiveSession) => void;
+  showCost: boolean;
+}) {
   const state = s.state ?? (now - s.lastEventAt < 60_000 ? 'working' : 'idle');
   return (
     <button
@@ -62,7 +72,7 @@ function Session({ s, now, onOpen }: { s: LiveSession; now: number; onOpen: (s: 
           {agentName(s.agent)} · {shortModel(s.model)}
           {s.projectName ? ` · ${s.projectName}` : ''}
         </span>
-        <span className="mono">{usd(s.costUsd, { approx: s.approximate, unknown: s.unknownCost })}</span>
+        {showCost && <span className="mono">{usd(s.costUsd, { approx: s.approximate, unknown: s.unknownCost })}</span>}
       </div>
       <div className="meta">
         {tokens(s.tokens)} tokens · {STATE_LABELS[state] ?? state} · {duration(now - s.startedAt)}
@@ -75,6 +85,29 @@ function MenuButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
   return (
     <button type="button" className="icon" aria-label="Usage menu" title="More actions" onClick={onClick}>
       ⋯
+    </button>
+  );
+}
+
+/** Opens the dashboard's Settings tab (billing, subscription limits, prices). */
+function SettingsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="icon"
+      aria-label="Usage settings"
+      title="Usage settings"
+      data-testid="usage-settings"
+      onClick={onClick}
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+        />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
     </button>
   );
 }
@@ -139,7 +172,7 @@ function App() {
       [
         { id: 'dashboard', label: 'Open dashboard' },
         { id: 'pricing', label: 'Refresh pricing' },
-        { id: 'settings', label: 'Usage settings' },
+        { id: 'settings', label: 'Settings' },
         { id: 'sources', label: 'Data sources' },
       ],
       { x: e.clientX, y: e.clientY },
@@ -154,27 +187,33 @@ function App() {
   const compact = height < COMPACT_HEIGHT;
   const limit = model.limit;
   const trend = model.burnRate.trend === 'up' ? '▲' : model.burnRate.trend === 'down' ? '▼' : '';
+  // Subscription billing only: API-equivalent costs (and today's totals) are left out.
+  const showCost = !model.subscriptionOnly;
+  const openSettings = () => void view?.request('openDashboard', { tab: 'pricing' });
+  const actions = (
+    <>
+      <SettingsButton onClick={openSettings} />
+      <MenuButton onClick={(e) => void menu(e)} />
+    </>
+  );
+  const subscriptionLimits = model.subscriptionLimits.map((bar) => (
+    <Limit key={bar.window ?? bar.label} bar={bar} now={model.now} testId="usage-subscription-limit" />
+  ));
   return (
     <div className={`card${compact ? ' compact' : ''}`} data-testid="usage-card">
-      {progress && (
-        <div className="muted" data-testid="usage-progress">
-          Indexing history… {Math.round((progress.done / Math.max(1, progress.total)) * 100)}%
+      {!model.hasData || !showCost ? (
+        <div className="row head">
+          {!showCost && (
+            <span className="heading" data-testid="usage-plan-heading">
+              {model.subscriptionLimits.length > 0 ? 'PLAN LIMITS' : 'SUBSCRIPTION'}
+            </span>
+          )}
+          <span className="spacer" />
+          <div className="head-actions">{actions}</div>
         </div>
-      )}
-      {model.subscriptionLimits.map((bar) => (
-        <Limit key={bar.window ?? bar.label} bar={bar} now={model.now} testId="usage-subscription-limit" />
-      ))}
-      {!model.hasData ? (
-        <>
-          <div className="row head">
-            <span className="spacer" />
-            <MenuButton onClick={(e) => void menu(e)} />
-          </div>
-          <Empty sources={sources} />
-        </>
       ) : (
-        <>
-          <div className="row head">
+        <div className="row head">
+          <div className="head-main">
             <span className="secondary">Today</span>
             <span
               className="today-value mono"
@@ -190,7 +229,7 @@ function App() {
             {model.today.unknownCost && (
               <span
                 className="unknown"
-                title="Some models have no price yet — add their rates in the dashboard (Pricing)"
+                title="Some models have no price yet — add their rates in the dashboard (Settings)"
               >
                 +?
               </span>
@@ -205,8 +244,28 @@ function App() {
               {usd(model.burnRate.usdPerHour)}/h{' '}
               <span className={model.burnRate.trend === 'up' ? 'trend-up' : 'trend-down'}>{trend}</span>
             </span>
-            <MenuButton onClick={(e) => void menu(e)} />
           </div>
+          <div className="head-actions">{actions}</div>
+        </div>
+      )}
+      {progress && (
+        <div className="muted" data-testid="usage-progress">
+          Indexing history… {Math.round((progress.done / Math.max(1, progress.total)) * 100)}%
+        </div>
+      )}
+      {subscriptionLimits}
+      {!showCost && model.subscriptionLimits.length === 0 && (
+        <div className="muted" data-testid="usage-subscription-hint">
+          Subscription billing: costs are hidden.{' '}
+          <button type="button" className="link" onClick={openSettings}>
+            Show plan limits
+          </button>
+        </div>
+      )}
+      {!model.hasData ? (
+        <Empty sources={sources} />
+      ) : (
+        <>
           {limit && (
             <Limit
               bar={limit}
@@ -219,11 +278,11 @@ function App() {
             <div className="hide-compact">
               <div className="heading">ACTIVE SESSIONS</div>
               {model.sessions.slice(0, 4).map((s) => (
-                <Session key={s.sessionId} s={s} now={model.now} onOpen={openSession} />
+                <Session key={s.sessionId} s={s} now={model.now} onOpen={openSession} showCost={showCost} />
               ))}
             </div>
           )}
-          {model.project && (
+          {showCost && model.project && (
             <div className="muted hide-compact" data-testid="usage-project">
               {model.project.name ?? 'This project'}: today {usd(model.project.todayUsd)} · last 7 days{' '}
               {usd(model.project.last7DaysUsd)}

@@ -16,7 +16,7 @@ const TABS: [Tab, string][] = [
   ['overview', 'Overview'],
   ['sessions', 'Sessions'],
   ['budgets', 'Budgets'],
-  ['pricing', 'Pricing'],
+  ['pricing', 'Settings'],
   ['sources', 'Sources'],
 ];
 const REFRESH_DEBOUNCE_MS = 500;

@@ -48,6 +48,11 @@ export interface SidebarModel {
   subscriptionLimits: LimitBar[];
   sessions: LiveSession[];
   project: { id: string; name: string | undefined; todayUsd: number; last7DaysUsd: number } | null;
+  /**
+   * Every agent in use is billed by subscription: API-equivalent costs mean nothing to the user, so the sidebar
+   * hides them (today's cost and tokens, burn rate, session and project costs).
+   */
+  subscriptionOnly: boolean;
 }
 
 export interface StatusModel {
@@ -62,6 +67,9 @@ export interface StatusModel {
   busy: boolean;
   /** Claude subscription limits (subscription billing only); replace the cost in the status bar. */
   subscriptionLimits: { window: string; percent: number; resetsAt: number | null }[];
+  /** Every agent in use is billed by subscription: tokens replace the API-equivalent cost. */
+  subscriptionOnly: boolean;
+  tokens: { today: number; week: number; month: number };
 }
 
 export interface ViewContext {
@@ -75,6 +83,23 @@ export interface ViewContext {
 }
 
 const tokenSum = (t: TokenTotals) => t.total;
+
+/** Agents are "in use" when they have events in this window (or a live session). */
+const IN_USE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Whether every agent in use (events today or in the last 7 days, or a live session) is billed by subscription.
+ * Without any recent usage the Claude Code billing decides, since it is the agent most people use.
+ */
+export function isSubscriptionOnly(db: Database, ctx: ViewContext, live: LiveSession[]): boolean {
+  const agents = new Set(live.map((s) => s.agent));
+  for (const r of db
+    .prepare('SELECT DISTINCT agent FROM sessions WHERE last_event_at >= ?')
+    .all(ctx.now - IN_USE_WINDOW_MS) as { agent: string }[])
+    agents.add(r.agent);
+  if (agents.size === 0) return ctx.billing['claude-code'] === 'subscription';
+  return [...agents].every((a) => ctx.billing[a] === 'subscription');
+}
 
 /** Sessions with events in the last 10 minutes or with a running agent (§12). */
 export function liveSessions(db: Database, ctx: ViewContext): LiveSession[] {
@@ -272,6 +297,7 @@ export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
     subscriptionLimits: subscription,
     sessions,
     project,
+    subscriptionOnly: isSubscriptionOnly(db, ctx, sessions),
   };
 }
 
@@ -282,10 +308,12 @@ export function statusModel(db: Database, ctx: ViewContext): StatusModel {
   const active = live[0];
   const week = periodRange('week', ctx.now, ctx.weekStartsOn);
   const month = periodRange('month', ctx.now);
+  const weekTotals = summary(db, week);
+  const monthTotals = summary(db, month);
   return {
     todayUsd: today.costUsd,
-    weekUsd: summary(db, week).costUsd,
-    monthUsd: summary(db, month).costUsd,
+    weekUsd: weekTotals.costUsd,
+    monthUsd: monthTotals.costUsd,
     topProjects: breakdown(db, { from: todayFrom, to: addDays(todayFrom, 1) }, 'project')
       .filter((p) => p.key && p.costUsd > 0)
       .slice(0, 3)
@@ -298,5 +326,7 @@ export function statusModel(db: Database, ctx: ViewContext): StatusModel {
       percent: Math.round(b.ratio * 100),
       resetsAt: b.resetsAt,
     })),
+    subscriptionOnly: isSubscriptionOnly(db, ctx, live),
+    tokens: { today: tokenSum(today.tokens), week: tokenSum(weekTotals.tokens), month: tokenSum(monthTotals.tokens) },
   };
 }

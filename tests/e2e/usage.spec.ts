@@ -126,7 +126,7 @@ test('Usage Monitor: today from fixtures, live update, dashboard and budget noti
     // Other tabs render.
     await dashboard.getByRole('tab', { name: 'Sessions' }).click();
     await expect(dashboard.getByTestId('usage-session-row').first()).toBeVisible();
-    await dashboard.getByRole('tab', { name: 'Pricing' }).click();
+    await dashboard.getByRole('tab', { name: 'Settings' }).click();
     await expect(dashboard.getByTestId('usage-unknown-models')).toContainText('claude-mystery-9');
     await dashboard.getByRole('tab', { name: 'Sources' }).click();
     await expect(dashboard.getByTestId('usage-sources')).toContainText('Claude Code logs');
@@ -166,9 +166,14 @@ test('Usage Monitor: Claude subscription limits through the Claude Code status l
   try {
     await waitForTerminal(win);
     const sidebar = await frameOf(win, 'sidebar.html');
-    await win.getByTestId('status-item-usage.today').click();
+    // Subscription billing: no costs in the sidebar, a hint to turn on the plan limits instead.
+    await expect(sidebar.getByTestId('usage-subscription-hint')).toBeVisible({ timeout: 20_000 });
+    await expect(sidebar.getByTestId('usage-today')).toHaveCount(0);
+    await expect(win.getByTestId('status-item-usage.today')).toContainText('0 tokens');
+    // The gear in the Usage card opens the dashboard's Settings tab.
+    await sidebar.getByTestId('usage-settings').click();
     const dashboard = await frameOf(win, 'dashboard.html');
-    await dashboard.getByRole('tab', { name: 'Pricing' }).click();
+    await expect(dashboard.getByRole('tab', { name: 'Settings' })).toHaveAttribute('aria-selected', 'true');
     const section = dashboard.getByTestId('usage-claude-limits');
     await section.getByLabel('Show Claude subscription limits').check();
 
@@ -196,6 +201,8 @@ test('Usage Monitor: Claude subscription limits through the Claude Code status l
     await expect(bars.nth(0)).toContainText('Claude: 24% of 5h limit · resets in');
     await expect(bars.nth(1)).toContainText('Claude: 41% of weekly limit');
     await expect(win.getByTestId('status-item-usage.today')).toContainText('5h 24% · week 41%');
+    await expect(sidebar.getByTestId('usage-subscription-hint')).toHaveCount(0);
+    await expect(sidebar.getByTestId('usage-plan-heading')).toHaveText('PLAN LIMITS');
     await expect(section.getByTestId('usage-claude-limits-state')).toContainText('last reading');
 
     // Turning it off restores the previous status line.

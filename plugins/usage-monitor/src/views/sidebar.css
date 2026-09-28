@@ -16,8 +16,26 @@
 .row > * {
   white-space: nowrap;
 }
-.head .icon {
-  align-self: center;
+.head {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+/* Today's figures wrap in a narrow sidebar; the gear and the menu stay in the top-right corner. */
+.head-main {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  min-width: 0;
+}
+.head-main > * {
+  white-space: nowrap;
+}
+.head-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
   margin-right: -4px;
 }
 .unknown {

@@ -52,6 +52,8 @@ export interface SidebarModel {
   subscriptionLimits: LimitBar[];
   sessions: LiveSession[];
   project: { id: string; name?: string; todayUsd: number; last7DaysUsd: number } | null;
+  /** Every agent in use is billed by subscription: costs are hidden. */
+  subscriptionOnly: boolean;
 }
 
 export interface SourceStatus {

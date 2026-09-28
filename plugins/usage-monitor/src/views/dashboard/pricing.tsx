@@ -80,7 +80,8 @@ function ClaudeLimits() {
           <div className="desc">
             Claude Code passes them to its status line (Pro and Max plans). Oxytocin sets a status line command in
             Claude Code&apos;s settings.json; a status line you already have keeps working and comes back when you turn
-            this off. With Claude Code billing set to Subscription, the limits replace the cost in the status bar.
+            this off. With Claude Code billing set to Subscription, the limits replace the cost in the sidebar and the
+            status bar.
           </div>
         </span>
         <input
@@ -146,7 +147,7 @@ export function PricingTab() {
             label={`${a === 'claudeCode' ? 'Claude Code' : a === 'codex' ? 'Codex' : 'Gemini CLI'} billing`}
             options={[
               ['api', 'API (pay per token)'],
-              ['subscription', 'Subscription (show ≈ API-equivalent cost)'],
+              ['subscription', 'Subscription (hide costs, show plan limits)'],
             ]}
           />
         ))}

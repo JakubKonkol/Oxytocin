@@ -159,6 +159,34 @@ describe('sidebar model', () => {
     expect(engine.status().busy).toBe(true);
   });
 
+  it('hides costs only when every agent in use is billed by subscription', () => {
+    // No usage yet: the Claude Code billing decides.
+    expect(engine.sidebar().subscriptionOnly).toBe(false);
+    engine.setSettings({ billing: { 'claude-code': 'subscription' } });
+    expect(engine.sidebar().subscriptionOnly).toBe(true);
+
+    engine.ingest([record('a', now - 60_000, 100_000)]);
+    expect(engine.sidebar().subscriptionOnly).toBe(true);
+    expect(engine.status()).toMatchObject({
+      subscriptionOnly: true,
+      tokens: { today: 100_000, week: 100_000, month: 100_000 },
+    });
+
+    // A Codex session billed by the API in the last 7 days brings the costs back.
+    engine.ingest([
+      record('b', now - 3 * 86_400_000, 10, {
+        agent: 'codex',
+        provider: 'openai',
+        sessionId: 's2',
+        source: 'codex-rollout',
+      }),
+    ]);
+    expect(engine.sidebar().subscriptionOnly).toBe(false);
+    engine.setSettings({ billing: { 'claude-code': 'subscription', codex: 'subscription' } });
+    expect(engine.sidebar().subscriptionOnly).toBe(true);
+    expect(engine.status().subscriptionOnly).toBe(true);
+  });
+
   it('shows Claude subscription limits as their own bars and in the status model', () => {
     const limit = (window: string, used: number, minutes: number, resetsAt: number) => ({
       kind: 'limit' as const,

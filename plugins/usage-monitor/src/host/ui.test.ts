@@ -78,6 +78,25 @@ describe('Usage Monitor UI glue', () => {
     for (const d of s.ctx.subscriptions) d.dispose();
   });
 
+  it('shows tokens instead of API-equivalent costs with subscription billing only', async () => {
+    const s = setup({
+      todayUsd: 4.8,
+      weekUsd: 10,
+      monthUsd: 20,
+      topProjects: [{ name: 'api', usd: 3.1 }],
+      approximate: true,
+      activeSession: null,
+      busy: false,
+      subscriptionLimits: [],
+      subscriptionOnly: true,
+      tokens: { today: 1_240_000, week: 12_500, month: 950 },
+    });
+    await flush();
+    expect(s.item.text).toBe('$(graph) 1.24M tokens');
+    expect(s.item.tooltip).toBe('Today: 1.24M tokens\nThis week: 13k tokens\nThis month: 950 tokens');
+    for (const d of s.ctx.subscriptions) d.dispose();
+  });
+
   it('hides the item when turned off and only lets the dashboard change usage settings', async () => {
     const s = setup({ todayUsd: 1 }, { 'usage.statusBar': 'off' });
     await flush();
