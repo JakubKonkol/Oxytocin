@@ -72,6 +72,8 @@ export const PluginPanelContributionSchema = z.object({
   entry: RelativePathSchema,
   icon: RelativePathSchema.optional(),
   singleton: z.union([z.literal('global'), z.literal('project'), z.literal(false)]).default(false),
+  /** Listed under Tools in the workspace's "+" menu and the right sidebar's "Add tool" menu (opened without params). */
+  showInAddMenu: z.boolean().default(false),
 });
 
 export const StatusBarItemContributionSchema = z.object({

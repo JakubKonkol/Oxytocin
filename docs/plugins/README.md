@@ -78,7 +78,7 @@ The backend is imported and `activate(ctx)` runs on the first matching event:
 | Key | Contributes |
 |---|---|
 | `views` | Sidebar sections: `{ id, slot: "sidebar", title, entry, icon?, order?, initialHeight?, minHeight? }` |
-| `panels` | Center-area tabs: `{ type, title, entry, icon?, singleton?: false \| "global" \| "project" }` |
+| `panels` | Center-area tabs: `{ type, title, entry, icon?, singleton?: false \| "global" \| "project", showInAddMenu? }` — with `showInAddMenu: true` the panel is a *tool*: it is listed in the workspace's **+** menu and the right sidebar's **Add tool** menu (opened without params) and can be dragged into the right sidebar |
 | `statusBarItems` | `{ id, alignment?: "left" \| "right", priority? }` — text and visibility are set by the backend |
 | `commands` | `{ id, title, icon? }` — listed in the command palette (`Ctrl+Shift+P`) |
 | `configuration` | `{ prefix, properties }` — settings shown in **Settings**; every key starts with `<prefix>.` |

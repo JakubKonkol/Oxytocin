@@ -3,6 +3,7 @@ import {
   defaultUiState,
   type PaneviewState,
   SCRATCHPAD_MAX_LENGTH,
+  type SidebarTool,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
   type UiState,
@@ -20,6 +21,9 @@ interface UiStore {
   setSecondarySidebarWidth: (width: number) => void;
   toggleSecondarySidebar: (open?: boolean) => void;
   setSecondaryPaneview: (paneview: PaneviewState) => void;
+  setSecondaryTools: (tools: SidebarTool[]) => void;
+  /** Persists the `oxy.setState` state of a plugin view that lives outside workspaces (right sidebar tools). */
+  setPluginViewState: (viewId: string, state: unknown) => void;
   setScratchpadText: (text: string) => void;
   /** Moves a command to the top of the palette's "recently used" list. */
   recordCommand: (id: string) => void;
@@ -38,6 +42,9 @@ function persist(patch: UiStatePatch): void {
     ...(patch.sidebar || pending.sidebar ? { sidebar: { ...pending.sidebar, ...patch.sidebar } } : {}),
     ...(patch.secondarySidebar || pending.secondarySidebar
       ? { secondarySidebar: { ...pending.secondarySidebar, ...patch.secondarySidebar } }
+      : {}),
+    ...(patch.pluginViewState || pending.pluginViewState
+      ? { pluginViewState: { ...pending.pluginViewState, ...patch.pluginViewState } }
       : {}),
   };
   if (timer) clearTimeout(timer);
@@ -87,6 +94,15 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setSecondaryPaneview(secondaryPaneview) {
     set({ state: { ...get().state, secondaryPaneview } });
     persist({ secondaryPaneview });
+  },
+  setSecondaryTools(secondaryTools) {
+    set({ state: { ...get().state, secondaryTools } });
+    persist({ secondaryTools });
+  },
+  setPluginViewState(viewId, value) {
+    const pluginViewState = { ...get().state.pluginViewState, [viewId]: value };
+    set({ state: { ...get().state, pluginViewState } });
+    persist({ pluginViewState: { [viewId]: value } });
   },
   setScratchpadText(text) {
     const scratchpad = { text: text.slice(0, SCRATCHPAD_MAX_LENGTH) };

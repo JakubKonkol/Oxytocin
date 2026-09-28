@@ -1,5 +1,6 @@
 /** Center-area panel kinds. Params hold identifiers only. */
-export type PanelKind = 'terminal' | 'diff' | 'plugin' | 'plugins' | 'keybindings' | 'settings' | 'welcome' | 'missing';
+export type PanelKind =
+  'terminal' | 'diff' | 'plugin' | 'scratchpad' | 'plugins' | 'keybindings' | 'settings' | 'welcome' | 'missing';
 
 export interface TerminalPanelParams {
   terminalId: string;
@@ -13,7 +14,7 @@ export interface MissingPanelParams {
 
 let counter = 0;
 /** Short random panel ids: term-xxxxxxxx. */
-export function newPanelId(kind: 'term' | 'diff' | 'plg'): string {
+export function newPanelId(kind: 'term' | 'diff' | 'plg' | 'tool'): string {
   counter = (counter + 1) % 1_000_000;
   const rand = crypto.getRandomValues(new Uint32Array(1))[0]!.toString(36);
   return `${kind}-${rand}${counter.toString(36)}`;

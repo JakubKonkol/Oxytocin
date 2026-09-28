@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- `contributes.panels[].showInAddMenu`: lists a panel under Tools in the workspace's "+" menu and the right sidebar's
+  "Add tool" menu. Panels can also be moved into the right sidebar, where they keep their `oxy.setState` state.
+
 ## 0.1.2
 
 - `oxy.agents.reportState(terminalId, { state, waitingFor?, sessionId? })` (`agents.annotate`): agent states reported

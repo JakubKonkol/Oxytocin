@@ -16,6 +16,7 @@ import { PluginStatusItems } from '../features/plugins/PluginStatusItems';
 import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
 import { HelpDialogs } from '../features/help/HelpDialogs';
+import { focusScratchpad } from '../features/tools/tools';
 
 /** "<project> — <active panel> — Oxytocin". */
 function useWindowTitle(): string {
@@ -55,10 +56,7 @@ export function AppLayout() {
       registerCommand({
         id: 'workbench.focusScratchpad',
         title: 'View: Focus Scratchpad',
-        run: () => {
-          useUiStore.getState().toggleSecondarySidebar(true);
-          requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="scratchpad-input"]')?.focus());
-        },
+        run: () => focusScratchpad(),
       }),
     ];
     return () => disposers.forEach((d) => d());

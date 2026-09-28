@@ -1,0 +1,26 @@
+{
+  "name": "@oxytocin/json-formatter",
+  "version": "0.1.0",
+  "description": "Format, minify and validate JSON in a panel next to the terminal",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "oxytocin": {
+    "id": "oxytocin.json-formatter",
+    "displayName": "JSON Formatter",
+    "description": "Format, minify and validate JSON next to the terminal or in the right sidebar.",
+    "publisher": "oxytocin",
+    "engine": "^0.1.3",
+    "contributes": {
+      "panels": [
+        {
+          "type": "json.formatter",
+          "title": "JSON Formatter",
+          "entry": "dist/views/formatter.html",
+          "singleton": false,
+          "showInAddMenu": true
+        }
+      ]
+    }
+  }
+}

@@ -3,8 +3,10 @@ import { applyUiStatePatch, defaultUiState, SCRATCHPAD_MAX_LENGTH, UiStateSchema
 
 describe('ui state', () => {
   it('defaults the right sidebar and scratchpad for files written by older versions', () => {
-    const { secondarySidebar, secondaryPaneview, scratchpad, ...older } = defaultUiState();
+    const { secondarySidebar, secondaryPaneview, secondaryTools, scratchpad, ...older } = defaultUiState();
     const parsed = UiStateSchema.parse(older);
+    expect(parsed.secondaryTools).toEqual(secondaryTools);
+    expect(parsed.secondaryTools).toEqual([{ id: 'scratchpad', kind: 'scratchpad' }]);
     expect(parsed.secondarySidebar).toEqual(secondarySidebar);
     expect(parsed.secondaryPaneview).toEqual(secondaryPaneview);
     expect(parsed.scratchpad).toEqual(scratchpad);
@@ -16,6 +18,21 @@ describe('ui state', () => {
     expect(state.secondarySidebar).toEqual({ width: 400, collapsed: true });
     expect(state.scratchpad.text).toBe('draft');
     expect(() => applyUiStatePatch(state, { secondarySidebar: { width: 5 } })).toThrow();
+  });
+
+  it('keeps the right sidebar tools, including closing all of them', () => {
+    const tool = {
+      id: 'tool-1',
+      kind: 'plugin' as const,
+      pluginId: 'oxytocin.json-formatter',
+      panelType: 'json.formatter',
+      viewId: 'pv-1',
+    };
+    let state = applyUiStatePatch(defaultUiState(), { secondaryTools: [tool] });
+    expect(UiStateSchema.parse(state).secondaryTools).toEqual([tool]);
+    state = applyUiStatePatch(state, { secondaryTools: [] });
+    expect(UiStateSchema.parse(state).secondaryTools).toEqual([]);
+    expect(UiStateSchema.shape.secondaryTools.safeParse([{ id: 'x', kind: 'terminal' }]).success).toBe(false);
   });
 
   it('caps the scratchpad size', () => {

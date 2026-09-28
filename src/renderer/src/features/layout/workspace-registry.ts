@@ -13,6 +13,11 @@ export function getWorkspaceApi(projectId: string): DockviewApi | undefined {
   return apis.get(projectId);
 }
 
+/** Every mounted workspace (drag and drop looks up the one a dragged tab comes from). */
+export function getWorkspaceApis(): DockviewApi[] {
+  return [...apis.values()];
+}
+
 export function setActiveWorkspace(projectId: string | null): void {
   active = projectId;
 }

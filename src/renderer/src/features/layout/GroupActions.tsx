@@ -1,15 +1,15 @@
 import type { IDockviewHeaderActionsProps } from 'dockview-react';
-import { Columns2, Maximize2, Minimize2, Plus, Rows2 } from 'lucide-react';
+import { Columns2, Maximize2, Minimize2, Rows2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { shortcutFor } from '../../lib/keyboard';
 import { IconButton } from '../../ui/IconButton';
-import { useProfilePickerStore } from './ProfilePicker';
+import { WorkspaceAddMenu } from '../tools/AddMenus';
 import { splitActive, toggleMaximize } from './layout-commands';
 import { getActiveWorkspace } from './workspace-registry';
 
 const hint = (command: string) => shortcutFor(command);
 
-/** Right side of a group header: split right, split down, maximize/restore, new terminal with profile. */
+/** Right side of a group header: split right, split down, maximize/restore, "+" (new terminal or tool). */
 export function GroupActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group } = props;
   const [maximized, setMaximized] = useState(containerApi.hasMaximizedGroup());
@@ -30,7 +30,6 @@ export function GroupActions(props: IDockviewHeaderActionsProps) {
   const splitRight = hint('terminal.splitRight');
   const splitDown = hint('terminal.splitDown');
   const maximize = hint('panel.toggleMaximize');
-  const newWithProfile = hint('terminal.newWithProfile');
 
   return (
     <div className="flex h-full items-center gap-0.5 pr-1.5" data-testid="group-actions">
@@ -57,15 +56,7 @@ export function GroupActions(props: IDockviewHeaderActionsProps) {
           }}
         />
       )}
-      <IconButton
-        label="New terminal with profile…"
-        {...(newWithProfile ? { shortcut: newWithProfile } : {})}
-        icon={<Plus size={14} />}
-        onClick={() => {
-          activate();
-          useProfilePickerStore.getState().open();
-        }}
-      />
+      <WorkspaceAddMenu api={containerApi} group={group} projectId={projectId} onOpen={activate} />
     </div>
   );
 }

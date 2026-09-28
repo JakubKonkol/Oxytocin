@@ -1,4 +1,4 @@
-import type { IDockviewPanelProps } from 'dockview-react';
+import type { AddPanelPositionOptions, IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useState } from 'react';
 import { OxyError } from '@shared/errors';
 import { useProjectsStore } from '../../stores/projects-store';
@@ -6,6 +6,7 @@ import { usePluginsStore } from '../../stores/plugins-store';
 import { EmptyState } from '../../ui/EmptyState';
 import { workspaceFor } from '../attention/reveal';
 import { newPanelId } from '../layout/panel-registry';
+import { findSidebarPluginTool, revealSidebarTool } from '../tools/tools';
 import { getWorkspaceApi } from '../layout/workspace-registry';
 import { useWorkspaceVisible } from '../layout/workspace-visibility';
 import { usePluginViewMeta } from './view-meta-store';
@@ -29,10 +30,23 @@ const newViewId = () => newPanelId('plg').replace('plg-', 'pv-');
  */
 export async function openPluginPanel(
   panelType: string,
-  o: { projectId?: string; params?: unknown; title?: string; placement?: 'active-group' | 'right' | 'below' } = {},
+  o: {
+    projectId?: string;
+    params?: unknown;
+    title?: string;
+    placement?: 'active-group' | 'right' | 'below';
+    /** Exact position (the group whose "+" menu opened it); wins over `placement`. */
+    position?: AddPanelPositionOptions;
+  } = {},
 ): Promise<void> {
   const contribution = usePluginsStore.getState().contributions.panels.find((p) => p.type === panelType);
   if (!contribution) throw new OxyError('NOT_FOUND', `Unknown panel type: ${panelType}`);
+  // A global singleton already open as a right sidebar tool is shown there.
+  const inSidebar = contribution.singleton === 'global' ? findSidebarPluginTool(panelType) : undefined;
+  if (inSidebar) {
+    revealSidebarTool(inSidebar.id);
+    return;
+  }
   const projectId = o.projectId ?? useProjectsStore.getState().activeId;
   if (!projectId) throw new OxyError('INVALID', 'Open a project first');
   const api = getWorkspaceApi(projectId) ?? (await workspaceFor(projectId));
@@ -66,9 +80,11 @@ export async function openPluginPanel(
     component: 'plugin',
     params,
     title: o.title ?? contribution.title,
-    ...(o.placement && o.placement !== 'active-group' && reference
-      ? { position: { referenceGroup: reference, direction: o.placement === 'right' ? 'right' : 'below' } }
-      : {}),
+    ...(o.position
+      ? { position: o.position }
+      : o.placement && o.placement !== 'active-group' && reference
+        ? { position: { referenceGroup: reference, direction: o.placement === 'right' ? 'right' : 'below' } }
+        : {}),
   });
 }
 

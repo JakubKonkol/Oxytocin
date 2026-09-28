@@ -3,6 +3,34 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Tools in the workspace.** The **+** of every tab group is now a menu: a new terminal (with the default or any
+  other profile) or a **tool** — the scratchpad, the JSON Formatter or any plugin panel that declares
+  `showInAddMenu`. Tools open next to the terminals and split, stack, float and move by drag and drop like them.
+- **Modular right sidebar.** Drag a tool's tab onto the right sidebar (or use *Move to right sidebar* in the tab menu)
+  to dock it there, and drag its section header back into the layout (or use *Move to workspace*). Every section can
+  be closed, reordered and has **Add tool**; with every tool closed the sidebar offers to add one. The tools, their
+  order and their state are kept across restarts.
+- **Scratchpad formatting and settings.** A Markdown toolbar (bold, italic, strikethrough, code, code block, heading,
+  lists, checklist, quote) with `Ctrl+B` / `Ctrl+I` / `Ctrl+E`, lists that continue on Enter, and a settings button
+  for the font (mono, sans, serif), size, line height, line wrapping, spell checking and the toolbar itself — also in
+  *Settings → Scratchpad*. The scratchpad can open as a workspace panel too; every copy edits the same notes.
+- **JSON Formatter** (built-in plugin): format with 2 or 4 spaces or tabs, sort keys, minify, copy, and errors with
+  their line and column.
+- **Usage settings button.** A gear in the top-right corner of the Usage card opens the dashboard's **Settings** tab
+  (billing, Claude subscription limits, prices), previously only reachable through the status bar.
+- Plugin API 0.1.3: `contributes.panels[].showInAddMenu`.
+
+### Changed
+
+- **Usage Monitor with subscription billing:** when every agent in use is billed by subscription, the Usage card
+  hides the API-equivalent costs (today's cost and tokens, burn rate, session and project costs) and shows the plan
+  limits — or a link to turn them on. The status bar shows today's tokens instead of a cost when no limits are
+  reported. The dashboard's *Pricing* tab is now called *Settings*.
+
 ## [0.3.1] - 2026-09-27
 
 ### Changed

@@ -33,7 +33,12 @@ test('packaged app: start, terminal, git changes and built-in plugins', async ()
       state: string;
       errors?: string[];
     }[];
-    for (const id of ['oxytocin.markdown-preview', 'oxytocin.usage-monitor', 'oxytocin.claude-code-bridge']) {
+    for (const id of [
+      'oxytocin.markdown-preview',
+      'oxytocin.usage-monitor',
+      'oxytocin.claude-code-bridge',
+      'oxytocin.json-formatter',
+    ]) {
       const p = plugins.find((x) => x.id === id);
       expect(p, id).toMatchObject({ source: 'builtin' });
       expect(['enabled', 'active'], `${id}: ${(p?.errors ?? []).join('; ')}`).toContain(p!.state);

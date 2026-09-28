@@ -47,6 +47,13 @@ and never kills a process; layouts and terminal scrollback are restored after a 
   badge and `Ctrl+Shift+J` to jump straight to the agent that is waiting for you.
 - Offers to **resume agent sessions** after a restart (never automatically).
 
+### 🧰 Modular workspace
+
+The **+** of every tab group opens a new terminal (any profile) or a **tool**: the scratchpad, the JSON Formatter or
+any plugin panel. Tools split, stack and float like terminals, and move into the **right sidebar** (drag a tab onto it,
+or *Move to right sidebar*) — and back. The right sidebar starts with the **scratchpad** for notes and prompt drafts
+(Markdown formatting, fonts, *Send to agent*); close it, reorder tools or add others with **Add tool**.
+
 ### 🔍 Live changes
 
 A live tree of every file changed since `HEAD`, with line counts, and a Monaco diff viewer that updates while the
@@ -61,7 +68,8 @@ terminal editor.
 
 Tokens and USD cost per session, project and model — read from your agents' **local logs** (Claude Code, Codex CLI,
 Gemini CLI), with an optional local OTLP receiver. Daily charts, burn rate, 5-hour subscription blocks, budgets with
-alerts and a status bar counter. Nothing leaves your machine.
+alerts and a status bar counter. On a Claude subscription it shows your plan's 5-hour and weekly limits instead of
+API-equivalent costs; the gear in the Usage card opens its settings. Nothing leaves your machine.
 
 ### 🧩 Plugins
 
@@ -73,6 +81,7 @@ add sidebar views, center panels, status bar items, commands, terminal profiles 
 | **Usage Monitor** | Token usage and cost dashboard |
 | **Markdown Preview** | Live preview of plans and reports your agents write |
 | **Claude Code Bridge** | Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks |
+| **JSON Formatter** | Format, minify and validate JSON next to the terminal or in the right sidebar |
 
 Start your own with `npm create oxytocin-plugin` — see the [plugin developer guide](docs/plugins/README.md).
 

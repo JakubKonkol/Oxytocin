@@ -36,6 +36,27 @@ export const PaneviewStateSchema = z.object({
 });
 export type PaneviewState = z.infer<typeof PaneviewStateSchema>;
 
+/**
+ * A tool in the right sidebar: the scratchpad or a plugin panel (`contributes.panels`) moved or added there. The
+ * same panels open in the workspace; tools move between both by drag and drop.
+ */
+export const SidebarToolSchema = z.discriminatedUnion('kind', [
+  z.object({ id: z.string().min(1), kind: z.literal('scratchpad') }),
+  z.object({
+    id: z.string().min(1),
+    kind: z.literal('plugin'),
+    pluginId: z.string(),
+    panelType: z.string(),
+    /** Instance id of the view (keys its `oxy.setState` state in `pluginViewState`). */
+    viewId: z.string(),
+    title: z.string().optional(),
+    params: z.unknown().optional(),
+  }),
+]);
+export type SidebarTool = z.infer<typeof SidebarToolSchema>;
+
+export const DEFAULT_SIDEBAR_TOOLS: SidebarTool[] = [{ id: 'scratchpad', kind: 'scratchpad' }];
+
 /** userData/ui-state.json. */
 export const UiStateSchema = z.object({
   version: z.literal(1),
@@ -45,6 +66,11 @@ export const UiStateSchema = z.object({
   /** Right-hand column (scratchpad and future tools); same width limits as the left sidebar. */
   secondarySidebar: SidebarStateSchema.default({ width: SIDEBAR_DEFAULT_WIDTH, collapsed: false }),
   secondaryPaneview: PaneviewStateSchema.default({ order: [], sizes: {}, collapsed: [], hidden: [] }),
+  /** Tools of the right sidebar, top to bottom (sizes and collapsed state live in `secondaryPaneview`). */
+  secondaryTools: z
+    .array(SidebarToolSchema)
+    .max(50)
+    .default(() => DEFAULT_SIDEBAR_TOOLS.map((t) => ({ ...t }))),
   scratchpad: ScratchpadStateSchema.default({ text: '' }),
   pluginViewState: z.record(z.string(), z.unknown()),
   dismissedHints: z.array(z.string()),
@@ -61,6 +87,7 @@ export function defaultUiState(): UiState {
     paneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
     secondarySidebar: { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false },
     secondaryPaneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
+    secondaryTools: DEFAULT_SIDEBAR_TOOLS.map((t) => ({ ...t })),
     scratchpad: { text: '' },
     pluginViewState: {},
     dismissedHints: [],
@@ -74,6 +101,7 @@ export const UiStatePatchSchema = z.object({
   paneview: PaneviewStateSchema.optional(),
   secondarySidebar: SidebarStateSchema.partial().optional(),
   secondaryPaneview: PaneviewStateSchema.optional(),
+  secondaryTools: z.array(SidebarToolSchema).max(50).optional(),
   scratchpad: ScratchpadStateSchema.optional(),
   pluginViewState: z.record(z.string(), z.unknown()).optional(),
   dismissedHints: z.array(z.string()).optional(),
@@ -90,6 +118,7 @@ export function applyUiStatePatch(state: UiState, patch: UiStatePatch): UiState 
       ? SidebarStateSchema.parse({ ...state.secondarySidebar, ...patch.secondarySidebar })
       : state.secondarySidebar,
     secondaryPaneview: patch.secondaryPaneview ?? state.secondaryPaneview,
+    secondaryTools: patch.secondaryTools ?? state.secondaryTools,
     scratchpad: patch.scratchpad ?? state.scratchpad,
     pluginViewState: patch.pluginViewState
       ? { ...state.pluginViewState, ...patch.pluginViewState }

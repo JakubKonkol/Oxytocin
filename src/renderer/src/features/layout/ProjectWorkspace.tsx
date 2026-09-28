@@ -2,9 +2,11 @@ import { DiffPanelComponent } from '../diff/DiffPanel';
 import { PluginPanelComponent } from '../plugins/plugin-panels';
 import {
   type DockviewApi,
+  type DockviewDidDropEvent,
   DockviewReact,
   type DockviewReadyEvent,
   type DockviewTheme,
+  getPaneData,
   type GetTabContextMenuItemsParams,
 } from 'dockview-react';
 import { useEffect, useRef } from 'react';
@@ -14,7 +16,16 @@ import { MissingPanel } from './MissingPanel';
 import { PluginsPanel } from '../plugins/PluginsPanel';
 import { KeybindingsPanel } from '../keybindings/KeybindingsPanel';
 import { SettingsPanel } from '../settings/SettingsPanel';
+import { ScratchpadPanel } from '../scratchpad/ScratchpadSection';
+import {
+  dropPosition,
+  isMovableComponent,
+  isSidebarToolDrag,
+  moveSidebarToolToWorkspace,
+  moveWorkspacePanelToSidebar,
+} from '../tools/tools';
 import { openDefaultLayout, restoreWorkspace, trackWorkspacePersistence } from './persistence';
+import { shieldIframesWhileDragging } from './drag-shield';
 import { GroupActions } from './GroupActions';
 import { OxyTab } from './OxyTab';
 import { useRenameStore } from './rename-store';
@@ -50,6 +61,7 @@ const components = {
   terminal: withErrorBoundary(TerminalPanelComponent, 'The terminal panel'),
   diff: withErrorBoundary(DiffPanelComponent, 'The diff panel'),
   plugin: withErrorBoundary(PluginPanelComponent, 'The plugin panel'),
+  scratchpad: withErrorBoundary(ScratchpadPanel, 'The scratchpad'),
   missing: MissingPanel,
   plugins: withErrorBoundary(PluginsPanel, 'The Plugins panel'),
   keybindings: withErrorBoundary(KeybindingsPanel, 'Keyboard Shortcuts'),
@@ -60,19 +72,7 @@ const initializing = new Set<string>();
 
 /** Marks drags so plugin iframes stop swallowing pointer events. */
 function trackDragging(api: DockviewApi, container: HTMLElement | null): void {
-  let safety: ReturnType<typeof setTimeout> | undefined;
-  const stop = () => {
-    document.body.classList.remove('oxy-dragging');
-    if (safety) clearTimeout(safety);
-  };
-  const start = () => {
-    document.body.classList.add('oxy-dragging');
-    if (safety) clearTimeout(safety);
-    safety = setTimeout(stop, 5000);
-    for (const type of ['dragend', 'drop', 'mouseup', 'pointerup'] as const) {
-      window.addEventListener(type, stop, { once: true, capture: true });
-    }
-  };
+  const start = () => shieldIframesWhileDragging();
   api.onWillDragPanel(start);
   api.onWillDragGroup(start);
   // Moving/resizing a floating group and dragging a sash use pointer events, not HTML5 drag events.
@@ -123,6 +123,9 @@ function tabContextMenu(projectId: string) {
       floating
         ? { label: 'Dock to layout', action: () => dockPanel(api, panel.id) }
         : { label: 'Move to new floating group', action: () => moveToFloating(api, panel.id) },
+      ...(isMovableComponent(panel.api.component)
+        ? [{ label: 'Move to right sidebar', action: () => void moveWorkspacePanelToSidebar(api, panel.id) }]
+        : []),
     ];
   };
 }
@@ -190,6 +193,10 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
       }
     });
     trackDragging(api, containerRef.current);
+    // Tools dragged out of the right sidebar (section headers) can be dropped into the layout.
+    api.onUnhandledDragOver((e) => {
+      if (isSidebarToolDrag(getPaneData())) e.accept();
+    });
     void initializeWorkspace(projectId, api).then((stop) => {
       if (apiRef.current === api) stopPersistence.current = stop;
       else stop();
@@ -207,6 +214,15 @@ export function ProjectWorkspace({ projectId, active }: { projectId: string; act
           watermarkComponent={EmptyWorkspace}
           rightHeaderActionsComponent={GroupActions}
           getTabContextMenuItems={tabContextMenu(projectId)}
+          onDidDrop={(e: DockviewDidDropEvent) => {
+            const data = getPaneData();
+            if (!isSidebarToolDrag(data)) return;
+            moveSidebarToolToWorkspace(data.paneId, {
+              api: e.api,
+              projectId,
+              position: dropPosition(e.position, e.group),
+            });
+          }}
           singleTabMode="fullwidth"
           defaultRenderer="always"
           onReady={onReady}
