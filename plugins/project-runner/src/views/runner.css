@@ -224,3 +224,14 @@ button.primary {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+
+.notice {
+  flex: none;
+  margin: 0 8px 4px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font-size: 11px;
+  cursor: pointer;
+}

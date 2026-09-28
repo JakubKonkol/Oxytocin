@@ -127,12 +127,19 @@ function ProfileForm(props: { draft: Draft; onSave: (d: Draft) => Promise<void>;
   );
 }
 
-function ProfileRow(props: { p: ProfileState; view: View; onEdit: (p: ProfileState) => void }) {
-  const { p, view } = props;
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error: /, '');
+
+function ProfileRow(props: {
+  p: ProfileState;
+  view: View;
+  onEdit: (p: ProfileState) => void;
+  onError: (message: string) => void;
+}) {
+  const { p, view, onError } = props;
   const { run } = p;
   const active = run.status === 'starting' || run.status === 'running' || run.status === 'stopping';
   const request = (method: string) => () => {
-    void view.request(method, { profileId: p.id }).catch(() => undefined);
+    void view.request(method, { profileId: p.id }).catch((e: unknown) => onError(messageOf(e)));
   };
   const menu = async (e: React.MouseEvent) => {
     const items = [
@@ -142,11 +149,15 @@ function ProfileRow(props: { p: ProfileState; view: View; onEdit: (p: ProfileSta
       { id: 'sep', label: '', separator: true },
       { id: 'delete', label: p.source === 'custom' ? 'Delete' : 'Hide' },
     ];
-    const picked = await view.showContextMenu(items, { x: e.clientX, y: e.clientY });
-    if (picked === 'edit') props.onEdit(p);
-    else if (picked === 'copy') await view.copyToClipboard(p.command);
-    else if (picked === 'reset') await view.request('reset', { profileId: p.id });
-    else if (picked === 'delete') await view.request('delete', { profileId: p.id });
+    try {
+      const picked = await view.showContextMenu(items, { x: e.clientX, y: e.clientY });
+      if (picked === 'edit') props.onEdit(p);
+      else if (picked === 'copy') await view.copyToClipboard(p.command);
+      else if (picked === 'reset') await view.request('reset', { profileId: p.id });
+      else if (picked === 'delete') await view.request('delete', { profileId: p.id });
+    } catch (err) {
+      onError(messageOf(err));
+    }
   };
   return (
     <div
@@ -287,18 +298,37 @@ function App() {
   const [state, setState] = useState<RunnerState | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!view) return;
     const off = view.onMessage((msg) => {
-      if ((msg as RunnerState).type === 'state') setState(msg as RunnerState);
+      if ((msg as RunnerState).type !== 'state') return;
+      setState(msg as RunnerState);
+      setError(null);
     });
-    view
-      .request<RunnerState>('load')
-      .then(setState)
-      .catch((e: unknown) => setError(String(e)));
+    let attempts = 0;
+    // The backend may still be starting (or reloading): try again a few times before showing the error.
+    const load = () =>
+      view
+        .request<RunnerState>('load')
+        .then((s) => {
+          setState(s);
+          setError(null);
+        })
+        .catch((e: unknown) => {
+          if (++attempts < 5) setTimeout(() => void load(), 1000 * attempts);
+          else setError(messageOf(e));
+        });
+    void load();
     return off;
   }, [view]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const save = useCallback(
     async (d: Draft) => {
@@ -313,7 +343,7 @@ function App() {
   );
 
   if (!view || (!state && !error)) return <div className="empty muted">Loading…</div>;
-  if (error || !state) return <div className="empty error">{error}</div>;
+  if (!state) return <div className="empty error">{error}</div>;
   if (!state.project)
     return (
       <div className="empty muted" data-testid="runner-no-project">
@@ -341,10 +371,15 @@ function App() {
         <IconButton
           icon="rescan"
           label="Detect apps again"
-          onClick={() => void view.request('rescan')}
+          onClick={() => void view.request('rescan').catch((e: unknown) => setNotice(messageOf(e)))}
           testId="runner-rescan"
         />
       </div>
+      {notice && (
+        <div className="notice error" data-testid="runner-notice" onClick={() => setNotice(null)}>
+          {notice}
+        </div>
+      )}
       {draft ? (
         <ProfileForm draft={draft} onSave={save} onCancel={() => setDraft(null)} />
       ) : state.profiles.length === 0 ? (
@@ -359,7 +394,7 @@ function App() {
       ) : (
         <div className="list">
           {state.profiles.map((p) => (
-            <ProfileRow key={p.id} p={p} view={view} onEdit={edit} />
+            <ProfileRow key={p.id} p={p} view={view} onEdit={edit} onError={setNotice} />
           ))}
         </div>
       )}
