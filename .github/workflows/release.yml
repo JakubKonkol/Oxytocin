@@ -1,15 +1,23 @@
 name: Release
 
-# Tag v* → the full test suite (full-tests.yml), packages for Windows (NSIS), macOS and Linux with a packaged smoke
-# test on each (package.yml), then a published GitHub Release with the changelog section. Windows is the primary
-# platform: its tests gate its package, and its package gates the release. Linux and macOS are tested and packaged in
-# parallel; their packages are attached when they succeed but never block the release (re-running their failed jobs
-# later re-runs this release job, which adds them). Signed and notarized when the signing secrets exist
-# (docs/RELEASING.md); unsigned otherwise. "Run workflow" on a branch runs everything except the release.
+# Actions → Release → Run workflow with a version (e.g. 0.3.2) makes a release from main: it bumps package.json,
+# renames the [Unreleased] changelog heading to the version, commits "chore(release): X.Y.Z" (skipped when package.json already says
+# X.Y.Z), runs the full test suite (full-tests.yml), packages Windows (NSIS), macOS and Linux with a packaged smoke
+# test on each (package.yml), then tags the commit vX.Y.Z and publishes the GitHub Release with the changelog
+# section. Pushing a vX.Y.Z tag does the same for an already bumped commit; Run workflow without a version is a dry
+# run (no commit, no release). Windows is the primary platform: its tests gate its package, and its package gates the
+# release. Linux and macOS are tested and packaged in parallel; their packages are attached when they succeed but
+# never block the release (re-running their failed jobs later re-runs the release job, which adds them). Signed and
+# notarized when the signing secrets exist (docs/RELEASING.md); unsigned otherwise.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, e.g. 0.3.2 (empty = dry run without a release)
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -19,54 +27,79 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - name: Version, changelog and release commit
+        id: plan
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GIT_AUTHOR_NAME: ${{ github.actor }}
+          GIT_AUTHOR_EMAIL: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
+        run: bash .github/scripts/prepare-release.sh
+
   tests-windows:
+    needs: prepare
     uses: ./.github/workflows/full-tests.yml
     with:
       platforms: windows
+      ref: ${{ needs.prepare.outputs.sha }}
 
   tests-linux-macos:
+    needs: prepare
     uses: ./.github/workflows/full-tests.yml
     with:
       platforms: linux-macos
+      ref: ${{ needs.prepare.outputs.sha }}
 
   package-windows:
-    needs: tests-windows
+    needs: [prepare, tests-windows]
     uses: ./.github/workflows/package.yml
     secrets: inherit
     with:
       platforms: windows
+      ref: ${{ needs.prepare.outputs.sha }}
 
   package-linux-macos:
-    needs: tests-linux-macos
+    needs: [prepare, tests-linux-macos]
     uses: ./.github/workflows/package.yml
     secrets: inherit
     with:
       platforms: linux-macos
+      ref: ${{ needs.prepare.outputs.sha }}
 
   release:
-    needs: [package-windows, package-linux-macos]
-    # Runs when the Windows package exists, whatever happened to Linux and macOS.
+    needs: [prepare, package-windows, package-linux-macos]
+    # Runs when there is a version to release and the Windows package exists, whatever happened to Linux and macOS.
     if: >-
-      !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.package-windows.result == 'success'
+      !cancelled() && needs.prepare.outputs.version != '' && needs.package-windows.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: actions/download-artifact@v5
         with:
           path: dist-packages
           pattern: packages-*
           merge-multiple: true
-      - name: Publish the GitHub Release with the changelog section
+      - name: Tag and publish the GitHub Release with the changelog section
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SHA: ${{ needs.prepare.outputs.sha }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          if [ "$VERSION" != "$PACKAGE_VERSION" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PACKAGE_VERSION"
-            exit 1
-          fi
+          TAG="v$VERSION"
           awk -v v="$VERSION" '$0 ~ "^## \\[?"v"\\]?" {p=1; next} /^## / && p {exit} p' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then
             echo "::warning::CHANGELOG.md has no section for $VERSION"
@@ -78,9 +111,10 @@ jobs:
           case "$VERSION" in *-*) PRERELEASE="--prerelease" ;; esac
           # An existing release (created by hand, or by an earlier run of this workflow) gets the packages added or
           # replaced: re-running the Linux/macOS jobs after a failure completes the release.
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist-packages/* --clobber
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist-packages/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist-packages/* $PRERELEASE --verify-tag \
+            # Creates the tag on the tested commit when it does not exist yet (Run workflow).
+            gh release create "$TAG" dist-packages/* $PRERELEASE --target "$SHA" \
               --title "Oxytocin $VERSION" --notes-file notes.md
           fi

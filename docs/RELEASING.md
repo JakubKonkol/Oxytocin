@@ -1,31 +1,36 @@
 # Releasing Oxytocin
 
-Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed (or manually with *Run workflow*,
-which runs everything except publishing). Per platform it runs the full test suite (`full-tests.yml`: typecheck,
-lint, unit and integration tests, plus E2E on Windows and Linux), packages the app (`package.yml`: Windows NSIS,
-macOS dmg + zip, Linux AppImage + deb), checks the Electron fuses, smoke-tests each packaged app (on Windows after a
-silent install) and finally **publishes** the GitHub Release with the matching `CHANGELOG.md` section.
+**To release: *Actions → Release → Run workflow*, enter the version (e.g. `0.3.2`) and run it on `main`.** The
+workflow (`.github/workflows/release.yml`) then does everything:
+
+1. Bumps `version` in `package.json` and `package-lock.json`, renames the `## [Unreleased]` heading of
+   `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD` and pushes the commit `chore(release): x.y.z` to `main`
+   (`.github/scripts/prepare-release.sh`). It refuses a version that is not newer, an existing tag or an empty
+   `[Unreleased]` section. When `package.json` already has the version (bumped by hand), it releases `main` as it is.
+2. Per platform runs the full test suite (`full-tests.yml`: typecheck, lint, unit and integration tests, plus E2E on
+   Windows and Linux), packages the app (`package.yml`: Windows NSIS, macOS dmg + zip, Linux AppImage + deb), checks
+   the Electron fuses and smoke-tests each packaged app (on Windows after a silent install).
+3. Tags the release commit `vx.y.z` and **publishes** the GitHub Release with the matching `CHANGELOG.md` section.
+
+The tag is only created at the end, so a failed run leaves no tag behind: fix the problem and run the workflow again
+with the same version. *Run workflow* without a version is a dry run (tests and packages, no commit, no release).
+Pushing a `vx.y.z` tag by hand also works for a commit whose `package.json` already has that version.
 
 **Windows is the primary platform.** Its tests gate its package and its package gates the release. Linux and macOS
 are tested and packaged in parallel; their packages are attached when they succeed, but a failure there never blocks
 the release. Re-run their failed jobs from the Actions page later: that re-runs the release job, which adds the
-missing packages to the existing release. The release job also refuses a tag that does not match `version` in
-`package.json`.
+missing packages to the existing release.
 
 Pushes to `main` and pull requests only run the fast checks in `ci.yml` on Windows (typecheck, lint, licenses, unit
 tests). Start *Actions → Full tests → Run workflow* by hand to run the full suite without releasing (all platforms,
 Windows only, or Linux + macOS). E2E tests are retried up to twice on CI; retried tests are reported as flaky.
 
-## Checklist
+## Before releasing
 
-1. Update `CHANGELOG.md` (move `## [Unreleased]` into a `## [x.y.z] - YYYY-MM-DD` section) and `version` in
-   `package.json` (and the root entry of `package-lock.json`).
-2. `npm run licenses:notices` and commit `THIRD_PARTY_NOTICES.md` if it changed.
-3. `npm run check` and `npm run e2e` are green on `main` (optionally run the *Full tests* workflow first, so a failure
-   does not surface only after tagging).
-4. Tag and push: `git tag -a vX.Y.Z -m "Oxytocin X.Y.Z" && git push origin vX.Y.Z`.
-5. The workflow publishes the release, which makes the update visible to installed apps (auto-update). A release
-   created by hand for the same tag beforehand is kept; the workflow adds or replaces its packages.
+- `CHANGELOG.md` has a `## [Unreleased]` section at the top describing the changes.
+- `npm run licenses:notices` and commit `THIRD_PARTY_NOTICES.md` if dependencies changed.
+- Publishing makes the update visible to installed apps (auto-update). A release created by hand for the same tag
+  beforehand is kept; the workflow adds or replaces its packages.
 
 ## Code signing and notarization
 

@@ -7,14 +7,14 @@ a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Moni
 ## Owner's working rules (mandatory in every session)
 1. **Work directly on `main`.**
 2. **Commit only a working state:** `npm run check` green, the relevant E2E tests green, the app builds and starts.
-3. **Record user-visible changes** in the `## [Unreleased]` section of `CHANGELOG.md`, then commit and **push**
-   (`git push origin main`).
+3. **Record user-visible changes** in the `## [Unreleased]` section at the top of `CHANGELOG.md` (add the heading
+   if it is missing; a release renames it to the version), then commit and **push** (`git push origin main`).
 4. **Never wire unfinished features into the visible UI.** Keep unfinished parts unwired or behind the
    `OXYTOCIN_EXPERIMENTAL=1` environment flag.
 5. Commits: Conventional Commits (`feat(terminals): …`, `fix(git): …`), authored as the repository owner
    (`git config user.name "Jakub Konkol"`, `git config user.email "jakub.konkol27@gmail.com"`), **without**
    `Co-Authored-By` trailers or "Generated with Claude Code" footers.
-6. Releases: see `docs/RELEASING.md` (bump `version`, move the changelog section, tag `vX.Y.Z`).
+6. Releases: *Actions → Release → Run workflow* with the version; see `docs/RELEASING.md`.
 
 ## Language and license
 - **Everything in this repository is in English**: UI text, README, CHANGELOG, code comments, identifiers, log and error messages, test names, commit messages, docs. No i18n framework.

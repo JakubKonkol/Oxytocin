@@ -10,6 +10,10 @@ on:
         description: windows or linux-macos
         type: string
         required: true
+      ref:
+        description: Commit to package (default the triggering one)
+        type: string
+        default: ''
 
 jobs:
   package:
@@ -32,6 +36,8 @@ jobs:
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc

@@ -3,15 +3,13 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
-## [Unreleased]
-
 ## [0.3.1] - 2026-09-27
 
 ### Changed
 
-- **Releases are built and published by GitHub Actions.** Pushing a version tag runs the full test suite and
-  publishes the release with the Windows installer; the Linux and macOS packages are added when their builds
-  succeed. Pushes to `main` only run the fast checks on Windows.
+- **Releases are built and published by GitHub Actions.** *Run workflow* on the Release workflow with a version
+  bumps it, runs the full test suite and publishes the release with the Windows installer; the Linux and macOS
+  packages are added when their builds succeed. Pushes to `main` only run the fast checks on Windows.
 
 ### Fixed
 
