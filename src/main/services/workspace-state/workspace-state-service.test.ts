@@ -93,6 +93,28 @@ describe('WorkspaceStateService.persistScrollback', () => {
   });
 });
 
+describe('WorkspaceStateService: saves during the quit', () => {
+  it('keeps the recorded scrollback files when the renderer saves the layout again afterwards', async () => {
+    const svc = new WorkspaceStateService(dir, logger);
+    const panels: WorkspaceState['panels'] = {
+      'term-a1': { kind: 'terminal', terminalId: 't-1', profileId: 'pwsh', cwd: 'C:\\w', userTitle: 'Logs' },
+      'term-b2': { kind: 'terminal', terminalId: 't-2', profileId: 'pwsh', cwd: 'C:\\w' },
+    };
+    await svc.save(state({ panels }));
+    await svc.persistScrollback((id) => Promise.resolve(id === 't-1' ? 'remember-this\r\n' : null));
+    // A debounced save from the renderer lands after the snapshots (e.g. a shell exiting while hosts stop).
+    await svc.save(state({ panels, savedAt: 99, activePanelId: 'term-b2' }));
+    const saved = JSON.parse(await readFile(join(dir, 'p1.json'), 'utf8')) as WorkspaceState;
+    expect(saved).toMatchObject({ savedAt: 99, activePanelId: 'term-b2' });
+    expect(saved.panels['term-a1']).toEqual({ ...panels['term-a1'], scrollbackFile: 'p1/scrollback/term-a1.vt' });
+    expect(saved.panels['term-b2']).not.toHaveProperty('scrollbackFile');
+    // A panel that now shows another terminal does not inherit the old snapshot.
+    await svc.save(state({ panels: { 'term-a1': { ...panels['term-a1']!, terminalId: 't-9' } as never } }));
+    const replaced = JSON.parse(await readFile(join(dir, 'p1.json'), 'utf8')) as WorkspaceState;
+    expect(replaced.panels['term-a1']).not.toHaveProperty('scrollbackFile');
+  });
+});
+
 describe('restoredScrollbackData', () => {
   it('appends a mode reset and a dimmed separator', () => {
     const data = restoredScrollbackData('old', new Date(2026, 8, 26, 18, 42));

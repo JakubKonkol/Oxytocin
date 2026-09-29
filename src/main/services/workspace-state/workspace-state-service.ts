@@ -24,6 +24,12 @@ function assertSafeId(id: string, what: string): void {
  */
 export class WorkspaceStateService {
   private readonly latest = new Map<string, WorkspaceState>();
+  /**
+   * Scrollback files recorded at quit, per project: panel id → the terminal snapshotted and its file. The renderer
+   * keeps saving layouts while the app shuts down (shells exiting, titles changing) and does not know about these
+   * files, so every later save of the same terminal gets them merged back in.
+   */
+  private readonly scrollbackFiles = new Map<string, Map<string, { terminalId: string; file: string }>>();
   private readonly queues = new Map<string, Promise<void>>();
 
   constructor(
@@ -64,7 +70,8 @@ export class WorkspaceStateService {
   }
 
   /** Atomic, serialized per project. */
-  save(state: WorkspaceState): Promise<void> {
+  save(incoming: WorkspaceState): Promise<void> {
+    const state = this.withScrollbackFiles(incoming);
     this.latest.set(state.projectId, state);
     const path = this.statePath(state.projectId);
     const previous = this.queues.get(state.projectId) ?? Promise.resolve();
@@ -73,6 +80,20 @@ export class WorkspaceStateService {
       .catch((e: unknown) => this.logger.error(`Failed to save workspace ${state.projectId}`, e));
     this.queues.set(state.projectId, next);
     return next;
+  }
+
+  private withScrollbackFiles(state: WorkspaceState): WorkspaceState {
+    const files = this.scrollbackFiles.get(state.projectId);
+    if (!files) return state;
+    let panels: WorkspaceState['panels'] | undefined;
+    for (const [panelId, { terminalId, file }] of files) {
+      const descriptor = state.panels[panelId];
+      if (descriptor?.kind !== 'terminal' || descriptor.terminalId !== terminalId || descriptor.scrollbackFile)
+        continue;
+      panels ??= { ...state.panels };
+      panels[panelId] = { ...descriptor, scrollbackFile: file };
+    }
+    return panels ? { ...state, panels } : state;
   }
 
   async flush(): Promise<void> {
@@ -132,12 +153,19 @@ export class WorkspaceStateService {
           continue;
         }
         const path = this.scrollbackPath(state.projectId, panelId);
+        const file = `${state.projectId}/scrollback/${panelId}.vt`;
+        if (descriptor.terminalId) {
+          const files =
+            this.scrollbackFiles.get(state.projectId) ?? new Map<string, { terminalId: string; file: string }>();
+          files.set(panelId, { terminalId: descriptor.terminalId, file });
+          this.scrollbackFiles.set(state.projectId, files);
+        }
         writes.push(
           writeFileAtomic(path, data).catch((e: unknown) =>
             this.logger.warn(`Failed to persist the scrollback of ${panelId}`, e),
           ),
         );
-        panels[panelId] = { ...descriptor, scrollbackFile: `${state.projectId}/scrollback/${panelId}.vt` };
+        panels[panelId] = { ...descriptor, scrollbackFile: file };
         changed = true;
       }
       if (changed) writes.push(this.save({ ...state, panels, savedAt: Date.now() }));
