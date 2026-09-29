@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
+import { readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   PANEL_ID_PATTERN,
@@ -98,28 +98,51 @@ export class WorkspaceStateService {
   /**
    * At quit: snapshots every live terminal of every saved workspace (`serialize` returns null for dead ones),
    * stores them next to the state and records the file in the panel descriptor.
+   *
+   * The quit sequence gives this a time limit, and a slow disk (antivirus scanning each new file on Windows) can
+   * use it up. So every snapshot is taken first (in memory), then the files and the states pointing at them are
+   * written at the same time: a quit cut short does not leave snapshots behind that no layout refers to.
    */
   async persistScrollback(serialize: (terminalId: string) => Promise<string | null>): Promise<void> {
-    for (const state of this.states()) {
-      let changed = false;
+    const snapshots = await Promise.all(
+      this.states().map(async (state) => {
+        const terminals: { panelId: string; terminalId: string }[] = [];
+        for (const [panelId, d] of Object.entries(state.panels))
+          if (d.kind === 'terminal' && d.terminalId && PANEL_ID_PATTERN.test(panelId))
+            terminals.push({ panelId, terminalId: d.terminalId });
+        const taken = await Promise.all(
+          terminals.map(async ({ panelId, terminalId }) => ({
+            panelId,
+            data: await serialize(terminalId).catch(() => null),
+          })),
+        );
+        return { state, snapshots: taken };
+      }),
+    );
+    const writes: Promise<void>[] = [];
+    for (const { state, snapshots: taken } of snapshots) {
       const panels = { ...state.panels };
-      for (const [panelId, descriptor] of Object.entries(panels)) {
-        if (descriptor.kind !== 'terminal' || !descriptor.terminalId || !PANEL_ID_PATTERN.test(panelId)) continue;
-        const data = await serialize(descriptor.terminalId).catch(() => null);
-        const path = this.scrollbackPath(state.projectId, panelId);
-        if (data === null) continue;
+      let changed = false;
+      for (const { panelId, data } of taken) {
+        const descriptor = panels[panelId];
+        if (data === null || descriptor?.kind !== 'terminal') continue;
         const bytes = Buffer.byteLength(data);
         if (bytes > MAX_SCROLLBACK_BYTES) {
           this.logger.info(`Scrollback of ${panelId} is ${bytes} bytes; not persisted`);
           continue;
         }
-        await mkdir(join(path, '..'), { recursive: true });
-        await writeFileAtomic(path, data);
+        const path = this.scrollbackPath(state.projectId, panelId);
+        writes.push(
+          writeFileAtomic(path, data).catch((e: unknown) =>
+            this.logger.warn(`Failed to persist the scrollback of ${panelId}`, e),
+          ),
+        );
         panels[panelId] = { ...descriptor, scrollbackFile: `${state.projectId}/scrollback/${panelId}.vt` };
         changed = true;
       }
-      if (changed) await this.save({ ...state, panels, savedAt: Date.now() });
+      if (changed) writes.push(this.save({ ...state, panels, savedAt: Date.now() }));
     }
+    await Promise.all(writes);
     await this.flush();
   }
 

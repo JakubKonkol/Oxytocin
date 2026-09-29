@@ -919,7 +919,8 @@ function bootstrap(): void {
               });
               return snap.data;
             }),
-            3000,
+            // Only reached on a slow disk (antivirus scanning the new files); the snapshots are taken first.
+            6000,
           ).catch((e: unknown) => log.warn('Failed to persist scrollback', e));
         }
         await Promise.all([uiState.flush(), projects.flush(), hosts.stopAll()]);

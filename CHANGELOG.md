@@ -12,6 +12,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   is now named without spaces, and the release workflow checks that every file the update manifests list exists.
   Installed versions pick up 0.5.2 normally.
 - The README release badge no longer shows "no releases or repo not found".
+- **Scrollback after a restart** is no longer lost on a slow disk (e.g. antivirus scanning new files on Windows):
+  every terminal is snapshotted first and the snapshots are written together with the layout that points at them,
+  so a quit that runs out of time no longer leaves them unused.
 
 ### Changed
 
