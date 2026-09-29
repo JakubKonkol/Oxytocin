@@ -66,6 +66,9 @@ win:
   target: [nsis]
   icon: resources/build/icon.ico
 nsis:
+  # No spaces: GitHub turns them into dots when the file is uploaded, and latest.yml (which spells them as dashes)
+  # would point the updater at a file that does not exist.
+  artifactName: ${productName}-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

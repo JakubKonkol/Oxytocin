@@ -51,7 +51,13 @@ export async function createElectronUpdaterBackend(logger: Logger): Promise<Upda
       return result?.isUpdateAvailable ? { version: result.updateInfo.version } : null;
     },
     async download(onProgress) {
-      const progress = (p: { percent: number }) => onProgress(p.percent);
+      const progress = (p: { percent: number; transferred: number; total: number; bytesPerSecond: number }) =>
+        onProgress({
+          percent: p.percent,
+          transferred: p.transferred,
+          total: p.total,
+          bytesPerSecond: p.bytesPerSecond,
+        });
       let downloaded!: () => void;
       const done = new Promise<void>((resolve) => (downloaded = resolve));
       autoUpdater.on('download-progress', progress);

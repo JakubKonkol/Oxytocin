@@ -4,12 +4,20 @@ import type { Logger } from '@shared/logging/logger';
 import type { Disposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 
+export interface DownloadProgress {
+  /** 0–100. */
+  percent: number;
+  transferred?: number;
+  total?: number;
+  bytesPerSecond?: number;
+}
+
 /** The update mechanism (electron-updater in packaged builds, a scripted fake in E2E). */
 export interface UpdaterBackend {
   setChannel(channel: UpdateChannel): void;
   /** The newer version, or null when the app is up to date. */
   check(): Promise<{ version: string } | null>;
-  download(onProgress: (percent: number) => void): Promise<void>;
+  download(onProgress: (progress: DownloadProgress) => void): Promise<void>;
   /**
    * Starts installing the downloaded update while the app quits; `restart` launches the new version afterwards.
    * Returns true when the backend quits the app itself.
@@ -32,6 +40,18 @@ export interface UpdateServiceOptions {
 
 export const FIRST_CHECK_DELAY_MS = 15_000;
 export const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Progress events are forwarded at most this often (the percentage changing also forwards one). */
+const PROGRESS_INTERVAL_MS = 500;
+const MAX_ERROR_LENGTH = 300;
+
+/**
+ * A short, readable error: electron-updater's HTTP errors append the response headers and body on further lines.
+ */
+export function updateErrorMessage(e: unknown): string {
+  const text = (e instanceof Error ? e.message : String(e)).trim();
+  const first = text.split(/\r?\n/, 1)[0]!.trim() || 'Unknown error';
+  return first.length > MAX_ERROR_LENGTH ? `${first.slice(0, MAX_ERROR_LENGTH - 1)}…` : first;
+}
 
 /**
  * Auto-update: checks at start and every 6 hours, downloads in the
@@ -113,9 +133,8 @@ export class UpdateService implements Disposable {
       backend.setChannel(this.options.settings()['updates.channel']);
       found = await backend.check();
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      this.options.logger.warn('Update check failed', error);
-      this.set({ status: 'error', error, lastCheck: now() });
+      this.options.logger.warn('Update check failed', e instanceof Error ? e.message : String(e));
+      this.set({ status: 'error', error: updateErrorMessage(e), lastCheck: now() });
       return this.state;
     }
     if (!found) {
@@ -130,20 +149,36 @@ export class UpdateService implements Disposable {
   }
 
   private async download(backend: UpdaterBackend, version: string): Promise<void> {
-    let last = 0;
+    const now = this.options.now ?? Date.now;
+    let lastPercent = 0;
+    let lastAt = 0;
     try {
-      await backend.download((percent) => {
-        const rounded = Math.max(0, Math.min(100, Math.floor(percent)));
-        if (rounded === last || this.state.status !== 'downloading') return;
-        last = rounded;
-        this.set({ status: 'downloading', version, percent: rounded });
+      await backend.download((progress) => {
+        if (this.state.status !== 'downloading') return;
+        const percent = Math.max(0, Math.min(100, Math.floor(progress.percent)));
+        const at = now();
+        if (percent === lastPercent && at - lastAt < PROGRESS_INTERVAL_MS) return;
+        lastPercent = percent;
+        lastAt = at;
+        const bytes = (n: number | undefined) => (n !== undefined && Number.isFinite(n) && n >= 0 ? n : undefined);
+        const transferred = bytes(progress.transferred);
+        const total = bytes(progress.total);
+        const bytesPerSecond = bytes(progress.bytesPerSecond);
+        this.set({
+          status: 'downloading',
+          version,
+          percent,
+          ...(transferred !== undefined ? { transferred } : {}),
+          ...(total !== undefined ? { total } : {}),
+          ...(bytesPerSecond !== undefined ? { bytesPerSecond } : {}),
+        });
       });
       this.options.logger.info(`Update ${version} is ready to install`);
       this.set({ status: 'ready', version });
     } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      this.options.logger.warn(`Downloading update ${version} failed`, error);
-      this.set({ status: 'error', error });
+      this.options.logger.warn(`Downloading update ${version} failed`, e instanceof Error ? e.message : String(e));
+      // The version stays: the status bar offers to retry the download.
+      this.set({ status: 'error', version, error: updateErrorMessage(e) });
     }
   }
 

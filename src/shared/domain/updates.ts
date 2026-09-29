@@ -17,6 +17,11 @@ export const UpdateStateSchema = z.object({
   version: z.string().optional(),
   /** Download progress, 0–100. */
   percent: z.number().min(0).max(100).optional(),
+  /** Bytes downloaded so far and in total, and the current speed (bytes per second), when the updater reports them. */
+  transferred: z.number().nonnegative().optional(),
+  total: z.number().nonnegative().optional(),
+  bytesPerSecond: z.number().nonnegative().optional(),
+  /** Why the last check or download failed. With `version` set, the download of that version failed. */
   error: z.string().optional(),
   /** Epoch ms of the last finished check. */
   lastCheck: z.number().optional(),

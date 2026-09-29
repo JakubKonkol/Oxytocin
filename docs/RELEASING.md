@@ -3,13 +3,14 @@
 **To release: *Actions → Release → Run workflow*, enter the version (e.g. `0.3.2`) and run it on `main`.** The
 workflow (`.github/workflows/release.yml`) then does everything:
 
-1. Bumps `version` in `package.json` and `package-lock.json`, renames the `## [Unreleased]` heading of
+1. Bumps `version` in `package.json` and `package-lock.json` (and the README release badge), renames the `## [Unreleased]` heading of
    `CHANGELOG.md` to `## [x.y.z] - YYYY-MM-DD` and pushes the commit `chore(release): x.y.z` to `main`
    (`.github/scripts/prepare-release.sh`). It refuses a version that is not newer, an existing tag or an empty
    `[Unreleased]` section. When `package.json` already has the version (bumped by hand), it releases `main` as it is.
 2. Per platform runs the full test suite (`full-tests.yml`: typecheck, lint, unit and integration tests, plus E2E on
    Windows and Linux), packages the app (`package.yml`: Windows NSIS, macOS dmg + zip, Linux AppImage + deb), checks
-   the Electron fuses and smoke-tests each packaged app (on Windows after a silent install).
+   that the update manifests point at the packages (`scripts/verify-update-manifests.ts`), checks the Electron fuses
+   and smoke-tests each packaged app (on Windows after a silent install).
 3. Tags the release commit `vx.y.z` and **publishes** the GitHub Release with the matching `CHANGELOG.md` section.
 
 The tag is only created at the end, so a failed run leaves no tag behind: fix the problem and run the workflow again
@@ -82,12 +83,15 @@ Electron launcher, and `OXYTOCIN_INSPECT_HOSTS=1` only works in development buil
 Installed apps update from GitHub Releases through `electron-updater` (`publish` in `electron-builder.yml`). The
 workflow uploads `latest.yml` / `latest-mac.yml` / `latest-linux.yml` and the `.blockmap` files next to the packages;
 **keep them in the release**, they are what the apps read. Installed apps see a release as soon as it is published.
+Package names must not contain spaces: GitHub turns them into dots on upload while `latest.yml` keeps dashes, so the
+apps would download a file that does not exist (the 0.5.1 Windows installer). The packaging job fails on that.
 
 - **Channels:** the `updates.channel` setting is `latest` (stable releases) or `beta` (also GitHub pre-releases). A
   version with a pre-release suffix (`0.3.0-beta.1`) is published as a pre-release and only offered on `beta`.
 - **Behaviour:** a check 15 s after start and every 6 hours (`updates.checkAutomatically`), download in the
-  background, install when the user quits or clicks *Restart to update* (after the same running-process confirmation
-  as quitting). Oxytocin never restarts by itself.
+  background, install when the user quits or clicks *Install now* (after the same running-process confirmation as
+  quitting). Clicking the status bar entry during a download shows its progress; once downloaded it offers *Install
+  now* or *On restart*, and a failed download offers *Retry*. Oxytocin never restarts by itself.
 - **Platforms:** Windows (NSIS) and macOS (zip; signed builds only, Squirrel.Mac requires a signature) update
   themselves; on Linux only the AppImage does — `deb` installs are updated through the package manager.
 - **Checking a release:** install the previous version, let the workflow publish the new release and use *Check for

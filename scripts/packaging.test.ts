@@ -72,3 +72,15 @@ describe('packaging', () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe('README', () => {
+  it('shows the current version in its release badge (bumped by .github/scripts/prepare-release.sh)', () => {
+    const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string };
+    const badge = /img\.shields\.io\/badge\/release-v(\d+\.\d+\.\d+)-/.exec(
+      readFileSync(join(root, 'README.md'), 'utf8'),
+    );
+    expect(badge).not.toBeNull();
+    // Pre-releases are not "latest": the badge keeps the last stable version.
+    if (!version.includes('-')) expect(badge![1]).toBe(version);
+  });
+});

@@ -24,6 +24,8 @@ export type ToastKind = 'info' | 'success' | 'warning' | 'error';
 export interface NotifyOptions {
   description?: string;
   action?: { label: string; onClick: () => void };
+  /** A second, quieter button that also closes the toast. */
+  cancel?: { label: string; onClick: () => void };
   id?: string;
   /** Milliseconds; warnings and errors stay longer by default. */
   duration?: number;

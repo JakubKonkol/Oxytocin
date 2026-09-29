@@ -67,6 +67,9 @@ jobs:
           fi
           npx tsx scripts/signing-args.ts ${{ matrix.platform }}
       - run: npx electron-builder ${{ matrix.target }} ${{ steps.signing.outputs.args }} --publish never
+      # latest*.yml must name the packages exactly as they are uploaded, or installed apps cannot download them.
+      - name: Verify update manifests
+        run: npx tsx scripts/verify-update-manifests.ts release
       - name: Verify Electron fuses
         shell: bash
         run: |

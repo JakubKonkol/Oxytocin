@@ -6,7 +6,8 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Scripted update backend for E2E runs (OXYTOCIN_E2E=1 only). Tests set `globalThis.__oxyFakeUpdate` in main to
- * `{ version }` (an update), `{ error }` (a failing check) or null (up to date); installing writes
+ * `{ version }` (an update), `{ version, downloadError }` (an update whose download fails), `{ error }` (a failing
+ * check) or null (up to date); `__oxyFakeUpdateStepMs` slows the download down. Installing writes
  * `e2e-update-installed.json` into userData because the app exits right after.
  */
 export function createE2eUpdateBackend(userDataDir: string): UpdaterBackend {
@@ -22,9 +23,13 @@ export function createE2eUpdateBackend(userDataDir: string): UpdaterBackend {
       return next?.version ? { version: next.version } : null;
     },
     async download(onProgress) {
+      const next = g['__oxyFakeUpdate'] as { downloadError?: string } | null | undefined;
+      const step = (g['__oxyFakeUpdateStepMs'] as number | undefined) ?? 150;
+      const total = 120 * 1024 * 1024;
       for (const percent of [5, 30, 65, 100]) {
-        await delay(150);
-        onProgress(percent);
+        await delay(step);
+        if (next?.downloadError && percent > 30) throw new Error(next.downloadError);
+        onProgress({ percent, transferred: (total * percent) / 100, total, bytesPerSecond: 8 * 1024 * 1024 });
       }
     },
     install(restart) {

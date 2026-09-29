@@ -4,8 +4,8 @@
 #
 # - Tag push (refs/tags/vX.Y.Z): releases that commit; package.json must already say X.Y.Z.
 # - Run workflow with a version on the default branch: if package.json is older, bumps it (package.json,
-#   package-lock.json), renames the `## [Unreleased]` changelog heading to `## [X.Y.Z] - <date>`, commits
-#   "chore(release): X.Y.Z" and pushes it. If package.json already says X.Y.Z (bumped by hand), releases HEAD.
+#   package-lock.json) and the README release badge (stable versions), renames the `## [Unreleased]` changelog
+#   heading to `## [X.Y.Z] - <date>`, commits "chore(release): X.Y.Z" and pushes it. If package.json already says X.Y.Z (bumped by hand), releases HEAD.
 #   The tag is created with the release at the end, so a failed run leaves no tag behind and can simply be
 #   started again with the same version.
 # - Run workflow without a version: dry run of the current commit.
@@ -82,6 +82,12 @@ else
     bump("package.json", 1);
     bump("package-lock.json", 2); // the lockfile header and its root package
   '
+  # The README badge is static (a dynamic one depends on shields.io reaching the GitHub API, and showed "repo not
+  # found" at times). Pre-releases are not the latest release, so they leave it alone.
+  if [[ "$VERSION" != *-* ]]; then
+    sed -i -E "s#(img\.shields\.io/badge/release-v)[0-9]+\.[0-9]+\.[0-9]+-#\1$VERSION-#" README.md
+    grep -q "img.shields.io/badge/release-v$VERSION-" README.md || echo "::warning::README.md has no release badge to update"
+  fi
   DATE=$(date -u +%F)
   # The [Unreleased] heading becomes the release heading; the next change adds a new one.
   awk -v v="$VERSION" -v d="$DATE" '
@@ -91,7 +97,7 @@ else
   mv CHANGELOG.md.new CHANGELOG.md
   git config user.name "$GIT_AUTHOR_NAME"
   git config user.email "$GIT_AUTHOR_EMAIL"
-  git add package.json package-lock.json CHANGELOG.md
+  git add package.json package-lock.json CHANGELOG.md README.md
   git commit -q -m "chore(release): $VERSION"
   git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
   echo "Committed and pushed chore(release): $VERSION ($(git rev-parse --short HEAD))."

@@ -3,6 +3,23 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Fixed
+
+- **Auto-update on Windows:** updates failed to download ("Cannot download … 0.5.1") because the installer was
+  uploaded as `Oxytocin.Setup.x.y.z.exe` while the update manifest pointed at `Oxytocin-Setup-x.y.z.exe`. The installer
+  is now named without spaces, and the release workflow checks that every file the update manifests list exists.
+  Installed versions pick up 0.5.2 normally.
+- The README release badge no longer shows "no releases or repo not found".
+
+### Changed
+
+- **Update progress:** clicking the status bar entry while an update downloads opens a popover with a progress bar,
+  the downloaded size and the speed. When the download finishes it offers **Install now** (restarts Oxytocin) or
+  **On restart** (installs the next time you quit). A failed download shows *Update failed* in the status bar and
+  the error with a **Retry** button in the popover.
+
 ## [0.5.1] - 2026-09-28
 
 ### Fixed
