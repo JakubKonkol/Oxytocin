@@ -26,6 +26,11 @@ function setup() {
     return Promise.resolve(snapshot);
   });
   const logs = vi.fn(() => ['VITE ready', 'Local: http://localhost:5173/']);
+  const answer = vi.fn(() => {
+    const { prompt: _answered, ...rest } = snapshot;
+    snapshot = rest;
+    return Promise.resolve(snapshot);
+  });
   const addProfile = vi.fn((_p: unknown, input: { name?: unknown }) =>
     Promise.resolve({ ...web, id: 'custom-1', name: String(input.name), source: 'custom' as const }),
   );
@@ -47,10 +52,12 @@ function setup() {
     waitFor,
     logs,
     addProfile,
+    answer,
   };
+  const setSnapshot = (next: Partial<RunSnapshot>) => (snapshot = { ...snapshot, ...next });
   const tools = buildTools(port);
   const call = (name: string, args: Record<string, unknown>) => tools.find((t) => t.name === name)!.handler(args);
-  return { call, tools, start, waitFor, logs, addProfile };
+  return { call, tools, start, waitFor, logs, addProfile, answer, setSnapshot };
 }
 
 describe('MCP tools', () => {
@@ -62,6 +69,7 @@ describe('MCP tools', () => {
       'restart_run_profile',
       'stop_run_profile',
       'get_run_logs',
+      'answer_run_prompt',
       'add_run_profile',
     ]);
     for (const t of tools) expect(t.inputSchema).toMatchObject({ type: 'object' });
@@ -96,6 +104,22 @@ describe('MCP tools', () => {
     expect(out).toContain('"status": "running"');
     expect(out).toContain('"url": "http://localhost:5173/"');
     expect(out).toContain('Local: http://localhost:5173/');
+  });
+
+  it('reports a question the app waits on and answers it', async () => {
+    const s = setup();
+    await expect(s.call('answer_run_prompt', { profile: 'web', answer: 'y' })).rejects.toThrow(/not waiting/);
+    s.setSnapshot({ status: 'starting', prompt: { id: 1, text: 'Use a different port? (Y/n)', yesNo: true } });
+    const waiting = s.setSnapshot({});
+    s.waitFor.mockImplementationOnce(() => Promise.resolve(waiting));
+    const listed = await s.call('list_run_profiles', {});
+    expect(listed).toContain('"waitingForInput": "Use a different port? (Y/n)"');
+    const started = await s.call('start_run_profile', { profile: 'web' });
+    expect(started).toContain('waiting for an answer in its terminal');
+    const answered = await s.call('answer_run_prompt', { profile: 'web', answer: 'y' });
+    expect(s.answer).toHaveBeenCalledWith(project, web.id, 'y');
+    expect(answered).toContain('"status": "running"');
+    await expect(s.call('answer_run_prompt', { profile: 'web' })).rejects.toThrow(/Pass `answer`/);
   });
 
   it('stops, returns logs and adds profiles', async () => {

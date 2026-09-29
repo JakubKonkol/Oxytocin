@@ -109,3 +109,34 @@
     left: 100%;
   }
 }
+
+/* Dialogs: the backdrop fades in, the dialog rises and scales in slightly. */
+@keyframes oxy-overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes oxy-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 6px)) scale(0.97);
+  }
+}
+.oxy-dialog-overlay {
+  animation: oxy-overlay-in var(--motion-normal) ease-out;
+}
+.oxy-dialog {
+  animation: oxy-dialog-in var(--motion-normal) cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .oxy-dialog,
+  .oxy-dialog-overlay {
+    animation: none;
+  }
+}
+:root[data-reduce-motion='true'] .oxy-dialog,
+:root[data-reduce-motion='true'] .oxy-dialog-overlay,
+:root[data-e2e='true'] .oxy-dialog,
+:root[data-e2e='true'] .oxy-dialog-overlay {
+  animation: none;
+}

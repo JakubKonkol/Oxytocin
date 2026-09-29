@@ -1,8 +1,14 @@
 import { create } from 'zustand';
+import type { ConfirmTone } from '../ui/ConfirmDialog';
+import { ipc } from '../lib/ipc-client';
 
 export interface ConfirmOptions {
   title: string;
   description?: string;
+  /** Items the confirmation is about (e.g. running processes), shown as a list. */
+  details?: readonly string[];
+  /** Icon and colour (default: `danger` when destructive, else `info`). */
+  tone?: ConfirmTone;
   confirmLabel?: string;
   cancelLabel?: string;
   destructive?: boolean;
@@ -46,4 +52,13 @@ export function confirmDialogEx(options: ConfirmOptions): Promise<ConfirmResult>
 /** Shows a confirmation dialog; resolves true on confirm. */
 export async function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   return (await confirmDialogEx(options)).confirmed;
+}
+
+/** Confirmations the main process asks (`ui:confirm`, e.g. quitting with running processes) use the same dialog. */
+export function registerMainConfirmRequests(): void {
+  ipc.on('ui:confirm', ({ requestId, ...options }) => {
+    void confirmDialogEx(options).then(({ confirmed, checked }) =>
+      ipc.invoke('ui:confirmResult', { requestId, confirmed, checked }),
+    );
+  });
 }

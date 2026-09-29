@@ -32,6 +32,10 @@ The project folder (3 levels deep by default, `projectRunner.scanDepth`) is sear
   Django, Uvicorn, …), a TCP port of the app's processes is listening or the command keeps running for a few seconds;
   *stopped* / *failed (exit N)* when the command ends (shell integration reports the exit code; without it the
   terminal's foreground process is followed). The URL opens in the browser.
+- **Questions:** an app that asks something while it starts (Angular's "Port 4200 is already in use. Would you like to
+  use a different port? (Y/n)", `[y/N]` prompts, "Enter …:") shows *waiting for input* with the question in the Run
+  tool — **Yes**/**No** or a text answer, and **Open terminal** — and in the status bar, plus a notification with the
+  same buttons. The answer is typed into the app's terminal.
 - **Stop** sends Ctrl+C (answering cmd.exe's "Terminate batch job" prompt), a second Ctrl+C after 3 s and kills the
   process tree after 8 s.
 - **Commands:** *Run: Start an App…* (quick pick), *Run: Stop All Apps*, *Run: Show Run Panel*, *Run: Connect Claude
@@ -52,9 +56,10 @@ With `projectRunner.mcp.enabled` (on by default) the plugin serves the Model Con
 | Tool | Does |
 |---|---|
 | `list_run_profiles` | The project's profiles with status, URL and ports |
-| `start_run_profile` / `restart_run_profile` | Starts (restarts) a profile and waits until it serves a URL, exits or `wait_seconds` pass; returns the recent output |
+| `start_run_profile` / `restart_run_profile` | Starts (restarts) a profile and waits until it serves a URL, exits, asks a question or `wait_seconds` pass; returns the recent output |
 | `stop_run_profile` | Stops a profile |
 | `get_run_logs` | The last lines of a profile's output |
+| `answer_run_prompt` | Types an answer (e.g. `y`) for a profile waiting for input (`waitingForInput` in its status) |
 | `add_run_profile` | Saves a new profile for the project |
 
 Every tool takes `cwd` (the agent's working directory selects the project) or `project`. Apps started by an agent are

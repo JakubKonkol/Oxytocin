@@ -48,6 +48,9 @@ describe('quit guard', () => {
     );
     expect(prompt.detail).toContain('• Claude Code in ‘api’ — Fix tests');
     expect(prompt.detail).toContain('• npm run dev in ‘web’ — bash');
+    expect(prompt.title).toBe('Quit Oxytocin?');
+    expect(prompt.description).toBe('2 terminals still run processes. Quitting stops them.');
+    expect(prompt.items).toEqual(['Claude Code in ‘api’ — Fix tests', 'npm run dev in ‘web’ — bash']);
   });
 
   it('shortens long command lines and caps the list', () => {

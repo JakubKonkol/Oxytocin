@@ -1,8 +1,8 @@
 import type { Disposable, TerminalMeta, TerminalsApi } from '@oxytocin/plugin-api';
-import { findListeningPort, findLocalUrls, LogBuffer, stripAnsi, TERMINATE_BATCH_PROMPT } from './output';
-import type { RunProfile, RunSnapshot, RunStatus, StartedBy } from '../shared/types';
+import { detectPrompt, findListeningPort, findLocalUrls, LogBuffer, stripAnsi, TERMINATE_BATCH_PROMPT } from './output';
+import type { RunProfile, RunPrompt, RunSnapshot, RunStatus, StartedBy } from '../shared/types';
 
-export type { RunSnapshot, RunStatus, StartedBy };
+export type { RunPrompt, RunSnapshot, RunStatus, StartedBy };
 
 /** A run's terminal as the plugin remembers it. */
 export interface TerminalLink {
@@ -34,6 +34,10 @@ interface Run {
   stopRequested: boolean;
   timers: ReturnType<typeof setTimeout>[];
   portPoll?: ReturnType<typeof setTimeout>;
+  /** A question the app waits on (it would otherwise look like it hangs while starting). */
+  prompt?: RunPrompt;
+  /** Checks for a question once the output has been quiet for a moment. */
+  promptCheck?: ReturnType<typeof setTimeout>;
 }
 
 export interface RunnerDeps {
@@ -46,6 +50,8 @@ export interface RunnerDeps {
   stopDelays?: { interrupt: number; kill: number };
   /** Without a URL, a command that keeps running this long counts as running (ms). */
   settleMs?: number;
+  /** How long the output must be quiet before its unfinished last line counts as a question (ms). */
+  promptQuietMs?: number;
   log?: (message: string, error?: unknown) => void;
 }
 
@@ -55,6 +61,7 @@ const INTERRUPTED = new Set([130, 143, -1073741510, 3221225786]);
 
 const keyOf = (projectId: string, profileId: string) => `${projectId}\u0000${profileId}`;
 const PORT_POLL_FAST_MS = 2000;
+const PROMPT_QUIET_MS = 600;
 const PORT_POLL_SLOW_MS = 10_000;
 const FAST_POLL_WINDOW_MS = 60_000;
 
@@ -85,6 +92,7 @@ export class RunManager implements Disposable {
   private readonly runs = new Map<string, Run>();
   private readonly listeners = new Set<(projectId: string) => void>();
   private readonly now: () => number;
+  private nextPromptId = 1;
 
   constructor(private readonly deps: RunnerDeps) {
     this.now = deps.now ?? Date.now;
@@ -137,6 +145,7 @@ export class RunManager implements Disposable {
       ...(run.startedBy ? { startedBy: run.startedBy } : {}),
       ...(run.exitCode !== undefined ? { exitCode: run.exitCode } : {}),
       ...(run.terminalId ? { terminalId: run.terminalId } : {}),
+      ...(run.prompt ? { prompt: run.prompt } : {}),
     };
   }
 
@@ -168,6 +177,9 @@ export class RunManager implements Disposable {
     run.timers = [];
     if (run.portPoll) clearTimeout(run.portPoll);
     run.portPoll = undefined;
+    if (run.promptCheck) clearTimeout(run.promptCheck);
+    run.promptCheck = undefined;
+    delete run.prompt;
   }
 
   /** Starts a profile (no-op while it is already starting or running). */
@@ -262,6 +274,13 @@ export class RunManager implements Disposable {
       void this.deps.terminals.sendText(run.terminalId, 'Y').catch(() => undefined);
     if (run.status !== 'starting' && run.status !== 'running') return;
     let changed = false;
+    // New output: the question (if any) was answered or replaced; look again once the output is quiet.
+    if (run.prompt && stripAnsi(data).trim()) {
+      delete run.prompt;
+      changed = true;
+    }
+    if (run.promptCheck) clearTimeout(run.promptCheck);
+    run.promptCheck = setTimeout(() => this.checkPrompt(run), this.deps.promptQuietMs ?? PROMPT_QUIET_MS);
     for (const line of lines) {
       if (!run.url) {
         const url = findLocalUrls(line)[0];
@@ -275,6 +294,30 @@ export class RunManager implements Disposable {
       run.sawStart = true;
       this.setStatus(run, 'running');
     } else if (changed) this.changed(run);
+  }
+
+  private checkPrompt(run: Run): void {
+    run.promptCheck = undefined;
+    if ((run.status !== 'starting' && run.status !== 'running') || run.stopRequested || run.prompt) return;
+    const found = detectPrompt(run.log.pending(), run.log.tail(4).slice(0, -1));
+    if (!found) return;
+    run.prompt = { id: this.nextPromptId++, ...found };
+    this.changed(run);
+  }
+
+  /**
+   * Answers the question a run waits on (typed into its terminal with Enter). With `promptId`, only while that
+   * question is still the open one (a stale notification button does nothing).
+   */
+  async answer(projectId: string, profileId: string, text: string, promptId?: number): Promise<RunSnapshot> {
+    const run = this.find(projectId, profileId);
+    if (!run?.terminalId || (run.status !== 'starting' && run.status !== 'running'))
+      throw new Error('The app is not running.');
+    if (promptId !== undefined && run.prompt?.id !== promptId) return this.snapshot(projectId, profileId);
+    delete run.prompt;
+    this.changed(run);
+    await this.deps.terminals.sendText(run.terminalId, text);
+    return this.snapshot(projectId, profileId);
   }
 
   private setStatus(run: Run, status: RunStatus): void {
@@ -358,6 +401,7 @@ export class RunManager implements Disposable {
   async stop(projectId: string, profileId: string): Promise<RunSnapshot> {
     const run = this.find(projectId, profileId);
     if (!run || (run.status !== 'starting' && run.status !== 'running')) return this.snapshot(projectId, profileId);
+    delete run.prompt;
     if (!run.terminalId || (run.status === 'starting' && !run.output)) {
       // Still being set up: start() sees the request and cancels.
       run.stopRequested = true;

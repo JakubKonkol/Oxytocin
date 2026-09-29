@@ -15,6 +15,7 @@ import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
 import { UpdateStateSchema } from '../domain/updates';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
+import { ConfirmResultSchema } from '../domain/confirm';
 import { QuickPickResultSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema, UserKeybindingSchema } from '../domain/keybindings';
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
@@ -54,6 +55,13 @@ export const invokeContract = {
   'ui:patchState': { req: UiStatePatchSchema, res: UiStateSchema },
   /** The renderer answers a `ui:quickPick` request (plugin `oxy.ui.showQuickPick`). */
   'ui:quickPickResult': { req: QuickPickResultSchema, res: z.void() },
+  /** The renderer answers a `ui:confirm` request. */
+  'ui:confirmResult': { req: ConfirmResultSchema, res: z.void() },
+  /** A button of a toast with actions was clicked (null: the toast closed without one). */
+  'notifications:action': {
+    req: z.object({ requestId: z.string().min(1).max(100), actionId: z.string().max(100).nullable() }),
+    res: z.void(),
+  },
   /** User overrides from keybindings.json (M7-T2). */
   'keybindings:get': { req: z.null().optional(), res: KeybindingsStateSchema },
   /** Replaces the user entries of one command (empty = back to the defaults), keeping comments. */

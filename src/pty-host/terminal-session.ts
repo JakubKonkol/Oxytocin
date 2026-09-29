@@ -55,7 +55,7 @@ export class TerminalSession {
   private readonly shellIntegration: boolean;
   /** Shell integration: the command line announced by OSC 633;E and the running command. */
   private pendingCommandLine: string | undefined;
-  private runningCommand: { commandLine?: string; startedAt: number } | undefined;
+  private runningCommand: { commandLine?: string; startedAt: number; interrupted?: boolean } | undefined;
   /** Output is also emitted as `terminal:output` (plugins with `terminals.read-output`). */
   private outputWatched = false;
 
@@ -171,6 +171,7 @@ export class TerminalSession {
           ...(running.commandLine ? { commandLine: running.commandLine } : {}),
           ...(mark.exitCode !== undefined ? { exitCode: mark.exitCode } : {}),
           durationMs: Date.now() - running.startedAt,
+          ...(running.interrupted ? { interrupted: true } : {}),
         });
         return;
       }
@@ -270,6 +271,8 @@ export class TerminalSession {
   write(data: string): void {
     if (!this._alive) return;
     this.pty.write(data);
+    // Ctrl+C (typed, or a plugin stopping its app): the command ending now was stopped, it did not fail.
+    if (this.runningCommand && data.includes('\x03')) this.runningCommand.interrupted = true;
     if (data.includes('\r')) {
       const now = Date.now();
       if (now - this.lastInputEmit >= 1000) {

@@ -16,6 +16,8 @@ export const INVOKE_CHANNELS = [
   'ui:getState',
   'ui:patchState',
   'ui:quickPickResult',
+  'ui:confirmResult',
+  'notifications:action',
   'projects:list',
   'projects:getActive',
   'projects:add',
@@ -95,6 +97,7 @@ export const EVENT_CHANNELS = [
   'plugins:statusBar',
   'plugins:openPanel',
   'ui:quickPick',
+  'ui:confirm',
   'keybindings:changed',
   'updates:state',
 ] as const;

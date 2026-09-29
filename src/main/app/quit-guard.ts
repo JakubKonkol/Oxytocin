@@ -4,6 +4,10 @@ import { displayCommandLine } from '@shared/utils/command-line';
 export interface QuitPrompt {
   message: string;
   detail: string;
+  /** The in-app dialog: a title, a sentence and one item per terminal. */
+  title: string;
+  description: string;
+  items: string[];
 }
 
 const MAX_LISTED = 8;
@@ -38,7 +42,13 @@ export function describeQuit(
   };
   const summary = busy.slice(0, 2).map(where).join(', ') + (busy.length > 2 ? '…' : '');
   const message = `${busy.length} ${busy.length === 1 ? 'terminal has a running process' : 'terminals have running processes'} (${summary}). Quit anyway?`;
-  const lines = busy.slice(0, MAX_LISTED).map((t) => `• ${where(t)} — ${t.title}`);
-  if (busy.length > MAX_LISTED) lines.push(`• …and ${busy.length - MAX_LISTED} more`);
-  return { message, detail: `${lines.join('\n')}\n\nThese processes will be stopped.` };
+  const items = busy.slice(0, MAX_LISTED).map((t) => `${where(t)} — ${t.title}`);
+  if (busy.length > MAX_LISTED) items.push(`…and ${busy.length - MAX_LISTED} more`);
+  return {
+    message,
+    detail: `${items.map((i) => `• ${i}`).join('\n')}\n\nThese processes will be stopped.`,
+    title: 'Quit Oxytocin?',
+    description: `${busy.length === 1 ? 'A terminal still runs a process' : `${busy.length} terminals still run processes`}. Quitting stops ${busy.length === 1 ? 'it' : 'them'}.`,
+    items,
+  };
 }

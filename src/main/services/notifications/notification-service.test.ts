@@ -153,6 +153,30 @@ describe('NotificationService', () => {
     expect(s.toast).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'success', message: 'Command finished' }));
   });
 
+  it('stays quiet about commands and processes the user stopped', () => {
+    const s = setup();
+    s.fire({ kind: 'shell' });
+    // Stopped with Ctrl+C (e.g. a Run panel's Stop of `ng serve`): any exit code, no "Command failed".
+    s.fire({
+      kind: 'shell',
+      lastCommand: { commandLine: 'ng serve', exitCode: 1, durationMs: 60_000, finishedAt: 1, interrupted: true },
+    });
+    s.fire({
+      kind: 'shell',
+      lastCommand: { commandLine: 'npm start', exitCode: 130, durationMs: 60_000, finishedAt: 2 },
+    });
+    s.fire({
+      kind: 'shell',
+      lastCommand: { commandLine: 'npm start', exitCode: -1073741510, durationMs: 60_000, finishedAt: 3 },
+    });
+    expect(s.toast).not.toHaveBeenCalled();
+    expect(s.osNotify).not.toHaveBeenCalled();
+    // Killed on request (a Stop that had to force it).
+    s.fire({ kind: 'process' });
+    s.fire({ kind: 'process', state: 'exited', exitCode: 1, killed: true });
+    expect(s.toast).not.toHaveBeenCalled();
+  });
+
   it('can turn command notifications off or change the threshold', () => {
     const off = setup({ 'notifications.commandFinished': false });
     off.fire({ kind: 'shell' });

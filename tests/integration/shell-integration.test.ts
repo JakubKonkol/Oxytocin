@@ -13,7 +13,13 @@ import type { ShellType } from '../../src/main/services/terminals/profiles';
 import { TerminalManager } from '../../src/pty-host/terminal-manager';
 import { silentLogger } from '../helpers/logger';
 
-type CommandEvent = { phase: string; commandLine?: string; exitCode?: number; durationMs?: number };
+type CommandEvent = {
+  phase: string;
+  commandLine?: string;
+  exitCode?: number;
+  durationMs?: number;
+  interrupted?: boolean;
+};
 
 const has = (bin: string) => {
   if (process.platform === 'win32') return false;
@@ -132,6 +138,16 @@ describe.skipIf(!has('bash'))('shell integration: bash', () => {
     expect(text).toContain('bashrc> ');
     manager!.write(id, 'echo marker-bash\r');
     await exercise(id, 'marker-bash');
+    // Stopped with Ctrl+C: reported as interrupted (no "Command failed" notification).
+    manager!.write(id, 'sleep 30\r');
+    await waitFor(() => commands().some((c) => c.phase === 'start' && c.commandLine === 'sleep 30'), 'sleep');
+    manager!.write(id, '\x03');
+    await waitFor(() => commands().some((c) => c.phase === 'end' && c.commandLine === 'sleep 30'), 'the interrupt');
+    expect(commands().find((c) => c.phase === 'end' && c.commandLine === 'sleep 30')).toMatchObject({
+      exitCode: 130,
+      interrupted: true,
+    });
+    expect(commands().find((c) => c.phase === 'end' && c.commandLine === 'false')?.interrupted).toBeUndefined();
   });
 });
 

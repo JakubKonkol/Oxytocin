@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { browsable, findListeningPort, findLocalUrls, LogBuffer, stripAnsi } from './output';
+import { browsable, detectPrompt, findListeningPort, findLocalUrls, LogBuffer, stripAnsi } from './output';
 
 describe('output', () => {
   it('strips colours, OSC sequences and control characters', () => {
@@ -38,5 +38,32 @@ describe('output', () => {
     expect(log.tail(2)).toEqual(['four', 'fi']);
     log.clear();
     expect(log.tail(5)).toEqual([]);
+  });
+
+  it('detects questions an app waits on', () => {
+    expect(detectPrompt('Would you like to use a different port? (Y/n)', ['? Port 4200 is already in use.'])).toEqual({
+      text: 'Port 4200 is already in use.\nWould you like to use a different port? (Y/n)',
+      yesNo: true,
+    });
+    expect(detectPrompt('? Would you like to run the app on another port instead? › (Y/n)', ['', 'compiled'])).toEqual({
+      text: 'Would you like to run the app on another port instead? › (Y/n)',
+      yesNo: true,
+    });
+    expect(detectPrompt('Overwrite the database? [y/N]', [])).toMatchObject({ yesNo: true });
+    expect(detectPrompt('Enter the port to use: ', ['Server log line'])).toEqual({
+      text: 'Enter the port to use:',
+      yesNo: false,
+    });
+    expect(detectPrompt('Press any key to continue . . .', [])).toMatchObject({ yesNo: false });
+    for (const progress of ['Building... 42%', '[=====>    ] 12/40', 'webpack compiling', ''])
+      expect(detectPrompt(progress, [])).toBeUndefined();
+  });
+
+  it('keeps the unfinished line as the app last drew it', () => {
+    const log = new LogBuffer();
+    log.push('done\n? Pick one\x1b[2K\x1b[G? Port in use? (Y/n) ');
+    expect(log.pending()).toBe('? Port in use? (Y/n) ');
+    log.push('\n');
+    expect(log.pending()).toBe('');
   });
 });

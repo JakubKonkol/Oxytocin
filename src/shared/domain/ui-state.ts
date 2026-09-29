@@ -24,9 +24,73 @@ export type SidebarState = z.infer<typeof SidebarStateSchema>;
 export const SCRATCHPAD_MAX_LENGTH = 100_000;
 
 export const ScratchpadStateSchema = z.object({
+  /** The text of the shared scratchpad (also used while no project is open). */
   text: z.string().max(SCRATCHPAD_MAX_LENGTH),
+  /** One scratchpad for all projects; off gives every project its own. */
+  shared: z.boolean().default(true),
+  /** Texts of the per-project scratchpads by project id (while `shared` is off; empty ones are left out). */
+  projects: z.record(z.string(), z.string().max(SCRATCHPAD_MAX_LENGTH)).default({}),
 });
 export type ScratchpadState = z.infer<typeof ScratchpadStateSchema>;
+
+export const defaultScratchpad = (): ScratchpadState => ({ text: '', shared: true, projects: {} });
+
+const perProject = (s: ScratchpadState, projectId: string | null | undefined): projectId is string =>
+  !s.shared && !!projectId;
+
+/** The text the scratchpad shows in a project (the shared one, or the project's own). */
+export function scratchpadText(s: ScratchpadState, projectId: string | null | undefined): string {
+  return perProject(s, projectId) ? (s.projects[projectId] ?? '') : s.text;
+}
+
+/**
+ * Sets the text the scratchpad shows in a project. Scratchpads of projects that are no longer open
+ * (`knownProjectIds`) are dropped on the way.
+ */
+export function withScratchpadText(
+  s: ScratchpadState,
+  projectId: string | null | undefined,
+  text: string,
+  knownProjectIds?: readonly string[],
+): ScratchpadState {
+  const value = text.slice(0, SCRATCHPAD_MAX_LENGTH);
+  if (!perProject(s, projectId)) return { ...s, text: value };
+  const projects = pruneScratchpads(s.projects, knownProjectIds);
+  if (value) projects[projectId] = value;
+  else delete projects[projectId];
+  return { ...s, projects };
+}
+
+function pruneScratchpads(projects: Record<string, string>, known?: readonly string[]): Record<string, string> {
+  if (!known) return { ...projects };
+  return Object.fromEntries(Object.entries(projects).filter(([id]) => known.includes(id)));
+}
+
+/** Projects other than `projectId` whose own scratchpad has text (what sharing would replace). */
+export function otherScratchpadsWithText(
+  s: ScratchpadState,
+  projectId: string | null | undefined,
+  knownProjectIds?: readonly string[],
+): string[] {
+  if (s.shared) return [];
+  return Object.entries(pruneScratchpads(s.projects, knownProjectIds))
+    .filter(([id, text]) => id !== projectId && text.trim().length > 0)
+    .map(([id]) => id);
+}
+
+/**
+ * Turns sharing on or off. On: the text shown in `projectId` becomes the one shared scratchpad and the other
+ * projects' scratchpads are discarded. Off: the project keeps the text it shows, other projects start empty.
+ */
+export function withScratchpadShared(
+  s: ScratchpadState,
+  shared: boolean,
+  projectId: string | null | undefined,
+): ScratchpadState {
+  if (s.shared === shared) return s;
+  if (shared) return { text: scratchpadText(s, projectId), shared: true, projects: {} };
+  return { text: s.text, shared: false, projects: projectId && s.text ? { [projectId]: s.text } : {} };
+}
 
 export const PaneviewStateSchema = z.object({
   order: z.array(z.string()),
@@ -73,7 +137,7 @@ export const UiStateSchema = z.object({
     .default(() => DEFAULT_SIDEBAR_TOOLS.map((t) => ({ ...t }))),
   /** Tools moved into the left sidebar, between its own sections (their order lives in `paneview`). */
   primaryTools: z.array(SidebarToolSchema).max(50).default([]),
-  scratchpad: ScratchpadStateSchema.default({ text: '' }),
+  scratchpad: ScratchpadStateSchema.default(defaultScratchpad),
   pluginViewState: z.record(z.string(), z.unknown()),
   dismissedHints: z.array(z.string()),
   /** Command ids run from the command palette, most recent first. */
@@ -91,7 +155,7 @@ export function defaultUiState(): UiState {
     secondaryPaneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
     secondaryTools: DEFAULT_SIDEBAR_TOOLS.map((t) => ({ ...t })),
     primaryTools: [],
-    scratchpad: { text: '' },
+    scratchpad: defaultScratchpad(),
     pluginViewState: {},
     dismissedHints: [],
     recentCommands: [],

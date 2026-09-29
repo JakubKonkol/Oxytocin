@@ -126,6 +126,7 @@ export class TerminalService implements Disposable {
           ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),
           durationMs: e.durationMs ?? 0,
           finishedAt: Date.now(),
+          ...(e.interrupted ? { interrupted: true } : {}),
         },
       });
     }
@@ -261,6 +262,7 @@ export class TerminalService implements Disposable {
   async kill(id: string, force = false): Promise<void> {
     const info = this.require(id);
     if (info.state !== 'running') return;
+    this.patch(id, { killed: true });
     await this.deps.ptyHost.call('kill', { id, force });
   }
 

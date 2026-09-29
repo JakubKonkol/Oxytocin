@@ -19,6 +19,7 @@ export interface RunnerTools {
     timeoutMs: number,
   ): Promise<RunSnapshot>;
   logs(project: ProjectInfo, profileId: string, lines: number): string[];
+  answer(project: ProjectInfo, profileId: string, text: string): Promise<RunSnapshot>;
   addProfile(project: ProjectInfo, input: ProfileInput): Promise<RunProfile>;
 }
 
@@ -54,15 +55,21 @@ function describeRun(profile: RunProfile, run: RunSnapshot): Record<string, unkn
     ...(run.ports.length ? { ports: run.ports } : {}),
     ...(run.exitCode !== undefined ? { exitCode: run.exitCode } : {}),
     ...(run.startedBy ? { startedBy: run.startedBy } : {}),
+    ...(run.prompt ? { waitingForInput: run.prompt.text } : {}),
   };
 }
 
-const isSettled = (s: RunSnapshot) => s.status !== 'starting';
+/** Ready, ended or asking something (a question never resolves by waiting). */
+const isSettled = (s: RunSnapshot) => s.status !== 'starting' || !!s.prompt;
 
 /** Status line plus the recent output an agent needs to judge a start or a crash. */
 function report(profile: RunProfile, run: RunSnapshot, logs: string[]): string {
   const lines = [JSON.stringify(describeRun(profile, run), null, 2)];
-  if (run.status === 'starting')
+  if (run.prompt)
+    lines.push(
+      `The app is waiting for an answer in its terminal: "${run.prompt.text}". Ask the user (it is also shown in Oxytocin) or answer with answer_run_prompt.`,
+    );
+  else if (run.status === 'starting')
     lines.push('Still starting — call get_run_logs or list_run_profiles later to check it.');
   if (logs.length) lines.push('', `Last ${logs.length} lines of output:`, ...logs);
   return lines.join('\n');
@@ -164,6 +171,33 @@ export function buildTools(r: RunnerTools): McpTool[] {
         const logs = r.logs(project, profile.id, clamp(args['lines'], 1, 500, 100));
         const run = r.snapshot(project, profile.id);
         return `${profile.name}: ${run.status}${run.url ? ` (${run.url})` : ''}\n${logs.length ? logs.join('\n') : '(no output yet)'}`;
+      },
+    },
+    {
+      name: 'answer_run_prompt',
+      title: 'Answer a run profile question',
+      description:
+        'Types an answer (followed by Enter) into the terminal of a run profile that waits for input, e.g. "y" when the dev server asks whether to use another port (see `waitingForInput` in the status). Then waits like start_run_profile.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          profile: PROFILE_ARG,
+          answer: { type: 'string', description: 'The text to type, e.g. "y" or "n".' },
+          ...PROJECT_ARGS,
+          wait_seconds: { type: 'number' },
+        },
+        required: ['profile', 'answer'],
+      },
+      handler: async (args) => {
+        const answer = args['answer'];
+        if (typeof answer !== 'string' || answer.length > 200) throw new Error('Pass `answer` (the text to type).');
+        const project = await r.resolveProject(args);
+        const profile = await r.profile(project, profileArg(args));
+        const before = r.snapshot(project, profile.id);
+        if (!before.prompt) throw new Error(`${profile.name} is not waiting for input (status: ${before.status}).`);
+        await r.answer(project, profile.id, answer);
+        const run = await r.waitFor(project, profile.id, isSettled, clamp(args['wait_seconds'], 0, 120, 30) * 1000);
+        return report(profile, run, r.logs(project, profile.id, run.status === 'running' ? 15 : 40));
       },
     },
     {

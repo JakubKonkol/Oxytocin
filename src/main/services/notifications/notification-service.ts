@@ -35,6 +35,12 @@ interface Last {
   workingSince?: number;
 }
 
+/**
+ * Exit codes of a stop rather than a failure: Ctrl+C in bash/zsh (130), SIGTERM (143) and Windows'
+ * STATUS_CONTROL_C_EXIT (0xC000013A, signed or not).
+ */
+const INTERRUPT_EXIT_CODES = new Set([130, 143, -1073741510, 3221225786]);
+
 /** Attention system: toasts, OS notifications and taskbar flashing on transitions. */
 export class NotificationService implements Disposable {
   private readonly last = new Map<string, Last>();
@@ -93,6 +99,8 @@ export class NotificationService implements Disposable {
       s['notifications.commandFinished'] &&
       cmd.durationMs >= s['notifications.commandFinishedMinSeconds'] * 1000
     ) {
+      // Stopped by the user (Ctrl+C, a Run panel's Stop): nothing to report.
+      if (cmd.interrupted || (cmd.exitCode !== undefined && INTERRUPT_EXIT_CODES.has(cmd.exitCode))) return;
       const failed = cmd.exitCode !== undefined && cmd.exitCode !== 0;
       const title = failed ? `Command failed (exit ${cmd.exitCode})` : 'Command finished';
       const body = [cmd.commandLine, where].filter(Boolean).join(' · ');
@@ -110,6 +118,8 @@ export class NotificationService implements Disposable {
       prev.state === 'running' &&
       info.state === 'exited' &&
       (info.exitCode ?? 0) !== 0 &&
+      !info.killed &&
+      !INTERRUPT_EXIT_CODES.has(info.exitCode ?? 0) &&
       s['notifications.processError']
     ) {
       this.deps.toast({

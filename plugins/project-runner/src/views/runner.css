@@ -165,6 +165,42 @@ button.primary {
   background: var(--warning);
   animation: pulse 1.2s ease-in-out infinite;
 }
+.profile[data-prompt] .status-text {
+  color: var(--warning);
+}
+.profile[data-prompt] .dot {
+  background: var(--warning);
+  animation: none;
+}
+.prompt {
+  margin: 0 4px 4px 20px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+.prompt-text {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.prompt-form {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 120px;
+}
+.prompt-form input {
+  flex: 1;
+  min-width: 0;
+}
 .dot[data-status='failed'] {
   background: var(--danger);
 }

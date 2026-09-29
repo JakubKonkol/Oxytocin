@@ -3,6 +3,34 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **One scratchpad per project.** The scratchpad's toolbar has **Share across projects** (on by default, as before).
+  Turn it off and every project gets its own scratchpad; the current project keeps what you see. Turning it on again
+  asks first when other projects have notes, because their scratchpads are replaced by the current one. Scratchpads
+  are kept across restarts, also when you quit right after typing.
+- **Run: apps that ask something while starting.** When an app waits for an answer (e.g. Angular's *"Port 4200 is
+  already in use. Would you like to use a different port? (Y/n)"*), the Run tool shows *waiting for input* with the
+  question and **Yes** / **No** (or a text answer) and **Open terminal**, the status bar says so, and a notification
+  offers the same answers — instead of an endless *starting*. Agents see the question (`waitingForInput`) and can
+  answer it with the new `answer_run_prompt` MCP tool.
+
+### Changed
+
+- **Oxytocin's own dialogs.** Quitting with running processes asks in an in-app dialog (listing the processes, with
+  *Don't ask again*) instead of the system message box. Confirmations have a new look: an icon, the affected items as
+  a list and a short fade-in.
+- Plugin notifications show their action buttons (`oxy.ui.showNotification({ actions })`) and report the clicked one.
+
+### Fixed
+
+- **Rename** from a project's context menu no longer closes the name field right after it opened.
+- Stopping an app (the Run tool's **Stop**, or Ctrl+C in a terminal) no longer shows *"Command failed"* when the app
+  exits with an error code on Ctrl+C (e.g. `ng serve`); a terminal killed on request no longer reports *"Process
+  exited with code …"*.
+
 ## [0.5.3] - 2026-09-29
 
 ### Changed

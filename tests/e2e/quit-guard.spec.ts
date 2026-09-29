@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -89,4 +89,41 @@ test('the quit dialog lists running processes and quitting leaves no orphans', a
     await app.close();
   }
   await expect.poll(() => pids.filter(isAlive), { timeout: 10_000 }).toEqual([]);
+});
+
+test("the quit confirmation is the app's own dialog", async () => {
+  const { app, win, userData } = await launchApp();
+  try {
+    await waitForTerminal(win);
+    await run(win, nodeCmd('setInterval(() => {}, 1000)'));
+    await expect(win.getByTestId('terminal-kind-badge')).toHaveText('PROCESS', { timeout: 10_000 });
+    await app.evaluate(() => {
+      (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] = 'dialog';
+    });
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    const dialog = win.getByTestId('confirm-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('Quit Oxytocin?');
+    await expect(dialog).toContainText('A terminal still runs a process. Quitting stops it.');
+    await expect(dialog.getByTestId('confirm-dialog-details')).toContainText('node -e');
+    // Cancel is focused: Enter does not quit by accident.
+    await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
+    await win.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await win.waitForTimeout(300);
+    expect(app.windows()).toHaveLength(1);
+
+    // "Don't ask again" + Quit: the setting is turned off and the app quits.
+    await app.evaluate(({ app: electronApp }) => electronApp.quit());
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('checkbox', { name: "Don't ask again" }).check();
+    const closed = app.waitForEvent('close');
+    await dialog.getByRole('button', { name: 'Quit' }).click();
+    await closed;
+    expect(JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8'))).toMatchObject({
+      'terminal.confirmOnQuit': false,
+    });
+  } finally {
+    await app.close().catch(() => undefined);
+  }
 });

@@ -237,6 +237,52 @@ describe('RunManager', () => {
     expect(gone.snapshot('p1', profile.id).status).toBe('idle');
   });
 
+  it('shows a question the app waits on and answers it in the terminal', async () => {
+    const t = fakeTerminals();
+    const runs = new RunManager({ terminals: t.api, settleMs: 3000, promptQuietMs: 500 });
+    await runs.start('/p', 'p1', profile, 'user');
+    const write = t.output.get('t1')!;
+    write('\x1b[32m?\x1b[39m Port 4200 is already in use.\r\nWould you like to use a different port? (Y/n) ');
+    expect(runs.snapshot('p1', profile.id).prompt).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(500);
+    const prompt = runs.snapshot('p1', profile.id).prompt;
+    expect(prompt).toMatchObject({
+      text: 'Port 4200 is already in use.\nWould you like to use a different port? (Y/n)',
+      yesNo: true,
+    });
+    expect(runs.snapshot('p1', profile.id).status).toBe('starting');
+    // A stale answer (a notification of an earlier question) does nothing.
+    await runs.answer('p1', profile.id, 'n', prompt!.id + 1);
+    expect(t.api.sendText).not.toHaveBeenCalled();
+    await runs.answer('p1', profile.id, 'y', prompt!.id);
+    expect(t.api.sendText).toHaveBeenCalledWith('t1', 'y');
+    expect(runs.snapshot('p1', profile.id).prompt).toBeUndefined();
+    write('y\r\n  ➜  Local:   http://localhost:4201/\r\n');
+    expect(runs.snapshot('p1', profile.id)).toMatchObject({ status: 'running', url: 'http://localhost:4201/' });
+    runs.dispose();
+  });
+
+  it('does not take progress output or answered questions for a prompt', async () => {
+    const t = fakeTerminals();
+    const runs = new RunManager({ terminals: t.api, settleMs: 3000, promptQuietMs: 500 });
+    await runs.start('/p', 'p1', profile, 'user');
+    const write = t.output.get('t1')!;
+    write('Building... 42%');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runs.snapshot('p1', profile.id).prompt).toBeUndefined();
+    write('\rContinue anyway? [y/N] ');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runs.snapshot('p1', profile.id).prompt?.text).toBe('Continue anyway? [y/N]');
+    // Answered in the terminal itself: the output goes on and the question disappears.
+    write('y\r\nCompiling…\r\n');
+    expect(runs.snapshot('p1', profile.id).prompt).toBeUndefined();
+    await runs.stop('p1', profile.id);
+    write('Stop now? (y/n) ');
+    await vi.advanceTimersByTimeAsync(600);
+    expect(runs.snapshot('p1', profile.id).prompt).toBeUndefined();
+    runs.dispose();
+  });
+
   it('builds folders with the root separator', () => {
     expect(profileFolder('C:\\work\\app', 'apps/web')).toBe('C:\\work\\app\\apps\\web');
     expect(profileFolder('/p/', '')).toBe('/p/');

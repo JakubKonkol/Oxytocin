@@ -35,6 +35,7 @@ export function PluginConsentDialog() {
       description={`Version ${plugin.version} by ${details.publisher} (${plugin.id}).`}
       confirmLabel="Enable"
       cancelLabel="Not now"
+      tone={details.hasBackend ? 'warning' : 'info'}
       onConfirm={() => settle(true)}
       onCancel={() => settle(false)}
     >

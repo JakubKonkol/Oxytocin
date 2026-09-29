@@ -127,6 +127,67 @@ function ProfileForm(props: { draft: Draft; onSave: (d: Draft) => Promise<void>;
   );
 }
 
+/** The question a starting app waits on, with its answers (the app would otherwise look like it hangs). */
+function PromptBar(props: { p: ProfileState; view: View; onError: (message: string) => void }) {
+  const { p, view, onError } = props;
+  const prompt = p.run.prompt!;
+  const [text, setText] = useState('');
+  const answer = (value: string) => {
+    void view
+      .request('answer', { profileId: p.id, text: value, promptId: prompt.id })
+      .catch((e: unknown) => onError(messageOf(e)));
+  };
+  return (
+    <div className="prompt" data-testid="runner-prompt" role="alert">
+      <div className="prompt-text" data-testid="runner-prompt-text">
+        {prompt.text}
+      </div>
+      <div className="prompt-actions">
+        {prompt.yesNo ? (
+          <>
+            <button type="button" className="primary" onClick={() => answer('y')} data-testid="runner-prompt-yes">
+              Yes
+            </button>
+            <button type="button" onClick={() => answer('n')} data-testid="runner-prompt-no">
+              No
+            </button>
+          </>
+        ) : (
+          <form
+            className="prompt-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              answer(text);
+              setText('');
+            }}
+          >
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Answer…"
+              aria-label="Answer"
+              className="mono"
+              data-testid="runner-prompt-input"
+            />
+            <button type="submit" className="primary" data-testid="runner-prompt-send">
+              Send
+            </button>
+          </form>
+        )}
+        <span className="spacer" />
+        <button
+          type="button"
+          className="link"
+          onClick={() => void view.request('logs', { profileId: p.id }).catch((e: unknown) => onError(messageOf(e)))}
+          data-testid="runner-prompt-terminal"
+        >
+          Open terminal
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error: /, '');
 
 function ProfileRow(props: {
@@ -160,80 +221,86 @@ function ProfileRow(props: {
     }
   };
   return (
-    <div
-      className="profile"
-      data-testid="runner-profile"
-      data-profile-id={p.id}
-      data-status={run.status}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        void menu(e);
-      }}
-    >
-      <span className="dot" data-status={run.status} title={statusLabel(run)} />
-      <div className="main">
-        <div className="title">
-          <span className="name">{p.name}</span>
-          {p.framework && <span className="framework">{p.framework}</span>}
-          {run.startedBy === 'agent' && active && (
-            <span className="agent" title="Started by an AI agent (MCP)" data-testid="runner-agent-badge">
-              agent
+    <div className="profile-item">
+      <div
+        className="profile"
+        data-testid="runner-profile"
+        data-profile-id={p.id}
+        data-status={run.status}
+        data-prompt={run.prompt ? 'true' : undefined}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          void menu(e);
+        }}
+      >
+        <span className="dot" data-status={run.status} title={statusLabel(run)} />
+        <div className="main">
+          <div className="title">
+            <span className="name">{p.name}</span>
+            {p.framework && <span className="framework">{p.framework}</span>}
+            {run.startedBy === 'agent' && active && (
+              <span className="agent" title="Started by an AI agent (MCP)" data-testid="runner-agent-badge">
+                agent
+              </span>
+            )}
+          </div>
+          <div className="detail">
+            {run.url && active ? (
+              <a
+                href={run.url}
+                data-testid="runner-url"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void view.request('openUrl', { url: run.url });
+                }}
+              >
+                {run.url.replace(/^https?:\/\//, '')}
+              </a>
+            ) : (
+              <span className="mono muted command" title={p.cwd ? `${p.cwd}: ${p.command}` : p.command}>
+                {p.command}
+              </span>
+            )}
+            <span className="status-text" data-testid="runner-status">
+              {run.prompt ? 'waiting for input' : statusLabel(run)}
             </span>
-          )}
+          </div>
         </div>
-        <div className="detail">
-          {run.url && active ? (
-            <a
-              href={run.url}
-              data-testid="runner-url"
-              onClick={(e) => {
-                e.preventDefault();
-                void view.request('openUrl', { url: run.url });
-              }}
-            >
-              {run.url.replace(/^https?:\/\//, '')}
-            </a>
+        <div className="actions">
+          {active ? (
+            <>
+              <IconButton
+                icon="restart"
+                label="Restart"
+                onClick={request('restart')}
+                testId="runner-restart"
+                disabled={run.status === 'stopping'}
+              />
+              <IconButton
+                icon="stop"
+                label="Stop"
+                tone="stop"
+                onClick={request('stop')}
+                testId="runner-stop"
+                disabled={run.status === 'stopping'}
+              />
+            </>
           ) : (
-            <span className="mono muted command" title={p.cwd ? `${p.cwd}: ${p.command}` : p.command}>
-              {p.command}
-            </span>
+            <IconButton icon="play" label="Run" tone="run" onClick={request('start')} testId="runner-start" />
           )}
-          <span className="status-text" data-testid="runner-status">
-            {statusLabel(run)}
-          </span>
+          <IconButton
+            icon="logs"
+            label="Show logs (terminal)"
+            onClick={request('logs')}
+            testId="runner-logs"
+            disabled={!run.terminalId}
+          />
+          <IconButton icon="more" label="More actions" onClick={(e) => void menu(e)} testId="runner-more" />
         </div>
       </div>
-      <div className="actions">
-        {active ? (
-          <>
-            <IconButton
-              icon="restart"
-              label="Restart"
-              onClick={request('restart')}
-              testId="runner-restart"
-              disabled={run.status === 'stopping'}
-            />
-            <IconButton
-              icon="stop"
-              label="Stop"
-              tone="stop"
-              onClick={request('stop')}
-              testId="runner-stop"
-              disabled={run.status === 'stopping'}
-            />
-          </>
-        ) : (
-          <IconButton icon="play" label="Run" tone="run" onClick={request('start')} testId="runner-start" />
-        )}
-        <IconButton
-          icon="logs"
-          label="Show logs (terminal)"
-          onClick={request('logs')}
-          testId="runner-logs"
-          disabled={!run.terminalId}
-        />
-        <IconButton icon="more" label="More actions" onClick={(e) => void menu(e)} testId="runner-more" />
-      </div>
+      {run.prompt && active && run.status !== 'stopping' && (
+        <PromptBar key={run.prompt.id} p={p} view={view} onError={onError} />
+      )}
     </div>
   );
 }

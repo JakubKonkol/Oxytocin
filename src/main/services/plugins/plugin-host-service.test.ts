@@ -74,6 +74,7 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
     lastCommand: { commandLine: 'npm run dev', exitCode: 1, durationMs: 5, finishedAt: 9 },
   };
   const quickPick = vi.fn(() => Promise.resolve(1));
+  const notifyWithActions = vi.fn(() => Promise.resolve('yes' as string | null));
   const terms = {
     list: () => [],
     get: (id: string) => (id === 't1' ? terminal : undefined),
@@ -103,6 +104,7 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
     openExternal: vi.fn(),
     openInEditor: vi.fn(),
     quickPick,
+    notifyWithActions,
     toRenderer,
     osNotify: vi.fn(),
   } as unknown as PluginCorePort;
@@ -116,7 +118,7 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
-  return { service, api, calls, events, ready, plugins, core, terms, toRenderer, quickPick };
+  return { service, api, calls, events, ready, plugins, core, terms, toRenderer, quickPick, notifyWithActions };
 }
 
 describe('PluginHostService', () => {
@@ -192,6 +194,23 @@ describe('PluginHostService', () => {
     await expect(
       s.api('b.two', 'ui.showQuickPick', { items: Array.from({ length: 5001 }, () => ({ label: 'x' })) }),
     ).rejects.toMatchObject({ code: 'INVALID' });
+  });
+
+  it('shows notifications, with buttons returning the clicked action', async () => {
+    const s = setup();
+    expect(await s.api('b.two', 'ui.showNotification', { level: 'warning', message: 'Hi', detail: 'more' })).toBe(null);
+    expect(s.toRenderer).toHaveBeenCalledWith('toast', { kind: 'warning', message: 'Hi', description: 'more' });
+    const actions = [
+      { id: 'yes', title: 'Yes' },
+      { id: 'show', title: 'Show Terminal' },
+    ];
+    expect(await s.api('b.two', 'ui.showNotification', { level: 'info', message: 'Ask', actions })).toBe('yes');
+    expect(s.notifyWithActions).toHaveBeenCalledWith({ kind: 'info', message: 'Ask', actions });
+    // Invalid buttons: a plain toast.
+    s.toRenderer.mockClear();
+    expect(await s.api('b.two', 'ui.showNotification', { message: 'x', actions: [{ id: '', title: '' }] })).toBe(null);
+    expect(s.toRenderer).toHaveBeenCalledWith('toast', { kind: 'info', message: 'x' });
+    expect(s.notifyWithActions).toHaveBeenCalledTimes(1);
   });
 
   it('attributes a hang to the busy plugin and excludes it after two incidents', async () => {

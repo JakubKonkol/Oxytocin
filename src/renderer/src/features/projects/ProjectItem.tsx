@@ -1,6 +1,6 @@
 import { ContextMenu } from 'radix-ui';
 import { AlertTriangle, Pin } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Project } from '@shared/domain/project';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { cn } from '../../lib/cn';
@@ -31,6 +31,9 @@ const menuItem =
 /** One row of the PROJECTS list. */
 export function ProjectItem({ project, active, terminals, onDragStart, onDropOn }: ProjectItemProps) {
   const [renaming, setRenaming] = useState(false);
+  // Rename chosen from the context menu: start it once the menu has closed and handed focus back, otherwise the
+  // menu's focus restore blurs the fresh input and ends the rename immediately.
+  const renameAfterMenu = useRef(false);
   const [dropHint, setDropHint] = useState<'before' | 'after' | null>(null);
   const status = useProjectsStore((s) => s.activity[project.id]);
   const dot = status?.activity ?? 'none';
@@ -148,6 +151,12 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
         <ContextMenu.Content
           data-testid="project-context-menu"
           className="z-50 min-w-52 rounded-control border border-line bg-elevated p-1 shadow-elevated"
+          onCloseAutoFocus={(e) => {
+            if (!renameAfterMenu.current) return;
+            renameAfterMenu.current = false;
+            e.preventDefault();
+            setRenaming(true);
+          }}
         >
           <ContextMenu.Item className={menuItem} onSelect={() => activateProject(project.id)}>
             Open
@@ -160,7 +169,13 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
             New terminal in project
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
-          <ContextMenu.Item className={menuItem} onSelect={() => setTimeout(() => setRenaming(true), 0)}>
+          <ContextMenu.Item
+            className={menuItem}
+            data-testid="project-menu-rename"
+            onSelect={() => {
+              renameAfterMenu.current = true;
+            }}
+          >
             Rename
           </ContextMenu.Item>
           <ContextMenu.Item

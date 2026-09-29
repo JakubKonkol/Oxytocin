@@ -104,4 +104,23 @@ describe('ConfirmDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(onConfirm).toHaveBeenCalledOnce();
   });
+
+  it('lists the details it is about', () => {
+    render(
+      <ConfirmDialog
+        open
+        tone="warning"
+        title="Quit Oxytocin?"
+        description="2 terminals still run processes."
+        details={['npm run dev in ‘web’', 'Claude Code in ‘api’']}
+        confirmLabel="Quit"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alertdialog', { name: 'Quit Oxytocin?' })).toBeInTheDocument();
+    expect(screen.getByText('2 terminals still run processes.')).toBeInTheDocument();
+    expect(screen.getByTestId('confirm-dialog-details').querySelectorAll('li')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Quit' })).toHaveFocus();
+  });
 });

@@ -40,6 +40,8 @@ function PendingDialog() {
       open
       title={current.title}
       {...(current.description ? { description: current.description } : {})}
+      {...(current.details ? { details: current.details } : {})}
+      {...(current.tone ? { tone: current.tone } : {})}
       {...(current.confirmLabel ? { confirmLabel: current.confirmLabel } : {})}
       {...(current.cancelLabel ? { cancelLabel: current.cancelLabel } : {})}
       destructive={current.destructive ?? false}

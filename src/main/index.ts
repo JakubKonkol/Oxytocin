@@ -16,16 +16,19 @@ import {
 } from 'electron';
 import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
+import type { ConfirmRequest } from '@shared/domain/confirm';
 import type { Platform } from '@shared/domain/terminal-profile';
+import type { NotificationPayload } from '@shared/ipc/events';
 import { appPaths } from './app/paths';
 import { PLUGIN_SCHEME, registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
 import { createPluginProtocolHandler } from './app/plugin-protocol';
 import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
 import { resolveUserDataOverride } from './app/user-data';
 import { applyNativeTheme, createMainWindow, isTrustedShellUrl } from './app/window-manager';
-import { busyTerminals, describeQuit } from './app/quit-guard';
+import { busyTerminals, describeQuit, type QuitPrompt } from './app/quit-guard';
 import { Hosts } from './hosts/hosts';
 import { registerInvokeHandlers, sendEvent } from './ipc/router';
+import { RendererRequests } from './services/ui/renderer-requests';
 import { QuickPickBroker } from './services/ui/quick-pick-broker';
 import { KeybindingsService } from './services/settings/keybindings-service';
 import { installShellIntegration } from './services/terminals/shell-integration';
@@ -378,6 +381,17 @@ function bootstrap(): void {
     sendEvent(mainWindow.webContents, 'ui:quickPick', request);
     return true;
   });
+  const confirms = new RendererRequests<ConfirmRequest, { confirmed: boolean; checked: boolean }>((request) => {
+    if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
+    sendEvent(mainWindow.webContents, 'ui:confirm', request);
+    return true;
+  });
+  // Toasts with buttons (plugins' `showNotification` actions); settled before the plugin's call times out.
+  const notificationActions = new RendererRequests<NotificationPayload & { requestId: string }, string>((request) => {
+    if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
+    sendEvent(mainWindow.webContents, 'notifications:show', request);
+    return true;
+  }, 45_000);
 
   const pluginDeps: Omit<PluginHostServiceDeps, 'host' | 'plugins' | 'logger'> = {
     env: {
@@ -421,6 +435,7 @@ function bootstrap(): void {
       openExternal: (url) => shell.openExternal(url),
       openInEditor: (req) => editor.open(req),
       quickPick: (items, options) => quickPicks.show(items, options),
+      notifyWithActions: (payload) => notificationActions.ask(payload),
       toRenderer: (event, payload) => {
         const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
         if (!wc) return;
@@ -578,6 +593,8 @@ function bootstrap(): void {
       'ui:getState': () => uiState.get(),
       'ui:patchState': (patch) => uiState.patch(patch),
       'ui:quickPickResult': ({ requestId, index }) => quickPicks.settle(requestId, index),
+      'ui:confirmResult': ({ requestId, confirmed, checked }) => confirms.settle(requestId, { confirmed, checked }),
+      'notifications:action': ({ requestId, actionId }) => notificationActions.settle(requestId, actionId),
       'terminals:create': (req) => terminals.create(req),
       'terminals:kill': (req) => terminals.kill(req.id, req.force ?? false),
       'terminals:restart': (req) => terminals.restart(req.id),
@@ -843,28 +860,59 @@ function bootstrap(): void {
     if (!details.isMainFrame || details.isSameDocument) return;
     link.shellDidUnload();
     quickPicks.cancelAll();
+    confirms.cancelAll();
+    notificationActions.cancelAll();
   });
   win.webContents.on('render-process-gone', () => {
     link.shellDidUnload();
     quickPicks.cancelAll();
+    confirms.cancelAll();
+    notificationActions.cancelAll();
   });
-  win.on('closed', () => quickPicks.cancelAll());
+  win.on('closed', () => {
+    quickPicks.cancelAll();
+    confirms.cancelAll();
+    notificationActions.cancelAll();
+  });
   hosts.pty.onDidBecomeReady(() => link.hostDidBecomeReady());
 
   // Quit sequence: QuitGuard → flush layouts → scrollback snapshots → hosts.
   let quitting = false;
-  let lastQuitPrompt: { message: string; detail: string } | null = null;
+  let lastQuitPrompt: QuitPrompt | null = null;
   let quitInProgress = false;
   const quitGuard = async (): Promise<boolean> => {
     if (!settings.get()['terminal.confirmOnQuit']) return true;
     const busy = busyTerminals(terminals.list());
     if (busy.length === 0) return true;
-    const { message, detail } = describeQuit(busy, (id) => projects.get(id)?.name);
+    const prompt = describeQuit(busy, (id) => projects.get(id)?.name);
+    const { message, detail } = prompt;
     if (e2e) {
-      lastQuitPrompt = { message, detail };
-      // Tests answer through a global; a native dialog would block Playwright's app.close().
-      return (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'] !== 'cancel';
+      lastQuitPrompt = prompt;
+      // Tests answer through a global ('dialog' shows the real dialog): Playwright's app.close() must not wait.
+      const answer = (globalThis as Record<string, unknown>)['__oxyQuitGuardAnswer'];
+      if (answer !== 'dialog') return answer !== 'cancel';
     }
+    // The window's own dialog; the native one only when the window cannot show it (renderer gone).
+    if (!win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+    const answer = await confirms.ask({
+      title: prompt.title,
+      description: prompt.description,
+      details: prompt.items,
+      confirmLabel: 'Quit',
+      destructive: true,
+      tone: 'warning',
+      checkbox: { label: "Don't ask again", defaultChecked: false },
+    });
+    if (answer) {
+      if (!answer.confirmed) return false;
+      if (answer.checked) await settings.update({ 'terminal.confirmOnQuit': false });
+      return true;
+    }
+    if (win.isDestroyed()) return true;
     const { response, checkboxChecked } = await dialog.showMessageBox(win, {
       type: 'warning',
       message,

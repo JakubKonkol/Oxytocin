@@ -24,6 +24,15 @@ export interface RunProfile {
 export type RunStatus = 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'failed';
 export type StartedBy = 'user' | 'agent';
 
+/** A question the app asks in its terminal and waits on (e.g. whether to use another port). */
+export interface RunPrompt {
+  /** Changes with every new question. */
+  id: number;
+  text: string;
+  /** Answered with yes or no. */
+  yesNo: boolean;
+}
+
 /** What the UI and the MCP tools show about a profile's run. */
 export interface RunSnapshot {
   profileId: string;
@@ -36,6 +45,8 @@ export interface RunSnapshot {
   startedBy?: StartedBy;
   exitCode?: number;
   terminalId?: string;
+  /** The app waits for an answer in its terminal. */
+  prompt?: RunPrompt;
 }
 
 /** A profile with its run, as sent to the views. */

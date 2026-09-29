@@ -90,8 +90,12 @@ export const TerminalInfoSchema = z.object({
       exitCode: z.number().optional(),
       durationMs: z.number(),
       finishedAt: z.number(),
+      /** Stopped with Ctrl+C while it ran: its exit code is not a failure. */
+      interrupted: z.boolean().optional(),
     })
     .optional(),
+  /** Killed on request (a Stop, closing it): its exit code is not a failure. */
+  killed: z.boolean().optional(),
 });
 export type TerminalInfo = z.infer<typeof TerminalInfoSchema>;
 

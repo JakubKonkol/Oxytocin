@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import {
   defaultUiState,
   type PaneviewState,
-  SCRATCHPAD_MAX_LENGTH,
+  type ScratchpadState,
   type SidebarTool,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
@@ -26,7 +26,8 @@ interface UiStore {
   setPrimaryTools: (tools: SidebarTool[]) => void;
   /** Persists the `oxy.setState` state of a plugin view that lives outside workspaces (right sidebar tools). */
   setPluginViewState: (viewId: string, state: unknown) => void;
-  setScratchpadText: (text: string) => void;
+  /** Replaces the scratchpad state (texts and the "share across projects" choice). */
+  setScratchpad: (scratchpad: ScratchpadState) => void;
   /** Moves a command to the top of the palette's "recently used" list. */
   recordCommand: (id: string) => void;
 }
@@ -56,6 +57,16 @@ function persist(patch: UiStatePatch): void {
     timer = undefined;
     void ipc.invoke('ui:patchState', toSend);
   }, 300);
+}
+
+/** Sends pending changes now (quitting: the last keystrokes in the scratchpad must not be lost). */
+export async function flushUiState(): Promise<void> {
+  if (!timer) return;
+  clearTimeout(timer);
+  timer = undefined;
+  const toSend = pending;
+  pending = {};
+  await ipc.invoke('ui:patchState', toSend);
 }
 
 export const clampSidebarWidth = (w: number) => Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, w)));
@@ -110,8 +121,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
     set({ state: { ...get().state, pluginViewState } });
     persist({ pluginViewState: { [viewId]: value } });
   },
-  setScratchpadText(text) {
-    const scratchpad = { text: text.slice(0, SCRATCHPAD_MAX_LENGTH) };
+  setScratchpad(scratchpad) {
     set({ state: { ...get().state, scratchpad } });
     persist({ scratchpad });
   },

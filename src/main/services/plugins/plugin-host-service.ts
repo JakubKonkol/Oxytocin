@@ -7,6 +7,7 @@ import type { Settings } from '@shared/domain/settings';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import { QUICK_PICK_MAX_ITEMS, type QuickPickItem, QuickPickItemSchema } from '@shared/domain/quick-pick';
+import type { NotificationPayload } from '@shared/ipc/events';
 import type { Logger } from '@shared/logging/logger';
 import type {
   HostApiEnv,
@@ -89,6 +90,8 @@ export interface PluginCorePort {
   openInEditor(req: { path: string; line?: number; column?: number }): Promise<void>;
   /** Shows a quick pick in the command palette; resolves the chosen index or null. */
   quickPick(items: QuickPickItem[], options: { placeholder?: string; source?: string }): Promise<number | null>;
+  /** A toast with buttons; resolves the id of the clicked one, or null when it closed without a click. */
+  notifyWithActions(payload: NotificationPayload): Promise<string | null>;
   /** Renderer-side effects (toasts, panels, core commands). */
   toRenderer(
     event:
@@ -151,11 +154,21 @@ export function toTerminalMeta(t: TerminalInfo) {
     ...(t.foreground ? { foreground: t.foreground } : {}),
     ...(t.shellIntegration ? { shellIntegration: true } : {}),
     ...(t.command ? { command: t.command } : {}),
-    ...(t.lastCommand ? { lastCommand: t.lastCommand } : {}),
+    ...(t.lastCommand ? { lastCommand: publicLastCommand(t.lastCommand) } : {}),
   };
 }
 
+/** `lastCommand` as the plugin API declares it. */
+function publicLastCommand({ interrupted: _interrupted, ...rest }: NonNullable<TerminalInfo['lastCommand']>) {
+  return rest;
+}
+
 const PlacementSchema = z.enum(['active-group', 'right', 'below']);
+/** `showNotification` buttons (at most three, short titles). */
+const NotificationActionsSchema = z
+  .array(z.object({ id: z.string().min(1).max(100), title: z.string().trim().min(1).max(60) }))
+  .min(1)
+  .max(3);
 const TerminalCreateParamsSchema = z.object({
   projectId: z.string().min(1),
   profileId: z.string().optional(),
@@ -740,16 +753,20 @@ export class PluginHostService implements Disposable {
       case 'ui.showNotification': {
         const level = p['level'] === 'error' ? 'error' : p['level'] === 'warning' ? 'warning' : 'info';
         const message = typeof p['message'] === 'string' ? p['message'] : '';
-        core.toRenderer('toast', {
+        const actions = NotificationActionsSchema.safeParse(p['actions']);
+        const toast: NotificationPayload = {
           kind: level,
           message,
           ...(typeof p['detail'] === 'string' ? { description: p['detail'] } : {}),
-        });
+        };
         if (p['os'] === true) {
           this.permission(plugin, 'notifications.os');
           const s = core.settings();
           if (s['notifications.os'] && !s['notifications.doNotDisturb']) core.osNotify(plugin.displayName, message);
         }
+        if (actions.success && actions.data.length > 0)
+          return await core.notifyWithActions({ ...toast, actions: actions.data });
+        core.toRenderer('toast', toast);
         return null;
       }
       case 'ui.showQuickPick': {

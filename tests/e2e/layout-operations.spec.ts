@@ -101,6 +101,23 @@ test('closing a panel kills its terminal; renaming a tab updates the title', asy
     await win.getByTestId('tab-rename-input').fill('API server');
     await win.keyboard.press('Enter');
     await expect(win.getByTestId(`tab-${second.id}`).getByTestId('tab-title')).toHaveText('API server');
+    // Rename from the tab's context menu.
+    await win.getByTestId(`terminal-view-${second.terminalId}`).click();
+    const tab = (await win.getByTestId(`tab-${second.id}`).boundingBox())!;
+    await win.mouse.move(tab.x + 20, tab.y + tab.height / 2);
+    await win.mouse.down({ button: 'right' });
+    await win.mouse.up({ button: 'right' });
+    const item = (await win.getByRole('menuitem', { name: 'Rename' }).boundingBox())!;
+    await win.mouse.move(item.x + 10, item.y + item.height / 2, { steps: 5 });
+    await win.mouse.down();
+    await win.mouse.up();
+    const input = win.getByTestId('tab-rename-input');
+    await expect(input).toBeFocused();
+    await win.waitForTimeout(1000);
+    await expect(input).toBeFocused();
+    await win.keyboard.type('Web server');
+    await win.keyboard.press('Enter');
+    await expect(win.getByTestId(`tab-${second.id}`).getByTestId('tab-title')).toHaveText('Web server');
 
     await win.getByTestId(`terminal-view-${second.terminalId}`).click();
     await win.keyboard.press('Control+Shift+KeyW');

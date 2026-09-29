@@ -83,6 +83,26 @@ test('projects can be renamed and pinned', async () => {
     await win.getByTestId('projects-item-Delta API').click({ button: 'right' });
     await win.getByRole('menuitem', { name: 'Pin' }).click();
     await expect(win.getByTestId('projects-item-Delta API').getByLabel('Pinned')).toBeVisible();
+
+    // Rename from the context menu (typing in a terminal before): the field stays open and focused after the
+    // menu closed and gave the focus back.
+    await win.locator('.xterm').first().click();
+    const row = (await win.getByTestId('projects-item-Delta API').boundingBox())!;
+    await win.mouse.move(row.x + 30, row.y + row.height / 2);
+    await win.mouse.down({ button: 'right' });
+    await win.mouse.up({ button: 'right' });
+    const item = (await win.getByRole('menuitem', { name: 'Rename' }).boundingBox())!;
+    await win.mouse.move(item.x + 10, item.y + item.height / 2, { steps: 5 });
+    await win.mouse.down();
+    await win.mouse.up();
+    const input = win.getByTestId('project-rename-input');
+    await expect(input).toBeFocused();
+    await win.waitForTimeout(1000);
+    await expect(input).toBeVisible();
+    await expect(input).toBeFocused();
+    await win.keyboard.type('Delta Web');
+    await win.keyboard.press('Enter');
+    await expect(win.getByTestId('projects-item-Delta Web')).toBeVisible();
   } finally {
     await app.close();
   }

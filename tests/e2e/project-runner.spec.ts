@@ -255,6 +255,73 @@ test('Project Runner: detects apps, runs them in background terminals, edits pro
   }
 });
 
+/** Asks like `ng serve` when its port is taken, then serves; exits with 1 on Ctrl+C (like the Angular CLI). */
+const ASKING_SERVER = `const http = require('http');
+const readline = require('readline');
+process.on('SIGINT', () => process.exit(1));
+process.stdout.write('\\x1b[32m?\\x1b[39m Port 4200 is already in use.\\nWould you like to use a different port? (Y/n) ');
+const rl = readline.createInterface({ input: process.stdin });
+rl.once('line', (answer) => {
+  rl.close();
+  if (/^n/i.test(answer)) { console.log('Aborted.'); process.exit(1); }
+  const server = http.createServer((req, res) => res.end('ok'));
+  server.listen(0, '127.0.0.1', () => console.log('  Local:   http://localhost:' + server.address().port + '/'));
+});
+`;
+
+test('Project Runner: a question of a starting app is shown and answered; stopping it is no failure', async () => {
+  test.setTimeout(90_000);
+  const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
+  await writeFile(join(project, 'package.json'), JSON.stringify({ name: 'asking', scripts: { dev: 'node ask.js' } }));
+  await writeFile(join(project, 'package-lock.json'), '{}');
+  await writeFile(join(project, 'ask.js'), ASKING_SERVER);
+  const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  await writeFile(
+    join(userData, 'settings.json'),
+    // A stopped command would report "Command failed (exit 1)" after a second.
+    JSON.stringify({ 'projectRunner.mcp.enabled': false, 'notifications.commandFinishedMinSeconds': 1 }),
+  );
+  await withRunInLeftSidebar(userData);
+  const { app, win } = await launchApp({ userData, project });
+  try {
+    await waitForTerminal(win);
+    const frame = await runnerFrame(win);
+    const row = frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]');
+    await row.getByTestId('runner-start').click();
+
+    // The question shows in the Run view, the status bar and a toast instead of an endless "starting".
+    await expect(row).toHaveAttribute('data-prompt', 'true', { timeout: 30_000 });
+    await expect(row.getByTestId('runner-status')).toHaveText('waiting for input');
+    const prompt = frame.getByTestId('runner-prompt');
+    await expect(prompt.getByTestId('runner-prompt-text')).toHaveText(
+      'Port 4200 is already in use.\nWould you like to use a different port? (Y/n)',
+    );
+    await expect(win.getByTestId('status-item-projectRunner.status')).toContainText('waiting for input');
+    const toast = win.locator('[data-sonner-toast]').filter({ hasText: 'is waiting for your answer' });
+    await expect(toast).toBeVisible();
+    await expect(toast.getByTestId('toast-action-yes')).toBeVisible();
+    await expect(toast.getByTestId('toast-action-show')).toBeVisible();
+
+    await prompt.getByTestId('runner-prompt-yes').click();
+    await expect(row).toHaveAttribute('data-status', 'running', { timeout: 20_000 });
+    await expect(frame.getByTestId('runner-prompt')).toHaveCount(0);
+    await expect(row.getByTestId('runner-url')).toHaveText(/^localhost:\d+\/$/);
+    // The toast's answer is stale now: it does nothing.
+    await toast.getByTestId('toast-action-no').click();
+    await win.waitForTimeout(500);
+    await expect(row).toHaveAttribute('data-status', 'running');
+
+    // Stop: the app exits with 1 on Ctrl+C, which is a stop, not a failure.
+    await win.waitForTimeout(1200);
+    await row.getByTestId('runner-stop').click();
+    await expect(row).toHaveAttribute('data-status', 'stopped', { timeout: 20_000 });
+    await win.waitForTimeout(1500);
+    await expect(win.locator('[data-sonner-toast]').filter({ hasText: 'Command failed' })).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
 test('Project Runner: the MCP server can be turned off in the settings', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
   await writeFile(

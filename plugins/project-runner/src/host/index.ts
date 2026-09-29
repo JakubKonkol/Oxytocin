@@ -128,6 +128,7 @@ class RunnerService {
         this.push(projectId);
         this.scheduleStatus();
         this.scheduleSaveLinks();
+        this.notifyPrompts();
       }),
       oxy.settings.onDidChange('projectRunner.mcp', () => void this.applyMcpSettings()),
       this.runs,
@@ -380,6 +381,13 @@ class RunnerService {
     view.onRequest<{ profileId: string }, boolean>('logs', ({ profileId }) =>
       this.withProject(view, (p) => this.runs.showLogs(p.id, profileId)),
     );
+    view.onRequest<{ profileId: string; text: string; promptId?: number }, RunSnapshot>(
+      'answer',
+      ({ profileId, text, promptId }) => {
+        if (typeof text !== 'string' || text.length > 1000) throw new Error('Invalid answer.');
+        return this.withProject(view, (p) => this.runs.answer(p.id, profileId, text, promptId));
+      },
+    );
     view.onRequest<{ url: string }, void>('openUrl', async ({ url }) => {
       if (!/^https?:\/\//i.test(url)) throw new Error('Only http(s) addresses can be opened.');
       await this.oxy.ui.openExternal(url);
@@ -435,6 +443,49 @@ class RunnerService {
     return r;
   }
 
+  // ── questions of starting apps ──
+
+  private readonly notifiedPrompts = new Set<number>();
+
+  /**
+   * An app that asks something while starting (Angular's "Port 4200 is already in use… (Y/n)") would look like it
+   * hangs: tell the user once per question, with the answers and a way to its terminal.
+   */
+  private notifyPrompts(): void {
+    const open = new Set<number>();
+    for (const run of this.runs.active()) {
+      const prompt = run.prompt;
+      if (!prompt) continue;
+      open.add(prompt.id);
+      if (this.notifiedPrompts.has(prompt.id)) continue;
+      this.notifiedPrompts.add(prompt.id);
+      const project = this.project(run.projectId);
+      const name = `${run.name ?? run.profileId}${project ? ` (${project.name})` : ''}`;
+      void this.oxy.ui
+        .showNotification({
+          level: 'warning',
+          message: `${name} is waiting for your answer`,
+          detail: prompt.text,
+          actions: [
+            ...(prompt.yesNo
+              ? [
+                  { id: 'yes', title: 'Yes' },
+                  { id: 'no', title: 'No' },
+                ]
+              : []),
+            { id: 'show', title: 'Show Terminal' },
+          ],
+        })
+        .then(async (action) => {
+          if (action === 'yes' || action === 'no')
+            await this.runs.answer(run.projectId, run.profileId, action === 'yes' ? 'y' : 'n', prompt.id);
+          else if (action === 'show') await this.runs.showLogs(run.projectId, run.profileId);
+        })
+        .catch((e: unknown) => this.ctx.log.warn('Answering a run prompt failed', e));
+    }
+    for (const id of [...this.notifiedPrompts]) if (!open.has(id)) this.notifiedPrompts.delete(id);
+  }
+
   // ── status bar ──
 
   private scheduleStatus(): void {
@@ -449,14 +500,16 @@ class RunnerService {
       item.hide();
       return;
     }
-    // Amber while an app is still starting or stopping.
-    const settling = active.some((r) => r.status !== 'running');
-    item.text = `$(play) ${active.length} running`;
+    // Amber while an app is still starting or stopping, or waits for an answer.
+    const settling = active.some((r) => r.status !== 'running' || r.prompt);
+    const asking = active.filter((r) => r.prompt).length;
+    item.text = `$(play) ${active.length} running${asking ? ` · ${asking} waiting for input` : ''}`;
     item.color = settling ? 'warning' : 'success';
     item.tooltip = active
       .map((r) => {
         const project = this.project(r.projectId);
-        return `${project ? `${project.name}: ` : ''}${r.name ?? r.profileId} — ${r.status}${r.url ? ` (${r.url})` : ''}`;
+        const status = r.prompt ? `waiting for input: ${r.prompt.text.replace(/\s+/g, ' ')}` : r.status;
+        return `${project ? `${project.name}: ` : ''}${r.name ?? r.profileId} — ${status}${r.url ? ` (${r.url})` : ''}`;
       })
       .join('\n');
     item.command = 'projectRunner.show';
@@ -511,6 +564,7 @@ class RunnerService {
       stop: (p, id) => this.runs.stop(p.id, id),
       waitFor: (p, id, done, ms) => this.runs.waitFor(p.id, id, done, ms),
       logs: (p, id, lines) => this.runs.logs(p.id, id, lines),
+      answer: (p, id, text) => this.runs.answer(p.id, id, text),
       addProfile: (p, input) => this.saveProfile(p, undefined, input),
     };
   }

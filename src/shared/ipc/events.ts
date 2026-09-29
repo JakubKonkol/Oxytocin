@@ -13,6 +13,7 @@ import { HostStatusSchema } from '../domain/app-info';
 import { SettingsSchema } from '../domain/settings';
 import { ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { ProjectSchema } from '../domain/project';
+import { ConfirmRequestSchema } from '../domain/confirm';
 import { QuickPickRequestSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema } from '../domain/keybindings';
 import { UpdateStateSchema } from '../domain/updates';
@@ -27,6 +28,12 @@ export const NotificationPayloadSchema = z.object({
   target: z.object({ projectId: ProjectIdSchema, terminalId: TerminalIdSchema }).optional(),
   /** Skip the toast when the target terminal is visible. */
   onlyIfHidden: z.boolean().optional(),
+  /** Buttons (a plugin's `showNotification` actions); the click is answered with `notifications:action`. */
+  actions: z
+    .array(z.object({ id: z.string().min(1).max(100), title: z.string().min(1).max(60) }))
+    .max(3)
+    .optional(),
+  requestId: z.string().min(1).max(100).optional(),
 });
 export type NotificationPayload = z.infer<typeof NotificationPayloadSchema>;
 
@@ -79,6 +86,8 @@ export const eventContract = {
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),
   /** Show a plugin's quick pick in the command palette; answered with `ui:quickPickResult`. */
   'ui:quickPick': QuickPickRequestSchema,
+  /** Ask the user to confirm something in the window's own dialog; answered with `ui:confirmResult`. */
+  'ui:confirm': ConfirmRequestSchema,
   /** keybindings.json changed (editor or external edit). */
   'keybindings:changed': KeybindingsStateSchema,
   /** Auto-update progress (M9-T2). */

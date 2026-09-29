@@ -35,7 +35,7 @@ export type PtyHostEvents = HostBaseEvents & {
   'terminal:cwd': { id: TerminalId; cwd: string };
   /**
    * Shell integration (OSC 633, 04 §11): `prompt` at each prompt, `start` when a command runs, `end` when it
-   * finished (exit code when the shell reported one).
+   * finished (exit code when the shell reported one; `interrupted` when Ctrl+C was typed while it ran).
    */
   'terminal:command': {
     id: TerminalId;
@@ -43,6 +43,7 @@ export type PtyHostEvents = HostBaseEvents & {
     commandLine?: string;
     exitCode?: number;
     durationMs?: number;
+    interrupted?: boolean;
   };
   'terminal:activity': { id: TerminalId; lastOutputAt: number };
   'terminal:process': { id: TerminalId; descendants: ProcInfo[]; foreground?: ProcInfo };

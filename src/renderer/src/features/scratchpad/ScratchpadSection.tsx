@@ -20,8 +20,15 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useRef, useState } from 'react';
 import type { CoreSettings } from '@shared/domain/settings';
+import {
+  otherScratchpadsWithText,
+  scratchpadText,
+  withScratchpadShared,
+  withScratchpadText,
+} from '@shared/domain/ui-state';
 import { cn } from '../../lib/cn';
 import { ipc } from '../../lib/ipc-client';
+import { confirmDialog } from '../../stores/dialog-store';
 import { useProjectsStore } from '../../stores/projects-store';
 import { useSettingsStore } from '../../stores/settings-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
@@ -77,6 +84,74 @@ function useScratchpadSettings(): ScratchpadSettings {
 
 const updateSetting = (key: `scratchpad.${string}`, value: unknown) =>
   void ipc.invoke('settings:update', { [key]: value });
+
+const knownProjectIds = () => {
+  const { projects } = useProjectsStore.getState();
+  // Not loaded yet: prune nothing.
+  return projects.length > 0 ? projects.map((p) => p.id) : undefined;
+};
+
+/** Sets the text the scratchpad shows now (the shared one, or the active project's own). */
+function setScratchpadText(text: string): void {
+  const ui = useUiStore.getState();
+  const activeId = useProjectsStore.getState().activeId;
+  ui.setScratchpad(withScratchpadText(ui.state.scratchpad, activeId, text, knownProjectIds()));
+}
+
+/** The text the scratchpad shows now. */
+function useScratchpadText(): string {
+  const activeId = useProjectsStore((s) => s.activeId);
+  return useUiStore((s) => scratchpadText(s.state.scratchpad, activeId));
+}
+
+/**
+ * Turns "Share across projects" on or off. Turning it on replaces the other projects' own scratchpads with this
+ * one, so that asks first when any of them has text.
+ */
+async function setScratchpadShared(shared: boolean): Promise<void> {
+  const activeId = useProjectsStore.getState().activeId;
+  const current = useUiStore.getState().state.scratchpad;
+  if (shared) {
+    const others = otherScratchpadsWithText(current, activeId, knownProjectIds());
+    if (others.length > 0) {
+      const names = others
+        .map((id) => useProjectsStore.getState().projects.find((p) => p.id === id)?.name)
+        .filter((n): n is string => !!n);
+      const which =
+        names.length > 0 && names.length <= 3
+          ? names.join(', ')
+          : `${others.length} other project${others.length === 1 ? '' : 's'}`;
+      const ok = await confirmDialog({
+        title: 'Share one scratchpad across projects?',
+        description: `The scratchpad of ${which} will be replaced by the one you see now. Its text cannot be restored.`,
+        confirmLabel: 'Share and replace',
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+  }
+  const latest = useUiStore.getState();
+  latest.setScratchpad(withScratchpadShared(latest.state.scratchpad, shared, useProjectsStore.getState().activeId));
+}
+
+/** "Share across projects": one scratchpad for all projects, or one per project. */
+export function ScratchpadShareToggle() {
+  const shared = useUiStore((s) => s.state.scratchpad.shared);
+  return (
+    <Tooltip label={shared ? 'Every project shows the same scratchpad' : 'Every project has its own scratchpad'}>
+      <label className="flex h-6 cursor-pointer items-center gap-1.5 rounded-control px-1 text-small whitespace-nowrap text-fg-secondary hover:bg-card-hover hover:text-fg">
+        <input
+          type="checkbox"
+          data-testid="scratchpad-shared"
+          checked={shared}
+          onChange={(e) => void setScratchpadShared(e.target.checked)}
+          className="accent-accent"
+        />
+        Share across projects
+      </label>
+    </Tooltip>
+  );
+}
 
 /** Running agents, recomputed when terminals or projects change. */
 function useAgentTargets(): AgentTarget[] {
@@ -224,13 +299,13 @@ export function ScratchpadSettingsButton() {
 }
 
 export function ScratchpadClearButton() {
-  const empty = useUiStore((s) => s.state.scratchpad.text.length === 0);
+  const empty = useScratchpadText().length === 0;
   return (
     <IconButton
       label="Clear scratchpad"
       icon={<Trash2 size={13} />}
       disabled={empty}
-      onClick={() => useUiStore.getState().setScratchpadText('')}
+      onClick={() => setScratchpadText('')}
     />
   );
 }
@@ -323,8 +398,8 @@ function applyToTextarea(el: HTMLTextAreaElement, change: TextChange, setText: (
  * the right sidebar and as a workspace panel; every instance edits the same text.
  */
 export function ScratchpadEditor({ actions }: { actions?: ReactNode }) {
-  const text = useUiStore((s) => s.state.scratchpad.text);
-  const setText = useUiStore((s) => s.setScratchpadText);
+  const text = useScratchpadText();
+  const setText = setScratchpadText;
   const settings = useScratchpadSettings();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const targets = useAgentTargets();
@@ -392,33 +467,34 @@ export function ScratchpadEditor({ actions }: { actions?: ReactNode }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {(settings.formattingToolbar || actions) && (
-        <div
-          className="mb-1.5 flex flex-none flex-wrap items-center gap-0.5"
-          data-testid="scratchpad-toolbar"
-          role="toolbar"
-          aria-label="Formatting"
-        >
-          {settings.formattingToolbar &&
-            TOOLBAR.map((group, i) => (
-              <div key={i} className={cn('flex items-center gap-0.5', i > 0 && 'border-l border-line-subtle pl-0.5')}>
-                {group.map((b) => (
-                  <IconButton
-                    key={b.id}
-                    data-testid={`scratchpad-format-${b.id}`}
-                    label={b.label}
-                    {...(b.shortcut ? { shortcut: b.shortcut } : {})}
-                    icon={b.icon}
-                    // Keep the textarea's selection.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => format(b.action)}
-                  />
-                ))}
-              </div>
-            ))}
-          {actions && <div className="ml-auto flex items-center gap-0.5">{actions}</div>}
+      <div
+        className="mb-1.5 flex flex-none flex-wrap items-center gap-0.5"
+        data-testid="scratchpad-toolbar"
+        role="toolbar"
+        aria-label="Formatting"
+      >
+        {settings.formattingToolbar &&
+          TOOLBAR.map((group, i) => (
+            <div key={i} className={cn('flex items-center gap-0.5', i > 0 && 'border-l border-line-subtle pl-0.5')}>
+              {group.map((b) => (
+                <IconButton
+                  key={b.id}
+                  data-testid={`scratchpad-format-${b.id}`}
+                  label={b.label}
+                  {...(b.shortcut ? { shortcut: b.shortcut } : {})}
+                  icon={b.icon}
+                  // Keep the textarea's selection.
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => format(b.action)}
+                />
+              ))}
+            </div>
+          ))}
+        <div className="ml-auto flex items-center gap-0.5">
+          <ScratchpadShareToggle />
+          {actions}
         </div>
-      )}
+      </div>
       <textarea
         ref={textareaRef}
         data-testid="scratchpad-input"

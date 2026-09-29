@@ -19,6 +19,8 @@ import { syncPluginCommands } from './features/plugins/plugin-commands';
 import { registerPluginManagerCommands } from './features/plugins/plugin-manager';
 import { registerHelpCommands } from './features/help/HelpDialogs';
 import { registerPaletteCommands } from './features/palette/palette-store';
+import { registerMainConfirmRequests } from './stores/dialog-store';
+import { flushUiState } from './stores/ui-store';
 import { registerKeybindingCommands } from './features/keybindings/KeybindingsPanel';
 import { registerSettingsCommands } from './features/settings/SettingsPanel';
 import { registerProjectSettingsCommands } from './features/projects/ProjectSettingsDialog';
@@ -49,12 +51,16 @@ syncPluginCommands();
 registerPluginManagerCommands();
 registerHelpCommands();
 registerPaletteCommands();
+registerMainConfirmRequests();
 registerKeybindingCommands();
 registerSettingsCommands();
 registerProjectSettingsCommands();
 registerUpdateCommands();
 installGlobalKeybindings();
-(window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = flushAllWorkspaces;
+// Called by main while quitting: layouts plus the debounced UI state (scratchpad text).
+(window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = async () => {
+  await Promise.all([flushAllWorkspaces(), flushUiState()]);
+};
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');
