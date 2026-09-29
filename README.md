@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/JakubKonkol/Oxytocin/releases/latest"><img alt="Latest release" src="https://img.shields.io/badge/release-v0.5.2-orange" /></a>
+  <a href="https://github.com/JakubKonkol/Oxytocin/releases/latest"><img alt="Latest release" src="https://img.shields.io/badge/release-v0.5.3-orange" /></a>
   <a href="https://github.com/JakubKonkol/Oxytocin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JakubKonkol/Oxytocin/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue" /></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" />

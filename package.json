@@ -1,7 +1,7 @@
 {
   "name": "oxytocin",
   "productName": "Oxytocin",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "An IDE for the terminal and AI: a desktop hub for projects, AI agent terminals, live git changes and API usage.",
   "private": true,
   "license": "MIT",
