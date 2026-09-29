@@ -12,9 +12,10 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   is now named without spaces, and the release workflow checks that every file the update manifests list exists.
   Installed versions pick up 0.5.2 normally.
 - The README release badge no longer shows "no releases or repo not found".
-- **Scrollback after a restart** is no longer lost on a slow disk (e.g. antivirus scanning new files on Windows):
-  every terminal is snapshotted first and the snapshots are written together with the layout that points at them,
-  so a quit that runs out of time no longer leaves them unused.
+- **Scrollback after a restart** was sometimes lost (reliably on slower Windows machines): a layout save from the
+  window that arrived while Oxytocin was quitting (a shell exiting, a title changing) overwrote the record of the
+  saved terminal contents. Those saves now keep it. Terminals are also snapshotted all at once, so quitting with
+  several terminals is faster.
 
 ### Changed
 
