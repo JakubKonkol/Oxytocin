@@ -14,7 +14,6 @@
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup",
-      "onView:projectRunner.sidebar",
       "onPanel:projectRunner.panel",
       "onCommand:projectRunner.show",
       "onCommand:projectRunner.run"
@@ -30,17 +29,6 @@
       "net.listen-local"
     ],
     "contributes": {
-      "views": [
-        {
-          "id": "projectRunner.sidebar",
-          "slot": "sidebar",
-          "title": "Run",
-          "entry": "dist/views/runner.html",
-          "order": 250,
-          "initialHeight": 200,
-          "minHeight": 110
-        }
-      ],
       "panels": [
         {
           "type": "projectRunner.panel",

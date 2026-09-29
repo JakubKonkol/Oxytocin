@@ -78,7 +78,7 @@ The backend is imported and `activate(ctx)` runs on the first matching event:
 | Key | Contributes |
 |---|---|
 | `views` | Sidebar sections: `{ id, slot: "sidebar", title, entry, icon?, order?, initialHeight?, minHeight? }` |
-| `panels` | Center-area tabs: `{ type, title, entry, icon?, singleton?: false \| "global" \| "project", showInAddMenu? }` — with `showInAddMenu: true` the panel is a *tool*: it is listed in the workspace's **+** menu and the right sidebar's **Add tool** menu (opened without params) and can be dragged into the right sidebar |
+| `panels` | Center-area tabs: `{ type, title, entry, icon?, singleton?: false \| "global" \| "project", showInAddMenu? }` — with `showInAddMenu: true` the panel is a *tool*: it is listed in the workspace's **+** menu and the right sidebar's **Add tool** menu (opened without params) and can be dragged into either sidebar |
 | `statusBarItems` | `{ id, alignment?: "left" \| "right", priority? }` — text and visibility are set by the backend |
 | `commands` | `{ id, title, icon? }` — listed in the command palette (`Ctrl+Shift+P`) |
 | `configuration` | `{ prefix, properties }` — settings shown in **Settings**; every key starts with `<prefix>.` |
@@ -201,7 +201,7 @@ registered; dispose it when you no longer need it.
 `{ projectId, path, line?, column? }` (an absolute path inside the project) when the user picks **Open Preview** in the
 Changes list or `Ctrl+click`s a file path in a terminal (the `terminal.fileLinks.open` setting chooses between previews
 and the editor; an opener with `default: true` wins when several match). When a panel of that type already shows the
-file — in the workspace or the right sidebar — it is revealed instead, and its view receives the message
+file — in the workspace or a sidebar — it is revealed instead, and its view receives the message
 `{ type: 'oxy:reveal', line?, column? }` (`view.onMessage`) to scroll to the new position.
 
 ## Views
@@ -241,9 +241,10 @@ With React, `useOxyView()`, `useOxyMessage()` and `useOxyTheme()` come from `@ox
 - **Keyboard:** Oxytocin's shortcuts keep working while a view has focus.
 - **Limits:** messages up to 1 MB and 200 per second per view.
 - Views stay loaded when they are moved between groups; they are recreated after a restart (use `setState`).
-- Every panel can be dragged into the right sidebar (and back). A panel in the right sidebar is not tied to a project:
-  `view.projectId` is empty there, so follow the active project (`oxy.projects.getActive/onDidChangeActive`) or keep
-  the project in the panel's params.
+- Every panel can be dragged into the right sidebar, from there to the left sidebar, and back. A panel in a sidebar is
+  not tied to a project: `view.projectId` is empty there, so follow the active project
+  (`oxy.projects.getActive/onDidChangeActive`) or keep the project in the panel's params. `oxy.ui.openPanel` of a
+  `singleton` panel reveals the one already in a sidebar (with the same params) instead of opening another.
 
 ## Debugging
 

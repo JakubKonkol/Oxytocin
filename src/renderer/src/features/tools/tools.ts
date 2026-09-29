@@ -58,30 +58,64 @@ function transferViewState(fromViewId: string): string {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Right sidebar
+// Sidebars
 
-let paneviewApi: PaneviewApi | null = null;
+/** The right sidebar holds tools by default; any tool can move to the left sidebar and back. */
+export type SidebarSide = 'left' | 'right';
 
-/** Set by the right sidebar when its paneview is ready (null when it unmounts). */
-export function setSidebarPaneviewApi(api: PaneviewApi | null): void {
-  paneviewApi = api;
+const paneviewApis: Record<SidebarSide, PaneviewApi | null> = { left: null, right: null };
+
+/** Set by a sidebar when its paneview is ready (null when it unmounts). */
+export function setSidebarPaneviewApi(api: PaneviewApi | null, side: SidebarSide = 'right'): void {
+  paneviewApis[side] = api;
+}
+
+const toolsOf = (side: SidebarSide): SidebarTool[] => {
+  const state = useUiStore.getState().state;
+  return side === 'left' ? state.primaryTools : state.secondaryTools;
+};
+
+function setToolsOf(side: SidebarSide, tools: SidebarTool[]): void {
+  if (side === 'left') useUiStore.getState().setPrimaryTools(tools);
+  else useUiStore.getState().setSecondaryTools(tools);
+}
+
+const allSidebarTools = (): SidebarTool[] => [...toolsOf('right'), ...toolsOf('left')];
+
+/** A tool of either sidebar, with the side it is in. */
+export function findSidebarTool(id: string): { tool: SidebarTool; side: SidebarSide } | undefined {
+  for (const side of ['right', 'left'] as const) {
+    const tool = toolsOf(side).find((t) => t.id === id);
+    if (tool) return { tool, side };
+  }
+  return undefined;
 }
 
 /**
- * Whether a paneview drag (a section header) carries a right sidebar tool. Tool ids (`scratchpad`, `tool-…`) never
- * collide with the left sidebar's sections (`projects`, `changes`, `plugin:…`).
+ * Whether a paneview drag (a section header) carries a sidebar tool. Tool ids (`scratchpad`, `tool-…`) never
+ * collide with the left sidebar's own sections (`projects`, `changes`, `plugin:…`).
  */
 export function isSidebarToolDrag(data: PaneTransfer | undefined): data is PaneTransfer {
-  return !!data && sidebarTools().some((t) => t.id === data.paneId);
+  return !!data && allSidebarTools().some((t) => t.id === data.paneId);
 }
 
-const sidebarTools = () => useUiStore.getState().state.secondaryTools;
-
 let pendingReveal: string | null = null;
+/** Where a tool added to the left sidebar goes among its sections (paneview index), by tool id. */
+const pendingLeftIndex = new Map<string, number>();
 
-/** Opens the right sidebar, expands the tool and focuses it (the scratchpad's text box). */
+/** The paneview index a tool added to the left sidebar asked for (read once). */
+export function takePendingLeftIndex(toolId: string): number | undefined {
+  const index = pendingLeftIndex.get(toolId);
+  pendingLeftIndex.delete(toolId);
+  return index;
+}
+
+/** Opens the tool's sidebar, expands the tool and focuses it (the scratchpad's text box). */
 export function revealSidebarTool(id: string): void {
-  useUiStore.getState().toggleSecondarySidebar(true);
+  const side = findSidebarTool(id)?.side ?? 'right';
+  const ui = useUiStore.getState();
+  if (side === 'right') ui.toggleSecondarySidebar(true);
+  else if (ui.state.sidebar.collapsed) ui.toggleSidebar();
   pendingReveal = id;
   requestAnimationFrame(applyPendingReveal);
 }
@@ -89,29 +123,37 @@ export function revealSidebarTool(id: string): void {
 /** Finishes `revealSidebarTool` once the sidebar (re)mounted and has the tool's section. */
 export function applyPendingReveal(): void {
   const id = pendingReveal;
-  const pane = id ? paneviewApi?.getPanel(id) : undefined;
-  if (!id || !pane) return;
+  if (!id) return;
+  const side = (['right', 'left'] as const).find((s) => paneviewApis[s]?.getPanel(id));
+  const pane = side ? paneviewApis[side]?.getPanel(id) : undefined;
+  if (!side || !pane) return;
   pendingReveal = null;
   if (!pane.api.isExpanded) pane.api.setExpanded(true);
   if (id === SCRATCHPAD_TOOL_ID)
     requestAnimationFrame(() =>
-      document
-        .querySelector<HTMLElement>('[data-testid="secondary-sidebar"] [data-testid="scratchpad-input"]')
-        ?.focus(),
+      document.querySelector<HTMLElement>(`[data-sidebar-side="${side}"] [data-testid="scratchpad-input"]`)?.focus(),
     );
 }
 
-/** Adds a tool to the right sidebar (at `index`, default: the bottom); the scratchpad is only there once. */
-export function addSidebarTool(tool: SidebarTool, index?: number): void {
-  const tools = sidebarTools();
-  const existing = tool.kind === 'scratchpad' ? tools.find((t) => t.kind === 'scratchpad') : undefined;
+/**
+ * Adds a tool to a sidebar (right: at `index` of its tools, default the bottom; left: at paneview `index` among its
+ * sections, default the bottom). The scratchpad is only open once.
+ */
+export function addSidebarTool(tool: SidebarTool, index?: number, side: SidebarSide = 'right'): void {
+  const existing = tool.kind === 'scratchpad' ? allSidebarTools().find((t) => t.kind === 'scratchpad') : undefined;
   if (existing) {
     revealSidebarTool(existing.id);
     return;
   }
+  const tools = toolsOf(side);
   const next = [...tools];
-  next.splice(index === undefined ? next.length : Math.max(0, Math.min(index, next.length)), 0, tool);
-  useUiStore.getState().setSecondaryTools(next);
+  if (side === 'left') {
+    next.push(tool);
+    if (index !== undefined) pendingLeftIndex.set(tool.id, index);
+  } else {
+    next.splice(index === undefined ? next.length : Math.max(0, Math.min(index, next.length)), 0, tool);
+  }
+  setToolsOf(side, next);
   revealSidebarTool(tool.id);
 }
 
@@ -128,19 +170,49 @@ export function sidebarToolFor(def: ToolDefinition): SidebarTool {
   };
 }
 
-/** Closes a tool of the right sidebar (a plugin view's saved state goes with it). */
+/** Closes a sidebar tool (a plugin view's saved state goes with it). */
 export function closeSidebarTool(id: string): void {
-  const tools = sidebarTools();
-  const tool = tools.find((t) => t.id === id);
-  if (!tool) return;
-  useUiStore.getState().setSecondaryTools(tools.filter((t) => t.id !== id));
+  const found = findSidebarTool(id);
+  if (!found) return;
+  const { tool, side } = found;
+  setToolsOf(
+    side,
+    toolsOf(side).filter((t) => t.id !== id),
+  );
   if (tool.kind === 'plugin' && useUiStore.getState().state.pluginViewState[tool.viewId] !== undefined)
     useUiStore.getState().setPluginViewState(tool.viewId, undefined);
 }
 
-/** A global singleton plugin panel already open in the right sidebar (it is revealed instead of opened twice). */
-export function findSidebarPluginTool(panelType: string): SidebarTool | undefined {
-  return sidebarTools().find((t) => t.kind === 'plugin' && t.panelType === panelType);
+/** A fresh view instance for a moved sidebar tool, carrying over its saved state. */
+function carryToolState(viewId: string): string {
+  if (viewStates.get(viewId) === undefined) {
+    const saved = useUiStore.getState().state.pluginViewState[viewId];
+    if (saved !== undefined) viewStates.set(viewId, saved);
+  }
+  const next = transferViewState(viewId);
+  const state = viewStates.get(next);
+  if (state !== undefined) useUiStore.getState().setPluginViewState(next, state);
+  return next;
+}
+
+/** Moves a tool to the other sidebar (at `index`, see `addSidebarTool`); the view keeps its state. */
+export function moveSidebarToolToSide(id: string, side: SidebarSide, index?: number): boolean {
+  const found = findSidebarTool(id);
+  if (!found || found.side === side) return false;
+  const { tool } = found;
+  const moved: SidebarTool =
+    tool.kind === 'scratchpad' ? tool : { ...tool, id: newPanelId('tool'), viewId: carryToolState(tool.viewId) };
+  closeSidebarTool(id);
+  addSidebarTool(moved, index, side);
+  return true;
+}
+
+/** A plugin tool (of either sidebar) showing this panel type with these params: revealed instead of opened twice. */
+export function findSidebarPluginTool(panelType: string, params?: unknown): SidebarTool | undefined {
+  const key = JSON.stringify(params ?? null);
+  return allSidebarTools().find(
+    (t) => t.kind === 'plugin' && t.panelType === panelType && JSON.stringify(t.params ?? null) === key,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -190,13 +262,18 @@ function addPluginPanel(
   });
 }
 
-/** Moves a workspace panel (scratchpad or plugin panel) into the right sidebar at `index`. */
-export function moveWorkspacePanelToSidebar(api: DockviewApi, panelId: string, index?: number): boolean {
+/** Moves a workspace panel (scratchpad or plugin panel) into a sidebar at `index` (see `addSidebarTool`). */
+export function moveWorkspacePanelToSidebar(
+  api: DockviewApi,
+  panelId: string,
+  index?: number,
+  side: SidebarSide = 'right',
+): boolean {
   const panel = api.getPanel(panelId);
   if (!panel) return false;
   if (panel.api.component === 'scratchpad') {
     api.removePanel(panel);
-    addSidebarTool({ id: SCRATCHPAD_TOOL_ID, kind: 'scratchpad' }, index);
+    addSidebarTool({ id: SCRATCHPAD_TOOL_ID, kind: 'scratchpad' }, index, side);
     return true;
   }
   if (panel.api.component !== 'plugin') return false;
@@ -217,16 +294,17 @@ export function moveWorkspacePanelToSidebar(api: DockviewApi, panelId: string, i
       ...(p.params !== undefined ? { params: p.params } : {}),
     },
     index,
+    side,
   );
   return true;
 }
 
-/** Moves a right sidebar tool into a workspace (default: the active group of the active project). */
+/** Moves a sidebar tool into a workspace (default: the active group of the active project). */
 export function moveSidebarToolToWorkspace(
   toolId: string,
   target?: { api: DockviewApi; projectId: string; position?: AddPanelPositionOptions },
 ): boolean {
-  const tool = sidebarTools().find((t) => t.id === toolId);
+  const tool = findSidebarTool(toolId)?.tool;
   if (!tool) return false;
   const ws = target ?? getActiveWorkspace();
   if (!ws) {
@@ -301,11 +379,11 @@ export function dropPosition(position: Position, group: DockviewGroupPanel | und
 }
 
 /**
- * View: Focus Scratchpad — the right sidebar's scratchpad, else the active workspace's scratchpad panel, else a
+ * View: Focus Scratchpad — the scratchpad of a sidebar, else the active workspace's scratchpad panel, else a
  * scratchpad added to the right sidebar.
  */
 export function focusScratchpad(): void {
-  if (sidebarTools().some((t) => t.kind === 'scratchpad')) {
+  if (allSidebarTools().some((t) => t.kind === 'scratchpad')) {
     revealSidebarTool(SCRATCHPAD_TOOL_ID);
     return;
   }

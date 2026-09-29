@@ -2,6 +2,7 @@ import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
+import { defaultUiState } from '../../src/shared/domain/ui-state';
 import { launchApp } from './helpers/launch';
 import { oxyTest, waitForTerminal } from './helpers/terminal';
 
@@ -44,6 +45,32 @@ console.log('ok');
   await chmod(command, 0o755);
   return { command, log };
 }
+
+/**
+ * The Run tool is not shown until it is added to a sidebar: these tests start with it in the left sidebar (where it
+ * used to be) and the right sidebar closed, so terminals keep their width on small CI screens.
+ */
+async function withRunInLeftSidebar(userData: string): Promise<void> {
+  const ui = defaultUiState();
+  ui.secondarySidebar.collapsed = true;
+  ui.primaryTools = [
+    {
+      id: 'tool-run',
+      kind: 'plugin',
+      pluginId: 'oxytocin.project-runner',
+      panelType: 'projectRunner.panel',
+      viewId: 'pv-run',
+      title: 'Run',
+    },
+  ];
+  await writeFile(join(userData, 'ui-state.json'), JSON.stringify(ui));
+}
+
+const uiTools = (win: Page) =>
+  win.evaluate(() => window.oxy.invoke('ui:getState')) as Promise<{
+    primaryTools: { id: string; panelType?: string }[];
+    secondaryTools: { id: string; panelType?: string }[];
+  }>;
 
 async function runnerFrame(win: Page): Promise<Frame> {
   let found: Frame | undefined;
@@ -95,6 +122,7 @@ test('Project Runner: detects apps, runs them in background terminals, edits pro
     join(userData, 'settings.json'),
     JSON.stringify({ 'projectRunner.mcp.port': MCP_PORT, 'projectRunner.claudeCommand': claude.command }),
   );
+  await withRunInLeftSidebar(userData);
   const { app, win } = await launchApp({ userData, project });
   try {
     await waitForTerminal(win);
@@ -233,6 +261,7 @@ test('Project Runner: the MCP server can be turned off in the settings', async (
     join(userData, 'settings.json'),
     JSON.stringify({ 'projectRunner.mcp.port': MCP_PORT, 'projectRunner.mcp.enabled': false }),
   );
+  await withRunInLeftSidebar(userData);
   const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
   try {
     await waitForTerminal(win);
@@ -244,5 +273,93 @@ test('Project Runner: the MCP server can be turned off in the settings', async (
     expect((await fetch(`http://127.0.0.1:${MCP_PORT}/mcp`, { method: 'POST' })).status).toBe(401);
   } finally {
     await app.close();
+  }
+});
+
+test('Run is added to the right sidebar, keeps its menus on screen and moves between the sidebars', async () => {
+  test.setTimeout(120_000);
+  const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
+  await writeFile(join(project, 'package.json'), JSON.stringify({ name: 'demo-web', scripts: { dev: 'node s.js' } }));
+  await writeFile(join(project, 'package-lock.json'), '{}');
+  const first = await launchApp({ project, secondarySidebar: true });
+  const { userData } = first;
+  let toolId = '';
+  try {
+    const { win } = first;
+    await waitForTerminal(win);
+    const left = win.getByTestId('sidebar');
+    const right = win.getByTestId('secondary-sidebar');
+    // Not shown until added: no Run section in the left sidebar, no Run tool anywhere.
+    await expect(left.getByTestId('section-header-plugin:oxytocin.project-runner:projectRunner.sidebar')).toHaveCount(
+      0,
+    );
+    await expect(win.getByTestId('sidebar-tool-projectRunner.panel')).toHaveCount(0);
+
+    // "Add tool" of the right sidebar → Run.
+    await right.getByTestId('section-header-scratchpad').hover();
+    await right.getByTestId('add-tool-below-scratchpad').click();
+    await win.getByTestId('sidebar-add-tool-menu').getByTestId('add-tool-plugin:projectRunner.panel').click();
+    await expect(right.getByTestId('sidebar-tool-projectRunner.panel')).toBeVisible();
+    let frame = await runnerFrame(win);
+    const row = () => frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]');
+    await expect(row()).toContainText('demo-web');
+
+    // "More actions" at the right edge of the window: the menu opens to the left, fully on screen.
+    await row().getByTestId('runner-more').click();
+    const menu = win.getByTestId('plugin-context-menu');
+    await expect(menu).toBeVisible();
+    const box = (await menu.boundingBox())!;
+    const viewport = await win.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    await win.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+
+    // "Move to left sidebar".
+    // ui-state.json is written with a short delay.
+    await expect
+      .poll(
+        async () =>
+          (toolId = (await uiTools(win)).secondaryTools.find((t) => t.panelType === 'projectRunner.panel')?.id ?? ''),
+      )
+      .not.toBe('');
+    await right.getByTestId(`section-header-${toolId}`).hover();
+    await right.getByTestId(`move-tool-side-${toolId}`).click();
+    await expect(left.getByTestId('sidebar-tool-projectRunner.panel')).toBeVisible();
+    await expect(right.getByTestId('sidebar-tool-projectRunner.panel')).toHaveCount(0);
+    await expect
+      .poll(async () => (await uiTools(win)).primaryTools.map((t) => t.panelType))
+      .toEqual(['projectRunner.panel']);
+    toolId = (await uiTools(win)).primaryTools[0]!.id;
+    frame = await runnerFrame(win);
+    await expect(row()).toContainText('demo-web');
+  } finally {
+    await first.app.close();
+  }
+
+  // It stays in the left sidebar after a restart; its section header drags it back to the right sidebar.
+  const again = await launchApp({ userData });
+  try {
+    const { win } = again;
+    await expect(win.getByTestId('app-ready')).toBeVisible({ timeout: 30_000 });
+    const left = win.getByTestId('sidebar');
+    const right = win.getByTestId('secondary-sidebar');
+    await expect(left.getByTestId('sidebar-tool-projectRunner.panel')).toBeVisible();
+    const frame = await runnerFrame(win);
+    await expect(frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]')).toContainText('demo-web');
+    const target = right.getByTestId('scratchpad-input');
+    const box = (await target.boundingBox())!;
+    await left
+      .getByTestId(`section-header-${toolId}`)
+      .dragTo(target, { targetPosition: { x: box.width / 2, y: box.height - 10 } });
+    await expect(right.getByTestId('sidebar-tool-projectRunner.panel')).toBeVisible();
+    await expect(left.getByTestId('sidebar-tool-projectRunner.panel')).toHaveCount(0);
+    await expect
+      .poll(async () => (await uiTools(win)).secondaryTools.map((t) => t.panelType ?? 'scratchpad'))
+      .toEqual(['scratchpad', 'projectRunner.panel']);
+  } finally {
+    await again.app.close();
   }
 });

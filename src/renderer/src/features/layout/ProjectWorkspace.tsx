@@ -124,7 +124,13 @@ function tabContextMenu(projectId: string) {
         ? { label: 'Dock to layout', action: () => dockPanel(api, panel.id) }
         : { label: 'Move to new floating group', action: () => moveToFloating(api, panel.id) },
       ...(isMovableComponent(panel.api.component)
-        ? [{ label: 'Move to right sidebar', action: () => void moveWorkspacePanelToSidebar(api, panel.id) }]
+        ? [
+            { label: 'Move to right sidebar', action: () => void moveWorkspacePanelToSidebar(api, panel.id) },
+            {
+              label: 'Move to left sidebar',
+              action: () => void moveWorkspacePanelToSidebar(api, panel.id, undefined, 'left'),
+            },
+          ]
         : []),
     ];
   };

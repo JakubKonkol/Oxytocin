@@ -35,6 +35,21 @@ describe('ui state', () => {
     expect(UiStateSchema.shape.secondaryTools.safeParse([{ id: 'x', kind: 'terminal' }]).success).toBe(false);
   });
 
+  it('keeps the left sidebar tools; files of older versions have none', () => {
+    const { primaryTools: _none, ...older } = defaultUiState();
+    expect(UiStateSchema.parse(older).primaryTools).toEqual([]);
+    const tool = {
+      id: 'tool-2',
+      kind: 'plugin' as const,
+      pluginId: 'oxytocin.project-runner',
+      panelType: 'projectRunner.panel',
+      viewId: 'pv-2',
+    };
+    const state = applyUiStatePatch(defaultUiState(), { primaryTools: [tool] });
+    expect(UiStateSchema.parse(state).primaryTools).toEqual([tool]);
+    expect(state.secondaryTools).toEqual(defaultUiState().secondaryTools);
+  });
+
   it('caps the scratchpad size', () => {
     expect(UiStateSchema.shape.scratchpad.safeParse({ text: 'x'.repeat(SCRATCHPAD_MAX_LENGTH + 1) }).success).toBe(
       false,

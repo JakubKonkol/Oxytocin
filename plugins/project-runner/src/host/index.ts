@@ -30,7 +30,6 @@ import type { RunnerState } from '../shared/types';
 import { RunManager, type RunSnapshot, type StartedBy, type TerminalLink } from './runner';
 
 export const PANEL_TYPE = 'projectRunner.panel';
-export const VIEW_ID = 'projectRunner.sidebar';
 const STATUS_ITEM = 'projectRunner.status';
 const DETECT_TTL_MS = 30_000;
 const MAX_READ_BYTES = 1024 * 1024;
@@ -528,7 +527,6 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const provider = { resolve: (view: PluginView) => s.attach(view) };
   ctx.subscriptions.push(
     oxy.ui.registerPanelProvider(PANEL_TYPE, provider),
-    oxy.ui.registerViewProvider(VIEW_ID, provider),
     oxy.commands.register('projectRunner.show', () => oxy.ui.openPanel(PANEL_TYPE, { placement: 'right' })),
     oxy.commands.register('projectRunner.run', async () => {
       const project = await oxy.projects.getActive();

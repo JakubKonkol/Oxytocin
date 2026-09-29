@@ -37,8 +37,8 @@ export const PaneviewStateSchema = z.object({
 export type PaneviewState = z.infer<typeof PaneviewStateSchema>;
 
 /**
- * A tool in the right sidebar: the scratchpad or a plugin panel (`contributes.panels`) moved or added there. The
- * same panels open in the workspace; tools move between both by drag and drop.
+ * A tool in a sidebar: the scratchpad or a plugin panel (`contributes.panels`) moved or added there. The same panels
+ * open in the workspace; tools move between the workspace and both sidebars by drag and drop.
  */
 export const SidebarToolSchema = z.discriminatedUnion('kind', [
   z.object({ id: z.string().min(1), kind: z.literal('scratchpad') }),
@@ -71,6 +71,8 @@ export const UiStateSchema = z.object({
     .array(SidebarToolSchema)
     .max(50)
     .default(() => DEFAULT_SIDEBAR_TOOLS.map((t) => ({ ...t }))),
+  /** Tools moved into the left sidebar, between its own sections (their order lives in `paneview`). */
+  primaryTools: z.array(SidebarToolSchema).max(50).default([]),
   scratchpad: ScratchpadStateSchema.default({ text: '' }),
   pluginViewState: z.record(z.string(), z.unknown()),
   dismissedHints: z.array(z.string()),
@@ -88,6 +90,7 @@ export function defaultUiState(): UiState {
     secondarySidebar: { width: SIDEBAR_DEFAULT_WIDTH, collapsed: false },
     secondaryPaneview: { order: [], sizes: {}, collapsed: [], hidden: [] },
     secondaryTools: DEFAULT_SIDEBAR_TOOLS.map((t) => ({ ...t })),
+    primaryTools: [],
     scratchpad: { text: '' },
     pluginViewState: {},
     dismissedHints: [],
@@ -102,6 +105,7 @@ export const UiStatePatchSchema = z.object({
   secondarySidebar: SidebarStateSchema.partial().optional(),
   secondaryPaneview: PaneviewStateSchema.optional(),
   secondaryTools: z.array(SidebarToolSchema).max(50).optional(),
+  primaryTools: z.array(SidebarToolSchema).max(50).optional(),
   scratchpad: ScratchpadStateSchema.optional(),
   pluginViewState: z.record(z.string(), z.unknown()).optional(),
   dismissedHints: z.array(z.string()).optional(),
@@ -119,6 +123,7 @@ export function applyUiStatePatch(state: UiState, patch: UiStatePatch): UiState 
       : state.secondarySidebar,
     secondaryPaneview: patch.secondaryPaneview ?? state.secondaryPaneview,
     secondaryTools: patch.secondaryTools ?? state.secondaryTools,
+    primaryTools: patch.primaryTools ?? state.primaryTools,
     scratchpad: patch.scratchpad ?? state.scratchpad,
     pluginViewState: patch.pluginViewState
       ? { ...state.pluginViewState, ...patch.pluginViewState }

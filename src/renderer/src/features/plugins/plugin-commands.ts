@@ -74,7 +74,7 @@ const pathParam = (params: unknown) => (params as { path?: unknown } | undefined
 
 /**
  * Opens a file with a plugin opener: its panel type with `{ projectId, path, line?, column? }` (absolute path). A
- * panel of that type already showing the file (in the workspace or the right sidebar) is revealed instead, and its
+ * panel of that type already showing the file (in the workspace or a sidebar) is revealed instead, and its
  * view receives `{ type: 'oxy:reveal', line, column }` for the new position.
  */
 export async function openWithOpener(
@@ -86,11 +86,10 @@ export async function openWithOpener(
   const reveal = (viewId: string) => {
     if (position.line) requestAnimationFrame(() => postToView(viewId, { type: 'oxy:reveal', ...position }));
   };
-  const tool = useUiStore
-    .getState()
-    .state.secondaryTools.find(
-      (t) => t.kind === 'plugin' && t.panelType === opener.panelType && samePath(pathParam(t.params), absolutePath),
-    );
+  const { secondaryTools, primaryTools } = useUiStore.getState().state;
+  const tool = [...secondaryTools, ...primaryTools].find(
+    (t) => t.kind === 'plugin' && t.panelType === opener.panelType && samePath(pathParam(t.params), absolutePath),
+  );
   if (tool?.kind === 'plugin') {
     revealSidebarTool(tool.id);
     reveal(tool.viewId);

@@ -3,6 +3,23 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Changed
+
+- **The Run tool is shown only when you add it.** The Project Runner no longer has a fixed section in the left sidebar:
+  add **Run** from **Add tool** in the right sidebar (or the workspace's **+** menu). If you used the Run section,
+  add it once again. Apps, run profiles, the status bar count and the MCP server work as before.
+- **Tools move between the sidebars.** Every tool of the right sidebar (Run, the scratchpad, the JSON Formatter, plugin
+  panels) moves to the left sidebar with its **Move to left sidebar** button or by dragging its section header there,
+  and back the same way; a workspace tab's menu has **Move to left sidebar** too. The place is kept across restarts.
+
+### Fixed
+
+- Menus of plugin views (e.g. **⋯** of an app in the Run tool) no longer open partly off-screen near the right or
+  bottom edge of the window; they open to the left or above instead. **Escape** closes them.
+- *Run: Show Run Panel* (and the Run status bar item) reveals the Run tool where it is instead of opening a second one.
+
 ## [0.5.2] - 2026-09-29
 
 ### Fixed

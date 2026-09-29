@@ -1,4 +1,11 @@
-import { type IPaneviewPanelProps, type PaneviewApi, PaneviewReact, type PaneviewReadyEvent } from 'dockview-react';
+import {
+  getPaneData,
+  type IPaneviewPanelProps,
+  type PaneviewApi,
+  type PaneviewDidDropEvent,
+  PaneviewReact,
+  type PaneviewReadyEvent,
+} from 'dockview-react';
 import { useEffect, useRef, useState } from 'react';
 import type { PaneviewState } from '@shared/domain/ui-state';
 import { Plus } from 'lucide-react';
@@ -13,8 +20,19 @@ import { useUiStore } from '../stores/ui-store';
 import { usePluginsStore } from '../stores/plugins-store';
 import { type PluginPaneParams, PluginSidebarView, sidebarViewInstanceId } from '../features/plugins/PluginSidebarView';
 import { usePluginViewMeta } from '../features/plugins/view-meta-store';
+import { shieldIframesWhileDragging } from '../features/layout/drag-shield';
+import {
+  applyPendingReveal,
+  draggedWorkspacePanel,
+  moveSidebarToolToSide,
+  moveWorkspacePanelToSidebar,
+  setSidebarPaneviewApi,
+  takePendingLeftIndex,
+} from '../features/tools/tools';
+import { addToolPane, TOOL_COMPONENTS, ToolActions, type ToolPaneParams, toolDraggedFrom } from './sidebar-tools';
 
 export const SIDEBAR_HEADER_SIZE = 30;
+const TOOL_DEFAULT_SIZE = 300;
 
 interface SectionDefinition {
   id: string;
@@ -59,9 +77,10 @@ function PaneHeader(props: IPaneviewPanelProps) {
     const d = props.api.onDidExpansionChange((e) => setExpanded(e.isExpanded));
     return () => d.dispose();
   }, [props.api]);
-  const plugin = props.params as Partial<PluginPaneParams> | undefined;
-  const extras =
-    plugin?.pluginId && plugin.viewId
+  const plugin = props.params as Partial<PluginPaneParams & ToolPaneParams> | undefined;
+  const extras = plugin?.toolId
+    ? { actions: <ToolActions toolId={plugin.toolId} side="left" /> }
+    : plugin?.pluginId && plugin.viewId
       ? { count: <PluginPaneBadge instanceId={sidebarViewInstanceId(plugin.pluginId, plugin.viewId)} /> }
       : props.api.id === 'projects'
         ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> }
@@ -80,6 +99,7 @@ function PaneHeader(props: IPaneviewPanelProps) {
 }
 
 const components = {
+  ...TOOL_COMPONENTS,
   'plugin-view': PluginSidebarView,
   projects: () => <ProjectsSection />,
   changes: () => <ChangesSection />,
@@ -130,6 +150,42 @@ function usePluginPanes(api: PaneviewApi | null, saved: PaneviewState): void {
   }, [api, views, saved]);
 }
 
+/**
+ * Keeps the tool sections (moved here from the right sidebar or the workspace) in sync with `primaryTools`: at the
+ * position they were dropped at, else where they were at the last start, else at the bottom.
+ */
+function useToolPanes(api: PaneviewApi | null): void {
+  const tools = useUiStore((s) => s.state.primaryTools);
+  useEffect(() => {
+    if (!api) return;
+    const wanted = new Set(tools.map((t) => t.id));
+    for (const pane of [...api.panels]) {
+      const toolId = (pane.params as Partial<ToolPaneParams> | undefined)?.toolId;
+      if (toolId && !wanted.has(pane.id)) api.removePanel(pane);
+    }
+    const layout = useUiStore.getState().state.paneview;
+    for (const tool of tools) {
+      if (api.getPanel(tool.id)) continue;
+      const saved = layout.order.indexOf(tool.id);
+      const index =
+        takePendingLeftIndex(tool.id) ??
+        (saved >= 0
+          ? api.panels.filter((p) => {
+              const i = layout.order.indexOf(p.id);
+              return i >= 0 && i < saved;
+            }).length
+          : api.panels.length);
+      addToolPane(api, tool, {
+        index: Math.max(0, Math.min(index, api.panels.length)),
+        expanded: !layout.collapsed.includes(tool.id),
+        size: layout.sizes[tool.id] ?? TOOL_DEFAULT_SIZE,
+        headerSize: SIDEBAR_HEADER_SIZE,
+      });
+    }
+    applyPendingReveal();
+  }, [api, tools]);
+}
+
 export function Sidebar() {
   const saved = useUiStore((s) => s.state.paneview);
   const setPaneview = useUiStore((s) => s.setPaneview);
@@ -137,7 +193,21 @@ export function Sidebar() {
   const [api, setApi] = useState<PaneviewApi | null>(null);
   // Layout restored at start-up (later changes are written by the paneview itself).
   const [initialLayout] = useState(saved);
+  const containerRef = useRef<HTMLDivElement>(null);
   usePluginPanes(api, initialLayout);
+  useEffect(() => {
+    setSidebarPaneviewApi(api, 'left');
+    return () => setSidebarPaneviewApi(null, 'left');
+  }, [api]);
+  useToolPanes(api);
+  // Section headers are HTML5 drag sources: keep plugin iframes from swallowing the drag.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onDragStart = () => shieldIframesWhileDragging();
+    el.addEventListener('dragstart', onDragStart, true);
+    return () => el.removeEventListener('dragstart', onDragStart, true);
+  }, []);
 
   const onReady = (event: PaneviewReadyEvent) => {
     const state = savedRef.current;
@@ -168,6 +238,10 @@ export function Sidebar() {
         requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="changes-tree"]')?.focus());
       },
     });
+    // Tools dragged from the right sidebar (section headers) or the workspace (tabs) can be dropped here.
+    event.api.onUnhandledDragOver((e) => {
+      if (draggedWorkspacePanel() || toolDraggedFrom('right', getPaneData()?.paneId)) e.accept();
+    });
     setApi(event.api);
     let timer: ReturnType<typeof setTimeout> | undefined;
     event.api.onDidLayoutChange(() => {
@@ -176,12 +250,27 @@ export function Sidebar() {
     });
   };
 
+  const onDidDrop = (e: PaneviewDidDropEvent) => {
+    const target = e.api.panels.indexOf(e.panel);
+    const index = target < 0 ? undefined : target + (e.position === 'bottom' ? 1 : 0);
+    const fromRight = toolDraggedFrom('right', getPaneData()?.paneId);
+    if (fromRight) {
+      moveSidebarToolToSide(fromRight, 'left', index);
+      return;
+    }
+    const dragged = draggedWorkspacePanel();
+    if (dragged) moveWorkspacePanelToSidebar(dragged.api, dragged.panel.id, index, 'left');
+  };
+
   return (
-    <PaneviewReact
-      className="oxy-sidebar dockview-theme-oxytocin h-full"
-      components={components}
-      headerComponents={{ section: PaneHeader }}
-      onReady={onReady}
-    />
+    <div ref={containerRef} className="h-full" data-sidebar-side="left">
+      <PaneviewReact
+        className="oxy-sidebar dockview-theme-oxytocin h-full"
+        components={components}
+        headerComponents={{ section: PaneHeader }}
+        onReady={onReady}
+        onDidDrop={onDidDrop}
+      />
+    </div>
   );
 }

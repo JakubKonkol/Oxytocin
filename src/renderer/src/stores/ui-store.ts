@@ -22,6 +22,8 @@ interface UiStore {
   toggleSecondarySidebar: (open?: boolean) => void;
   setSecondaryPaneview: (paneview: PaneviewState) => void;
   setSecondaryTools: (tools: SidebarTool[]) => void;
+  /** Tools of the left sidebar (moved there from the right sidebar or the workspace). */
+  setPrimaryTools: (tools: SidebarTool[]) => void;
   /** Persists the `oxy.setState` state of a plugin view that lives outside workspaces (right sidebar tools). */
   setPluginViewState: (viewId: string, state: unknown) => void;
   setScratchpadText: (text: string) => void;
@@ -98,6 +100,10 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setSecondaryTools(secondaryTools) {
     set({ state: { ...get().state, secondaryTools } });
     persist({ secondaryTools });
+  },
+  setPrimaryTools(primaryTools) {
+    set({ state: { ...get().state, primaryTools } });
+    persist({ primaryTools });
   },
   setPluginViewState(viewId, value) {
     const pluginViewState = { ...get().state.pluginViewState, [viewId]: value };

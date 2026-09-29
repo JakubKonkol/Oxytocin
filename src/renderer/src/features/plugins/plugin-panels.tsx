@@ -41,8 +41,9 @@ export async function openPluginPanel(
 ): Promise<void> {
   const contribution = usePluginsStore.getState().contributions.panels.find((p) => p.type === panelType);
   if (!contribution) throw new OxyError('NOT_FOUND', `Unknown panel type: ${panelType}`);
-  // A global singleton already open as a right sidebar tool is shown there.
-  const inSidebar = contribution.singleton === 'global' ? findSidebarPluginTool(panelType) : undefined;
+  // A singleton already open as a sidebar tool (left or right) is shown there: a sidebar tool follows the active
+  // project, so it serves every project.
+  const inSidebar = contribution.singleton ? findSidebarPluginTool(panelType, o.params) : undefined;
   if (inSidebar) {
     revealSidebarTool(inSidebar.id);
     return;

@@ -56,8 +56,8 @@ and never kills a process; layouts and terminal scrollback come back after a res
 ### 🧰 A modular workspace
 
 The **+** of every tab group opens a new terminal (with any profile) or a **tool**: the scratchpad, the JSON Formatter
-or any plugin panel. Tools split, stack and float exactly like terminals. Drag one onto the **right sidebar** to keep
-it next to you in every project, and drag it back whenever you like.
+or any plugin panel. Tools split, stack and float exactly like terminals. Drag one onto the **right sidebar** (or the
+left one) to keep it next to you in every project, move it between the sidebars, and drag it back whenever you like.
 
 <p align="center">
   <img alt="Claude Code next to a dev server and a JSON Formatter, with the + menu listing terminals and tools" src="docs/images/modular-workspace.png" width="960" />
@@ -71,11 +71,12 @@ agent without submitting it. Close the scratchpad, reorder the sections or add o
 
 The **Project Runner** finds what a project can run — `package.json` scripts (Next.js, Vite, Angular, …), .NET
 projects with their launch URLs, Django/FastAPI/Flask apps, Go, Rust, Spring Boot, Laravel, Rails, Docker Compose —
-and starts it with one click. The **Run** section shows every app's status and the URL it serves; its output stays in
-a terminal you can open at any time. Add your own run profiles (command, folder, environment) per project.
+and starts it with one click. Add the **Run** tool to a sidebar (**Add tool** in the right sidebar, then move it to the
+left one if you like): it shows every app's status and the URL it serves; its output stays in a terminal you can open
+at any time. Add your own run profiles (command, folder, environment) per project.
 
-Agents can use it too: the runner is an **MCP server** (`Connect Claude Code` in the Run section), so Claude Code can
-list, start, restart and stop your apps and read their logs — and you see in the Run section what the agent started.
+Agents can use it too: the runner is an **MCP server** (`Connect Claude Code` in the Run tool), so Claude Code can
+list, start, restart and stop your apps and read their logs — and you see in the Run tool what the agent started.
 
 ### 🔍 Live changes
 

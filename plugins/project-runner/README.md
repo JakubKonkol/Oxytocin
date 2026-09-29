@@ -22,8 +22,9 @@ The project folder (3 levels deep by default, `projectRunner.scanDepth`) is sear
 
 ## Running
 
-- The **Run** section (left sidebar) and the **Run** tool (the workspace's **+** menu, movable into the right sidebar)
-  list the apps of the active project with **Run**, **Stop**, **Restart**, **Show logs** and a menu (edit, copy the
+- The **Run** tool lists the apps of the active project. It is not shown until you add it: **Add tool** in the right
+  sidebar (the section's **Move to left sidebar** button or a drag moves it to the left sidebar and back) or the
+  workspace's **+** menu. It with **Run**, **Stop**, **Restart**, **Show logs** and a menu (edit, copy the
   command, reset, hide/delete). The status bar shows how many apps run.
 - Every app runs in its own terminal, started in the background with the project's environment; **Show logs** opens it.
   The terminal is reused for the next run while its shell is idle.
@@ -40,7 +41,7 @@ The project folder (3 levels deep by default, `projectRunner.scanDepth`) is sear
 
 Detected apps can be edited (name, command, folder, environment variables, URL) and hidden; your own profiles are
 added with **+**. Profiles are stored per project in the plugin's storage (`plugin-data/oxytocin.project-runner`) and
-kept across restarts. Detection runs again when the Run section is shown after 30 seconds; **Detect apps again**
+kept across restarts. Detection runs again when the Run tool is shown after 30 seconds; **Detect apps again**
 rescans at once.
 
 ## MCP server for agents
@@ -57,9 +58,9 @@ With `projectRunner.mcp.enabled` (on by default) the plugin serves the Model Con
 | `add_run_profile` | Saves a new profile for the project |
 
 Every tool takes `cwd` (the agent's working directory selects the project) or `project`. Apps started by an agent are
-marked **agent** in the Run section, so you see what it runs.
+marked **agent** in the Run tool, so you see what it runs.
 
-**Connect Claude Code** (in the Run section, or the command) runs
+**Connect Claude Code** (in the Run tool, or the command) runs
 `claude mcp add --scope user --transport http oxytocin-runner http://127.0.0.1:47286/mcp --header "Authorization: Bearer …"`
 (`projectRunner.claudeCommand` names the `claude` executable). The **⋯** menu next to it copies that command or an
 `mcpServers` JSON snippet for other MCP clients, and disconnects Claude Code again. Turn the server off with
