@@ -137,6 +137,7 @@ const CORE_COMMANDS = new Set([
   'oxytocin.diff.open',
   'oxytocin.changes.refresh',
   'oxytocin.panel.focus',
+  'oxytocin.mcp.openSettings',
 ]);
 
 const MAX_HANG_INCIDENTS = 2;

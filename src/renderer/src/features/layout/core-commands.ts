@@ -49,6 +49,9 @@ export function runCoreCommand(id: string, args: unknown[]): void {
     case 'oxytocin.terminal.new':
       void executeCommand('terminal.new');
       break;
+    case 'oxytocin.mcp.openSettings':
+      void executeCommand('oxytocin.mcp.openSettings');
+      break;
     case 'oxytocin.terminal.focus': {
       const t = useTerminalsStore.getState().terminals[String(args[0])];
       if (t) void revealTerminal(t.projectId, t.id);

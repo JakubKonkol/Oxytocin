@@ -72,6 +72,7 @@ The backend is imported and `activate(ctx)` runs on the first matching event:
 | `onCommand:<id>` | One of the plugin's commands runs |
 | `onView:<id>` / `onPanel:<type>` | One of its views or panels opens |
 | `onAgentDetected:<agentId>` | An AI agent (e.g. `claude-code`) is detected in a terminal |
+| `onMcpTool:<name>` | An agent calls one of the plugin's MCP tools (see [Tools for AI agents](#tools-for-ai-agents)) |
 
 ### Contributions
 
@@ -85,6 +86,7 @@ The backend is imported and `activate(ctx)` runs on the first matching event:
 | `fileOpeners` | `{ id, extensions, panelType, title, default? }` — opens files from the Changes list and terminal links in a panel (see [File openers](#file-openers)) |
 | `terminalProfiles` | `{ id, name, kind?: "shell" \| "agent", command?, args?, env?, icon? }` |
 | `agents` | Agent detection rules: `{ id, displayName, provider?, processNames?, commandLinePatterns?, icon? }` |
+| `mcp` | Tools for AI agents: `{ prefix, tools }` (see [Tools for AI agents](#tools-for-ai-agents)) |
 
 Setting properties use a JSON-schema subset: `type` (`boolean`, `number`, `integer`, `string`, `array`, `object`),
 `default`, `enum` (+ `enumDescriptions`), `minimum`, `maximum`, `description`. Invalid values are rejected in the
@@ -106,6 +108,7 @@ use.
 | `agents.read` / `agents.annotate` | `oxy.agents.list/onDidChange` / `reportSession`, `reportState` |
 | `git.read` | `oxy.git.*` |
 | `notifications.os` | `showNotification({ os: true })` |
+| `mcp.tools` | `oxy.mcp.registerTool` and `contributes.mcp` — tools AI agents can call (the consent dialog lists them) |
 | `fs.read-project`, `fs.read-home`, `net.listen-local`, `net.fetch` | Informational: declare what the backend does with Node APIs |
 
 ## The backend
@@ -203,6 +206,62 @@ Changes list or `Ctrl+click`s a file path in a terminal (the `terminal.fileLinks
 and the editor; an opener with `default: true` wins when several match). When a panel of that type already shows the
 file — in the workspace or a sidebar — it is revealed instead, and its view receives the message
 `{ type: 'oxy:reveal', line?, column? }` (`view.onMessage`) to scroll to the new position.
+
+### Tools for AI agents
+
+Oxytocin runs one local MCP server (`oxytocin`) that the user connects Claude Code and other agents to once (*Settings
+→ Agent Tools*). Plugins add tools to it; agents see them as soon as the plugin is enabled and lose them when it is
+disabled or fails — running Claude Code sessions are told through MCP's `notifications/tools/list_changed`, no
+re-connecting needed. Since API 0.1.5.
+
+Declare the tools in the manifest (they are listed before the plugin is activated, and shown in the consent dialog):
+
+```jsonc
+"permissions": ["mcp.tools"],
+"activationEvents": ["onMcpTool:tests_run"],
+"contributes": {
+  "mcp": {
+    "prefix": "tests",
+    "tools": [
+      {
+        "name": "tests_run",
+        "title": "Run tests",
+        "description": "Runs the project's tests and returns the failures with file and line.",
+        "inputSchema": { "type": "object", "properties": { "filter": { "type": "string" } } },
+        "annotations": { "readOnlyHint": false, "destructiveHint": false },
+        "timeoutMs": 120000
+      }
+    ]
+  }
+}
+```
+
+and handle them in the backend:
+
+```ts
+ctx.subscriptions.push(
+  oxy.mcp.registerTool('tests_run', async (args, context) => {
+    const filter = typeof args['filter'] === 'string' ? args['filter'] : undefined; // arguments are untrusted input
+    const failures = await runTests(context.projectId, filter, context.signal);
+    return failures.length ? failures.join('\n') : 'All tests passed.';
+  }),
+);
+```
+
+- **Names.** One `prefix` per plugin (`^[a-z][a-z0-9]{1,15}$`, `oxy` is reserved); every tool is named `<prefix>_…`
+  (`^[a-zA-Z0-9_-]{1,64}$`). Claude Code shows it as `mcp__oxytocin__tests_run`. When two plugins claim a prefix, a
+  built-in plugin wins, otherwise the lower plugin id; the other plugin shows an error in the plugin manager.
+- **Descriptions** are how agents choose tools: say what the tool does *and when to use it*.
+- **Results.** Return a string or `{ content: [{ type: 'text', text } | { type: 'image', data, mimeType }], isError?,
+  structuredContent? }`. A thrown error is reported to the agent as a tool error. Text over 256 KB is cut and images
+  over 5 MB are left out (with a note to the agent).
+- **Context.** `context.projectId` is the project of the calling agent's terminal (else its `cwd` or `project`
+  argument, else the active project); `terminalId` and `agentId` are set when known. `context.signal` aborts when the
+  agent cancels the call, it times out (`timeoutMs`, default 60 s, at most 10 minutes) or the plugin is deactivated.
+- **Asking the user.** `annotations.destructiveHint: true` makes Oxytocin ask before each call (*Allow once*, *Always
+  allow*, *Deny*). Users can switch any tool off or change its policy in *Settings → Agent Tools*.
+- **Runtime tools.** `oxy.mcp.registerTool(definition, handler)` adds a tool that is not in the manifest (the name still
+  starts with the prefix); it is offered while the returned `Disposable` lives.
 
 ## Views
 

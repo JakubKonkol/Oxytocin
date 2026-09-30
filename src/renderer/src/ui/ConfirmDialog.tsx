@@ -14,6 +14,13 @@ export interface ConfirmDialogProps {
   details?: readonly string[];
   confirmLabel?: string;
   cancelLabel?: string;
+  /** A third button between Cancel and Confirm. */
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+  /** Monospace text in a scrollable block (e.g. a tool's arguments). */
+  code?: string;
+  /** Confirming is not possible yet (e.g. no answer chosen). */
+  confirmDisabled?: boolean;
   destructive?: boolean;
   /** Icon and colour of the dialog (default: `danger` when destructive, else `info`). */
   tone?: ConfirmTone;
@@ -37,6 +44,10 @@ export function ConfirmDialog({
   details,
   confirmLabel = 'OK',
   cancelLabel = 'Cancel',
+  secondaryLabel,
+  onSecondary,
+  code,
+  confirmDisabled = false,
   destructive = false,
   tone = destructive ? 'danger' : 'info',
   children,
@@ -81,6 +92,14 @@ export function ConfirmDialog({
                   ))}
                 </ul>
               )}
+              {code && (
+                <pre
+                  data-testid="confirm-dialog-code"
+                  className="mt-3 max-h-48 overflow-auto rounded-control border border-line-subtle bg-card px-3 py-2 font-mono text-small whitespace-pre-wrap text-fg-secondary"
+                >
+                  {code}
+                </pre>
+              )}
               {children && <div className="mt-3">{children}</div>}
             </div>
           </div>
@@ -90,8 +109,21 @@ export function ConfirmDialog({
                 {cancelLabel}
               </Button>
             </AlertDialog.Cancel>
+            {secondaryLabel && onSecondary && (
+              <AlertDialog.Action asChild>
+                <Button variant="secondary" data-testid="confirm-dialog-secondary" onClick={onSecondary}>
+                  {secondaryLabel}
+                </Button>
+              </AlertDialog.Action>
+            )}
+            {/* One element whatever `confirmDisabled` says: remounting it would move the focus (autoFocus). */}
             <AlertDialog.Action asChild>
-              <Button variant={destructive ? 'danger' : 'primary'} autoFocus={!destructive} onClick={onConfirm}>
+              <Button
+                variant={destructive ? 'danger' : 'primary'}
+                autoFocus={!destructive && !confirmDisabled}
+                disabled={confirmDisabled}
+                onClick={onConfirm}
+              >
                 {confirmLabel}
               </Button>
             </AlertDialog.Action>

@@ -5,6 +5,25 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+### Added
+
+- **One MCP server for your AI agents.** Oxytocin runs a local MCP server (`oxytocin`, 127.0.0.1 only, protected by a
+  token) that Claude Code, Codex CLI, Cursor and other agents connect to once. It offers Oxytocin's own tools — list
+  the projects and terminals, read the output of another terminal (a dev server, a test run), notify you, ask you a
+  question in a dialog, open a file for you — plus the tools of your plugins. When you turn a plugin on or off, its
+  tools appear or disappear in running agent sessions without reconnecting (for agents that support MCP's live tool
+  updates; others see them in their next session).
+- **Settings → Agent Tools**: the server's status, **Connect Claude Code** (one click, no re-connecting when plugins
+  change), copyable config for other clients, *Reset token*, every tool with an on/off switch and *Run without
+  asking* / *Ask first* / *Blocked*, and a log of recent calls (without their arguments). Tools that change or delete
+  something ask first by default: *Allow once*, *Always allow* or *Deny* — also with a system notification when
+  Oxytocin is in the background. Open it with *Agent Tools: Open* in the command palette.
+- Oxytocin knows which terminal an agent calls from (Claude Code passes it along), so tools act on the right project
+  without being told the folder.
+- **Plugins can give agents tools** (plugin API 0.1.5): `contributes.mcp` with a tool prefix and the tools, the
+  `mcp.tools` permission (the consent dialog lists the tools), `onMcpTool:<name>` activation and
+  `oxy.mcp.registerTool(…)`, also for tools added at runtime. See *Tools for AI agents* in the plugin docs.
+
 ### Fixed
 
 - **Terminals restored after a restart** no longer show old prompt lines several times, lose the last lines of the

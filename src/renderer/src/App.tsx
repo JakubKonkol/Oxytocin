@@ -23,6 +23,7 @@ import { reportSettingsProblems } from './features/settings/SettingsPanel';
 import { PluginConsentDialog } from './features/plugins/PluginConsentDialog';
 import { subscribeUpdates } from './features/updates/update-store';
 import { TooltipProvider } from './ui/Tooltip';
+import { subscribeMcp } from './features/agent-tools/mcp-store';
 
 export function App() {
   const [loaded, setLoaded] = useState(false);
@@ -36,6 +37,7 @@ export function App() {
     subscribeProjects();
     subscribeKeybindings();
     subscribeUpdates();
+    subscribeMcp();
     ipc.on('notifications:show', showNotification);
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req));

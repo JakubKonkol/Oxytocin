@@ -48,6 +48,11 @@ export function PluginConsentDialog() {
               {details.permissions.map((p) => (
                 <li key={p.id} title={p.id}>
                   {p.description}
+                  {p.items && (
+                    <span data-testid="plugin-consent-items" className="text-fg-muted">
+                      : {p.items.join(', ')}
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>

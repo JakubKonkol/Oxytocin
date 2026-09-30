@@ -14,6 +14,7 @@ import { Button } from '../../ui/Button';
 import { IconButton } from '../../ui/IconButton';
 import { notify } from '../../ui/Toast';
 import { getActiveWorkspace } from '../layout/workspace-registry';
+import { AgentToolsView } from '../agent-tools/AgentToolsView';
 import {
   allDescriptors,
   filterDescriptors,
@@ -25,24 +26,32 @@ import {
 } from './settings-model';
 
 export const SETTINGS_PANEL_ID = 'settings-editor';
+/** The settings section with Oxytocin's MCP server and the tools agents can use. */
+export const AGENT_TOOLS_SECTION = 'Agent Tools';
 
-/** Opens (or focuses) the Settings editor; `query` pre-fills the search (e.g. a problem's key). */
-export function openSettingsEditor(query?: string): void {
+/**
+ * Opens (or focuses) the Settings editor; `query` pre-fills the search (e.g. a problem's key), `section` shows one
+ * section (e.g. Agent Tools).
+ */
+export function openSettingsEditor(query?: string, section?: string): void {
   const workspace = getActiveWorkspace();
   if (!workspace) {
     notify('info', 'Open a project to edit settings');
     return;
   }
   if (query !== undefined) pendingQuery = query;
+  if (section !== undefined) pendingSection = section;
   const existing = workspace.api.getPanel(SETTINGS_PANEL_ID);
   if (existing) {
     existing.api.setActive();
     if (query !== undefined) window.dispatchEvent(new CustomEvent('oxy:settings-query', { detail: query }));
+    if (section !== undefined) window.dispatchEvent(new CustomEvent('oxy:settings-section', { detail: section }));
     return;
   }
   workspace.api.addPanel({ id: SETTINGS_PANEL_ID, component: 'settings', title: 'Settings' });
 }
 let pendingQuery: string | undefined;
+let pendingSection: string | undefined;
 
 async function openSettingsFile(): Promise<void> {
   try {
@@ -57,6 +66,11 @@ export function registerSettingsCommands(): void {
     id: 'workbench.openSettings',
     title: 'Preferences: Open Settings',
     run: () => openSettingsEditor(),
+  });
+  registerCommand({
+    id: 'oxytocin.mcp.openSettings',
+    title: 'Agent Tools: Open (MCP Server, Connect Claude Code)',
+    run: () => openSettingsEditor('', AGENT_TOOLS_SECTION),
   });
   registerCommand({
     id: 'workbench.openSettingsFile',
@@ -315,13 +329,25 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
     pendingQuery = undefined;
     return q;
   });
-  const [section, setSection] = useState<string | null>(null);
+  const [section, setSection] = useState<string | null>(() => {
+    const s = pendingSection ?? null;
+    pendingSection = undefined;
+    return s;
+  });
   const [coreProblems, setCoreProblems] = useState<SettingsProblem[]>([]);
 
   useEffect(() => {
     const onQuery = (e: Event) => setQuery((e as CustomEvent<string>).detail);
+    const onSection = (e: Event) => {
+      setSection((e as CustomEvent<string>).detail);
+      pendingSection = undefined;
+    };
     window.addEventListener('oxy:settings-query', onQuery);
-    return () => window.removeEventListener('oxy:settings-query', onQuery);
+    window.addEventListener('oxy:settings-section', onSection);
+    return () => {
+      window.removeEventListener('oxy:settings-query', onQuery);
+      window.removeEventListener('oxy:settings-section', onSection);
+    };
   }, []);
   // Problems are re-read whenever settings.json changes.
   useEffect(() => {
@@ -398,6 +424,7 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
           ))}
         </nav>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
+          {!searching && section === AGENT_TOOLS_SECTION && <AgentToolsView />}
           {groups.map((g) => (
             <section key={g.section} data-testid="settings-group" data-section={g.section} className="mb-4">
               <h2 className="oxy-label border-b border-line-subtle py-1.5">{g.section}</h2>

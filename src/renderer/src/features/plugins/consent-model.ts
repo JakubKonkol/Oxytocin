@@ -9,7 +9,8 @@ export interface ConsentDetails {
   publisher: string;
   /** The plugin runs Node.js code in the Plugin Host (no sandbox). */
   hasBackend: boolean;
-  permissions: { id: PluginPermission; description: string }[];
+  /** `items`: what exactly (the titles of the tools agents get with `mcp.tools`). */
+  permissions: { id: PluginPermission; description: string; items?: string[] }[];
   /** It replaces a built-in plugin with the same id. */
   replacesBuiltin: boolean;
 }
@@ -19,7 +20,10 @@ export function consentDetails(plugin: PluginDescriptor): ConsentDetails {
   return {
     publisher: plugin.publisher ?? 'an unknown publisher',
     hasBackend: !!m?.main,
-    permissions: (m?.permissions ?? []).map((id) => ({ id, description: PERMISSION_DESCRIPTIONS[id] })),
+    permissions: (m?.permissions ?? []).map((id) => {
+      const tools = id === 'mcp.tools' ? (m?.contributes.mcp?.tools ?? []).map((t) => t.title ?? t.name) : [];
+      return { id, description: PERMISSION_DESCRIPTIONS[id], ...(tools.length ? { items: tools } : {}) };
+    }),
     replacesBuiltin: (plugin.shadowed ?? []).some((s) => s.source === 'builtin'),
   };
 }
