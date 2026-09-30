@@ -9,8 +9,8 @@ a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Moni
 2. **Commit only a working state:** `npm run check` green, the relevant E2E tests green, the app builds and starts.
 3. **Record user-visible changes** in the `## [Unreleased]` section at the top of `CHANGELOG.md` (add the heading
    if it is missing; a release renames it to the version), then commit and **push** (`git push origin main`).
-4. **Never wire unfinished features into the visible UI.** Keep unfinished parts unwired or behind the
-   `OXYTOCIN_EXPERIMENTAL=1` environment flag.
+4. **No feature flags.** While Oxytocin is in development (0.x), a feature is available as soon as the version
+   containing it is released. Split large features into steps that each leave a complete, usable state.
 5. Commits: Conventional Commits (`feat(terminals): …`, `fix(git): …`), authored as the repository owner
    (`git config user.name "Jakub Konkol"`, `git config user.email "jakub.konkol27@gmail.com"`), **without**
    `Co-Authored-By` trailers or "Generated with Claude Code" footers.

@@ -48,8 +48,6 @@ User-visible result:
 | Consent dialog model | `src/renderer/src/features/plugins/consent-model.ts` |
 | Plugin author docs | `docs/plugins/README.md`, `packages/plugin-api/CHANGELOG.md` |
 
-`OXYTOCIN_EXPERIMENTAL` is mentioned in `CLAUDE.md` but **not implemented anywhere yet**; step 1 adds it.
-
 ## Design
 
 ### Where the server lives
@@ -307,7 +305,7 @@ tool's timeout → deny. Never block the hub's event loop while waiting.
 ### How agents find out about new tools
 
 - Clients that support `list_changed` refresh the list within the running session. Claude Code is believed to
-  support it — **verify on the current version first** (step 2 below). Record the result in this file.
+  support it — **verify on the current version first** (step 1 below). Record the result in this file.
 - Clients that do not support it see the new tools in their next session (`tools/list` at start).
 - `initialize.instructions` is built dynamically: one paragraph on Oxytocin plus one line per plugin that currently
   contributes tools. `oxy_capabilities` is the always-working fallback.
@@ -316,9 +314,11 @@ tool's timeout → deny. Never block the hub's event loop while waiting.
 
 ## Pitfalls
 
-- **Unfinished work stays invisible.** Until the last step, the hub, its settings and the *Agent tools* panel run only
-  with `OXYTOCIN_EXPERIMENTAL=1`. The Project Runner keeps its own server until the migration step so released
-  behaviour never breaks.
+- **No feature flags.** Everything on `main` ships with the next release, so every step must leave a complete,
+  usable state (no half-built panel, no setting that does nothing). Steps 1–3 add no UI; the *Agent tools* panel
+  lands complete in step 4. Aim to ship the whole plan, including the Project Runner migration (step 5), in one
+  release so users do not see two MCP servers; until the migration lands, the runner keeps its own server so nothing
+  breaks.
 - **Do not break the existing runner MCP users.** Their Claude Code config points at `oxytocin-runner` on 47286. The
   migration must be explicit and the old server must keep working until the user reconnects (or for one release).
 - **Main process rules:** no synchronous I/O, no blocking waits (the `ask` dialog is async), zod at every boundary
@@ -349,34 +349,33 @@ tool's timeout → deny. Never block the hub's event loop while waiting.
 Each step: code + tests, `npm run check` green, relevant E2E green (`xvfb-run -a npm run e2e` on Linux), commit
 (Conventional Commits, authored as the owner, no trailers), push.
 
-1. **Experimental flag.** Read `OXYTOCIN_EXPERIMENTAL=1` in main once at start-up, expose it to the renderer
-   (app info) and to the Plugin Hosts' API env. Unit test. No visible change.
-2. **Hub transport (experimental).** `src/main/services/mcp/http-server.ts`: move the runner's server logic, add
+1. **Hub transport.** `src/main/services/mcp/http-server.ts`: move the runner's server logic, add
    sessions, SSE, `DELETE`, `listChanged: true`, cancellation, size caps. Integration test with a real HTTP client:
    initialize → session id → GET stream → trigger a change → receive `notifications/tools/list_changed` → `tools/list`
    shows the new tool; unknown session → 404; bad token/Host/Origin → 401/403 on POST, GET and DELETE.
-   **Manual check:** register the experimental server in Claude Code, start a session, enable a test tool, and
-   confirm Claude Code picks it up without restarting. Also check whether `${OXYTOCIN_TERMINAL_ID}` is expanded in the
-   header. Write both results into this file (*Verification log* below).
-3. **Registry + core tools (experimental).** Pure registry with unit tests (listing rules, prefix conflicts,
-   debounce/diff, policy defaults). Core tools with unit tests. Settings `mcp.*`, token storage, caller context.
-4. **Plugin contributions (experimental).** Manifest schema (`contributes.mcp`, `mcp.tools` permission,
-   `onMcpTool:` activation), RPC methods, `oxy.mcp.registerTool` in `src/plugin-host/api.ts`, host restart handling,
-   Plugin API 0.1.5 types and changelog, `docs/plugins/README.md`. Tests: schema unit tests, host API unit tests, an
-   integration test with a fixture plugin in `tests/fixtures/plugins/` (enable → tool listed → call → disable →
-   removed → notification sent).
-5. **Agent tools panel + client registration (experimental).** Settings panel, *Connect Claude Code*, copy config,
-   reset token, `ask` dialog, call log. E2E test (`tests/e2e/mcp-hub.spec.ts`): enable a fixture plugin in the
-   plugin manager → an SSE client connected to the hub receives `list_changed` and sees the tool; turning the tool
-   off in the panel removes it; an `ask` tool shows the dialog and *Deny* returns an error to the client.
-6. **Migrate the Project Runner.** Its tools move to `contributes.mcp` with prefix `run` and are handled through
+   **Manual check:** register the hub in Claude Code by hand (`claude mcp add …`), start a session, add a test tool,
+   and confirm Claude Code picks it up without restarting. Also check whether `${OXYTOCIN_TERMINAL_ID}` is expanded in
+   the header. Write both results into this file (*Verification log* below).
+2. **Registry + core tools.** Pure registry with unit tests (listing rules, prefix conflicts, debounce/diff, policy
+   defaults). Core tools with unit tests. Settings `mcp.*`, token storage, caller context.
+3. **Plugin contributions.** Manifest schema (`contributes.mcp`, `mcp.tools` permission, `onMcpTool:` activation),
+   RPC methods, `oxy.mcp.registerTool` in `src/plugin-host/api.ts`, host restart handling, Plugin API 0.1.5 types and
+   changelog, `docs/plugins/README.md`. Tests: schema unit tests, host API unit tests, an integration test with a
+   fixture plugin in `tests/fixtures/plugins/` (enable → tool listed → call → disable → removed → notification sent).
+4. **Agent tools panel + client registration.** Settings panel, *Connect Claude Code*, copy config, reset token,
+   `ask` dialog, call log. E2E test (`tests/e2e/mcp-hub.spec.ts`): enable a fixture plugin in the plugin manager → an
+   SSE client connected to the hub receives `list_changed` and sees the tool; turning the tool off in the panel
+   removes it; an `ask` tool shows the dialog and *Deny* returns an error to the client.
+5. **Migrate the Project Runner.** Its tools move to `contributes.mcp` with prefix `run` and are handled through
    `oxy.mcp`; its own server, token, `projectRunner.mcp.*` settings and connect button go away (settings deprecated
    for one release); the Run view links to *Settings → Agent tools* for connecting. Update its README and
    `tests/e2e/project-runner.spec.ts`. Migration of the `oxytocin-runner` registration.
-7. **Release it.** Remove the experimental gate, add the `## [Unreleased]` entry to `CHANGELOG.md` (user-facing
-   wording: one MCP server, plugin tools appear live, Agent tools settings, runner migration note), update the
-   README's feature list, rename this file from `01-unreleased-…` to `01-released-…` (or delete it) in the release
-   commit.
+6. **Wrap up.** Update the README's feature list. After the release that contains the feature, rename this file from
+   `01-unreleased-…` to `01-released-…` (or delete it).
+
+Steps that change what users see (4 and 5, and any user-visible part of the others) add their entry to
+`## [Unreleased]` in `CHANGELOG.md` in the same commit (user-facing wording: one MCP server, plugin tools appear
+live, *Agent tools* settings, runner migration note).
 
 ## Definition of done
 
@@ -391,7 +390,7 @@ Each step: code + tests, `npm run check` green, relevant E2E green (`xvfb-run -a
 
 ## Verification log
 
-Fill in during step 2.
+Fill in during step 1.
 
 - Claude Code version tested: _
 - `notifications/tools/list_changed` refreshes tools in a running session: _
