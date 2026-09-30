@@ -26,8 +26,11 @@ export const SpawnOptionsSchema = z.object({
   scrollback: z.number().int().min(0).max(100_000),
   /** Windows only: use the bundled conpty.dll / OpenConsole.exe (node-pty `useConptyDll`). */
   useConptyDll: z.boolean().optional(),
-  /** VT data written to the mirror before any PTY output (restored scrollback). */
-  restoreData: z.string().optional(),
+  /**
+   * A buffer saved earlier (scrollback restored at start-up, or the old buffer of a restarted terminal), written to
+   * the mirror before any PTY output and followed by a dimmed separator line with `label`.
+   */
+  restore: z.object({ data: z.string(), label: z.string().max(200) }).optional(),
   /** Typed into the shell after its first output (agent profiles, startup commands). */
   initialCommand: z.string().optional(),
   /** Shell integration scripts were injected: the initial command waits for the first prompt (OSC 633;B). */

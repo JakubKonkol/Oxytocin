@@ -106,9 +106,8 @@ describe('TerminalService', () => {
     const second = await svc.restart(first.id);
     expect(second.id).not.toBe(first.id);
     expect(second.title).toBe('API');
-    const respawn = calls.at(-1)!.params as { restoreData?: string };
-    expect(respawn.restoreData).toContain('old output');
-    expect(respawn.restoreData).toContain('── Restarted ──');
+    const respawn = calls.at(-1)!.params as { restore?: { data: string; label: string } };
+    expect(respawn.restore).toEqual({ data: 'old output', label: 'Restarted' });
     expect(removed).toEqual([first.id]);
     expect(calls.map((c) => c.method)).toEqual(['spawn', 'serialize', 'kill', 'dispose', 'spawn']);
   });

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceState } from '@shared/domain/workspace';
-import { restoredScrollbackData, WorkspaceStateService } from './workspace-state-service';
+import { sessionRestoredLabel } from '../terminals/scrollback-format';
+import { WorkspaceStateService } from './workspace-state-service';
 
 const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 let dir: string;
@@ -115,12 +116,8 @@ describe('WorkspaceStateService: saves during the quit', () => {
   });
 });
 
-describe('restoredScrollbackData', () => {
-  it('appends a mode reset and a dimmed separator', () => {
-    const data = restoredScrollbackData('old', new Date(2026, 8, 26, 18, 42));
-    expect(data.startsWith('old\x1b[0m\x1b[?25h')).toBe(true);
-    // Leaving the alternate screen restores the cursor, so it is only emitted when the snapshot used it.
-    expect(restoredScrollbackData('\x1b[?1049h\x1b[Hfull', new Date())).toContain('\x1b[0m\x1b[?1049l');
-    expect(data).toContain('── Session restored · Sep 26, 2026, 6:42 PM ──');
+describe('sessionRestoredLabel', () => {
+  it('names the time the scrollback was saved', () => {
+    expect(sessionRestoredLabel(new Date(2026, 8, 26, 18, 42))).toBe('Session restored · Sep 26, 2026, 6:42 PM');
   });
 });

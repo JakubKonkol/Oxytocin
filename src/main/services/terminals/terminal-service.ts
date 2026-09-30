@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 import type { Settings } from '@shared/domain/settings';
 import type { AgentInfo } from '@shared/domain/agent';
-import type { CreateTerminalRequest, TerminalInfo, TerminalKind } from '@shared/domain/terminal';
+import type { CreateTerminalRequest, SpawnOptions, TerminalInfo, TerminalKind } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
 import type { PtyHostEvents, PtyHostMethods } from '@shared/rpc/contracts/pty-host';
 import type { Logger } from '@shared/logging/logger';
@@ -10,7 +10,6 @@ import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import type { UtilityHost } from '../../hosts/utility-host';
 import { composeEnv, type EnvLayer } from './env-composer';
-import { withSeparator } from './scrollback-format';
 import type { ProfileService } from './profiles';
 import { injectShellIntegration, type ShellIntegrationScripts } from './shell-integration';
 
@@ -28,14 +27,16 @@ export interface ProjectContext {
   defaultProfileId?: string;
 }
 
+export type RestoredBuffer = NonNullable<SpawnOptions['restore']>;
+
 export interface TerminalServiceDeps {
   ptyHost: Pick<UtilityHost<PtyHostMethods, PtyHostEvents>, 'call' | 'onEvent' | 'onDidBecomeReady'>;
   profiles: ProfileService;
   settings: () => Settings;
   resolveProject: (projectId: string) => ProjectContext | null;
   baseEnv: () => EnvLayer | Promise<EnvLayer>;
-  /** Reads the scrollback snapshot saved for a panel at the last quit (already wrapped with a separator). */
-  readScrollback?: (projectId: string, panelId: string) => Promise<string | null>;
+  /** Reads the scrollback snapshot saved for a panel at the last quit, with the label of its separator. */
+  readScrollback?: (projectId: string, panelId: string) => Promise<RestoredBuffer | null>;
   /** Environment contributions from plugins (M5); applied after project env. */
   pluginEnv?: (ctx: { projectId: string; profileId: string }) => EnvLayer[];
   /** Installed shell integration scripts (M7-T5); null when unavailable. */
@@ -165,7 +166,7 @@ export class TerminalService implements Disposable {
     return this.createWith(req);
   }
 
-  private async createWith(req: CreateTerminalRequest, restoreOverride?: string): Promise<TerminalInfo> {
+  private async createWith(req: CreateTerminalRequest, restoreOverride?: RestoredBuffer): Promise<TerminalInfo> {
     const project = this.deps.resolveProject(req.projectId);
     if (!project) throw new OxyError('NOT_FOUND', `Project ${req.projectId} not found`);
     const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
@@ -215,7 +216,7 @@ export class TerminalService implements Disposable {
         ({ args, env: spawnEnv, injected: shellIntegration } = injection);
       }
     }
-    const restoreData =
+    const restore =
       restoreOverride ??
       (req.restoreScrollback && this.deps.readScrollback
         ? await this.deps.readScrollback(req.projectId, req.restoreScrollback.panelId)
@@ -230,7 +231,7 @@ export class TerminalService implements Disposable {
       rows: req.rows ?? DEFAULT_ROWS,
       scrollback: settings['terminal.scrollback'],
       useConptyDll: settings['terminal.windows.useBundledConpty'],
-      ...(restoreData ? { restoreData } : {}),
+      ...(restore ? { restore } : {}),
       ...(initialCommand ? { initialCommand } : {}),
       ...(shellIntegration ? { shellIntegration } : {}),
     });
@@ -292,7 +293,7 @@ export class TerminalService implements Disposable {
         cwd: info.cwd,
         ...(info.userTitle ? { userTitle: info.userTitle } : {}),
       },
-      previous ? withSeparator(previous, 'Restarted') : undefined,
+      previous ? { data: previous, label: 'Restarted' } : undefined,
     );
   }
 

@@ -64,7 +64,8 @@ import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
 import { projectPathsFromArgv } from './app/argv';
-import { restoredScrollbackData, WorkspaceStateService } from './services/workspace-state/workspace-state-service';
+import { WorkspaceStateService } from './services/workspace-state/workspace-state-service';
+import { sessionRestoredLabel } from './services/terminals/scrollback-format';
 import { UpdateService, type UpdaterBackend } from './services/updates/update-service';
 import { createElectronUpdaterBackend, updateUnsupportedReason } from './services/updates/electron-updater-backend';
 import { createE2eUpdateBackend } from './services/updates/e2e-update-backend';
@@ -190,7 +191,7 @@ function bootstrap(): void {
     readScrollback: async (projectId, panelId) => {
       if (!settings.get()['terminal.restoreScrollback']) return null;
       const saved = await workspaceState.readScrollback(projectId, panelId);
-      return saved ? restoredScrollbackData(saved.data, saved.savedAt) : null;
+      return saved ? { data: saved.data, label: sessionRestoredLabel(saved.savedAt) } : null;
     },
     pluginEnv: (ctx): EnvLayer[] => pluginEnvLayers(pluginHost.environments(), ctx, process.platform),
     beforeSpawn: (): Promise<void> => pluginHost.envBarrier(),

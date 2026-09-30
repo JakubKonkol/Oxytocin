@@ -9,7 +9,6 @@ import {
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
 import { writeFileAtomic } from '../storage/atomic-write';
-import { withSeparator } from '../terminals/scrollback-format';
 
 const MAX_SCROLLBACK_BYTES = 1024 * 1024;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -180,10 +179,4 @@ export class WorkspaceStateService {
     await rm(this.statePath(projectId), { force: true });
     await rm(join(this.dir, projectId), { recursive: true, force: true });
   }
-}
-
-/** VT data written into a revived terminal: the old buffer, reset modes, then a dimmed separator. */
-export function restoredScrollbackData(snapshot: string, at: Date): string {
-  const when = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(at);
-  return withSeparator(snapshot, `Session restored · ${when}`);
 }

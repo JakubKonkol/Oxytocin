@@ -95,6 +95,7 @@ export interface TerminalManagerDeps {
   emit: EmitFn;
   logger: Logger;
   platform?: NodeJS.Platform;
+  windowsBuild?: number;
   killTimeoutMs?: number;
   onSpawned?: () => void;
 }

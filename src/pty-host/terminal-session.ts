@@ -22,6 +22,8 @@ export interface TerminalSessionDeps {
   emit: EmitFn;
   logger: Logger;
   platform?: NodeJS.Platform;
+  /** Windows build number (ConPTY behaviour of the mirror, like the renderer's `windowsPty`). */
+  windowsBuild?: number;
   killTimeoutMs?: number;
 }
 
@@ -58,6 +60,9 @@ export class TerminalSession {
   private runningCommand: { commandLine?: string; startedAt: number; interrupted?: boolean } | undefined;
   /** Output is also emitted as `terminal:output` (plugins with `terminals.read-output`). */
   private outputWatched = false;
+  /** Output held back while a restored buffer is written into the mirror (it must come first). */
+  private heldOutput: string[] | undefined;
+  private heldExit: { exitCode: number; signal?: number } | undefined;
 
   constructor(
     opts: SpawnOptions,
@@ -66,22 +71,37 @@ export class TerminalSession {
     this.id = opts.id;
     this.platform = deps.platform ?? process.platform;
     const emit = deps.emit;
-    this.mirror = new HeadlessMirror(opts.cols, opts.rows, opts.scrollback, {
-      onTitle: (title) => this.scheduleTitle(title),
-      onBell: () => {
-        const now = Date.now();
-        if (now - this.lastBellAt < 1000) return;
-        this.lastBellAt = now;
-        emit('terminal:bell', { id: this.id });
+    this.mirror = new HeadlessMirror(
+      opts.cols,
+      opts.rows,
+      opts.scrollback,
+      {
+        onTitle: (title) => this.scheduleTitle(title),
+        onBell: () => {
+          const now = Date.now();
+          if (now - this.lastBellAt < 1000) return;
+          this.lastBellAt = now;
+          emit('terminal:bell', { id: this.id });
+        },
+        onProgress: (state, value) =>
+          emit('terminal:progress', value === undefined ? { id: this.id, state } : { id: this.id, state, value }),
+        onNotification: (body, title) =>
+          emit('terminal:notification', title === undefined ? { id: this.id, body } : { id: this.id, title, body }),
+        onCwd: (cwd) => emit('terminal:cwd', { id: this.id, cwd }),
+        onShellMark: (mark) => this.onShellMark(mark),
       },
-      onProgress: (state, value) =>
-        emit('terminal:progress', value === undefined ? { id: this.id, state } : { id: this.id, state, value }),
-      onNotification: (body, title) =>
-        emit('terminal:notification', title === undefined ? { id: this.id, body } : { id: this.id, title, body }),
-      onCwd: (cwd) => emit('terminal:cwd', { id: this.id, cwd }),
-      onShellMark: (mark) => this.onShellMark(mark),
-    });
-    if (opts.restoreData) this.mirror.write(opts.restoreData);
+      this.platform === 'win32' ? { windowsBuild: deps.windowsBuild ?? 0 } : {},
+    );
+    if (opts.restore) {
+      const held: string[] = (this.heldOutput = []);
+      void this.mirror.restore(opts.restore.data, opts.restore.label, this.platform === 'win32').then(() => {
+        this.heldOutput = undefined;
+        for (const data of held) this.onPtyData(data);
+        const exit = this.heldExit;
+        this.heldExit = undefined;
+        if (exit) this.onPtyExit(exit.exitCode, exit.signal);
+      });
+    }
     this.batcher = new DataBatcher((data) => this.broadcastData(data));
 
     const ptyOptions: IPtyForkOptions | IWindowsPtyForkOptions =
@@ -128,6 +148,10 @@ export class TerminalSession {
   }
 
   private onPtyData(data: string): void {
+    if (this.heldOutput) {
+      this.heldOutput.push(data);
+      return;
+    }
     const now = Date.now();
     this.lastOutputAt = now;
     if (now - this.lastActivityEmit >= 1000) {
@@ -205,6 +229,10 @@ export class TerminalSession {
 
   private onPtyExit(exitCode: number, signal?: number): void {
     if (!this._alive) return;
+    if (this.heldOutput) {
+      this.heldExit = signal === undefined ? { exitCode } : { exitCode, signal };
+      return;
+    }
     this._alive = false;
     if (this.killTimer) clearTimeout(this.killTimer);
     if (this.initialCommandTimer) clearTimeout(this.initialCommandTimer);

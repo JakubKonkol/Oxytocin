@@ -3,6 +3,16 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Fixed
+
+- **Terminals restored after a restart** no longer show old prompt lines several times, lose the last lines of the
+  restored output or leave the cursor invisible. On Windows the restored output now sits in the scrollback above the
+  *Session restored* line, and the new shell starts on a clean screen below it (ConPTY expects an empty screen). The
+  copy of each terminal that Oxytocin keeps for restoring resizes the same way as the visible terminal, so it no
+  longer collects stale lines when a panel grows.
+
 ## [0.6.0] - 2026-09-29
 
 ### Added

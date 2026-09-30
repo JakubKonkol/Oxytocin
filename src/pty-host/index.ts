@@ -1,3 +1,4 @@
+import { release } from 'node:os';
 import { spawn } from 'node-pty';
 import { fromMessagePort, type MessagePortLike } from '@shared/rpc/adapters';
 import type { PtyHostEvents, PtyHostInboundEvents } from '@shared/rpc/contracts/pty-host';
@@ -18,6 +19,8 @@ const logRef: { log?: Logger } = {};
 const monitorRef: { poke?: () => void; nudge?: (withinMs: number) => void; commandStarted?: () => void } = {};
 const manager = new TerminalManager({
   spawnPty: spawn,
+  // Same build number as the renderer's `windowsPty` (main's app info), so mirror and view resize alike.
+  ...(process.platform === 'win32' ? { windowsBuild: Number(release().split('.')[2] ?? 0) } : {}),
   onSpawned: () => monitorRef.poke?.(),
   emit: (name, payload) => {
     // A command usually starts with Enter; output resuming after a quiet period also hints at new processes.

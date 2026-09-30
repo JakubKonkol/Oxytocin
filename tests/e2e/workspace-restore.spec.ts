@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
-import { activeProjectId, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { activeProjectId, nodeCmd, oxyTest, run, waitForPrompt, waitForTerminal } from './helpers/terminal';
 
 test('layout, titles and scrollback survive an app restart', async () => {
   const first = await launchApp();
@@ -39,6 +39,17 @@ test('layout, titles and scrollback survive an app restart', async () => {
       (await Promise.all(ws.panels.map((p) => t.text(p.terminalId!)))).find((x) => x.includes('remember-this')) ?? '';
     await expect.poll(restoredText).toMatch(/remember-this[\s\S]*── Session restored · .+ ──/);
     await expect(second.win.getByTestId('tab-title').filter({ hasText: 'Logs' })).toBeVisible();
+    // The new shell writes below the restored lines; nothing restored shows up twice.
+    const terminalId = (await Promise.all(ws.panels.map(async (p) => ({ p, text: await t.text(p.terminalId!) })))).find(
+      (x) => x.text.includes('remember-this'),
+    )!.p.terminalId!;
+    await second.win.getByTestId(`terminal-view-${terminalId}`).click();
+    await waitForPrompt(second.win, terminalId);
+    await run(second.win, nodeCmd("console.log('after-' + 'restore')"));
+    await expect.poll(() => t.text(terminalId)).toMatch(/── Session restored · .+ ──[\s\S]*after-restore/);
+    const text = await t.text(terminalId);
+    expect(text.match(/remember-this/g)).toHaveLength(1);
+    expect(text.match(/Session restored/g)).toHaveLength(1);
   } finally {
     await second.app.close();
   }
