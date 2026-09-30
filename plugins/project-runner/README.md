@@ -1,7 +1,7 @@
 # Project Runner
 
 Built-in Oxytocin plugin: finds what a project can run, runs it with one click and shows its status, URL and logs — for
-you and for your AI agents (MCP).
+you and for your AI agents (through Oxytocin's MCP server).
 
 ## Detection
 
@@ -38,8 +38,7 @@ The project folder (3 levels deep by default, `projectRunner.scanDepth`) is sear
   same buttons. The answer is typed into the app's terminal.
 - **Stop** sends Ctrl+C (answering cmd.exe's "Terminate batch job" prompt), a second Ctrl+C after 3 s and kills the
   process tree after 8 s.
-- **Commands:** *Run: Start an App…* (quick pick), *Run: Stop All Apps*, *Run: Show Run Panel*, *Run: Connect Claude
-  Code (MCP)*.
+- **Commands:** *Run: Start an App…* (quick pick), *Run: Stop All Apps*, *Run: Show Run Panel*.
 
 ## Run profiles
 
@@ -48,25 +47,28 @@ added with **+**. Profiles are stored per project in the plugin's storage (`plug
 kept across restarts. Detection runs again when the Run tool is shown after 30 seconds; **Detect apps again**
 rescans at once.
 
-## MCP server for agents
+## Tools for agents
 
-With `projectRunner.mcp.enabled` (on by default) the plugin serves the Model Context Protocol on
-`http://127.0.0.1:47286/mcp` (`projectRunner.mcp.port`), protected by a random token. Tools:
+The plugin gives AI agents tools through Oxytocin's MCP server (`oxytocin`; connect Claude Code once in **Settings →
+Agent Tools**, also reachable from **Agent Tools** at the bottom of the Run tool):
 
 | Tool | Does |
 |---|---|
-| `list_run_profiles` | The project's profiles with status, URL and ports |
-| `start_run_profile` / `restart_run_profile` | Starts (restarts) a profile and waits until it serves a URL, exits, asks a question or `wait_seconds` pass; returns the recent output |
-| `stop_run_profile` | Stops a profile |
-| `get_run_logs` | The last lines of a profile's output |
-| `answer_run_prompt` | Types an answer (e.g. `y`) for a profile waiting for input (`waitingForInput` in its status) |
-| `add_run_profile` | Saves a new profile for the project |
+| `run_list_profiles` | The project's profiles with status, URL and ports |
+| `run_start_profile` / `run_restart_profile` | Starts (restarts) a profile and waits until it serves a URL, exits, asks a question or `wait_seconds` pass; returns the recent output |
+| `run_stop_profile` | Stops a profile |
+| `run_get_logs` | The last lines of a profile's output |
+| `run_answer_prompt` | Types an answer (e.g. `y`) for a profile waiting for input (`waitingForInput` in its status) |
+| `run_add_profile` | Saves a new profile for the project |
 
-Every tool takes `cwd` (the agent's working directory selects the project) or `project`. Apps started by an agent are
-marked **agent** in the Run tool, so you see what it runs.
+Every tool takes `cwd` (the agent's working directory selects the project) or `project`; without them the project of
+the agent's terminal (or the active project) is used. Apps started by an agent are marked **agent** in the Run tool,
+so you see what it runs. The tools can be turned off or set to ask first in Agent Tools like any other tool.
 
-**Connect Claude Code** (in the Run tool, or the command) runs
-`claude mcp add --scope user --transport http oxytocin-runner http://127.0.0.1:47286/mcp --header "Authorization: Bearer …"`
-(`projectRunner.claudeCommand` names the `claude` executable). The **⋯** menu next to it copies that command or an
-`mcpServers` JSON snippet for other MCP clients, and disconnects Claude Code again. Turn the server off with
-`projectRunner.mcp.enabled: false` (Settings → Project Runner).
+### Before Oxytocin 0.6.5
+
+The plugin used to run its own server, `oxytocin-runner` on port 47286, with the same tools under other names
+(`list_run_profiles`, `start_run_profile`, …). Where it was used it keeps running for this release, so Claude Code
+sessions registered back then still work; **Connect Claude Code** in Agent Tools removes that old registration. The
+settings `projectRunner.mcp.enabled` and `projectRunner.mcp.port` only control this old server and go away with it;
+`projectRunner.claudeCommand` is replaced by `mcp.claudeCommand`.

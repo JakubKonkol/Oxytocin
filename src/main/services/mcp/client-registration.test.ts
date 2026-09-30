@@ -75,11 +75,13 @@ describe('client registration', () => {
   });
 
   it('runs the CLI without a parent Claude Code session and with its install folders on PATH', () => {
-    const env = cliEnv({ CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', PATH: '/usr/bin', HOME: '/home/u' }, 'linux');
+    const env = cliEnv({ CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', PATH: '/usr/bin' }, 'linux');
     expect(env['CLAUDECODE']).toBeUndefined();
     expect(env['CLAUDE_CODE_ENTRYPOINT']).toBeUndefined();
     expect(env['PATH']).toMatch(/^\/usr\/bin:.*\.local\/bin/);
-    expect(cliEnv({ Path: 'C:\\x' }, 'win32')['Path']).toMatch(/^C:\\x;/);
+    expect(cliEnv({ Path: 'C:\\x', APPDATA: 'C:\\Users\\u\\AppData\\Roaming' }, 'win32')['Path']).toMatch(
+      /^C:\\x;.*;C:\\Users\\u\\AppData\\Roaming\\npm$/,
+    );
     expect(quoteWin('X-Oxytocin-Terminal: ${A:-none}')).toBe('"X-Oxytocin-Terminal: ${A:-none}"');
     expect(quoteWin('plain')).toBe('plain');
   });

@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { isAllowedHost, isAllowedOrigin, McpServer } from './mcp';
-import { addArgs, addCommandLine, mcpConfigJson } from './claude';
 
 const servers: McpServer[] = [];
 afterEach(async () => {
@@ -115,30 +114,5 @@ describe('McpServer', () => {
     expect(isAllowedHost('evil.example:47286')).toBe(false);
     expect(isAllowedHost(undefined)).toBe(false);
     expect(isAllowedOrigin('null')).toBe(false);
-  });
-});
-
-describe('Claude Code registration', () => {
-  it('builds the claude mcp add command and a generic config', () => {
-    expect(addArgs(47286, 'tok')).toEqual([
-      'mcp',
-      'add',
-      '--scope',
-      'user',
-      '--transport',
-      'http',
-      'oxytocin-runner',
-      'http://127.0.0.1:47286/mcp',
-      '--header',
-      'Authorization: Bearer tok',
-    ]);
-    expect(addCommandLine(47286, 'tok')).toBe(
-      'claude mcp add --scope user --transport http oxytocin-runner http://127.0.0.1:47286/mcp --header "Authorization: Bearer tok"',
-    );
-    expect(JSON.parse(mcpConfigJson(1, 't'))).toEqual({
-      mcpServers: {
-        'oxytocin-runner': { type: 'http', url: 'http://127.0.0.1:1/mcp', headers: { Authorization: 'Bearer t' } },
-      },
-    });
   });
 });

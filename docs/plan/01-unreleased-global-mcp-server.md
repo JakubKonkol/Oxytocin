@@ -1,6 +1,6 @@
 # Plan 01 — One global Oxytocin MCP server with plugin-contributed tools
 
-Status: **planned, not started** · Target: next minor release · Plugin API: **0.1.5**
+Status: **implemented** (all steps; ships with 0.6.5) · Plugin API: **0.1.5**
 
 This document is written for the agent (or person) who implements the feature. Read it completely before starting,
 then follow the steps in [Implementation steps](#implementation-steps) in order. Every step ends in a working,
@@ -390,8 +390,16 @@ live, *Agent tools* settings, runner migration note).
 
 ## Verification log
 
-Fill in during step 1.
-
-- Claude Code version tested: _
-- `notifications/tools/list_changed` refreshes tools in a running session: _
-- `${OXYTOCIN_TERMINAL_ID}` expanded in `--header` of a user-scope HTTP server: _
+- Claude Code version tested: **2.1.285** (`claude mcp list` / `claude mcp get` against a logging server).
+- `notifications/tools/list_changed` refreshes tools in a running session: **not verified** — it needs a logged-in
+  interactive session, which the implementation environment did not have. Claude Code opens the session's SSE stream
+  (`GET /mcp` right after `notifications/initialized`), which is where the notification is delivered. The limitation is
+  stated in the Agent Tools panel ("agents that support live tool updates see the change at once, others in their
+  next session") and `oxy_capabilities` is the fallback.
+- `${OXYTOCIN_TERMINAL_ID}` expanded in `--header` of a user-scope HTTP server: **yes**. Without the variable Claude
+  Code sends the literal `${OXYTOCIN_TERMINAL_ID}` and prints a "Missing environment variables" warning, so the server
+  is registered with `${OXYTOCIN_TERMINAL_ID:-none}` (default syntax, also verified).
+- Claude Code first probes with `server/discover` (`MCP-Protocol-Version: 2026-07-28`, no session); the hub answers
+  400 and Claude Code falls back to `initialize` (`protocolVersion: 2025-11-25`), accepts `2025-06-18`, sends
+  `notifications/initialized` (202), opens the SSE stream and lists the tools — verified against the hub's transport
+  (`claude mcp list` → "Connected", the terminal header arrives expanded).

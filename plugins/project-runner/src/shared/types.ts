@@ -54,20 +54,10 @@ export interface ProfileState extends RunProfile {
   run: RunSnapshot;
 }
 
-export interface McpState {
-  enabled: boolean;
-  port: number | null;
-  error: string | null;
-  /** Registered in Claude Code (null = unknown). */
-  claude: boolean | null;
-  calls: number;
-}
-
 /** Backend → view (`load` response and pushed updates). */
 export interface RunnerState {
   type: 'state';
   project: { id: string; name: string; rootPath: string } | null;
   profiles: ProfileState[];
   scanning: boolean;
-  mcp: McpState;
 }

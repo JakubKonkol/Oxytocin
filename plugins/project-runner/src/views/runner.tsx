@@ -305,57 +305,22 @@ function ProfileRow(props: {
   );
 }
 
-function McpFooter({ state, view }: { state: RunnerState; view: View }) {
-  const { mcp } = state;
-  const [message, setMessage] = useState<string | null>(null);
-  const connect = async () => {
-    setMessage('Connecting…');
-    const r = await view.request<{ ok: boolean; output: string }>('connectClaude').catch((e: unknown) => ({
-      ok: false,
-      output: String(e),
-    }));
-    setMessage(r.ok ? null : r.output || 'Connecting failed');
-  };
-  const copy = async (e: React.MouseEvent) => {
-    const config = await view.request<{ command: string; json: string }>('mcpConfig');
-    const picked = await view.showContextMenu(
-      [
-        { id: 'command', label: 'Copy "claude mcp add" Command' },
-        { id: 'json', label: 'Copy MCP Config (JSON)' },
-        ...(mcp.claude ? [{ id: 'disconnect', label: 'Disconnect Claude Code' }] : []),
-      ],
-      { x: e.clientX, y: e.clientY },
-    );
-    if (picked === 'command') await view.copyToClipboard(config.command);
-    else if (picked === 'json') await view.copyToClipboard(config.json);
-    else if (picked === 'disconnect') await view.request('disconnectClaude');
-  };
-  if (!mcp.enabled)
-    return (
-      <div className="footer muted" data-testid="runner-mcp" data-state="off">
-        MCP server off · Settings → Project Runner
-      </div>
-    );
+/** Agents run these apps through Oxytocin's MCP server; connecting them happens in Settings → Agent Tools. */
+function AgentsFooter({ view }: { view: View }) {
   return (
-    <div className="footer" data-testid="runner-mcp" data-state={mcp.port ? 'on' : 'error'}>
-      {mcp.port ? (
-        <span className="muted" title={`Agents run these profiles through http://127.0.0.1:${mcp.port}/mcp`}>
-          MCP :{mcp.port}
-          {mcp.claude ? ' · Claude Code ✓' : ''}
-        </span>
-      ) : (
-        <span className="error" title={mcp.error ?? ''}>
-          MCP server unavailable
-        </span>
-      )}
+    <div className="footer" data-testid="runner-mcp">
+      <span className="muted" title="Tools run_list_profiles, run_start_profile, … of Oxytocin's MCP server">
+        AI agents can run these apps
+      </span>
       <span className="spacer" />
-      {mcp.port && !mcp.claude && (
-        <button type="button" className="link" onClick={() => void connect()} data-testid="runner-connect-claude">
-          Connect Claude Code
-        </button>
-      )}
-      {mcp.port && <IconButton icon="more" label="MCP options" onClick={(e) => void copy(e)} />}
-      {message && <div className="footer-message">{message}</div>}
+      <button
+        type="button"
+        className="link"
+        onClick={() => void view.request('openAgentTools')}
+        data-testid="runner-agent-tools"
+      >
+        Agent Tools
+      </button>
     </div>
   );
 }
@@ -465,7 +430,7 @@ function App() {
           ))}
         </div>
       )}
-      <McpFooter state={state} view={view} />
+      <AgentsFooter view={view} />
     </div>
   );
 }

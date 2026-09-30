@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
 import { MCP_SERVER_NAME, type McpCliResult } from '@shared/domain/mcp';
 import { shouldStripInherited } from '../terminals/env-composer';
 
@@ -17,6 +17,8 @@ export type RunCli = (args: string[]) => Promise<McpCliResult>;
 
 /** PATH plus the usual install folders of Claude Code (the app may have been started without a login shell). */
 export function cliPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home = homedir()): string {
+  const path = platform === 'win32' ? win32 : posix;
+  const join = (...parts: string[]) => path.join(...parts);
   const extra =
     platform === 'win32'
       ? [join(home, '.local', 'bin'), ...(env['APPDATA'] ? [join(env['APPDATA'], 'npm')] : [])]

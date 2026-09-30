@@ -305,12 +305,19 @@ function CallLog({ log }: { log: readonly McpCallLogEntry[] }) {
   );
 }
 
+/** Claude Code is asked once per session whether it knows the server (it runs the `claude` CLI). */
+let claudeChecked = false;
+
 /** Settings → Agent Tools: the MCP server, the tools agents get (on/off, allow/ask/block) and recent calls. */
 export function AgentToolsView() {
   const state = useMcpStore((s) => s.state);
   const settings = useSettingsStore((s) => s.settings);
   useEffect(() => {
     void useMcpStore.getState().load();
+    if (!claudeChecked) {
+      claudeChecked = true;
+      void ipc.invoke('mcp:checkClaude').catch(() => null);
+    }
   }, []);
   const groups = useMemo(() => groupTools(state?.tools ?? []), [state?.tools]);
   if (!state || !settings) return null;

@@ -2,19 +2,10 @@ import { randomBytes } from 'node:crypto';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import type { OxytocinApi, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
-import {
-  addCommandLine,
-  connectClaude,
-  createCliRunner,
-  disconnectClaude,
-  isConnectedToClaude,
-  mcpConfigJson,
-  type RunCli,
-} from './claude';
 import { type DetectedProfile, type DetectFs, detectProfiles } from './detect';
 import { McpServer } from './mcp';
 import { fromShellPath, pathCandidates } from './paths';
-import { buildTools, type RunnerTools } from './tools';
+import { buildTools, LEGACY_TOOL_NAMES, type RunnerTools } from './tools';
 import {
   emptyConfig,
   findProfile,
@@ -61,7 +52,8 @@ export function nodeDetectFs(root: string): DetectFs {
 
 class RunnerService {
   readonly runs: RunManager;
-  readonly mcp: McpServer;
+  /** The old `oxytocin-runner` server (see mcp.ts): only for installs that used it before Oxytocin had its own. */
+  readonly legacyMcp: McpServer;
   private readonly views = new Set<PluginView>();
   private readonly detected = new Map<string, { at: number; profiles: DetectedProfile[] }>();
   private readonly scanning = new Map<string, Promise<DetectedProfile[]>>();
@@ -71,9 +63,6 @@ class RunnerService {
   private projects: ProjectInfo[] = [];
   /** Resolves when the service knows the projects (views and tools wait for it). */
   ready: Promise<void> = Promise.resolve();
-  private claudeConnected: boolean | null = null;
-  private claudeChecked: Promise<boolean | null> | undefined;
-  private readonly cli: RunCli;
   private statusTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly ctx: PluginContext) {
@@ -82,17 +71,21 @@ class RunnerService {
       terminals: oxy.terminals,
       log: (message, error) => ctx.log.debug(message, error),
     });
-    this.cli = createCliRunner(() => oxy.settings.get<string>('projectRunner.claudeCommand') || 'claude');
-    this.mcp = new McpServer(
+    this.legacyMcp = new McpServer(
       {
         name: 'oxytocin-runner',
         version: ctx.plugin.version,
         instructions:
-          'Run profiles of the projects open in Oxytocin (dev servers, APIs, workers). Pass your current working directory as `cwd` so the right project is used. Apps started here are visible to the user in Oxytocin’s Run panel and terminals.',
+          'Run profiles of the projects open in Oxytocin (dev servers, APIs, workers). Pass your current working directory as `cwd` so the right project is used. Apps started here are visible to the user in Oxytocin’s Run panel and terminals. This server is replaced by Oxytocin’s own MCP server "oxytocin" (tools run_*); the user connects it in Oxytocin under Settings → Agent Tools.',
       },
-      () => this.token(),
+      () => this.ctx.storage.get<string>('mcpToken') ?? '',
     );
-    this.mcp.setTools(buildTools(this.toolsPort()));
+    this.legacyMcp.setTools(buildTools(this.toolsPort(), LEGACY_TOOL_NAMES));
+  }
+
+  /** The tools for Oxytocin's MCP server (`contributes.mcp`, prefix `run`). */
+  mcpTools() {
+    return buildTools(this.toolsPort());
   }
 
   private get oxy(): OxytocinApi {
@@ -130,9 +123,9 @@ class RunnerService {
         this.scheduleSaveLinks();
         this.notifyPrompts();
       }),
-      oxy.settings.onDidChange('projectRunner.mcp', () => void this.applyMcpSettings()),
+      oxy.settings.onDidChange('projectRunner.mcp', () => void this.applyLegacyMcp()),
       this.runs,
-      { dispose: () => void this.mcp.stop() },
+      { dispose: () => void this.legacyMcp.stop() },
     );
     const before = this.projectEvents;
     const [projects, active] = await Promise.all([oxy.projects.list(), oxy.projects.getActive()]);
@@ -141,7 +134,7 @@ class RunnerService {
       this.active = active;
     }
     await this.adoptTerminals().catch((e: unknown) => this.ctx.log.warn('Adopting running apps failed', e));
-    await this.applyMcpSettings();
+    await this.applyLegacyMcp();
     this.updateStatus();
   }
 
@@ -171,33 +164,24 @@ class RunnerService {
     }
   }
 
-  private token(): string {
-    let token = this.ctx.storage.get<string>('mcpToken');
-    if (!token) {
-      token = randomBytes(24).toString('base64url');
-      void this.ctx.storage.set('mcpToken', token);
-    }
-    return token;
-  }
-
-  private mcpPort(): number {
-    return this.oxy.settings.get<number>('projectRunner.mcp.port') || 47286;
-  }
-
   private mcpQueue: Promise<void> = Promise.resolve();
 
-  /** Starts, moves or stops the MCP server per the settings; serialized (quick toggles must not overlap). */
-  applyMcpSettings(): Promise<void> {
+  /**
+   * Starts, moves or stops the old `oxytocin-runner` server per the deprecated `projectRunner.mcp.*` settings;
+   * serialized. It runs only where it ran before (a token exists), so earlier Claude Code registrations keep working.
+   */
+  applyLegacyMcp(): Promise<void> {
     this.mcpQueue = this.mcpQueue.then(async () => {
       const enabled = this.oxy.settings.get<boolean>('projectRunner.mcp.enabled') !== false;
-      if (!enabled) await this.mcp.stop();
-      else if (this.mcp.port !== this.mcpPort()) {
-        this.token();
-        await this.mcp
-          .start(this.mcpPort())
-          .catch((e: unknown) => this.ctx.log.warn(`MCP server could not start: ${this.mcp.error ?? String(e)}`));
+      const port = this.oxy.settings.get<number>('projectRunner.mcp.port') || 47286;
+      if (!enabled || !this.ctx.storage.get<string>('mcpToken')) await this.legacyMcp.stop();
+      else if (this.legacyMcp.port !== port) {
+        await this.legacyMcp
+          .start(port)
+          .catch((e: unknown) =>
+            this.ctx.log.warn(`The old MCP server could not start: ${this.legacyMcp.error ?? String(e)}`),
+          );
       }
-      this.pushAll();
     });
     return this.mcpQueue;
   }
@@ -328,13 +312,6 @@ class RunnerService {
       project: project ? { id: project.id, name: project.name, rootPath: project.rootPath } : null,
       profiles: profiles.map((p) => ({ ...p, run: this.runs.snapshot(project!.id, p.id) })),
       scanning: project ? this.scanning.has(project.id) : false,
-      mcp: {
-        enabled: this.oxy.settings.get<boolean>('projectRunner.mcp.enabled') !== false,
-        port: this.mcp.port,
-        error: this.mcp.error,
-        claude: this.claudeConnected,
-        calls: this.mcp.calls,
-      },
     };
   }
 
@@ -365,8 +342,6 @@ class RunnerService {
 
   attach(view: PluginView): void {
     this.views.add(view);
-    // Asked once, when a Run view first shows (it runs the `claude` CLI).
-    this.claudeChecked ??= this.checkClaude().catch(() => null);
     view.onDidDispose(() => this.views.delete(view));
     view.onRequest('load', async () => this.state(await this.projectOf(view)));
     view.onRequest<{ profileId: string }, RunSnapshot>('start', ({ profileId }) =>
@@ -407,40 +382,10 @@ class RunnerService {
         this.push(p.id);
       }),
     );
-    view.onRequest('connectClaude', () => this.connectClaude());
-    view.onRequest('disconnectClaude', async () => {
-      const r = await disconnectClaude(this.cli);
-      this.claudeConnected = r.ok ? false : this.claudeConnected;
-      this.pushAll();
-      return r;
-    });
-    view.onRequest('checkClaude', () => this.checkClaude());
-    view.onRequest('mcpConfig', () => ({
-      command: addCommandLine(this.mcpPort(), this.token()),
-      json: mcpConfigJson(this.mcpPort(), this.token()),
-    }));
+    view.onRequest('openAgentTools', () => this.oxy.commands.execute('oxytocin.mcp.openSettings'));
     view.onDidChangeVisibility((visible) => {
       if (visible) void this.send(view);
     });
-  }
-
-  async checkClaude(): Promise<boolean | null> {
-    this.claudeConnected = await isConnectedToClaude(this.cli, this.mcpPort());
-    this.pushAll();
-    return this.claudeConnected;
-  }
-
-  async connectClaude(): Promise<{ ok: boolean; output: string }> {
-    if (this.mcp.port === null) {
-      return {
-        ok: false,
-        output: this.mcp.error ?? 'The MCP server is turned off ("projectRunner.mcp.enabled" in Settings).',
-      };
-    }
-    const r = await connectClaude(this.cli, this.mcp.port, this.token());
-    if (r.ok) this.claudeConnected = true;
-    this.pushAll();
-    return r;
   }
 
   // ── questions of starting apps ──
@@ -529,8 +474,13 @@ class RunnerService {
 
   private toolsPort(): RunnerTools {
     return {
-      resolveProject: async ({ project, cwd }) => {
+      resolveProject: async ({ project, cwd }, context) => {
         const projects = (this.projects = await this.oxy.projects.list());
+        const explicit = (typeof project === 'string' && project.trim()) || (typeof cwd === 'string' && cwd.trim());
+        // Oxytocin's server knows the caller's project (its terminal, else the active project).
+        const fromCaller =
+          !explicit && context?.projectId ? projects.find((p) => p.id === context.projectId) : undefined;
+        if (fromCaller) return fromCaller;
         if (typeof project === 'string' && project.trim()) {
           const wanted = project.trim();
           const byPath = isAbsolute(fromShellPath(wanted, this.oxy.env.platform))
@@ -612,17 +562,10 @@ export async function activate(ctx: PluginContext): Promise<void> {
     oxy.commands.register('projectRunner.stopAll', async () => {
       await Promise.all(s.runs.active().map((r) => s.runs.stop(r.projectId, r.profileId)));
     }),
-    oxy.commands.register('projectRunner.connectClaude', async () => {
-      const r = await s.connectClaude();
-      void oxy.ui.showNotification({
-        level: r.ok ? 'info' : 'error',
-        message: r.ok
-          ? 'Claude Code can now run your profiles (MCP server "oxytocin-runner").'
-          : 'Connecting Claude Code failed',
-        ...(r.ok ? {} : { detail: r.output }),
-      });
-    }),
   );
+  // Agents run the apps through Oxytocin's MCP server (`contributes.mcp`, prefix `run`).
+  for (const tool of s.mcpTools())
+    ctx.subscriptions.push(oxy.mcp.registerTool(tool.name, (args, context) => tool.handler(args, context)));
   await initialized;
 }
 

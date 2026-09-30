@@ -24,6 +24,16 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   `mcp.tools` permission (the consent dialog lists the tools), `onMcpTool:<name>` activation and
   `oxy.mcp.registerTool(…)`, also for tools added at runtime. See *Tools for AI agents* in the plugin docs.
 
+### Changed
+
+- **Project Runner: its agent tools moved into Oxytocin's MCP server** as `run_list_profiles`, `run_start_profile`,
+  `run_restart_profile`, `run_stop_profile`, `run_get_logs`, `run_answer_prompt` and `run_add_profile`. The Run tool's
+  *Connect Claude Code* button and the *Run: Connect Claude Code (MCP)* command are gone: **Agent Tools** at the bottom
+  of the Run tool opens the new settings. If you connected Claude Code to the old `oxytocin-runner` server, it keeps
+  working for this release; **Connect Claude Code** in Agent Tools replaces it (and removes the old entry from Claude
+  Code). `projectRunner.mcp.enabled` and `projectRunner.mcp.port` only affect that old server and will be removed;
+  `projectRunner.claudeCommand` is replaced by `mcp.claudeCommand`.
+
 ### Fixed
 
 - **Terminals restored after a restart** no longer show old prompt lines several times, lose the last lines of the

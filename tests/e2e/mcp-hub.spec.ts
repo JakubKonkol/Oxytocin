@@ -169,3 +169,29 @@ test('Agent tools: plugin tools reach connected agents live, can be turned off, 
     await app.close();
   }
 });
+
+test('Agent tools: the server follows mcp.enabled and reports a port in use', async () => {
+  const port = await freePort();
+  const blocker = createServer();
+  await new Promise<void>((resolve) => blocker.listen(port, '127.0.0.1', resolve));
+  const userData = await userDataWithPlugins([], { 'mcp.port': port });
+  const { app, win } = await launchApp({ userData, project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')) });
+  try {
+    await waitForTerminal(win);
+    await win.getByTestId('app-menu').click();
+    await win.getByRole('menuitem', { name: 'Settings' }).click();
+    await win.locator('[data-testid="settings-section"][data-section="Agent Tools"]').click();
+    await expect(win.getByTestId('mcp-status-text')).toContainText(`Port ${port} is in use`);
+    // Another port: it starts there.
+    const next = await freePort();
+    await win.evaluate((p) => window.oxy.invoke('settings:update', { 'mcp.port': p }), next);
+    await expect(win.getByTestId('mcp-status-text')).toContainText(`127.0.0.1:${next}/mcp`);
+    expect((await fetch(`http://127.0.0.1:${next}/mcp`, { method: 'POST' })).status).toBe(401);
+    await win.evaluate(() => window.oxy.invoke('settings:update', { 'mcp.enabled': false }));
+    await expect(win.getByTestId('mcp-status-text')).toHaveText('MCP server turned off');
+    await expect(fetch(`http://127.0.0.1:${next}/mcp`, { method: 'POST' })).rejects.toThrow();
+  } finally {
+    await app.close();
+    blocker.close();
+  }
+});

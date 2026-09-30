@@ -2,6 +2,10 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 /**
+ * The plugin's own MCP server `oxytocin-runner` from before Oxytocin had one (≤ 0.6.0), kept for one release so
+ * Claude Code registrations made then keep working until the user connects Oxytocin's server (which removes the old
+ * registration). Its tools are the Run tools under their old names; new installs never start it.
+ *
  * A minimal Model Context Protocol server over Streamable HTTP (JSON responses, no SSE): `initialize`, `ping`,
  * `tools/list` and `tools/call`. Local only (127.0.0.1), Bearer token, Origin checked against DNS rebinding.
  */
@@ -14,9 +18,13 @@ export interface McpTool {
   name: string;
   title?: string;
   description: string;
-  inputSchema: Record<string, unknown>;
-  /** Resolves the text shown to the agent; throws for tool errors (reported with `isError`). */
-  handler: (args: Record<string, unknown>) => Promise<string>;
+  inputSchema: { type: 'object'; [key: string]: unknown };
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean };
+  /**
+   * Resolves the text shown to the agent; throws for tool errors (reported with `isError`). `context` comes from
+   * Oxytocin's MCP server (the caller's project); the legacy server passes none.
+   */
+  handler: (args: Record<string, unknown>, context?: { projectId?: string }) => Promise<string>;
 }
 
 interface JsonRpcRequest {

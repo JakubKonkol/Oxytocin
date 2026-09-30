@@ -1,16 +1,16 @@
 {
   "name": "@oxytocin/project-runner",
   "version": "0.1.0",
-  "description": "Detects the apps of a project and runs them in terminals, with status, URLs and an MCP server for agents",
+  "description": "Detects the apps of a project and runs them in terminals, with status, URLs and tools for AI agents",
   "license": "MIT",
   "private": true,
   "type": "module",
   "oxytocin": {
     "id": "oxytocin.project-runner",
     "displayName": "Project Runner",
-    "description": "Detects runnable apps (Node.js, .NET, Python, Go, Rust, Java, …), runs them with one click, shows their status, URL and logs, and lets AI agents run them through MCP.",
+    "description": "Detects runnable apps (Node.js, .NET, Python, Go, Rust, Java, …), runs them with one click, shows their status, URL and logs, and lets AI agents run them through Oxytocin's MCP server.",
     "publisher": "oxytocin",
-    "engine": "^0.1.4",
+    "engine": "^0.1.5",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup",
@@ -26,7 +26,8 @@
       "terminals.read-output",
       "fs.read-project",
       "fs.read-home",
-      "net.listen-local"
+      "net.listen-local",
+      "mcp.tools"
     ],
     "contributes": {
       "panels": [
@@ -57,10 +58,6 @@
         {
           "id": "projectRunner.show",
           "title": "Run: Show Run Panel"
-        },
-        {
-          "id": "projectRunner.connectClaude",
-          "title": "Run: Connect Claude Code (MCP)"
         }
       ],
       "configuration": {
@@ -69,19 +66,19 @@
           "projectRunner.mcp.enabled": {
             "type": "boolean",
             "default": true,
-            "description": "Runs a local MCP server (127.0.0.1, token protected) through which AI agents such as Claude Code list, start, stop and read the logs of your run profiles."
+            "description": "Deprecated (removed in the next release): keeps the old \"oxytocin-runner\" MCP server running for Claude Code registrations made before Oxytocin 0.6.5. The Run tools are now part of Oxytocin's MCP server — connect it in Settings → Agent Tools."
           },
           "projectRunner.mcp.port": {
             "type": "integer",
             "default": 47286,
             "minimum": 1024,
             "maximum": 65535,
-            "description": "Local port of the MCP server. After changing it, connect Claude Code again from the Run panel."
+            "description": "Deprecated (removed in the next release): port of the old \"oxytocin-runner\" MCP server. Oxytocin's own server uses \"mcp.port\"."
           },
           "projectRunner.claudeCommand": {
             "type": "string",
             "default": "claude",
-            "description": "The Claude Code command used to register the MCP server (a name on PATH or a full path)."
+            "description": "Deprecated and ignored: Claude Code is connected in Settings → Agent Tools, which uses \"mcp.claudeCommand\"."
           },
           "projectRunner.scanDepth": {
             "type": "integer",
@@ -91,6 +88,247 @@
             "description": "How many folder levels below the project root are searched for apps."
           }
         }
+      },
+      "mcp": {
+        "prefix": "run",
+        "tools": [
+          {
+            "name": "run_list_profiles",
+            "title": "List run profiles",
+            "annotations": {
+              "readOnlyHint": true,
+              "openWorldHint": false
+            },
+            "description": "Lists the run profiles (apps that can be started: dev servers, APIs, workers) of a project open in Oxytocin with their status (idle, starting, running, stopping, stopped, failed) and URL.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                }
+              }
+            }
+          },
+          {
+            "name": "run_start_profile",
+            "title": "Start a run profile",
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": false,
+              "openWorldHint": false
+            },
+            "description": "Starts a run profile in an Oxytocin terminal (the user sees it in the Run panel) and waits until the app serves a URL/port, exits or `wait_seconds` pass. Returns the status, the URL and the recent output. Does nothing when it already runs.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "description": "Run profile id or name (see run_list_profiles)."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                },
+                "wait_seconds": {
+                  "type": "number",
+                  "description": "How long to wait for the app to be ready (default 30, max 120)."
+                }
+              },
+              "required": [
+                "profile"
+              ]
+            }
+          },
+          {
+            "name": "run_restart_profile",
+            "title": "Restart a run profile",
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": false,
+              "openWorldHint": false
+            },
+            "description": "Stops a run profile (if it runs) and starts it again, then waits like run_start_profile.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "description": "Run profile id or name (see run_list_profiles)."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                },
+                "wait_seconds": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "profile"
+              ]
+            }
+          },
+          {
+            "name": "run_stop_profile",
+            "title": "Stop a run profile",
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": false,
+              "openWorldHint": false
+            },
+            "description": "Stops a running profile (Ctrl+C, then a forced kill after a few seconds) and waits for it to end.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "description": "Run profile id or name (see run_list_profiles)."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                }
+              },
+              "required": [
+                "profile"
+              ]
+            }
+          },
+          {
+            "name": "run_get_logs",
+            "title": "Get run output",
+            "annotations": {
+              "readOnlyHint": true,
+              "openWorldHint": false
+            },
+            "description": "Returns the recent output (plain text) of a run profile — the dev server log with errors and stack traces.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "description": "Run profile id or name (see run_list_profiles)."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                },
+                "lines": {
+                  "type": "number",
+                  "description": "Number of lines from the end (default 100, max 500)."
+                }
+              },
+              "required": [
+                "profile"
+              ]
+            }
+          },
+          {
+            "name": "run_answer_prompt",
+            "title": "Answer a run profile question",
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": false,
+              "openWorldHint": false
+            },
+            "description": "Types an answer (followed by Enter) into the terminal of a run profile that waits for input, e.g. \"y\" when the dev server asks whether to use another port (see `waitingForInput` in the status). Then waits like run_start_profile.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "profile": {
+                  "type": "string",
+                  "description": "Run profile id or name (see run_list_profiles)."
+                },
+                "answer": {
+                  "type": "string",
+                  "description": "The text to type, e.g. \"y\" or \"n\"."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                },
+                "wait_seconds": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "profile",
+                "answer"
+              ]
+            }
+          },
+          {
+            "name": "run_add_profile",
+            "title": "Add a run profile",
+            "annotations": {
+              "readOnlyHint": false,
+              "destructiveHint": false,
+              "openWorldHint": false
+            },
+            "description": "Adds a run profile to a project (e.g. a command the auto-detection missed). It is saved for the user and shown in the Run panel.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Short name, e.g. \"api\"."
+                },
+                "command": {
+                  "type": "string",
+                  "description": "Command typed into the terminal, e.g. \"npm run dev\"."
+                },
+                "folder": {
+                  "type": "string",
+                  "description": "Folder relative to the project root (default: the root)."
+                },
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Environment variables."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "Your current working directory; selects the Oxytocin project that contains it."
+                },
+                "project": {
+                  "type": "string",
+                  "description": "Project name, id or root folder (instead of cwd)."
+                }
+              },
+              "required": [
+                "name",
+                "command"
+              ]
+            }
+          }
+        ]
       }
     }
   }

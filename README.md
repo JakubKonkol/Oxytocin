@@ -75,8 +75,16 @@ and starts it with one click. Add the **Run** tool to a sidebar (**Add tool** in
 left one if you like): it shows every app's status and the URL it serves; its output stays in a terminal you can open
 at any time. Add your own run profiles (command, folder, environment) per project.
 
-Agents can use it too: the runner is an **MCP server** (`Connect Claude Code` in the Run tool), so Claude Code can
-list, start, restart and stop your apps and read their logs — and you see in the Run tool what the agent started.
+Agents can use it too: through Oxytocin's MCP server Claude Code can list, start, restart and stop your apps and read
+their logs — and you see in the Run tool what the agent started.
+
+### 🤖 Tools for your agents
+
+Oxytocin is a local **MCP server** your agents connect to once (**Settings → Agent Tools → Connect Claude Code**, or
+copy the config for Codex CLI, Cursor and others). Agents get Oxytocin's own tools — see the projects and terminals,
+read another terminal's output (a dev server, a test run), notify you, ask you something in a dialog, open a file for
+you — plus the tools of your plugins, which appear in running sessions as soon as you turn a plugin on. Every tool can
+be switched off or set to ask you first, and the recent calls are listed (without their arguments).
 
 ### 🔍 Live changes
 
@@ -98,13 +106,14 @@ gear in the Usage card opens its settings. Nothing leaves your machine.
 ### 🧩 Plugins
 
 Plugins are plain HTML/JS/CSS: views run in sandboxed iframes, backends in a separate Plugin Host process. They add
-sidebar views, panels and tools, status bar items, commands, settings, terminal profiles and agent rules.
+sidebar views, panels and tools, status bar items, commands, settings, terminal profiles, agent rules and tools for AI
+agents.
 
 | Built-in plugin | What it does |
 |---|---|
 | **Usage Monitor** | Token usage, costs, budgets and Claude subscription limits |
 | **File Preview** | Live preview of Markdown (rendered) and code (highlighted) — from terminal links and the Changes list |
-| **Project Runner** | Detects runnable apps, runs them with status, URLs and logs, and lets agents run them over MCP |
+| **Project Runner** | Detects runnable apps, runs them with status, URLs and logs, and lets agents run them (MCP tools) |
 | **Claude Code Bridge** | Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks |
 | **JSON Formatter** | Format, minify and validate JSON next to the terminal or in the right sidebar |
 
