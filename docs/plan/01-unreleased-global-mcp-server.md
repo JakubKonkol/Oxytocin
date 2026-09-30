@@ -300,7 +300,7 @@ tool's timeout → deny. Never block the hub's event loop while waiting.
 - Copyable JSON for other clients (`mcpServers` format). Codex CLI and Cursor formats differ; verify them before
   offering client-specific snippets.
 - The runner's *Connect Claude Code* button and its `projectRunner.mcp.*` settings are replaced by the core ones in
-  the final step. Mark the old settings deprecated for one release (ignored, with a note) before deleting them.
+  step 5. Mark the old settings deprecated for one release (ignored, with a note) before deleting them.
 
 ### How agents find out about new tools
 
