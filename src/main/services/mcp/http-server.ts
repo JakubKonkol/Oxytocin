@@ -36,7 +36,8 @@ export interface ToolCall {
 
 /** What the transport asks the hub. */
 export interface McpHandler {
-  info(): { name: string; version: string; instructions?: string };
+  /** Server info for `initialize`; the terminal header lets the instructions describe the caller's project. */
+  info(terminalHeader?: string): { name: string; version: string; instructions?: string };
   listTools(): ListedTool[];
   hasTool(name: string): boolean;
   callTool(name: string, args: Record<string, unknown>, call: ToolCall): Promise<McpToolResult>;
@@ -343,7 +344,7 @@ export class McpHttpServer {
     switch (m.method) {
       case 'initialize': {
         const requested = str(m.params?.['protocolVersion']);
-        const info = this.handler.info();
+        const info = this.handler.info(terminalHeader || undefined);
         return ok({
           protocolVersion: PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: true } },

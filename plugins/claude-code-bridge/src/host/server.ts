@@ -21,7 +21,8 @@ const sameSecret = (a: string, b: string) => {
 
 /**
  * Local endpoint for Claude Code `http` hooks: 127.0.0.1 only, Bearer token, JSON body up to 1 MB. Answers 204 (an
- * empty 2xx means "no decision" to Claude Code, so permission prompts and prompts proceed normally).
+ * empty 2xx means "no decision" to Claude Code, so permission prompts and prompts proceed normally), or 200 with the
+ * hook's JSON output when the handler returns one (the resource brief with a session's first prompt).
  */
 export class BridgeServer {
   private server: Server | undefined;
@@ -29,7 +30,8 @@ export class BridgeServer {
 
   constructor(
     private readonly token: string,
-    private readonly onEvent: (terminalId: string, input: HookInput) => void,
+    /** Handles an event; a returned object is sent back as the hook's JSON output (e.g. `additionalContext`). */
+    private readonly onEvent: (terminalId: string, input: HookInput) => unknown,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -85,7 +87,15 @@ export class BridgeServer {
       if (!input || typeof input !== 'object') return this.reply(res, 400);
       this.stats.events++;
       this.stats.lastEventAt = this.now();
-      if (terminalId) this.onEvent(terminalId, input);
+      const output = terminalId
+        ? await Promise.resolve(this.onEvent(terminalId, input)).catch(() => undefined)
+        : undefined;
+      if (output && typeof output === 'object') {
+        const body = JSON.stringify(output);
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+        res.end(body);
+        return;
+      }
       this.reply(res, 204);
     } catch {
       this.reply(res, 400);

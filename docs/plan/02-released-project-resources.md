@@ -1,7 +1,12 @@
 # Plan 02 — Project resources: databases and APIs for AI agents
 
-Status: **planned, not started** · Depends on: **Plan 01** (Oxytocin's MCP server, released in 0.6.5 — code in
-`src/main/services/mcp/`) · Target: next minor release
+Status: **released in 0.7.0** (steps 1–8 and Oracle from step 9; SSH tunnels and Azure AD authentication are not
+done) · Depends on: **Plan 01** (Oxytocin's MCP server, released in 0.6.5 — code in `src/main/services/mcp/`)
+
+Implementation notes (where it differs from the plan below): resources are stored in `project-resources.json` in
+userData rather than in `projects.json` (an entry written by a newer version can never make the project list
+unreadable, and is kept as it is); the session brief goes with the first `UserPromptSubmit` of a session instead of
+`SessionStart` (see the verification log); the Connections Host is `src/connections-host/` and starts on first use.
 
 This document is written for the agent (or person) who implements the feature. Read it completely, read the MCP server code (Plan 01, `src/main/services/mcp/`),
 then follow [Implementation steps](#implementation-steps) in order. Every step ends in a working, released-quality
@@ -423,8 +428,22 @@ of any server.
 
 Fill in while implementing.
 
-- Claude Code applies `additionalContext` from an `http` `SessionStart` hook response: _
-- `pgsql-ast-parser` vs `libpg-query` chosen, and why: _
-- Bundled size of the per-dialect `node-sql-parser` builds: _
-- `licenses:check` accepts `oracledb`'s `(Apache-2.0 OR UPL-1.0)`: _
-- `tedious` against SQL Server Express on Windows (named instance, trust server certificate): _
+- Claude Code applies `additionalContext` from an `http` `SessionStart` hook response: **no — `SessionStart` supports
+  only `command` and `mcp_tool` hooks** (Claude Code hooks reference, checked 2026-09-30), and `mcp_tool` hooks are
+  skipped at launch because MCP servers are not connected yet. `UserPromptSubmit` supports `http` hooks with
+  `hookSpecificOutput.additionalContext`, so the Claude Code Bridge answers the first prompt of each session with the
+  brief (its hook set is unchanged, so existing installations get it without reinstalling). MCP instructions carry
+  the brief too.
+- `pgsql-ast-parser` vs `libpg-query` chosen, and why: **`libpg-query` 18** (MIT) — PostgreSQL's own parser compiled
+  to WebAssembly: no compiler needed on any platform, the exact PG 18 grammar (CTEs, `EXPLAIN (ANALYZE …)`, locking
+  clauses), 1.8 MB. It stays external (it loads its `.wasm` next to its module) and ships in app.asar.
+- Bundled size of the per-dialect `node-sql-parser` builds: **~0.9 MB** for mysql, mariadb, transactsql and sqlite
+  (instead of 92 MB for the package); the whole Connections Host bundle with every driver is ~9 MB in out/main.
+- `licenses:check` accepts `oracledb`'s `(Apache-2.0 OR UPL-1.0)`: **yes**. Its install script only checks the
+  thick-mode setup and is not approved (`allowScripts`), thin mode needs none. `node-sql-parser` depends on
+  `big-integer` (Unlicense, a public-domain dedication): `Unlicense` was added to the allowlist.
+- `tedious` against SQL Server Express on Windows (named instance, trust server certificate): not verified on Windows
+  in this session; verified against SQL Server 2022 Developer in Docker (TCP, *Trust server certificate*, TLS on).
+- All engines were tested against real servers in Docker (PostgreSQL 17, MySQL 8.4, MariaDB 11, SQL Server 2022,
+  MongoDB 8, Redis 7, ClickHouse 25.8, Oracle Free 23) through the integration tests and the built app; 2,400 queries
+  across them left the Connections Host's heap unchanged (65 → 62 MB).

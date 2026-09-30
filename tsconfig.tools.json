@@ -18,6 +18,7 @@
     "src/main/**/*",
     "src/pty-host/**/*",
     "src/workspace-host/**/*",
+    "src/connections-host/**/*",
     "src/plugin-host/**/*",
     "src/preload/**/*",
     "packages/*/index.d.ts",

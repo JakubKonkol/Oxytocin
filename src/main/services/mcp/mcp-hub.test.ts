@@ -5,6 +5,7 @@ import { Emitter } from '@shared/utils/emitter';
 import { type AskPolicyAnswer, McpHub, type McpHubDeps } from './mcp-hub';
 import { McpHttpServer } from './http-server';
 import type { PluginToolSource } from './tool-registry';
+import type { ResourceTool } from './resource-tools';
 
 const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 const hubs: McpHub[] = [];
@@ -16,7 +17,9 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-function setup(o: { answer?: AskPolicyAnswer; call?: () => Promise<McpToolResult> } = {}) {
+function setup(
+  o: { answer?: AskPolicyAnswer; call?: () => Promise<McpToolResult>; resources?: McpHubDeps['resources'] } = {},
+) {
   let settings: Settings = { ...defaultSettings('linux'), 'mcp.port': 0 };
   const settingsChanged = new Emitter<Settings>();
   const pluginsChanged = new Emitter<void>();
@@ -83,6 +86,7 @@ function setup(o: { answer?: AskPolicyAnswer; call?: () => Promise<McpToolResult
     askPolicy,
     cli: vi.fn(() => Promise.resolve({ ok: true, output: '' })),
     logger,
+    ...(o.resources ? { resources: o.resources } : {}),
   };
   const hub = new McpHub(deps);
   hubs.push(hub);
@@ -198,5 +202,42 @@ describe('McpHub', () => {
     await hub.resetToken();
     expect(token()).not.toBe(before);
     expect(hub.clientConfig().json).toContain(token()!);
+  });
+});
+
+describe('McpHub resource tools', () => {
+  it('lists resource tools only while a project has such resources and briefs the caller', async () => {
+    const kinds = new Set<string>();
+    const changed = new Emitter<void>();
+    const tool: ResourceTool = {
+      needs: 'sql',
+      definition: { name: 'oxy_db_query', description: 'Runs SQL.', inputSchema: { type: 'object' } },
+      logDetail: (args) => `db: ${String(args['query'])}`,
+      run: () => 'rows',
+    };
+    const listTool: ResourceTool = {
+      needs: 'any',
+      definition: { name: 'oxy_project_resources', description: 'Lists.', inputSchema: { type: 'object' } },
+      logDetail: () => undefined,
+      run: () => '[]',
+    };
+    const { hub, call } = setup({
+      resources: {
+        tools: [tool, listTool],
+        kinds: () => kinds,
+        onDidChange: (l) => changed.event(() => l()),
+        brief: (projectId) => (projectId === 'p1' ? 'Project "Shop" has resources: database "shop-db"' : ''),
+      },
+    });
+    const info = () => hub.state().tools.find((t) => t.name === 'oxy_db_query');
+    expect(info()).toMatchObject({ listed: false, problem: expect.stringContaining('SQL database') as unknown });
+    kinds.add('sql').add('any');
+    changed.fire();
+    expect(info()).toMatchObject({ listed: true });
+    await call('oxy_db_query', { query: 'SELECT 1' });
+    expect(hub.state().log[0]).toMatchObject({ tool: 'oxy_db_query', projectId: 'p1', detail: 'db: SELECT 1' });
+    const instructions = (hub as unknown as { instructions(t?: string): string }).instructions.bind(hub);
+    expect(instructions('t-1')).toContain('database "shop-db"');
+    expect(instructions()).toContain('call oxy_project_resources');
   });
 });

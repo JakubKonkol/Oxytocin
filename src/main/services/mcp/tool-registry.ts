@@ -50,6 +50,8 @@ const MAX_DYNAMIC_TOOLS = 100;
 export class McpToolRegistry {
   private core: McpToolDefinition[] = [];
   private coreDefaults: Readonly<Record<string, McpPolicy>> = {};
+  /** Core tools not offered right now, with the reason (resource tools wait for a project resource). */
+  private coreHidden: ReadonlyMap<string, string> = new Map();
   private plugins: PluginToolSource[] = [];
   private readonly dynamic = new Map<string, McpToolDefinition[]>();
   private settings: ToolSettings = { disabled: [], policies: {} };
@@ -61,6 +63,14 @@ export class McpToolRegistry {
   setCore(tools: McpToolDefinition[], defaults: Readonly<Record<string, McpPolicy>> = {}): void {
     this.core = tools;
     this.coreDefaults = defaults;
+    this.changeEmitter.fire();
+  }
+
+  /** Hides core tools (with the reason shown in the settings) until what they need exists. */
+  setCoreHidden(hidden: ReadonlyMap<string, string>): void {
+    const key = (m: ReadonlyMap<string, string>) => JSON.stringify([...m].sort());
+    if (key(hidden) === key(this.coreHidden)) return;
+    this.coreHidden = hidden;
     this.changeEmitter.fire();
   }
 
@@ -179,7 +189,7 @@ export class McpToolRegistry {
         ...(reason ? { problem: reason } : {}),
       });
     };
-    for (const tool of this.core) add(tool, { kind: 'core' }, false, undefined);
+    for (const tool of this.core) add(tool, { kind: 'core' }, false, this.coreHidden.get(tool.name));
     const plugins = [...this.plugins].sort(
       (a, b) => a.pluginName.localeCompare(b.pluginName) || a.pluginId.localeCompare(b.pluginId),
     );

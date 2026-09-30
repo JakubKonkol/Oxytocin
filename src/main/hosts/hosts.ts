@@ -1,4 +1,5 @@
 import { utilityProcess } from 'electron';
+import type { ConnectionsHostEvents, ConnectionsHostMethods } from '@shared/rpc/contracts/connections-host';
 import type { PluginHostEvents, PluginHostMethods } from '@shared/rpc/contracts/plugin-host';
 import type { PtyHostEvents, PtyHostMethods } from '@shared/rpc/contracts/pty-host';
 import type { WorkspaceHostEvents, WorkspaceHostMethods } from '@shared/rpc/contracts/workspace-host';
@@ -16,7 +17,7 @@ export type SupervisedHost = Pick<
   'status' | 'start' | 'stop' | 'kill' | 'name'
 >;
 
-type HostEntry = 'ptyHost' | 'workspaceHost' | 'pluginHost';
+type HostEntry = 'ptyHost' | 'workspaceHost' | 'pluginHost' | 'connectionsHost';
 
 function forkHost(
   entry: HostEntry,
@@ -41,6 +42,8 @@ export class Hosts {
   readonly workspace: UtilityHost<WorkspaceHostMethods, WorkspaceHostEvents>;
   readonly plugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
   readonly externalPlugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
+  /** Database drivers and API requests of project resources (Plan 02); started on first use. */
+  readonly connections: UtilityHost<ConnectionsHostMethods, ConnectionsHostEvents>;
   private readonly statusEmitter = new Emitter<HostStatus[]>();
   readonly onDidChangeStatus = this.statusEmitter.event;
 
@@ -86,10 +89,22 @@ export class Hosts {
       9233,
       pluginPing,
     );
+    this.connections = make<ConnectionsHostMethods, ConnectionsHostEvents>(
+      'connectionsHost',
+      'Oxytocin Connections Host',
+      'conn',
+      9234,
+    );
+  }
+
+  /** Starts the Connections Host when it is not running (it is only needed once a project has resources). */
+  ensureConnections(): void {
+    const state = this.connections.state;
+    if (state === 'stopped' || state === 'failed') this.connections.start();
   }
 
   all(): SupervisedHost[] {
-    return [this.pty, this.workspace, this.plugin, this.externalPlugin];
+    return [this.pty, this.workspace, this.plugin, this.externalPlugin, this.connections];
   }
 
   status(): HostStatus[] {

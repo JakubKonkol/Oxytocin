@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { PluginContext } from '@oxytocin/plugin-api';
 import { createCliRunner, installInClaude, isInstalledInClaude, refreshInClaude, removeFromClaude } from './claude-cli';
 import { TOKEN_VAR, writeMarketplace } from './claude-plugin';
-import { stateFromHook } from './events';
+import { BriefedSessions, briefOutput, stateFromHook } from './events';
 import { BridgeServer } from './server';
 import type { ActionResult, BridgeStatus } from '../shared/status';
 
@@ -35,9 +35,19 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const run = createCliRunner(claudeCommand);
   let installed: boolean | null = ctx.storage.get<boolean>('installed') ?? null;
 
-  const server = new BridgeServer(token, (terminalId, input) => {
+  // With a session's first prompt, Claude Code gets a brief about the project's databases and APIs (Oxytocin's
+  // project resources), so it uses Oxytocin's tools instead of hunting for credentials.
+  const briefed = new BriefedSessions();
+  const server = new BridgeServer(token, async (terminalId, input) => {
     const report = stateFromHook(input);
     if (report) oxy.agents.reportState(terminalId, report);
+    const sessionId = typeof input.session_id === 'string' ? input.session_id : '';
+    if (input.hook_event_name === 'SessionEnd' && sessionId) briefed.forget(terminalId, sessionId);
+    if (input.hook_event_name !== 'UserPromptSubmit' || !sessionId || !briefed.first(terminalId, sessionId)) return;
+    const brief = await oxy.commands
+      .execute<{ text: string } | null>('oxytocin.resources.agentBrief', { terminalId })
+      .catch(() => null);
+    return brief?.text ? briefOutput(brief.text) : undefined;
   });
   let retry: ReturnType<typeof setInterval> | undefined;
   const listen = async () => {

@@ -12,6 +12,7 @@
     "src/pty-host/**/*",
     "src/workspace-host/**/*",
     "src/plugin-host/**/*",
+    "src/connections-host/**/*",
     "src/shared/**/*"
   ]
 }

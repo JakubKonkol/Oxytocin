@@ -43,10 +43,12 @@ test('a killed utility host is restarted and the restart is logged', async () =>
   try {
     const running = async () =>
       app.evaluate(() => (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.hosts.status());
-    // The external Plugin Host only starts for user/developer plugins (ADR-022).
-    const core = (list: { name: string; state: string }[]) => list.filter((h) => !h.name.endsWith('(external)'));
+    // The external Plugin Host only starts for user/developer plugins (ADR-022), the Connections Host when a project
+    // resource is first used.
+    const onDemand = (name: string) => name.endsWith('(external)') || name === 'Oxytocin Connections Host';
+    const core = (list: { name: string; state: string }[]) => list.filter((h) => !onDemand(h.name));
     await expect.poll(async () => core(await running()).every((h) => h.state === 'running')).toBe(true);
-    expect((await running()).find((h) => h.name.endsWith('(external)'))?.state).toBe('stopped');
+    expect((await running()).filter((h) => onDemand(h.name)).map((h) => h.state)).toEqual(['stopped', 'stopped']);
     const before = (await running()).find((h) => h.name === 'Oxytocin PTY Host');
     await app.evaluate(() => (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.hosts.pty.kill());
     await expect

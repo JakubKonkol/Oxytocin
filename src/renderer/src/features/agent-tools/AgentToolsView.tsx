@@ -280,7 +280,9 @@ function CallLog({ log }: { log: readonly McpCallLogEntry[] }) {
         )}
       </div>
       {log.length === 0 ? (
-        <p className="py-2 text-small text-fg-muted">No tool calls yet. Arguments and results are never recorded.</p>
+        <p className="py-2 text-small text-fg-muted">
+          No tool calls yet. Results are never recorded; database and API tools keep the query or request line.
+        </p>
       ) : (
         <div className="max-h-72 overflow-auto">
           {log.map((e) => (
@@ -290,11 +292,14 @@ function CallLog({ log }: { log: readonly McpCallLogEntry[] }) {
               data-tool={e.tool}
               data-outcome={e.outcome}
               className="flex items-center gap-3 border-b border-line-subtle py-1 text-small last:border-b-0"
-              title={e.error}
+              title={[e.detail, e.error].filter(Boolean).join('\n') || undefined}
             >
               <span className="w-16 flex-none font-mono text-fg-muted">{new Date(e.at).toLocaleTimeString()}</span>
               <span className="w-52 flex-none truncate font-mono text-fg">{e.tool}</span>
-              <span className="min-w-0 flex-1 truncate text-fg-secondary">{e.caller ?? 'Unknown caller'}</span>
+              <span className="min-w-0 flex-1 truncate text-fg-secondary">
+                {e.caller ?? 'Unknown caller'}
+                {e.detail && <span className="ml-2 font-mono text-fg-muted">{e.detail}</span>}
+              </span>
               <span className="w-16 flex-none text-right font-mono text-fg-muted">{e.durationMs} ms</span>
               <Badge variant={OUTCOME_BADGES[e.outcome].variant}>{OUTCOME_BADGES[e.outcome].label}</Badge>
             </div>

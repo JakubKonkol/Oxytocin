@@ -86,6 +86,19 @@ read another terminal's output (a dev server, a test run), notify you, ask you s
 you — plus the tools of your plugins, which appear in running sessions as soon as you turn a plugin on. Every tool can
 be switched off or set to ask you first, and the recent calls are listed (without their arguments).
 
+### 🗄️ Databases and APIs for your agents
+
+Describe a project's resources in **Project settings** (right-click the project): its **databases** — PostgreSQL,
+CockroachDB, SQL Server, MySQL, MariaDB, MongoDB, SQLite, Redis/Valkey, ClickHouse and Oracle — its **HTTP APIs**
+(base URL, authentication, OpenAPI), log files, links and related projects. *Test connection* works like in an IDE,
+and *Import from project…* finds connection strings in `.env`, `appsettings.json`, Spring, docker-compose and Prisma
+files. Agents then read the schema, query the data and call the API through Oxytocin's tools (`oxy_db_query`,
+`oxy_api_request`, …): Oxytocin adds the credentials (encrypted with your OS keychain, never shown to the agent) and
+enforces what you allowed — read-only by default (a real SQL parser checks every statement; reads also run in
+read-only transactions), *ask before writes* with the full statement in a dialog, or read-write for development
+databases. Secret columns are masked, results are capped, and every query is kept in the call log. Claude Code
+sessions are told about the resources with their first prompt, so agents stop hunting for connection strings.
+
 ### 🔍 Live changes
 
 A live tree of every file changed since `HEAD`, with line counts, and a Monaco diff viewer that updates while the
@@ -160,6 +173,7 @@ src/main            Electron main process — orchestrates windows, IPC and the 
 src/pty-host        utility process: node-pty terminals + headless xterm mirrors
 src/workspace-host  utility process: file watching (@parcel/watcher) and git
 src/plugin-host     utility process: plugin backends
+src/connections-host utility process: database drivers, SQL guard and API requests of project resources
 src/renderer        React 19 UI (dockview, xterm.js, Monaco)
 src/preload         contextBridge API (window.oxy)
 src/shared          pure TypeScript: domain types, IPC/RPC contracts, zod schemas
@@ -174,6 +188,7 @@ ACK-based flow control, so busy agents never block the UI.
 
 - [Writing plugins](docs/plugins/README.md) — manifest, backend API, views, debugging and distribution.
 - [Releasing](docs/RELEASING.md) — packaging, code signing and auto-update.
+- [Testing the database bridge](docs/testing-databases.md) — integration tests against real database servers.
 - [Changelog](CHANGELOG.md)
 
 ## License

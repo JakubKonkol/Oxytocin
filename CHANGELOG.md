@@ -3,6 +3,42 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Databases and APIs for your agents.** *Project settings* (right-click a project) is now a larger dialog with tabs,
+  and describes the project's **resources**: databases (PostgreSQL, CockroachDB, SQL Server, MySQL, MariaDB, MongoDB,
+  SQLite, Redis/Valkey, ClickHouse, Oracle), HTTP APIs (base URL or a Run profile's URL, bearer/basic/API-key/header
+  authentication, OpenAPI), log files, links and related projects. *Test connection* shows the server version and
+  latency or a clear error (authentication, host unreachable, TLS, missing database, timeout); *Import from project…*
+  finds connection strings in `.env`, `appsettings*.json`, Spring `application.properties`/`.yml`, docker-compose and
+  Prisma files and either references the env variable (nothing copied) or copies the connection into Oxytocin.
+- **The bridge.** Agents use the resources through new tools of Oxytocin's MCP server — `oxy_project_resources`,
+  `oxy_db_schema`, `oxy_db_query`, `oxy_mongo`, `oxy_redis`, `oxy_api_describe`, `oxy_api_request` and
+  `oxy_logs_tail` — which are only offered once a project has such a resource. Oxytocin adds the credentials (they
+  never reach the agent) and enforces what you allowed per database: **read-only** (the default: a real SQL parser
+  per dialect lets through only plain reads — one statement, built-in functions, no `SELECT … INTO`, `FOR UPDATE`,
+  sleeping, file or network functions — and reads also run in read-only transactions), **ask before writes** (every
+  other statement is shown to you in full, with *Allow* / *Deny*) or **read-write** (still asking before `DROP`,
+  `TRUNCATE` and `UPDATE`/`DELETE` without `WHERE`); production databases cannot be read-write. MongoDB and Redis get
+  operation and command allowlists. APIs only receive the methods and paths you allow, only at their own origin.
+  Results are capped (rows, bytes, time) and say how many rows exist; columns such as `password_hash` or `api_token`
+  are masked (`***`); secrets never appear in errors.
+- **Secrets are encrypted** with the operating system's keychain (DPAPI, Keychain, libsecret/KWallet) and can only be
+  written from the dialog, never read back. On Linux without a keyring the dialog says that they are only obfuscated.
+- **Agents are told about the resources:** in the MCP server's instructions (for the project of the terminal they run
+  in), with the first prompt of every Claude Code session (through the Claude Code Bridge hooks), and — when you
+  choose it on the new *Agents* tab — in a managed block of `AGENTS.md` or `CLAUDE.md`. The *Agents* tab also shows the
+  brief and the project's recent tool calls with their queries.
+- Resource tool calls keep the query or request line in the call log (Settings → Agent Tools), never the results.
+- *Save to repository* writes the resources without secrets and production hosts to `.oxytocin/project.json`; when a
+  repository with this file is opened, Oxytocin asks once per version before using it.
+- Links of a project appear in its context menu; related projects share the resources they mark *Share with related
+  projects*, and the *Related projects* tab suggests `claude --add-dir` for their code.
+- Database drivers run in a new **Connections Host** process that starts on first use and stops after 10 idle
+  minutes; its connection pools close after 5 idle minutes, so projects without resources pay nothing.
+
 ## [0.6.5] - 2026-09-30
 
 ### Added

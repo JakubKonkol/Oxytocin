@@ -20,6 +20,10 @@ files:
   - node_modules/{js-yaml,argparse,lazy-val,lodash.escaperegexp,lodash.isequal,tiny-typed-emitter,debug,ms,sax}/**
   # Plugin installation from .zip archives (M9-T3).
   - node_modules/{yauzl,pend}/**
+  # The PostgreSQL parser of the Connections Host (loads its WebAssembly file next to itself); the database drivers
+  # are bundled into out/main.
+  - node_modules/libpg-query/**
+  - node_modules/@pgsql/types/**
 asar: true
 asarUnpack:
   - '**/node_modules/node-pty/**'

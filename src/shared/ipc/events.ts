@@ -103,6 +103,8 @@ export const eventContract = {
     path: z.string().min(1),
     line: z.number().int().min(1).optional(),
   }),
+  /** A project's resources changed (context menu links, the Project settings dialog). */
+  'resources:changed': z.object({ projectId: ProjectIdSchema }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

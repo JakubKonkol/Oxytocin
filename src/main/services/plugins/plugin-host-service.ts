@@ -107,6 +107,8 @@ export interface PluginCorePort {
     payload: unknown,
   ): void;
   osNotify(title: string, body: string): void;
+  /** What an agent in this terminal should know about its project's resources (null: nothing to tell). */
+  agentBrief?(terminalId: string): string | null;
 }
 
 export interface PluginHostServiceDeps {
@@ -138,6 +140,7 @@ const CORE_COMMANDS = new Set([
   'oxytocin.changes.refresh',
   'oxytocin.panel.focus',
   'oxytocin.mcp.openSettings',
+  'oxytocin.resources.agentBrief',
 ]);
 
 const MAX_HANG_INCIDENTS = 2;
@@ -663,6 +666,14 @@ export class PluginHostService implements Disposable {
       const { id, args } = params as { id: string; args: unknown[] };
       if (!CORE_COMMANDS.has(id)) throw new OxyError('NOT_FOUND', `Unknown command: ${id}`);
       if (id === 'oxytocin.changes.refresh') return undefined;
+      // Returns the brief about the project resources of a terminal: `{ terminalId }` → `{ text } | null`.
+      if (id === 'oxytocin.resources.agentBrief') {
+        const arg = args[0];
+        const terminalId = arg && typeof arg === 'object' ? (arg as { terminalId?: unknown }).terminalId : undefined;
+        if (typeof terminalId !== 'string' || !terminalId) return null;
+        const text = core.agentBrief?.(terminalId);
+        return text ? { text } : null;
+      }
       core.toRenderer('runCommand', { id, args });
       return undefined;
     }

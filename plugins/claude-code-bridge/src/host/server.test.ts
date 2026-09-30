@@ -8,7 +8,7 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function start(onEvent: (id: string, input: HookInput) => void) {
+async function start(onEvent: (id: string, input: HookInput) => unknown) {
   server = new BridgeServer('secret', onEvent, () => 1234);
   // Port 0 is not what the bridge uses, but lets the test pick a free port; read it back from the address.
   await server.start(0);
@@ -16,6 +16,22 @@ async function start(onEvent: (id: string, input: HookInput) => void) {
 }
 
 describe('BridgeServer', () => {
+  it('sends a JSON hook output when the handler returns one', async () => {
+    const s = await start(() => ({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'brief' },
+    }));
+    const port = (s as unknown as { server: { address(): { port: number } } }).server.address().port;
+    const r = await fetch(`http://127.0.0.1:${port}/claude/hook`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer secret', 'X-Oxytocin-Terminal': 't1' },
+      body: '{"hook_event_name":"UserPromptSubmit","session_id":"s"}',
+    });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'brief' },
+    });
+  });
+
   it('accepts authenticated hook posts and attributes them to the terminal', async () => {
     const events: [string, HookInput][] = [];
     const s = await start((id, input) => events.push([id, input]));

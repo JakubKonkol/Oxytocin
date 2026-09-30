@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stateFromHook } from './events';
+import { BriefedSessions, briefOutput, stateFromHook } from './events';
 
 describe('stateFromHook', () => {
   it('maps Claude Code hook events to agent states with the session id', () => {
@@ -31,5 +31,21 @@ describe('stateFromHook', () => {
     expect(stateFromHook({ hook_event_name: 'PreCompact' })).toBeNull();
     expect(stateFromHook({})).toBeNull();
     expect(stateFromHook({ hook_event_name: 'Stop', session_id: 42 })).toEqual({ state: 'idle' });
+  });
+});
+
+describe('resource brief', () => {
+  it('is sent once per session and terminal', () => {
+    const b = new BriefedSessions();
+    expect(b.first('t1', 's1')).toBe(true);
+    expect(b.first('t1', 's1')).toBe(false);
+    expect(b.first('t2', 's1')).toBe(true);
+    b.forget('t1', 's1');
+    expect(b.first('t1', 's1')).toBe(true);
+    for (let i = 0; i < 1100; i++) b.first('t', String(i));
+    expect(b.size).toBe(1000);
+    expect(briefOutput('x')).toEqual({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'x' },
+    });
   });
 });

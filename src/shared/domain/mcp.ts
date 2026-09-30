@@ -110,7 +110,7 @@ export type McpToolInfo = z.infer<typeof McpToolInfoSchema>;
 export const McpCallOutcomeSchema = z.enum(['ok', 'error', 'denied', 'cancelled']);
 export type McpCallOutcome = z.infer<typeof McpCallOutcomeSchema>;
 
-/** One tool call (no arguments or results: they can contain secrets). */
+/** One tool call (no arguments or results: they can contain secrets; resource tools keep a short `detail`). */
 export const McpCallLogEntrySchema = z.object({
   id: z.number(),
   at: z.number(),
@@ -120,6 +120,10 @@ export const McpCallLogEntrySchema = z.object({
   durationMs: z.number(),
   outcome: McpCallOutcomeSchema,
   error: z.string().optional(),
+  /** The caller's project (for the project's call log in Project settings → Agents). */
+  projectId: z.string().optional(),
+  /** Resource tools: the query or request line (the audit trail, without results or secrets). */
+  detail: z.string().optional(),
 });
 export type McpCallLogEntry = z.infer<typeof McpCallLogEntrySchema>;
 

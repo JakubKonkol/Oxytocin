@@ -29,6 +29,7 @@ import {
   type RunCli,
 } from './client-registration';
 import { buildCoreTools, type CoreTool, type CoreToolsDeps } from './core-tools';
+import type { ResourceTool, ResourceToolNeed } from './resource-tools';
 import { type ListedTool, McpHttpServer, type ToolCall } from './http-server';
 import { McpToolRegistry, type PluginToolSource, type RegistryEntry } from './tool-registry';
 
@@ -78,7 +79,26 @@ export interface McpHubDeps {
   askPolicy(request: AskPolicyRequest): Promise<AskPolicyAnswer>;
   cli: RunCli;
   logger: Logger;
+  /** Project resources (Plan 02): their tools are listed only while a project has such a resource. */
+  resources?: {
+    tools: ResourceTool[];
+    /** Which kinds of exposed resources exist in any project. */
+    kinds(): ReadonlySet<string>;
+    onDidChange(listener: () => void): Disposable;
+    /** What an agent in this project should know about its resources ('' when there are none). */
+    brief(projectId: string): string;
+  };
 }
+
+const NEEDS_REASON: Record<ResourceToolNeed, string> = {
+  any: 'Offered when a project has resources for agents (Project settings → Databases, APIs, Links & logs).',
+  database: 'Offered when a project has a database for agents (Project settings → Databases).',
+  sql: 'Offered when a project has an SQL database for agents (Project settings → Databases).',
+  mongodb: 'Offered when a project has a MongoDB database for agents (Project settings → Databases).',
+  redis: 'Offered when a project has a Redis database for agents (Project settings → Databases).',
+  api: 'Offered when a project has an API for agents (Project settings → APIs).',
+  log: 'Offered when a project has a log file for agents (Project settings → Links & logs).',
+};
 
 const INSTRUCTIONS =
   'Oxytocin is the desktop app the user runs you in: it manages their projects, terminals (shells, dev servers, other agents), git changes and plugins. Use these tools to see what runs in the other terminals, to show the user a file, to notify or ask them. Tools that take `cwd` choose the Oxytocin project that contains it; pass your working directory. Plugins add tools while you work; `oxy_capabilities` lists the current ones.';
@@ -92,6 +112,7 @@ export class McpHub implements Disposable {
   readonly registry = new McpToolRegistry();
   private readonly server: McpHttpServer;
   private readonly coreTools: Map<string, CoreTool>;
+  private readonly logDetails = new Map<string, (args: Record<string, unknown>) => string | undefined>();
   private readonly log: McpCallLogEntry[] = [];
   private logId = 0;
   private claudeConnected: boolean | null = null;
@@ -110,15 +131,21 @@ export class McpHub implements Disposable {
   constructor(private readonly deps: McpHubDeps) {
     this.server = new McpHttpServer(
       {
-        info: () => ({ name: MCP_SERVER_NAME, version: deps.appVersion, instructions: this.instructions() }),
+        info: (terminalHeader) => ({
+          name: MCP_SERVER_NAME,
+          version: deps.appVersion,
+          instructions: this.instructions(terminalHeader),
+        }),
         listTools: () => this.listTools(),
         hasTool: (name) => this.registry.resolve(name) !== undefined,
         callTool: (name, args, call) => this.callTool(name, args, call),
       },
       () => this.token(),
     );
-    const core = buildCoreTools({ ...deps.core, tools: () => this.registry.all() });
+    const resourceTools = deps.resources?.tools ?? [];
+    const core: CoreTool[] = [...buildCoreTools({ ...deps.core, tools: () => this.registry.all() }), ...resourceTools];
     this.coreTools = new Map(core.map((t) => [t.definition.name, t]));
+    for (const t of resourceTools) this.logDetails.set(t.definition.name, (args) => t.logDetail(args));
     const defaults: Record<string, McpPolicy> = {};
     for (const t of core) if (t.defaultPolicy) defaults[t.definition.name] = t.defaultPolicy;
     this.registry.setCore(
@@ -126,6 +153,8 @@ export class McpHub implements Disposable {
       defaults,
     );
     this.applyToolSettings(deps.settings());
+    this.applyResourceKinds();
+    if (deps.resources) this.store.add(deps.resources.onDidChange(() => this.applyResourceKinds()));
     this.registry.setPlugins(deps.plugins.sources());
     this.lastListedKey = this.registry.listedKey();
     this.store.add(this.registry.onDidChange(() => this.onRegistryChange()));
@@ -215,6 +244,18 @@ export class McpHub implements Disposable {
     this.registry.setSettings({ disabled: s['mcp.tools.disabled'], policies: s['mcp.tools.policy'] });
   }
 
+  /** Resource tools are listed only while a project has what they need (keeps everyone else's tool list short). */
+  private applyResourceKinds(): void {
+    const r = this.deps.resources;
+    if (!r) return;
+    const kinds = r.kinds();
+    const has = (need: ResourceToolNeed) =>
+      need === 'database' ? kinds.has('sql') || kinds.has('mongodb') || kinds.has('redis') : kinds.has(need);
+    const hidden = new Map<string, string>();
+    for (const t of r.tools) if (!has(t.needs)) hidden.set(t.definition.name, NEEDS_REASON[t.needs]);
+    this.registry.setCoreHidden(hidden);
+  }
+
   private listTools(): ListedTool[] {
     return this.registry.listed().map((e) => ({
       name: e.name,
@@ -225,13 +266,26 @@ export class McpHub implements Disposable {
     }));
   }
 
-  private instructions(): string {
+  private instructions(terminalHeader?: string): string {
     const plugins = new Map<string, number>();
     for (const e of this.registry.listed())
       if (e.source.kind === 'plugin') plugins.set(e.source.pluginName, (plugins.get(e.source.pluginName) ?? 0) + 1);
-    if (plugins.size === 0) return INSTRUCTIONS;
-    const lines = [...plugins].map(([name, n]) => `- ${name}: ${n} tool${n === 1 ? '' : 's'}`);
-    return `${INSTRUCTIONS}\n\nPlugins with tools now:\n${lines.join('\n')}`;
+    const parts = [INSTRUCTIONS];
+    if (plugins.size) {
+      const lines = [...plugins].map(([name, n]) => `- ${name}: ${n} tool${n === 1 ? '' : 's'}`);
+      parts.push(`Plugins with tools now:\n${lines.join('\n')}`);
+    }
+    const resources = this.deps.resources;
+    if (resources && this.registry.resolve('oxy_project_resources')) {
+      // The terminal the agent runs in names its project: tell it about that project's databases and APIs.
+      const terminal = terminalHeader ? this.deps.caller.terminal(terminalHeader.trim()) : undefined;
+      const brief = terminal ? resources.brief(terminal.projectId) : '';
+      parts.push(
+        brief ||
+          "Projects in Oxytocin can have databases, HTTP APIs and log files for agents: call oxy_project_resources (with your cwd) to see those of your project, and use Oxytocin's tools for them instead of looking for credentials.",
+      );
+    }
+    return parts.join('\n\n');
   }
 
   private onRegistryChange(): void {
@@ -292,6 +346,12 @@ export class McpHub implements Disposable {
       args,
     });
     const callerLabel = this.callerLabel(caller);
+    let detail: string | undefined;
+    try {
+      detail = entry.source.kind === 'core' ? this.logDetails.get(name)?.(args) : undefined;
+    } catch {
+      detail = undefined;
+    }
     const finish = (outcome: McpCallOutcome, result: McpToolResult, error?: string): McpToolResult => {
       this.record({
         at: started,
@@ -301,6 +361,8 @@ export class McpHub implements Disposable {
         durationMs: Date.now() - started,
         outcome,
         ...(error ? { error: error.slice(0, 300) } : {}),
+        ...(caller.context.projectId ? { projectId: caller.context.projectId } : {}),
+        ...(detail ? { detail: detail.slice(0, 500) } : {}),
       });
       return result;
     };

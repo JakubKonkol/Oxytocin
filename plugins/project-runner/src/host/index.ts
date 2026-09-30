@@ -562,6 +562,19 @@ export async function activate(ctx: PluginContext): Promise<void> {
     oxy.commands.register('projectRunner.stopAll', async () => {
       await Promise.all(s.runs.active().map((r) => s.runs.stop(r.projectId, r.profileId)));
     }),
+    // For Oxytocin's project resources: an API's base URL can come from a run profile.
+    oxy.commands.register('oxytocin.project-runner.resolveUrl', (arg: unknown) => {
+      const { projectId, profileId } = (arg ?? {}) as { projectId?: unknown; profileId?: unknown };
+      if (typeof projectId !== 'string' || typeof profileId !== 'string') return null;
+      const run = s.runs.snapshot(projectId, profileId);
+      return (run.status === 'running' || run.status === 'starting') && run.url ? run.url : null;
+    }),
+    oxy.commands.register('oxytocin.project-runner.profiles', async (arg: unknown) => {
+      const projectId = (arg ?? {}) && typeof arg === 'object' ? (arg as { projectId?: unknown }).projectId : undefined;
+      const project = (await oxy.projects.list()).find((p) => p.id === projectId);
+      if (!project) return [];
+      return (await s.profiles(project)).map((p) => ({ id: p.id, name: p.name, ...(p.url ? { url: p.url } : {}) }));
+    }),
   );
   // Agents run the apps through Oxytocin's MCP server (`contributes.mcp`, prefix `run`).
   for (const tool of s.mcpTools())

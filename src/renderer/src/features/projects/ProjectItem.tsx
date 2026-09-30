@@ -1,7 +1,8 @@
 import { ContextMenu } from 'radix-ui';
-import { AlertTriangle, Pin } from 'lucide-react';
+import { AlertTriangle, Link2, Pin } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { Project } from '@shared/domain/project';
+import type { LinkResource } from '@shared/domain/project-resources';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { cn } from '../../lib/cn';
 import { executeCommand } from '../../lib/commands';
@@ -31,6 +32,7 @@ const menuItem =
 /** One row of the PROJECTS list. */
 export function ProjectItem({ project, active, terminals, onDragStart, onDropOn }: ProjectItemProps) {
   const [renaming, setRenaming] = useState(false);
+  const [links, setLinks] = useState<LinkResource[]>([]);
   // Rename chosen from the context menu: start it once the menu has closed and handed focus back, otherwise the
   // menu's focus restore blurs the fresh input and ends the rename immediately.
   const renameAfterMenu = useRef(false);
@@ -52,7 +54,16 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
   ].join(' · ');
 
   return (
-    <ContextMenu.Root>
+    <ContextMenu.Root
+      onOpenChange={(open) => {
+        // The project's links (Project settings → Links & logs), loaded when the menu opens.
+        if (open)
+          void ipc
+            .invoke('resources:get', { projectId: project.id })
+            .then((r) => setLinks(r.resources.links))
+            .catch(() => setLinks([]));
+      }}
+    >
       <ContextMenu.Trigger asChild>
         <div
           role="option"
@@ -198,6 +209,18 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
           >
             Copy path
           </ContextMenu.Item>
+          {links.length > 0 && <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />}
+          {links.map((l) => (
+            <ContextMenu.Item
+              key={l.id}
+              className={menuItem}
+              data-testid="project-menu-link"
+              onSelect={() => void ipc.invoke('shell:openExternal', { url: l.url }).catch(() => undefined)}
+            >
+              <Link2 size={12} className="mr-1.5 inline" />
+              {l.title}
+            </ContextMenu.Item>
+          ))}
           <ContextMenu.Item
             className={menuItem}
             data-testid="project-menu-settings"

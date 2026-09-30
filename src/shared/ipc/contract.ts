@@ -22,6 +22,15 @@ import { KeybindingsStateSchema, UserKeybindingSchema } from '../domain/keybindi
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { TerminalProfileSchema } from '../domain/terminal-profile';
 import { AddProjectResultSchema, ProjectPatchSchema, ProjectSchema } from '../domain/project';
+import {
+  ImportCandidateSchema,
+  INSTRUCTIONS_FILES,
+  ProjectResourcesSchema,
+  ResourceTestResultSchema,
+  SecretChangeSchema,
+  SecretKeySchema,
+  SecretsStatusSchema,
+} from '../domain/project-resources';
 import type { InvokeChannel } from './channels';
 
 interface InvokeSpec {
@@ -165,6 +174,72 @@ export const invokeContract = {
     res: McpCliResultSchema.extend({ migrated: z.boolean() }).nullable(),
   },
   'mcp:clearLog': { req: z.null().optional(), res: z.void() },
+  /** A project's resources (Plan 02) with which secrets are set; never the secrets themselves. */
+  'resources:get': {
+    req: z.object({ projectId: ProjectIdSchema }),
+    res: z.object({
+      resources: ProjectResourcesSchema,
+      secrets: SecretsStatusSchema,
+      /** Written by a newer Oxytocin: saving replaces it. */
+      unreadable: z.boolean(),
+      /** `.oxytocin/project.json` exists in the repository. */
+      repositoryFile: z.boolean(),
+    }),
+  },
+  /** Saves the resources; secret changes are write-only (a value, null to remove, or an import token). */
+  'resources:save': {
+    req: z.object({
+      projectId: ProjectIdSchema,
+      resources: z.unknown(),
+      secrets: z.array(SecretChangeSchema).max(200).default([]),
+    }),
+    res: ProjectResourcesSchema,
+  },
+  /** "Test connection" for a database or API as edited (unsaved values typed in the dialog included). */
+  'resources:test': {
+    req: z.object({
+      projectId: ProjectIdSchema,
+      kind: z.enum(['database', 'api']),
+      resource: z.unknown(),
+      /** Typed but unsaved secrets (null: removed in the dialog). */
+      secrets: z.record(SecretKeySchema, z.string().max(20_000).nullable()).default({}),
+      /** Secrets of an imported candidate, by key → import token. */
+      importTokens: z.record(SecretKeySchema, z.string().max(200)).default({}),
+    }),
+    res: ResourceTestResultSchema,
+  },
+  /** Connection strings found in the project's files (.env, appsettings, Spring, docker-compose, Prisma). */
+  'resources:import': { req: z.object({ projectId: ProjectIdSchema }), res: z.array(ImportCandidateSchema) },
+  /** The brief agents get about the project's resources (preview in the Agents tab). */
+  'resources:brief': { req: z.object({ projectId: ProjectIdSchema }), res: z.object({ text: z.string() }) },
+  /** Writes (and from then on keeps up to date) the managed block in AGENTS.md or CLAUDE.md; `none` removes it. */
+  'resources:writeInstructions': {
+    req: z.object({ projectId: ProjectIdSchema, file: z.enum(INSTRUCTIONS_FILES) }),
+    res: z.object({ path: z.string().nullable(), written: z.boolean() }),
+  },
+  /** Writes `.oxytocin/project.json` (no secrets, no production resources). */
+  'resources:saveToRepository': { req: z.object({ projectId: ProjectIdSchema }), res: z.object({ path: z.string() }) },
+  /** A file picker for resource paths; the result is relative to the project root when inside it. */
+  'resources:pickFile': {
+    req: z.object({ projectId: ProjectIdSchema, purpose: z.enum(['sqlite', 'env', 'log', 'openapi', 'certificate']) }),
+    res: z.string().nullable(),
+  },
+  /** Which secrets of a project are set (`<resourceId>/<key>`), and whether they are encrypted. */
+  'secrets:status': { req: z.object({ projectId: ProjectIdSchema }), res: SecretsStatusSchema },
+  /** Write-only: there is no channel that returns a secret. */
+  'secrets:set': {
+    req: z.object({
+      projectId: ProjectIdSchema,
+      resourceId: z.string().min(1).max(64),
+      key: SecretKeySchema,
+      value: z.string().max(20_000),
+    }),
+    res: SecretsStatusSchema,
+  },
+  'secrets:delete': {
+    req: z.object({ projectId: ProjectIdSchema, resourceId: z.string().min(1).max(64), key: SecretKeySchema }),
+    res: SecretsStatusSchema,
+  },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;
 
 export type InvokeReq<C extends InvokeChannel> = z.input<(typeof invokeContract)[C]['req']>;

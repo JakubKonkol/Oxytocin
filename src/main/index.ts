@@ -11,6 +11,7 @@ import {
   MessageChannelMain,
   nativeImage,
   Notification,
+  safeStorage,
   screen,
   session,
   shell,
@@ -75,6 +76,9 @@ import { createCliRunner } from './services/mcp/client-registration';
 import type { PluginToolSource } from './services/mcp/tool-registry';
 import { JsonFileStore } from './services/storage/json-file-store';
 import type { McpToolResult } from '@shared/domain/mcp';
+import { SecretStore } from './services/secrets/secret-store';
+import { ResourceService } from './services/resources/resource-service';
+import { ResourcesController } from './services/resources/resources-controller';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -163,6 +167,23 @@ function bootstrap(): void {
     logger: createLogger('projects'),
   });
   const projectsReady = projects.load();
+
+  // Project resources (Plan 02): databases, APIs, links and logs for AI agents; secrets encrypted with safeStorage.
+  const secretStore = new SecretStore(
+    join(app.getPath('userData'), 'secrets.json'),
+    safeStorage,
+    createLogger('secrets'),
+  );
+  const resourceProjects = () => projects.list().map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
+  const resources = new ResourceService({
+    file: join(app.getPath('userData'), 'project-resources.json'),
+    secrets: secretStore,
+    projects: resourceProjects,
+    logger: createLogger('resources'),
+  });
+  const resourcesReady = Promise.all([secretStore.load(), resources.load()]).catch((e: unknown) =>
+    log.error('Project resources could not be loaded', e),
+  );
 
   const workspaceState = new WorkspaceStateService(
     join(app.getPath('userData'), 'workspaces'),
@@ -477,6 +498,7 @@ function bootstrap(): void {
         }
         if (Notification.isSupported()) new Notification({ title, body, icon: appPaths.windowIcon() }).show();
       },
+      agentBrief: (terminalId) => resourcesController.sessionBrief(terminalId),
     },
   };
   // Built-in plugins and user/developer plugins run in separate Plugin Hosts (ADR-022).
@@ -606,6 +628,46 @@ function bootstrap(): void {
               }),
         };
       });
+  const resourcesController: ResourcesController = new ResourcesController({
+    resources,
+    secrets: secretStore,
+    host: {
+      call: (method, params, opts) => hosts.connections.call(method, params as never, opts) as never,
+      running: () => hosts.connections.state === 'running' || hosts.connections.state === 'starting',
+      start: () => hosts.ensureConnections(),
+      stop: () => hosts.connections.stop(),
+    },
+    projects: resourceProjects,
+    terminalProject: (id) => terminals.get(id)?.projectId,
+    runProfileUrl: async (projectId, profileId) => {
+      const url = await pluginHost.executeCommand('projectRunner.resolveUrl', [{ projectId, profileId }]);
+      return typeof url === 'string' && url ? url : null;
+    },
+    confirm: async ({ title, description, details, code, confirmLabel, cancelLabel, tone, signal }) => {
+      if (!windowFocused()) osNotify(title, description);
+      const answer = await confirms.ask(
+        {
+          title,
+          description: description.slice(0, 2000),
+          ...(details?.length ? { details: details.map((d) => d.slice(0, 500)) } : {}),
+          ...(code ? { code: code.length > 20_000 ? `${code.slice(0, 20_000)}…` : code } : {}),
+          confirmLabel,
+          cancelLabel,
+          tone,
+          destructive: tone === 'danger',
+        },
+        signal,
+      );
+      return answer ? answer.confirmed : null;
+    },
+    logger: createLogger('resources'),
+  });
+  // Repository resources (`.oxytocin/project.json`) are offered when a project is opened.
+  const checkRepository = (id: string | null) => {
+    if (id) void resourcesReady.then(() => resourcesController.checkRepositoryConfig(id));
+  };
+  projects.onDidChangeActive(checkRepository);
+
   const mcpHub: McpHub = new McpHub({
     settings: () => settings.get(),
     onDidChangeSettings: (listener) => settings.onDidChange(listener),
@@ -688,8 +750,17 @@ function bootstrap(): void {
       () => shellEnv,
     ),
     logger: createLogger('mcp'),
+    resources: {
+      tools: resourcesController.tools,
+      kinds: () => resources.kinds(),
+      onDidChange: (listener) => resources.onDidChange(() => listener()),
+      brief: (projectId) => resourcesController.brief(projectId),
+    },
   });
-  void pluginsReady.then(() => mcpHub.start());
+  void Promise.all([pluginsReady, resourcesReady]).then(() => mcpHub.start());
+  // The resource tools are listed once the resources are loaded (and whenever projects come and go).
+  void resourcesReady.then(() => resources.touch());
+  projects.onDidChange(() => resources.touch());
 
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);
@@ -745,6 +816,7 @@ function bootstrap(): void {
         if (killTerminals) await Promise.all(terminals.list(id).map((t) => terminals.close(t.id)));
         projects.remove(id);
         await workspaceState.delete(id);
+        await resources.removeProject(id);
       },
       'projects:update': (patch) => projects.update(patch),
       'projects:reorder': ({ ids }) => projects.reorder(ids),
@@ -876,6 +948,67 @@ function bootstrap(): void {
       'mcp:clientConfig': () => mcpHub.clientConfig(),
       'mcp:resetToken': () => mcpHub.resetToken(),
       'mcp:clearLog': () => mcpHub.clearLog(),
+      'resources:get': async ({ projectId }) => {
+        await resourcesReady;
+        return resourcesController.get(projectId);
+      },
+      'resources:save': async ({ projectId, resources: input, secrets }) => {
+        await resourcesReady;
+        return resourcesController.save(projectId, input, secrets);
+      },
+      'resources:test': async (req) => {
+        await resourcesReady;
+        return resourcesController.test(req);
+      },
+      'resources:import': ({ projectId }) => resourcesController.importCandidates(projectId),
+      'resources:brief': async ({ projectId }) => {
+        await resourcesReady;
+        return { text: resourcesController.brief(projectId) };
+      },
+      'resources:writeInstructions': ({ projectId, file }) => resourcesController.writeInstructions(projectId, file),
+      'resources:saveToRepository': async ({ projectId }) => ({
+        path: await resourcesController.saveToRepository(projectId),
+      }),
+      'resources:pickFile': async ({ projectId, purpose }) => {
+        const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyPickFileAnswer'] : undefined;
+        let picked: string | null;
+        if (typeof scripted === 'string' || scripted === null) picked = scripted;
+        else {
+          const filters: Record<typeof purpose, Electron.FileFilter[]> = {
+            sqlite: [{ name: 'SQLite database', extensions: ['db', 'sqlite', 'sqlite3', 's3db'] }],
+            env: [{ name: 'Env file', extensions: ['env', '*'] }],
+            log: [{ name: 'Log file', extensions: ['log', 'txt', '*'] }],
+            openapi: [{ name: 'OpenAPI document', extensions: ['json', 'yaml', 'yml'] }],
+            certificate: [{ name: 'Certificate', extensions: ['pem', 'crt', 'cer'] }],
+          };
+          const project = projects.get(projectId);
+          const result = await dialog.showOpenDialog(win, {
+            title: 'Choose a file',
+            ...(project ? { defaultPath: project.rootPath } : {}),
+            properties: ['openFile', 'showHiddenFiles'],
+            filters: [...filters[purpose], { name: 'All files', extensions: ['*'] }],
+          });
+          picked = result.canceled ? null : (result.filePaths[0] ?? null);
+        }
+        return picked ? resourcesController.relativePath(projectId, picked) : null;
+      },
+      'secrets:status': async ({ projectId }) => {
+        await resourcesReady;
+        return secretStore.status(projectId);
+      },
+      'secrets:set': async ({ projectId, resourceId, key, value }) => {
+        await resourcesReady;
+        const r = resources.get(projectId);
+        if (![...r.databases, ...r.apis].some((x) => x.id === resourceId))
+          throw new OxyError('INVALID', `No database or API ${resourceId} in this project.`);
+        await secretStore.set(projectId, resourceId, key, value);
+        return secretStore.status(projectId);
+      },
+      'secrets:delete': async ({ projectId, resourceId, key }) => {
+        await resourcesReady;
+        await secretStore.delete(projectId, resourceId, key);
+        return secretStore.status(projectId);
+      },
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
@@ -934,6 +1067,12 @@ function bootstrap(): void {
   git.onDidChangeStatus((status) => sendEvent(win.webContents, 'git:status', status));
   pluginHost.onDidChangeStatusBar((items) => sendEvent(win.webContents, 'plugins:statusBar', items));
   mcpHub.onDidChangeState((state) => sendEvent(win.webContents, 'mcp:state', state));
+  resourcesController.onDidChange((projectId) => sendEvent(win.webContents, 'resources:changed', { projectId }));
+  // The first project shown is checked once the window can show the question.
+  win.webContents.once(
+    'did-finish-load',
+    () => void projectsReady.then(() => checkRepository(projects.activeProjectId)),
+  );
   let lastContributions = '';
   plugins.onDidChange((list) => {
     sendEvent(win.webContents, 'plugins:changed', list);
@@ -1157,7 +1296,8 @@ function bootstrap(): void {
         }
         // Open SSE streams would keep the MCP server from closing.
         await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
-        await Promise.all([uiState.flush(), projects.flush(), hosts.stopAll()]);
+        resourcesController.dispose();
+        await Promise.all([uiState.flush(), projects.flush(), resources.flush(), secretStore.flush(), hosts.stopAll()]);
       } catch (e) {
         log.error('Error during quit', e);
       } finally {
@@ -1193,6 +1333,9 @@ function bootstrap(): void {
       updates: () => updates,
       mcp: mcpHub,
       confirms,
+      resources,
+      resourcesController,
+      secretStore,
     };
   }
 }

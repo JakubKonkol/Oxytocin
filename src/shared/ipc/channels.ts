@@ -77,6 +77,17 @@ export const INVOKE_CHANNELS = [
   'mcp:clientConfig',
   'mcp:resetToken',
   'mcp:clearLog',
+  'resources:get',
+  'resources:save',
+  'resources:test',
+  'resources:import',
+  'resources:brief',
+  'resources:writeInstructions',
+  'resources:saveToRepository',
+  'resources:pickFile',
+  'secrets:status',
+  'secrets:set',
+  'secrets:delete',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -110,6 +121,7 @@ export const EVENT_CHANNELS = [
   'ui:confirmDismiss',
   'mcp:state',
   'mcp:openFile',
+  'resources:changed',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

@@ -49,3 +49,35 @@ export function stateFromHook(input: HookInput): StateReport | null {
       return null;
   }
 }
+
+/** The hook output that adds the project's resource brief to Claude's context with the prompt. */
+export function briefOutput(text: string) {
+  return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } };
+}
+
+const MAX_BRIEFED = 1000;
+
+/**
+ * Sessions that already got the resource brief: once per session (a new session after /clear gets it again), with
+ * the oldest forgotten beyond 1000.
+ */
+export class BriefedSessions {
+  private readonly keys = new Set<string>();
+
+  /** True the first time a session asks. */
+  first(terminalId: string, sessionId: string): boolean {
+    const key = `${terminalId}:${sessionId}`;
+    if (this.keys.has(key)) return false;
+    this.keys.add(key);
+    if (this.keys.size > MAX_BRIEFED) this.keys.delete(this.keys.values().next().value!);
+    return true;
+  }
+
+  forget(terminalId: string, sessionId: string): void {
+    this.keys.delete(`${terminalId}:${sessionId}`);
+  }
+
+  get size(): number {
+    return this.keys.size;
+  }
+}

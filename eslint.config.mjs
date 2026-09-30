@@ -92,6 +92,7 @@ export default tseslint.config(
       '**/pty-host/**',
       '**/workspace-host/**',
       '**/plugin-host/**',
+      '**/connections-host/**',
       '**/preload/**',
     ],
     'src/shared must stay pure TypeScript and only import from src/shared.',
@@ -99,18 +100,26 @@ export default tseslint.config(
   ),
   boundary(
     ['src/renderer/**/*.{ts,tsx}'],
-    ['node:*', '**/main/**', '**/pty-host/**', '**/workspace-host/**', '**/plugin-host/**', '**/preload/**'],
+    [
+      'node:*',
+      '**/main/**',
+      '**/pty-host/**',
+      '**/workspace-host/**',
+      '**/plugin-host/**',
+      '**/connections-host/**',
+      '**/preload/**',
+    ],
     'The renderer may only import src/shared and its own modules.',
     ['electron', ...NODE_BUILTINS],
   ),
   boundary(
-    ['src/pty-host/**/*.ts', 'src/workspace-host/**/*.ts', 'src/plugin-host/**/*.ts'],
+    ['src/pty-host/**/*.ts', 'src/workspace-host/**/*.ts', 'src/plugin-host/**/*.ts', 'src/connections-host/**/*.ts'],
     ['**/main/**', '**/renderer/**', '**/preload/**'],
     'Hosts talk to main over RPC only; import src/shared and their own modules.',
   ),
   boundary(
     ['src/main/**/*.ts'],
-    ['**/pty-host/**', '**/workspace-host/**', '**/plugin-host/**', '**/renderer/**'],
+    ['**/pty-host/**', '**/workspace-host/**', '**/plugin-host/**', '**/connections-host/**', '**/renderer/**'],
     'Main talks to hosts over RPC only; never import host code.',
   ),
   boundary(
