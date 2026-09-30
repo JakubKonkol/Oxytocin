@@ -46,6 +46,32 @@ test('packaged app: start, terminal, git changes and built-in plugins', async ()
     }
     await expect(win.getByTestId('status-item-usage.today')).toBeVisible();
 
+    // Every database driver loads from the package (they are bundled into out/main; a missing module shows here):
+    // SQLite answers, the others fail on the closed port, not with a load error.
+    await writeFile(join(repo, 'smoke.db'), '');
+    const projectId = ((await win.evaluate(() => window.oxy.invoke('projects:getActive'))) as { id: string }).id;
+    for (const engine of ['sqlite', 'postgresql', 'mysql', 'sqlserver', 'mongodb', 'redis', 'clickhouse', 'oracle']) {
+      const resource =
+        engine === 'sqlite'
+          ? { id: 'smoke', name: 'smoke', engine, connection: { kind: 'file', path: 'smoke.db' } }
+          : {
+              id: 'smoke',
+              name: 'smoke',
+              engine,
+              connection: { kind: 'fields', host: '127.0.0.1', port: 1, options: {} },
+              access: { timeoutMs: 5000 },
+            };
+      const result = (await win.evaluate(
+        ([id, r]) => window.oxy.invoke('resources:test', { projectId: id, kind: 'database', resource: r }),
+        [projectId, resource] as const,
+      )) as { ok: boolean; error?: { kind: string; message: string } };
+      if (engine === 'sqlite') expect(result, engine).toMatchObject({ ok: true });
+      else {
+        expect(result.error?.message ?? '', engine).not.toMatch(/Cannot find module|MODULE_NOT_FOUND/);
+        expect(result.ok, engine).toBe(false);
+      }
+    }
+
     // LICENSE and THIRD_PARTY_NOTICES.md ship in resources/.
     await win.getByTestId('app-menu').click();
     await win.getByRole('menuitem', { name: 'Third-Party Notices' }).click();

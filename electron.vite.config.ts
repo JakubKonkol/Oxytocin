@@ -26,7 +26,6 @@ const BUNDLED_DEPS = [
 /** Optional modules the drivers try to load (compression, Kerberos, cloud auth): absent, so they stay external. */
 const OPTIONAL_DRIVER_DEPS = [
   'pg-native',
-  'pg-cloudflare',
   'kerberos',
   '@mongodb-js/zstd',
   '@mongodb-js/kerberos',
