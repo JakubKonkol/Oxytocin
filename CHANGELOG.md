@@ -3,7 +3,7 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
-## [Unreleased]
+## [0.7.0] - 2026-09-30
 
 ### Added
 
