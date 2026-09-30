@@ -1,9 +1,9 @@
 # Plan 02 — Project resources: databases and APIs for AI agents
 
-Status: **planned, not started** · Depends on: **Plan 01** (`01-unreleased-global-mcp-server.md`) · Target: after
-Plan 01 is released
+Status: **planned, not started** · Depends on: **Plan 01** (Oxytocin's MCP server, released in 0.6.5 — code in
+`src/main/services/mcp/`) · Target: next minor release
 
-This document is written for the agent (or person) who implements the feature. Read it completely, read Plan 01,
+This document is written for the agent (or person) who implements the feature. Read it completely, read the MCP server code (Plan 01, `src/main/services/mcp/`),
 then follow [Implementation steps](#implementation-steps) in order. Every step ends in a working, released-quality
 state (see the owner's rules in `CLAUDE.md`: work on `main`, no feature flags, changelog for user-visible changes).
 
@@ -55,7 +55,7 @@ exists, so they use it instead of hunting for connection strings.
 | Claude Code hooks installed as a local Claude Code plugin with `http` hooks; headers interpolate `$OXYTOCIN_TERMINAL_ID` via `allowedEnvVars` | `plugins/claude-code-bridge/src/host/claude-plugin.ts`, `events.ts` |
 | Project Runner knows each app's URL (for "base URL from a run profile") | `plugins/project-runner/src/host/` |
 | License allowlist (`MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;…;MPL-2.0`) | `package.json` → `licenses:check` |
-| Plan 01: MCP hub, core tools `oxy_*`, `allow/ask/deny` policies, caller context (which project/terminal calls), call log | `docs/plan/01-unreleased-global-mcp-server.md` |
+| Plan 01: MCP hub, core tools `oxy_*`, `allow/ask/deny` policies, caller context (which project/terminal calls), call log | `src/main/services/mcp/` (`mcp-hub.ts`, `core-tools.ts`, `tool-registry.ts`, `caller-context.ts`), `src/shared/domain/mcp.ts`, Settings → Agent Tools in `src/renderer/src/features/agent-tools/` |
 
 ## Design
 
@@ -348,7 +348,8 @@ or **copy into Oxytocin** (the secret goes into the secret store). Parsers are p
 
 ## Pitfalls
 
-- **Plan 01 first.** The tools, policies (*ask* dialog), caller context and call log come from Plan 01.
+- **Build on Plan 01.** The tools, policies (*ask* dialog), caller context and call log come from Oxytocin's MCP
+  server (`src/main/services/mcp/`, released in 0.6.5).
 - **Every step ships.** No feature flags; each step must leave a complete, usable feature (see steps below).
 - **Secrets in error messages and logs:** drivers include connection strings, hostnames and sometimes passwords in
   errors. Scrub every error in the host (replace the secret values and URL credentials) before it leaves the process;
