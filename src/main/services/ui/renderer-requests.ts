@@ -8,18 +8,34 @@ import { randomUUID } from 'node:crypto';
 export class RendererRequests<TRequest extends { requestId: string }, TAnswer> {
   private readonly pending = new Map<string, (answer: TAnswer | null) => void>();
 
-  /** `send` returns false when there is no window to ask. */
+  /**
+   * `send` returns false when there is no window to ask. `dismiss` tells the window to drop a request nobody waits for
+   * anymore (it timed out or was aborted).
+   */
   constructor(
     private readonly send: (request: TRequest) => boolean,
     private readonly timeoutMs = 0,
+    private readonly dismiss?: (requestId: string) => void,
   ) {}
 
-  ask(request: Omit<TRequest, 'requestId'>): Promise<TAnswer | null> {
+  /** `signal` withdraws the request (resolved with null, the window's dialog closes). */
+  ask(request: Omit<TRequest, 'requestId'>, signal?: AbortSignal): Promise<TAnswer | null> {
     const requestId = randomUUID();
     return new Promise((resolve) => {
-      const timer = this.timeoutMs > 0 ? setTimeout(() => this.settle(requestId, null), this.timeoutMs) : undefined;
+      if (signal?.aborted) {
+        resolve(null);
+        return;
+      }
+      const withdraw = () => {
+        if (!this.pending.has(requestId)) return;
+        this.settle(requestId, null);
+        this.dismiss?.(requestId);
+      };
+      const timer = this.timeoutMs > 0 ? setTimeout(withdraw, this.timeoutMs) : undefined;
+      signal?.addEventListener('abort', withdraw, { once: true });
       this.pending.set(requestId, (answer) => {
         if (timer) clearTimeout(timer);
+        signal?.removeEventListener('abort', withdraw);
         resolve(answer);
       });
       if (!this.send({ ...request, requestId } as TRequest)) this.settle(requestId, null);

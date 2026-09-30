@@ -5,6 +5,7 @@ import { type PluginDescriptor, type PluginPermission } from '@shared/domain/plu
 import { type Project, PROJECT_COLOR_VALUES } from '@shared/domain/project';
 import type { Settings } from '@shared/domain/settings';
 import type { TerminalInfo } from '@shared/domain/terminal';
+import { type McpCallContext, type McpToolResult, toolError } from '@shared/domain/mcp';
 import { OxyError } from '@shared/errors';
 import { QUICK_PICK_MAX_ITEMS, type QuickPickItem, QuickPickItemSchema } from '@shared/domain/quick-pick';
 import type { NotificationPayload } from '@shared/ipc/events';
@@ -119,6 +120,13 @@ export interface PluginHostServiceDeps {
   logger: Logger;
   /** How long new terminals wait for plugin environments after start-up (default `ENV_BARRIER_MS`). */
   envBarrierMs?: number;
+  /** MCP tools plugins register at runtime (`oxy.mcp.registerTool(definition, …)`). */
+  mcp?: {
+    addDynamicTool(pluginId: string, definition: unknown): void;
+    removeDynamicTool(pluginId: string, name: string): void;
+    /** The host restarted: the runtime tools of these plugins are gone. */
+    dropDynamicTools(pluginIds: string[]): void;
+  };
 }
 
 /** Core commands plugins may execute. */
@@ -206,6 +214,8 @@ function toHostInfo(p: PluginDescriptor): HostPluginInfo | null {
     panels: m.contributes.panels.map((v) => v.type),
     statusBarItems: m.contributes.statusBarItems.map((v) => v.id),
     ...(m.contributes.configuration ? { configurationPrefix: m.contributes.configuration.prefix } : {}),
+    ...(m.contributes.mcp ? { mcpPrefix: m.contributes.mcp.prefix } : {}),
+    mcpTools: m.contributes.mcp?.tools.map((t) => t.name) ?? [],
   };
 }
 
@@ -265,6 +275,7 @@ export class PluginHostService implements Disposable {
   }
 
   private onHostRestarted(): void {
+    this.deps.mcp?.dropDynamicTools(this.deps.plugins.enabled().map((p) => p.id));
     const suspect = this.busy;
     this.busy = null;
     for (const id of [...this.statusBarItems.values()].map((s) => s.pluginId)) this.clearPluginUi(id);
@@ -349,6 +360,35 @@ export class PluginHostService implements Disposable {
 
   async executeCommand(id: string, args: unknown[]): Promise<unknown> {
     return this.deps.host.call('commands:execute', { id, args }, { timeoutMs: 60_000 });
+  }
+
+  private mcpCallCounter = 0;
+
+  /** Runs a plugin's MCP tool in this host; `signal` cancels it (the handler's signal is aborted). */
+  async callMcpTool(o: {
+    pluginId: string;
+    name: string;
+    args: Record<string, unknown>;
+    context: McpCallContext;
+    timeoutMs: number;
+    signal: AbortSignal;
+  }): Promise<McpToolResult> {
+    const callId = `${Date.now().toString(36)}-${++this.mcpCallCounter}`;
+    const cancel = () => this.deps.host.emit('mcp:cancel', { callId });
+    o.signal.addEventListener('abort', cancel, { once: true });
+    try {
+      return await this.deps.host.call(
+        'mcp:callTool',
+        { callId, pluginId: o.pluginId, name: o.name, args: o.args, context: o.context, timeoutMs: o.timeoutMs },
+        // The host enforces the timeout itself; activating the plugin may take a moment on top.
+        { timeoutMs: o.timeoutMs + 35_000 },
+      );
+    } catch (e) {
+      if (this.deps.host.state !== 'running') return toolError('The plugin host restarted; try again.');
+      return toolError(e instanceof Error ? e.message : String(e));
+    } finally {
+      o.signal.removeEventListener('abort', cancel);
+    }
   }
 
   async logs(id: string): Promise<PluginLogEntry[]> {
@@ -825,6 +865,20 @@ export class PluginHostService implements Disposable {
         });
         return undefined;
       }
+      case 'mcp.registerDynamicTool': {
+        this.permission(plugin, 'mcp.tools');
+        if (!this.deps.mcp) throw new OxyError('UNAVAILABLE', 'The MCP server is not available');
+        try {
+          this.deps.mcp.addDynamicTool(pluginId, p['definition']);
+        } catch (e) {
+          throw new OxyError('INVALID', e instanceof Error ? e.message : String(e));
+        }
+        return undefined;
+      }
+      case 'mcp.unregisterDynamicTool':
+        this.permission(plugin, 'mcp.tools');
+        this.deps.mcp?.removeDynamicTool(pluginId, String(p['name']));
+        return undefined;
       case 'settings.update': {
         const key = String(p['key']);
         const prefix = plugin.manifest.contributes.configuration?.prefix;

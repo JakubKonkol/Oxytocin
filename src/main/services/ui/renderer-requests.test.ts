@@ -35,4 +35,26 @@ describe('RendererRequests', () => {
     await expect(late).resolves.toBeNull();
     expect(timed.size).toBe(0);
   });
+
+  it('withdraws a request when its signal aborts and tells the window to drop it', async () => {
+    const sent: ConfirmRequest[] = [];
+    const dismissed: string[] = [];
+    const requests = new RendererRequests<ConfirmRequest, Answer>(
+      (r) => (sent.push(r), true),
+      0,
+      (id) => dismissed.push(id),
+    );
+    const controller = new AbortController();
+    const answer = requests.ask({ title: 'Allow?' }, controller.signal);
+    controller.abort();
+    await expect(answer).resolves.toBeNull();
+    expect(dismissed).toEqual([sent[0]!.requestId]);
+    // A late answer is ignored.
+    requests.settle(sent[0]!.requestId, { confirmed: true, checked: false });
+    expect(requests.size).toBe(0);
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(requests.ask({ title: 'x' }, aborted.signal)).resolves.toBeNull();
+    expect(sent).toHaveLength(1);
+  });
 });

@@ -43,6 +43,7 @@ const SECTION_NAMES: Record<string, string> = {
   editor: 'Editor',
   notifications: 'Notifications',
   plugins: 'Plugins',
+  mcp: 'Agent Tools',
   updates: 'Updates',
   diagnostics: 'Diagnostics',
 };
@@ -57,7 +58,7 @@ const PLATFORM_KEYS: Partial<Record<CoreSettingKey, Platform>> = {
   'terminal.macOptionIsMeta': 'darwin',
 };
 
-const READ_ONLY_KEYS = new Set<string>(['plugins.enabled']);
+const READ_ONLY_KEYS = new Set<string>(['plugins.enabled', 'mcp.tools.disabled', 'mcp.tools.policy']);
 
 const words = (segment: string) =>
   segment

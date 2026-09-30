@@ -5,6 +5,8 @@ import type {
   EnvironmentCollection,
   EnvScope,
   Event,
+  McpToolDefinition,
+  McpToolHandler,
   OxytocinApi,
   PluginView,
   ProjectInfo,
@@ -68,6 +70,7 @@ export interface ApiDeps {
   registerCommand: (id: string, handler: (...args: unknown[]) => unknown) => Disposable;
   executeCommand: (id: string, args: unknown[]) => Promise<unknown>;
   registerProvider: (kind: 'view' | 'panel', id: string, provider: ViewProvider) => Disposable;
+  registerMcpTool: (tool: string | McpToolDefinition, handler: McpToolHandler) => Disposable;
   /** Reports an error thrown by plugin code inside a callback. */
   reportError: (where: string, error: unknown) => void;
 }
@@ -376,6 +379,12 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       },
     },
     commands,
+    mcp: {
+      registerTool: (tool: string | McpToolDefinition, handler: McpToolHandler) => {
+        require('mcp.tools');
+        return deps.registerMcpTool(tool, handler);
+      },
+    },
     settings: {
       get: <T>(key: string): T => {
         if (!readable(key)) throw new OxyError('PERMISSION', `Plugin ${plugin.id} cannot read the setting "${key}"`);

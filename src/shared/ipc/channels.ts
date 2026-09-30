@@ -70,6 +70,13 @@ export const INVOKE_CHANNELS = [
   'keybindings:openFile',
   'workspace:load',
   'workspace:save',
+  'mcp:getState',
+  'mcp:connectClaude',
+  'mcp:disconnectClaude',
+  'mcp:checkClaude',
+  'mcp:clientConfig',
+  'mcp:resetToken',
+  'mcp:clearLog',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -100,6 +107,9 @@ export const EVENT_CHANNELS = [
   'ui:confirm',
   'keybindings:changed',
   'updates:state',
+  'ui:confirmDismiss',
+  'mcp:state',
+  'mcp:openFile',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

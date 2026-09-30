@@ -43,6 +43,7 @@ function fakeHost(views: string[] = []) {
     onDidChangeStatusBar: status.event,
     onDidChangeEnvironment: env.event,
     fireStatus: () => status.fire([]),
+    callMcpTool: vi.fn(() => Promise.resolve({ content: [{ type: 'text' as const, text: 'ok' }] })),
   } satisfies Partial<PluginHostService> & Record<string, unknown>;
 }
 
@@ -58,6 +59,12 @@ describe('PluginHosts', () => {
     expect(external.executeCommand).toHaveBeenCalledWith('x.run', []);
     await hosts.executeCommand('usage.show', []);
     expect(builtin.executeCommand).toHaveBeenCalledWith('usage.show', []);
+    const signal = new AbortController().signal;
+    const call = { name: 'x_do', args: {}, context: {}, timeoutMs: 1000, signal };
+    await hosts.callMcpTool({ ...call, pluginId: 'acme.x' });
+    expect(external.callMcpTool).toHaveBeenCalledWith({ ...call, pluginId: 'acme.x' });
+    await hosts.callMcpTool({ ...call, pluginId: 'oxytocin.usage' });
+    expect(builtin.callMcpTool).toHaveBeenCalledWith({ ...call, pluginId: 'oxytocin.usage' });
     await hosts.logs('acme.x');
     expect(external.logs).toHaveBeenCalledWith('acme.x');
     await hosts.viewClosed('v-ext');

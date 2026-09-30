@@ -1,0 +1,76 @@
+{
+  "name": "oxytocin-test-mcp-tools",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "oxytocin": {
+    "id": "test.mcp",
+    "displayName": "MCP Tools (test)",
+    "publisher": "oxytocin-tests",
+    "engine": "^0.1.5",
+    "main": "host.js",
+    "activationEvents": [
+      "onMcpTool:tests_echo",
+      "onMcpTool:tests_wait",
+      "onMcpTool:tests_reset",
+      "onCommand:tests.addDynamic"
+    ],
+    "permissions": [
+      "mcp.tools"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "tests.addDynamic",
+          "title": "Tests: Add a Dynamic Tool"
+        },
+        {
+          "id": "tests.removeDynamic",
+          "title": "Tests: Remove the Dynamic Tool"
+        }
+      ],
+      "mcp": {
+        "prefix": "tests",
+        "tools": [
+          {
+            "name": "tests_echo",
+            "title": "Echo",
+            "description": "Echoes the text back, with the project and terminal of the caller.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              }
+            },
+            "annotations": {
+              "readOnlyHint": true
+            }
+          },
+          {
+            "name": "tests_wait",
+            "title": "Wait",
+            "description": "Waits until it is cancelled or times out.",
+            "inputSchema": {
+              "type": "object"
+            },
+            "timeoutMs": 2000
+          },
+          {
+            "name": "tests_reset",
+            "title": "Reset the test data",
+            "description": "Pretends to delete data (asks the user first).",
+            "inputSchema": {
+              "type": "object"
+            },
+            "annotations": {
+              "destructiveHint": true
+            }
+          }
+        ]
+      }
+    }
+  }
+}

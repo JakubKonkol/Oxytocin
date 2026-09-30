@@ -1,3 +1,4 @@
+import type { McpCallContext, McpToolResult } from '../../domain/mcp';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
 
 /** What the Plugin Host needs to load one plugin. */
@@ -15,6 +16,10 @@ export interface HostPluginInfo {
   panels: string[];
   statusBarItems: string[];
   configurationPrefix?: string;
+  /** `contributes.mcp.prefix`: tools registered at runtime must start with `<prefix>_`. */
+  mcpPrefix?: string;
+  /** Names of the tools declared in `contributes.mcp.tools`. */
+  mcpTools: string[];
 }
 
 export interface HostApiEnv {
@@ -69,6 +74,18 @@ export type PluginHostMethods = HostBaseMethods & {
   'views:visibility': (o: { viewId: string; visible: boolean }) => void;
   /** Message or request from a view to its backend. */
   'views:message': (o: { viewId: string; envelope: ViewEnvelope }) => void;
+  /**
+   * Runs a plugin's MCP tool: activates the plugin (`onMcpTool:<name>`) when needed, waits briefly for its handler and
+   * enforces `timeoutMs`. A thrown error becomes a tool error.
+   */
+  'mcp:callTool': (o: {
+    callId: string;
+    pluginId: string;
+    name: string;
+    args: Record<string, unknown>;
+    context: McpCallContext;
+    timeoutMs: number;
+  }) => McpToolResult;
 };
 
 /** Events the host sends to main. */
@@ -89,6 +106,8 @@ export type PluginHostEvents = HostBaseEvents & {
 /** Events main sends to the host (API events: projects, terminals, agents, git, settings). */
 export type PluginHostInboundEvents = {
   'api:event': { name: string; payload: unknown };
+  /** The agent cancelled an MCP tool call (or it timed out in main). */
+  'mcp:cancel': { callId: string };
 };
 
 /** Host → main calls. */

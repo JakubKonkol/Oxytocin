@@ -1,5 +1,14 @@
 import { pathToFileURL } from 'node:url';
-import type { Disposable, Logger, PluginContext, PluginModule, ViewProvider } from '@oxytocin/plugin-api';
+import type {
+  Disposable,
+  Logger,
+  McpToolDefinition,
+  McpToolHandler,
+  PluginContext,
+  PluginModule,
+  ViewProvider,
+} from '@oxytocin/plugin-api';
+import { type McpCallContext, type McpToolResult, normalizeToolResult, toolError } from '@shared/domain/mcp';
 import { OxyError } from '@shared/errors';
 import type { HostApiEnv, HostPluginInfo, PluginLogEntry } from '@shared/rpc/contracts/plugin-host';
 import { toDisposable } from '@shared/utils/disposable';
@@ -8,6 +17,8 @@ import { ApiEvents, type ApiEventName, createApi } from './api';
 import { createPluginStorage } from './storage';
 
 const ACTIVATE_WARN_MS = 5000;
+/** How long a tool call waits for a handler registered while (or shortly after) the plugin activates. */
+const MCP_HANDLER_GRACE_MS = 5000;
 const DEACTIVATE_TIMEOUT_MS = 2000;
 const LOG_LIMIT = 500;
 
@@ -45,6 +56,9 @@ export class PluginRuntime {
   readonly onDidRegisterProvider = this.providerEmitter.event;
   private readonly deactivateEmitter = new Emitter<string>();
   readonly onDidDeactivate = this.deactivateEmitter.event;
+  private readonly mcpHandlers = new Map<string, { pluginId: string; handler: McpToolHandler }>();
+  private readonly mcpHandlerEmitter = new Emitter<string>();
+  private readonly mcpCalls = new Map<string, { pluginId: string; controller: AbortController }>();
   private settingsSnapshot: Record<string, unknown> = {};
   private env: HostApiEnv = { appVersion: '0.0.0', platform: 'linux', locale: 'en-US', homeDir: '', userDataDir: '' };
   private generationCounter = 0;
@@ -162,6 +176,7 @@ export class PluginRuntime {
         registerCommand: (commandId, handler) => this.registerCommand(plugin, commandId, handler),
         executeCommand: (commandId, args) => this.executeCommand(commandId, args),
         registerProvider: (kind, providerId, provider) => this.registerProvider(plugin, kind, providerId, provider),
+        registerMcpTool: (tool, handler) => this.registerMcpTool(plugin, tool, handler),
         reportError: (where, error) => log.error(`Error in ${where}`, error),
       }),
     };
@@ -215,6 +230,8 @@ export class PluginRuntime {
     plugin.internal = [];
     for (const [id, c] of [...this.commands]) if (c.pluginId === plugin.info.id) this.commands.delete(id);
     for (const [id, p] of [...this.providers]) if (p.pluginId === plugin.info.id) this.providers.delete(id);
+    for (const [name, h] of [...this.mcpHandlers]) if (h.pluginId === plugin.info.id) this.mcpHandlers.delete(name);
+    for (const call of this.mcpCalls.values()) if (call.pluginId === plugin.info.id) call.controller.abort();
   }
 
   async deactivate(id: string): Promise<void> {
@@ -316,6 +333,122 @@ export class PluginRuntime {
     });
     plugin.internal.push(d);
     return d;
+  }
+
+  private registerMcpTool(plugin: LoadedPlugin, tool: string | McpToolDefinition, handler: McpToolHandler): Disposable {
+    const { info } = plugin;
+    if (typeof handler !== 'function') throw new OxyError('INVALID', 'registerTool needs a handler function');
+    const name = typeof tool === 'string' ? tool : tool?.name;
+    if (typeof name !== 'string') throw new OxyError('INVALID', 'registerTool needs a tool name or definition');
+    const declared = info.mcpTools.includes(name);
+    if (typeof tool === 'string' && !declared)
+      throw new OxyError('INVALID', `Tool "${name}" is not declared in contributes.mcp.tools`);
+    if (typeof tool !== 'string') {
+      if (!info.mcpPrefix) throw new OxyError('INVALID', 'Declare contributes.mcp.prefix to register tools');
+      if (!name.startsWith(`${info.mcpPrefix}_`))
+        throw new OxyError('INVALID', `Tool "${name}" must start with the prefix "${info.mcpPrefix}_"`);
+      if (declared) throw new OxyError('INVALID', `Tool "${name}" is declared in the manifest; pass only its name`);
+    }
+    const existing = this.mcpHandlers.get(name);
+    if (existing && existing.pluginId !== info.id)
+      throw new OxyError('INVALID', `Tool "${name}" is already registered by ${existing.pluginId}`);
+    const entry = { pluginId: info.id, handler };
+    this.mcpHandlers.set(name, entry);
+    this.mcpHandlerEmitter.fire(name);
+    const log = this.logger(plugin);
+    if (typeof tool !== 'string')
+      void this.bridge
+        .call(info.id, 'mcp.registerDynamicTool', { definition: tool })
+        .catch((e: unknown) => log.error(`Registering the tool ${name} failed`, e));
+    let disposed = false;
+    const d = toDisposable(() => {
+      if (disposed) return;
+      disposed = true;
+      if (this.mcpHandlers.get(name) === entry) this.mcpHandlers.delete(name);
+      if (typeof tool !== 'string')
+        void this.bridge.call(info.id, 'mcp.unregisterDynamicTool', { name }).catch(() => undefined);
+    });
+    plugin.internal.push(d);
+    return d;
+  }
+
+  private waitForMcpHandler(name: string, ms: number): Promise<void> {
+    if (this.mcpHandlers.has(name)) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(done, ms);
+      const sub = this.mcpHandlerEmitter.event((registered) => {
+        if (registered === name) done();
+      });
+      function done() {
+        clearTimeout(timer);
+        sub.dispose();
+        resolve();
+      }
+    });
+  }
+
+  /**
+   * Runs an MCP tool of a plugin: activates it (`onMcpTool:<name>`) when needed, waits briefly for the handler, and
+   * aborts the handler's signal on cancellation, timeout or deactivation. Errors become tool errors.
+   */
+  async callMcpTool(o: {
+    callId: string;
+    pluginId: string;
+    name: string;
+    args: Record<string, unknown>;
+    context: McpCallContext;
+    timeoutMs: number;
+  }): Promise<McpToolResult> {
+    const plugin = this.plugins.get(o.pluginId);
+    if (!plugin) return toolError(`The plugin ${o.pluginId} is not loaded.`);
+    if (this.mcpHandlers.get(o.name)?.pluginId !== o.pluginId) {
+      try {
+        if (plugin.state === 'inactive') {
+          await this.activateByEvent(`onMcpTool:${o.name}`);
+          if (plugin.state === 'inactive') await this.activate(o.pluginId, `onMcpTool:${o.name}`);
+        } else if (plugin.activation) await plugin.activation;
+      } catch (e) {
+        return toolError(e instanceof Error ? e.message : String(e));
+      }
+      await this.waitForMcpHandler(o.name, MCP_HANDLER_GRACE_MS);
+    }
+    const entry = this.mcpHandlers.get(o.name);
+    if (!entry || entry.pluginId !== o.pluginId) return toolError(`The tool ${o.name} is not available.`);
+    const controller = new AbortController();
+    this.mcpCalls.set(o.callId, { pluginId: o.pluginId, controller });
+    const timer = setTimeout(() => controller.abort(new Error('timeout')), o.timeoutMs);
+    const aborted = new Promise<never>((_, reject) =>
+      controller.signal.addEventListener(
+        'abort',
+        () =>
+          reject(
+            new Error(
+              controller.signal.reason instanceof Error && controller.signal.reason.message === 'timeout'
+                ? `${o.name} did not finish within ${Math.round(o.timeoutMs / 1000)} s.`
+                : 'Cancelled.',
+            ),
+          ),
+        { once: true },
+      ),
+    );
+    this.bridge.busy(o.pluginId);
+    try {
+      const run = Promise.resolve().then(() => entry.handler(o.args, { ...o.context, signal: controller.signal }));
+      run.catch(() => undefined);
+      return normalizeToolResult(await Promise.race([run, aborted]));
+    } catch (e) {
+      if (!controller.signal.aborted) this.logger(plugin).warn(`Tool ${o.name} failed`, e);
+      return toolError(e instanceof Error ? e.message : String(e));
+    } finally {
+      clearTimeout(timer);
+      aborted.catch(() => undefined);
+      this.mcpCalls.delete(o.callId);
+      this.bridge.busy(null);
+    }
+  }
+
+  cancelMcpCall(callId: string): void {
+    this.mcpCalls.get(callId)?.controller.abort();
   }
 
   /** Runs a plugin command, activating `onCommand:<id>` first; core commands go to main. */

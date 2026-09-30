@@ -55,6 +55,7 @@ type HostService = Pick<
   | 'environments'
   | 'onDidChangeStatusBar'
   | 'onDidChangeEnvironment'
+  | 'callMcpTool'
 >;
 
 /**
@@ -115,6 +116,11 @@ export class PluginHosts implements Disposable {
   executeCommand(id: string, args: unknown[]): Promise<unknown> {
     const owner = this.plugins.list().find((p) => p.manifest?.contributes.commands.some((c) => c.id === id));
     return (owner ? this.forPlugin(owner.id) : this.builtin).executeCommand(id, args);
+  }
+
+  /** Runs a plugin's MCP tool in the plugin's host. */
+  callMcpTool(o: Parameters<HostService['callMcpTool']>[0]): ReturnType<HostService['callMcpTool']> {
+    return this.forPlugin(o.pluginId).callMcpTool(o);
   }
 
   logs(id: string): Promise<PluginLogEntry[]> {

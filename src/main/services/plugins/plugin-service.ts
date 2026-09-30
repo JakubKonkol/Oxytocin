@@ -44,6 +44,8 @@ export class PluginService {
   private readonly changeEmitter = new Emitter<PluginDescriptor[]>();
   readonly onDidChange = this.changeEmitter.event;
   private candidates: (Candidate & { shadowed: Candidate[] })[] = [];
+  /** Problems found outside discovery (e.g. an MCP tool prefix another plugin owns), shown with the plugin. */
+  private problems = new Map<string, string>();
 
   constructor(private readonly deps: PluginServiceDeps) {}
 
@@ -89,9 +91,15 @@ export class PluginService {
       this.deps.apiVersion ?? OXYTOCIN_API_VERSION,
     );
     this.plugins = described.map((p) => {
+      const problem = this.problems.get(p.id);
+      const withProblem = problem ? { ...p, errors: [...(p.errors ?? []), problem] } : p;
       const rt = this.runtime.get(p.id);
-      if (!rt || p.state !== 'enabled') return p;
-      return { ...p, state: rt.state, ...(rt.error ? { errors: [...(p.errors ?? []), rt.error] } : {}) };
+      if (!rt || p.state !== 'enabled') return withProblem;
+      return {
+        ...withProblem,
+        state: rt.state,
+        ...(rt.error ? { errors: [...(withProblem.errors ?? []), rt.error] } : {}),
+      };
     });
     this.changeEmitter.fire(this.plugins);
   }
@@ -119,6 +127,13 @@ export class PluginService {
     const current = this.deps.settings()['plugins.enabled'];
     await this.deps.updateSettings({ 'plugins.enabled': { ...current, [id]: enabled } });
     if (!enabled) this.runtime.delete(id);
+    this.recompute();
+  }
+
+  /** Replaces the problems reported from outside discovery (plugin id → message). */
+  setProblems(problems: Map<string, string>): void {
+    if (JSON.stringify([...problems]) === JSON.stringify([...this.problems])) return;
+    this.problems = new Map(problems);
     this.recompute();
   }
 

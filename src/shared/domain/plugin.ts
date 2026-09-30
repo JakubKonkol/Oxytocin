@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { McpContributionSchema } from './mcp';
 
 export const PLUGIN_PERMISSIONS = [
   'projects.read',
@@ -15,6 +16,7 @@ export const PLUGIN_PERMISSIONS = [
   'net.listen-local',
   'net.fetch',
   'notifications.os',
+  'mcp.tools',
 ] as const;
 export const PluginPermissionSchema = z.enum(PLUGIN_PERMISSIONS);
 export type PluginPermission = z.infer<typeof PluginPermissionSchema>;
@@ -35,6 +37,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'net.listen-local': 'Accept connections on this computer (a local server)',
   'net.fetch': 'Download data from the internet',
   'notifications.os': 'Show system notifications',
+  'mcp.tools': "Give AI agents tools to use (through Oxytocin's MCP server)",
 };
 
 /** Used as the host of `oxy-plugin://<id>`: lowercase, dot-separated. */
@@ -51,7 +54,7 @@ const RelativePathSchema = z
 const ActivationEventSchema = z
   .string()
   .regex(
-    /^(\*|onStartup|onProjectOpen|onView:.+|onPanel:.+|onCommand:.+|onAgentDetected:.+)$/,
+    /^(\*|onStartup|onProjectOpen|onView:.+|onPanel:.+|onCommand:.+|onAgentDetected:.+|onMcpTool:.+)$/,
     'unknown activation event',
   );
 
@@ -146,22 +149,29 @@ export const PluginContributesSchema = z.object({
   fileOpeners: z.array(FileOpenerContributionSchema).default([]),
   terminalProfiles: z.array(PluginTerminalProfileSchema).default([]),
   agents: z.array(PluginAgentRuleSchema).default([]),
+  /** Tools for AI agents, offered by Oxytocin's MCP server (needs the `mcp.tools` permission). */
+  mcp: McpContributionSchema.optional(),
 });
 export type PluginContributes = z.infer<typeof PluginContributesSchema>;
 
 /** The `oxytocin` section of a plugin's package.json. */
-export const PluginManifestSchema = z.object({
-  id: PluginIdSchema,
-  displayName: z.string().min(1),
-  description: z.string().optional(),
-  publisher: z.string().min(1),
-  icon: RelativePathSchema.optional(),
-  engine: z.string().min(1),
-  main: RelativePathSchema.optional(),
-  activationEvents: z.array(ActivationEventSchema).default([]),
-  permissions: z.array(PluginPermissionSchema).default([]),
-  contributes: PluginContributesSchema.default(() => PluginContributesSchema.parse({})),
-});
+export const PluginManifestSchema = z
+  .object({
+    id: PluginIdSchema,
+    displayName: z.string().min(1),
+    description: z.string().optional(),
+    publisher: z.string().min(1),
+    icon: RelativePathSchema.optional(),
+    engine: z.string().min(1),
+    main: RelativePathSchema.optional(),
+    activationEvents: z.array(ActivationEventSchema).default([]),
+    permissions: z.array(PluginPermissionSchema).default([]),
+    contributes: PluginContributesSchema.default(() => PluginContributesSchema.parse({})),
+  })
+  .refine((m) => !m.contributes.mcp || m.permissions.includes('mcp.tools'), {
+    message: 'contributes.mcp needs the "mcp.tools" permission',
+    path: ['permissions'],
+  });
 export type PluginManifest = z.infer<typeof PluginManifestSchema>;
 
 export const PluginSourceSchema = z.enum(['builtin', 'user', 'dev']);

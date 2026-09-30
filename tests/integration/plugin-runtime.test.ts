@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HostPluginInfo } from '../../src/shared/rpc/contracts/plugin-host';
 import { PluginRuntime } from '../../src/plugin-host/runtime';
 
@@ -18,6 +18,7 @@ const info = (dir: string, over: Partial<HostPluginInfo>): HostPluginInfo => ({
   activationEvents: [],
   commands: [],
   views: [],
+  mcpTools: [],
   panels: [],
   statusBarItems: [],
   ...over,
@@ -137,5 +138,77 @@ describe('PluginRuntime', () => {
     error.stack = `Error: late failure\n    at x (${join(fixtures, 'echo', 'host.js')}:3:1)`;
     expect(runtime.pluginForError(error)).toBe('test.echo');
     expect(runtime.pluginForError(new Error('core'))).toBeUndefined();
+  });
+});
+
+describe('PluginRuntime MCP tools', () => {
+  const mcp = info('mcp-tools', {
+    id: 'test.mcp',
+    permissions: ['mcp.tools'],
+    activationEvents: [
+      'onMcpTool:tests_echo',
+      'onMcpTool:tests_wait',
+      'onMcpTool:tests_reset',
+      'onCommand:tests.addDynamic',
+    ],
+    commands: ['tests.addDynamic', 'tests.removeDynamic'],
+    mcpPrefix: 'tests',
+    mcpTools: ['tests_echo', 'tests_wait', 'tests_reset'],
+  });
+  const call = (runtime: PluginRuntime, name: string, extra: { callId?: string; timeoutMs?: number } = {}) =>
+    runtime.callMcpTool({
+      callId: extra.callId ?? name,
+      pluginId: 'test.mcp',
+      name,
+      args: { text: 'hi' },
+      context: { projectId: 'p1', terminalId: 't-1' },
+      timeoutMs: extra.timeoutMs ?? 5000,
+    });
+
+  it('activates the plugin on the first call and passes the caller context', async () => {
+    const { runtime, states } = setup();
+    await runtime.load([mcp], {}, env());
+    expect(runtime.get('test.mcp')?.state).toBe('inactive');
+    expect(await call(runtime, 'tests_echo')).toEqual({
+      content: [{ type: 'text', text: 'echo: hi' }],
+      structuredContent: { projectId: 'p1', terminalId: 't-1' },
+    });
+    expect(states).toContain('test.mcp:active');
+    expect(await call(runtime, 'tests_reset')).toEqual({ content: [{ type: 'text', text: 'reset done' }] });
+    expect(await call(runtime, 'tests_missing')).toEqual({
+      isError: true,
+      content: [{ type: 'text', text: 'The tool tests_missing is not available.' }],
+    });
+  });
+
+  it('aborts a call on cancel, timeout and deactivation', async () => {
+    const { runtime } = setup();
+    await runtime.load([mcp], {}, env());
+    const cancelled = call(runtime, 'tests_wait', { callId: 'c1' });
+    await vi.waitFor(() => expect(runtime.get('test.mcp')?.state).toBe('active'));
+    await new Promise((r) => setTimeout(r, 20));
+    runtime.cancelMcpCall('c1');
+    expect(await cancelled).toEqual({ isError: true, content: [{ type: 'text', text: 'Cancelled.' }] });
+    expect(await call(runtime, 'tests_wait', { timeoutMs: 100 })).toEqual({
+      isError: true,
+      content: [{ type: 'text', text: 'tests_wait did not finish within 0 s.' }],
+    });
+    const pending = call(runtime, 'tests_wait', { callId: 'c3' });
+    await new Promise((r) => setTimeout(r, 20));
+    await runtime.deactivate('test.mcp');
+    expect((await pending).isError).toBe(true);
+  });
+
+  it('registers runtime tools with main and unregisters them', async () => {
+    const { runtime, calls } = setup();
+    await runtime.load([mcp], {}, env());
+    await runtime.executeCommand('tests.addDynamic', []);
+    const registered = calls.find((c) => c.method === 'mcp.registerDynamicTool')?.params as {
+      definition: { name: string };
+    };
+    expect(registered.definition.name).toBe('tests_dynamic');
+    expect(await call(runtime, 'tests_dynamic')).toEqual({ content: [{ type: 'text', text: 'dynamic works' }] });
+    await runtime.executeCommand('tests.removeDynamic', []);
+    expect(calls.find((c) => c.method === 'mcp.unregisterDynamicTool')?.params).toEqual({ name: 'tests_dynamic' });
   });
 });

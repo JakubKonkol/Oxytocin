@@ -48,6 +48,7 @@ const impl: Impl<Omit<PluginHostMethods, 'ping' | 'shutdown'>> = {
   'views:close': ({ viewId }) => views.close(viewId),
   'views:visibility': ({ viewId, visible }) => views.setVisible(viewId, visible),
   'views:message': ({ viewId, envelope }) => views.message(viewId, envelope),
+  'mcp:callTool': (o) => runtime.callMcpTool(o),
 };
 
 const { rpc, log } = startHostRuntime<PluginHostEvents, PluginHostInboundEvents>({
@@ -60,6 +61,7 @@ const { rpc, log } = startHostRuntime<PluginHostEvents, PluginHostInboundEvents>
 });
 ref.rpc = rpc;
 rpc.onEvent('api:event', ({ name, payload }) => runtime.dispatch(name, payload));
+rpc.onEvent('mcp:cancel', ({ callId }) => runtime.cancelMcpCall(callId));
 
 // Errors thrown asynchronously by plugin code: blame the plugin (by stack) instead of crashing the host.
 const onUncaught = (error: unknown) => {

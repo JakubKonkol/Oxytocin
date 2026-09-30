@@ -59,6 +59,8 @@ export interface OxytocinApi {
   readonly ui: UiApi;
   readonly commands: CommandsApi;
   readonly settings: SettingsApi;
+  /** Tools for AI agents through Oxytocin's MCP server (since 0.1.5). */
+  readonly mcp: McpApi;
 }
 
 // ── Projects ───────────────────────────────────────────── (permission: projects.read)
@@ -300,4 +302,65 @@ export interface SettingsApi {
   /** Only keys with the plugin's own prefix. */
   update(key: string, value: unknown): Promise<void>;
   onDidChange(keyPrefix: string, listener: () => void): Disposable;
+}
+
+// ── Tools for AI agents ────────────────────────────────── (mcp.tools, since 0.1.5)
+/**
+ * Plugins give AI agents (Claude Code, Codex CLI, Cursor, …) tools through Oxytocin's MCP server. Declare them in
+ * `contributes.mcp` (a `prefix` and the `tools`); every tool name starts with `<prefix>_`. Agents see a tool as soon as
+ * the plugin is enabled — calling it activates the plugin with `onMcpTool:<name>`.
+ */
+export interface McpApi {
+  /**
+   * Handles a tool declared in `contributes.mcp.tools`. Without a handler, calls to the tool fail with "tool not
+   * available". Disposing unregisters the handler.
+   */
+  registerTool(name: string, handler: McpToolHandler): Disposable;
+  /**
+   * Adds a tool that is not in the manifest (e.g. only while a database is running). The name must use the plugin's
+   * prefix. It is listed while the Disposable lives and the plugin is enabled.
+   */
+  registerTool(definition: McpToolDefinition, handler: McpToolHandler): Disposable;
+}
+
+/** Returns the result, or a string (one text item). A thrown error is reported to the agent as a tool error. */
+export type McpToolHandler = (
+  args: Record<string, unknown>,
+  context: McpCallContext,
+) => Promise<McpToolResult | string> | McpToolResult | string;
+
+export interface McpCallContext {
+  /** The project the call belongs to (from the caller's terminal, else its cwd/project argument, else the active one). */
+  projectId?: string;
+  /** The Oxytocin terminal the agent runs in, when known. */
+  terminalId?: string;
+  agentId?: string;
+  /** Aborted when the agent cancels the call, the call times out or the plugin is deactivated. */
+  signal: AbortSignal;
+}
+
+export interface McpToolDefinition {
+  /** `^[a-zA-Z0-9_-]{1,64}$`, starting with the plugin's prefix and "_". */
+  name: string;
+  title?: string;
+  /** Agents choose tools by their description: say what it does and when to use it. */
+  description: string;
+  /** JSON Schema of the arguments (`type: "object"`). Validate the arguments yourself: they come from an agent. */
+  inputSchema: { type: 'object'; [key: string]: unknown };
+  /** `destructiveHint: true` makes Oxytocin ask the user before each call (unless they allow it always). */
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+  /** Default 60 000, at most 600 000. */
+  timeoutMs?: number;
+}
+
+export interface McpToolResult {
+  /** Text is cut at 256 KB and images over 5 MB are left out (with a note to the agent). */
+  content: ({ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string })[];
+  isError?: boolean;
+  structuredContent?: Record<string, unknown>;
 }

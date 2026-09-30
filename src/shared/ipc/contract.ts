@@ -16,6 +16,7 @@ import { UpdateStateSchema } from '../domain/updates';
 import { WorkspaceLoadResultSchema, WorkspaceStateSchema } from '../domain/workspace';
 import { UiStatePatchSchema, UiStateSchema } from '../domain/ui-state';
 import { ConfirmResultSchema } from '../domain/confirm';
+import { McpCliResultSchema, McpStateSchema } from '../domain/mcp';
 import { QuickPickResultSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema, UserKeybindingSchema } from '../domain/keybindings';
 import { CreateTerminalRequestSchema, ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
@@ -149,6 +150,21 @@ export const invokeContract = {
   'shell:revealInFolder': { req: z.object({ path: z.string().min(1) }), res: z.void() },
   'shell:openExternal': { req: z.object({ url: z.string().url() }), res: z.void() },
   'terminals:profiles': { req: z.null().optional(), res: z.array(TerminalProfileSchema) },
+  /** Oxytocin's MCP server: status, tools with their switches and policies, recent calls. */
+  'mcp:getState': { req: z.null().optional(), res: McpStateSchema },
+  /** Registers the server in Claude Code (user scope) and removes the old `oxytocin-runner` entry. */
+  'mcp:connectClaude': { req: z.null().optional(), res: McpCliResultSchema.extend({ migrated: z.boolean() }) },
+  'mcp:disconnectClaude': { req: z.null().optional(), res: McpCliResultSchema },
+  /** Asks Claude Code whether the server is registered at the current address (null: unknown). */
+  'mcp:checkClaude': { req: z.null().optional(), res: z.boolean().nullable() },
+  /** The `claude mcp add` command line and `mcpServers` JSON for other clients (with the token). */
+  'mcp:clientConfig': { req: z.null().optional(), res: z.object({ command: z.string(), json: z.string() }) },
+  /** A new token; Claude Code is connected again when it was connected. */
+  'mcp:resetToken': {
+    req: z.null().optional(),
+    res: McpCliResultSchema.extend({ migrated: z.boolean() }).nullable(),
+  },
+  'mcp:clearLog': { req: z.null().optional(), res: z.void() },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;
 
 export type InvokeReq<C extends InvokeChannel> = z.input<(typeof invokeContract)[C]['req']>;

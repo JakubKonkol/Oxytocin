@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Tools for AI agents: `contributes.mcp` (`prefix`, `tools`), the `mcp.tools` permission, the `onMcpTool:<name>`
+  activation event and `oxy.mcp.registerTool(name | definition, handler)`. The tools are offered by Oxytocin's MCP
+  server (`oxytocin`); agents see them without restarting when a plugin is enabled, disabled or reloaded.
+
 ## 0.1.4
 
 - `oxy.terminals.create({ …, env, reveal })`: per-terminal environment variables, and `reveal: false` to start a

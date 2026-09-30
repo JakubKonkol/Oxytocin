@@ -14,6 +14,7 @@ import { SettingsSchema } from '../domain/settings';
 import { ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain/terminal';
 import { ProjectSchema } from '../domain/project';
 import { ConfirmRequestSchema } from '../domain/confirm';
+import { McpStateSchema } from '../domain/mcp';
 import { QuickPickRequestSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema } from '../domain/keybindings';
 import { UpdateStateSchema } from '../domain/updates';
@@ -92,6 +93,16 @@ export const eventContract = {
   'keybindings:changed': KeybindingsStateSchema,
   /** Auto-update progress (M9-T2). */
   'updates:state': UpdateStateSchema,
+  /** A `ui:confirm` request nobody needs anymore (it timed out, or the tool call was cancelled): close its dialog. */
+  'ui:confirmDismiss': z.object({ requestId: z.string().min(1).max(100) }),
+  /** The MCP server's status, tools or call log changed. */
+  'mcp:state': McpStateSchema,
+  /** An agent asked to show a file (`oxy_open_file`). */
+  'mcp:openFile': z.object({
+    projectId: ProjectIdSchema,
+    path: z.string().min(1),
+    line: z.number().int().min(1).optional(),
+  }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

@@ -1,5 +1,6 @@
 import { homedir, release } from 'node:os';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
+import { z } from 'zod';
 import { join } from 'node:path';
 import {
   app,
@@ -69,6 +70,11 @@ import { sessionRestoredLabel } from './services/terminals/scrollback-format';
 import { UpdateService, type UpdaterBackend } from './services/updates/update-service';
 import { createElectronUpdaterBackend, updateUnsupportedReason } from './services/updates/electron-updater-backend';
 import { createE2eUpdateBackend } from './services/updates/e2e-update-backend';
+import { McpHub } from './services/mcp/mcp-hub';
+import { createCliRunner } from './services/mcp/client-registration';
+import type { PluginToolSource } from './services/mcp/tool-registry';
+import { JsonFileStore } from './services/storage/json-file-store';
+import type { McpToolResult } from '@shared/domain/mcp';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -382,11 +388,21 @@ function bootstrap(): void {
     sendEvent(mainWindow.webContents, 'ui:quickPick', request);
     return true;
   });
-  const confirms = new RendererRequests<ConfirmRequest, { confirmed: boolean; checked: boolean }>((request) => {
-    if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
-    sendEvent(mainWindow.webContents, 'ui:confirm', request);
-    return true;
-  });
+  const confirms = new RendererRequests<
+    ConfirmRequest,
+    { confirmed: boolean; checked: boolean; secondary?: boolean; value?: string }
+  >(
+    (request) => {
+      if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
+      sendEvent(mainWindow.webContents, 'ui:confirm', request);
+      return true;
+    },
+    0,
+    (requestId) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        sendEvent(mainWindow.webContents, 'ui:confirmDismiss', { requestId });
+    },
+  );
   // Toasts with buttons (plugins' `showNotification` actions); settled before the plugin's call times out.
   const notificationActions = new RendererRequests<NotificationPayload & { requestId: string }, string>((request) => {
     if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
@@ -401,6 +417,11 @@ function bootstrap(): void {
       locale: app.getLocale() || 'en-US',
       homeDir: homedir(),
       userDataDir: app.getPath('userData'),
+    },
+    mcp: {
+      addDynamicTool: (pluginId, definition) => mcpHub.addDynamicTool(pluginId, definition),
+      removeDynamicTool: (pluginId, name) => mcpHub.removeDynamicTool(pluginId, name),
+      dropDynamicTools: (pluginIds) => mcpHub.dropDynamicTools(pluginIds),
     },
     // E2E runs on slow CI machines can lengthen the start-up barrier for terminal environments (test-only).
     ...(e2e && process.env['OXYTOCIN_E2E_ENV_BARRIER_MS']
@@ -522,6 +543,154 @@ function bootstrap(): void {
   git.onDidChangeStatus((status) => pluginHost.notifyGitStatus(status));
   settings.onDidChange((s) => pluginHost.notifySettings(s));
 
+  // Oxytocin's MCP server: core tools plus the tools plugins contribute (`contributes.mcp`).
+  const mcpTokenStore = new JsonFileStore<{ token?: string | undefined }>({
+    path: join(app.getPath('userData'), 'mcp.json'),
+    schema: z.object({ token: z.string().min(16).optional() }),
+    defaults: () => ({}),
+    debounceMs: 0,
+    logger: createLogger('mcp'),
+  });
+  mcpTokenStore.loadSync();
+  const windowFocused = () => {
+    const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyWindowFocused'] : undefined;
+    if (typeof scripted === 'boolean') return scripted;
+    return !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && mainWindow.isFocused();
+  };
+  const osNotify = (title: string, body: string) => {
+    const s = settings.get();
+    if (!s['notifications.os'] || s['notifications.doNotDisturb']) return;
+    pluginDeps.core.osNotify(title, body);
+  };
+  const toWindow = <C extends Parameters<typeof sendEvent>[1]>(
+    channel: C,
+    payload: Parameters<typeof sendEvent<C>>[2],
+  ) => {
+    if (mainWindow && !mainWindow.isDestroyed()) sendEvent(mainWindow.webContents, channel, payload);
+  };
+  const callerDeps = {
+    terminal: (id: string) => {
+      const t = terminals.get(id);
+      return t ? { id: t.id, projectId: t.projectId, ...(t.agent ? { agentId: t.agent.agentId } : {}) } : undefined;
+    },
+    projects: () => projects.list().map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath })),
+    activeProjectId: () => projects.activeProjectId,
+    findByPath: (path: string) => {
+      const p = projects.findByPath(path);
+      return p ? { id: p.id, name: p.name, rootPath: p.rootPath } : undefined;
+    },
+    realpath: (path: string) => realpath(path).catch(() => null),
+    platform: process.platform,
+  };
+  const mcpToolSources = (): PluginToolSource[] =>
+    plugins
+      .list()
+      .filter((p) => p.manifest?.contributes.mcp)
+      .map((p) => {
+        const mcp = p.manifest!.contributes.mcp!;
+        const running = p.state === 'enabled' || p.state === 'active';
+        return {
+          pluginId: p.id,
+          pluginName: p.displayName,
+          builtin: p.source === 'builtin',
+          prefix: mcp.prefix,
+          declared: mcp.tools,
+          available: running,
+          ...(running
+            ? {}
+            : {
+                unavailableReason:
+                  p.state === 'failed'
+                    ? `The plugin failed${p.errors?.length ? `: ${p.errors.at(-1)}` : '.'}`
+                    : 'The plugin is turned off.',
+              }),
+        };
+      });
+  const mcpHub: McpHub = new McpHub({
+    settings: () => settings.get(),
+    onDidChangeSettings: (listener) => settings.onDidChange(listener),
+    updateSettings: (patch) => settings.update(patch),
+    tokenStore: {
+      get: () => mcpTokenStore.get().token,
+      set: async (token) => {
+        mcpTokenStore.set({ token });
+        await mcpTokenStore.flush();
+      },
+    },
+    appVersion,
+    core: {
+      projects: () => projects.list().map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath })),
+      activeProjectId: () => projects.activeProjectId,
+      branch: (id) => git.status(id)?.branch?.head ?? undefined,
+      terminals: (projectId) => terminals.list(projectId),
+      terminalText: (id) => hosts.pty.call('getText', { id }),
+      notify: ({ title, message, level }) => {
+        toWindow('notifications:show', { kind: level, message, description: title });
+        if (!windowFocused()) osNotify(title, message);
+      },
+      ask: async ({ title, question, options, placeholder, timeoutMs, signal }) => {
+        const timeout = AbortSignal.timeout(timeoutMs);
+        if (!windowFocused()) osNotify(title, question);
+        const answer = await confirms.ask(
+          {
+            title,
+            description: question,
+            input: options ? { kind: 'options', options } : { kind: 'text', ...(placeholder ? { placeholder } : {}) },
+            confirmLabel: 'Answer',
+            cancelLabel: 'Dismiss',
+            tone: 'info',
+          },
+          AbortSignal.any([signal, timeout]),
+        );
+        return answer?.confirmed && answer.value !== undefined ? answer.value : null;
+      },
+      openFile: ({ projectId, path, line }) => {
+        toWindow('mcp:openFile', { projectId, path, ...(line ? { line } : {}) });
+        return Promise.resolve();
+      },
+      isFile: async (path) => (await stat(path).catch(() => null))?.isFile() ?? false,
+      platform: process.platform,
+    },
+    caller: callerDeps,
+    describeTerminal: (id) => {
+      const t = terminals.get(id);
+      if (!t) return undefined;
+      const project = projects.get(t.projectId)?.name;
+      return project ? `${t.title} · ${project}` : t.title;
+    },
+    plugins: {
+      sources: mcpToolSources,
+      onDidChange: (listener) => plugins.onDidChange(() => listener()),
+      call: (o): Promise<McpToolResult> => pluginHost.callMcpTool(o),
+      setProblems: (problems) => plugins.setProblems(problems),
+    },
+    askPolicy: async ({ toolTitle, toolName, source, caller, args, signal }) => {
+      const who = caller ? `An agent in ${caller}` : 'An agent';
+      if (!windowFocused()) osNotify(`Allow ${toolTitle}?`, `${who} wants to use ${toolName} (${source}).`);
+      const code = JSON.stringify(args, null, 2);
+      const answer = await confirms.ask(
+        {
+          title: `Allow ${toolTitle}?`,
+          description: `${who} wants to use ${toolName} (${source}).`,
+          ...(code !== '{}' ? { code: code.length > 20_000 ? `${code.slice(0, 20_000)}…` : code } : {}),
+          confirmLabel: 'Allow once',
+          secondaryLabel: 'Always allow',
+          cancelLabel: 'Deny',
+          tone: 'warning',
+        },
+        signal,
+      );
+      if (!answer) return null;
+      return answer.secondary ? 'always' : answer.confirmed ? 'once' : 'deny';
+    },
+    cli: createCliRunner(
+      () => settings.get()['mcp.claudeCommand'] || 'claude',
+      () => shellEnv,
+    ),
+    logger: createLogger('mcp'),
+  });
+  void pluginsReady.then(() => mcpHub.start());
+
   installPermissionHandlers(session.defaultSession);
   registerAppProtocol(session.defaultSession);
   session.defaultSession.protocol.handle(
@@ -594,7 +763,13 @@ function bootstrap(): void {
       'ui:getState': () => uiState.get(),
       'ui:patchState': (patch) => uiState.patch(patch),
       'ui:quickPickResult': ({ requestId, index }) => quickPicks.settle(requestId, index),
-      'ui:confirmResult': ({ requestId, confirmed, checked }) => confirms.settle(requestId, { confirmed, checked }),
+      'ui:confirmResult': ({ requestId, confirmed, checked, secondary, value }) =>
+        confirms.settle(requestId, {
+          confirmed,
+          checked,
+          ...(secondary ? { secondary } : {}),
+          ...(value !== undefined ? { value } : {}),
+        }),
       'notifications:action': ({ requestId, actionId }) => notificationActions.settle(requestId, actionId),
       'terminals:create': (req) => terminals.create(req),
       'terminals:kill': (req) => terminals.kill(req.id, req.force ?? false),
@@ -694,6 +869,13 @@ function bootstrap(): void {
       'plugins:viewClosed': ({ viewId }) => pluginHost.viewClosed(viewId),
       'plugins:viewVisibility': ({ viewId, visible }) => pluginHost.viewVisibility(viewId, visible),
       'plugins:viewMessage': ({ viewId, envelope }) => pluginHost.viewMessage(viewId, envelope),
+      'mcp:getState': () => mcpHub.state(),
+      'mcp:connectClaude': () => mcpHub.connectClaude(),
+      'mcp:disconnectClaude': () => mcpHub.disconnectClaude(),
+      'mcp:checkClaude': () => mcpHub.checkClaude(),
+      'mcp:clientConfig': () => mcpHub.clientConfig(),
+      'mcp:resetToken': () => mcpHub.resetToken(),
+      'mcp:clearLog': () => mcpHub.clearLog(),
       'terminals:markSeen': ({ id }) => activity.markSeen(id),
       'window:setAttention': (req) => applyAttention(req),
       // The renderer has no clipboard-read permission; main reads it on request (Ctrl+V).
@@ -751,6 +933,7 @@ function bootstrap(): void {
   activity.onDidChange((list) => sendEvent(win.webContents, 'projects:activity', list));
   git.onDidChangeStatus((status) => sendEvent(win.webContents, 'git:status', status));
   pluginHost.onDidChangeStatusBar((items) => sendEvent(win.webContents, 'plugins:statusBar', items));
+  mcpHub.onDidChangeState((state) => sendEvent(win.webContents, 'mcp:state', state));
   let lastContributions = '';
   plugins.onDidChange((list) => {
     sendEvent(win.webContents, 'plugins:changed', list);
@@ -972,6 +1155,8 @@ function bootstrap(): void {
             6000,
           ).catch((e: unknown) => log.warn('Failed to persist scrollback', e));
         }
+        // Open SSE streams would keep the MCP server from closing.
+        await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
         await Promise.all([uiState.flush(), projects.flush(), hosts.stopAll()]);
       } catch (e) {
         log.error('Error during quit', e);
@@ -1006,6 +1191,8 @@ function bootstrap(): void {
       logFile: () => logFilePath(),
       perf: () => ({ firstTerminalOutputMs }),
       updates: () => updates,
+      mcp: mcpHub,
+      confirms,
     };
   }
 }

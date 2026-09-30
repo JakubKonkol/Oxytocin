@@ -274,6 +274,27 @@ export const CORE_SETTINGS = {
     'Loads plugins from development folders and reloads them on changes.',
   ),
   'plugins.devPaths': def(z.array(z.string()), [], 'Development plugin folders (one per line).'),
+  'mcp.enabled': def(
+    z.boolean(),
+    true,
+    "Runs Oxytocin's MCP server (127.0.0.1 only, token protected): AI agents such as Claude Code use Oxytocin's tools and the tools of your plugins through it.",
+  ),
+  'mcp.port': def(
+    z.number().int().min(1024).max(65535),
+    47287,
+    'Local port of the MCP server. After changing it, connect Claude Code again (Agent tools).',
+  ),
+  'mcp.claudeCommand': def(
+    z.string().min(1),
+    'claude',
+    'The Claude Code command used to connect it to the MCP server (a name on PATH or a full path).',
+  ),
+  'mcp.tools.disabled': def(z.array(z.string().max(64)), [], 'Tools agents cannot see (managed in Agent tools).'),
+  'mcp.tools.policy': def(
+    z.record(z.string().max(64), z.enum(['allow', 'ask', 'deny'])),
+    {},
+    'Per tool: runs without asking, asks you first, or is blocked (managed in Agent tools).',
+  ),
   'updates.checkAutomatically': def(
     z.boolean(),
     true,
