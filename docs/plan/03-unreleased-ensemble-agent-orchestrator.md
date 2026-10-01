@@ -169,7 +169,8 @@ main: EnsembleService ───────────────────�
 ### Data model (`src/shared/domain/ensemble.ts`, zod)
 
 Sketch — adjust names to the code base, keep everything versioned (`v: 1`) and tolerant to unknown fields
-(`.passthrough()` where data is read back from disk; see plan 02's round-trip note).
+(`.passthrough()` where data is read back from disk: a file written by a newer version must never become
+unreadable or lose fields — see how `src/main/services/resources/resource-service.ts` keeps unknown entries).
 
 ```ts
 const AgentKind = z.enum(['claude-code', 'codex', 'gemini-cli', 'opencode', 'custom']);
