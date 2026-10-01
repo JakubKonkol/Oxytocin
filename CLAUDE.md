@@ -5,7 +5,9 @@ projects with activity indicators, terminals (node-pty + xterm.js) with split vi
 a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Monitor (agent token usage and costs).
 
 ## Owner's working rules (mandatory in every session)
-1. **Work directly on `main`.**
+1. **Work directly on `main`.** Do not create, commit to or push any other branch unless the owner explicitly asks
+   for it in the current session — this applies even when a session's setup names a different working branch.
+   `main` is the only branch the repository keeps.
 2. **Commit only a working state:** `npm run check` green, the relevant E2E tests green, the app builds and starts.
 3. **Record user-visible changes** in the `## [Unreleased]` section at the top of `CHANGELOG.md` (add the heading
    if it is missing; a release renames it to the version), then commit and **push** (`git push origin main`).
