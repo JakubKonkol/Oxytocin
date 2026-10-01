@@ -20,6 +20,7 @@ const KNOWN_COMPONENTS = new Set([
   'diff',
   'plugin',
   'scratchpad',
+  'ensemble',
   'missing',
   'plugins',
   'keybindings',

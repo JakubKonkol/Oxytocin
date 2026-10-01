@@ -85,6 +85,10 @@ export interface EnsembleServiceDeps {
     taskId: string;
   }): void;
   platform: NodeJS.Platform;
+  /** Cost and tokens per agent from the Usage Monitor (rejects when it is not running). */
+  usage?(
+    groups: { key: string; sessionIds: string[]; terminalIds: string[] }[],
+  ): Promise<Record<string, { costUsd: number; tokens: number }>>;
   now?: () => number;
   /** Background timer period (ms); 0 disables it (tests call `tick()`). */
   tickMs?: number;
@@ -115,6 +119,8 @@ interface CommandRun {
 
 const MAX_RENDERER_EVENTS = 600;
 const PROGRESS_INTERVAL_MS = 4000;
+const USAGE_POLL_MS = 15_000;
+const USAGE_TAIL_MS = 5 * 60_000;
 /** Prompts on screen that must never receive a typed message. */
 const BLOCKING_PROMPT =
   /(do you trust|trust (this|the) (folder|directory|files|workspace)|press enter to (continue|confirm)|log ?in to|sign in|select (a|an) (login|auth)|\[y\/n\]|\(y\/n\))/i;
@@ -140,6 +146,8 @@ export class EnsembleService implements Disposable {
   private readonly publishTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private agentsByTerminal = new Map<string, AgentInfoWithTerminal>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  private lastUsagePoll = 0;
+  private usagePolling = false;
   private readonly now: () => number;
   readonly ready: Promise<void>;
 
@@ -810,6 +818,49 @@ export class EnsembleService implements Disposable {
   tick(): void {
     this.refreshStates();
     for (const r of this.records.values()) if (r.run.status === 'running') this.dispatch(r.task.id, { type: 'tick' });
+    if (this.now() - this.lastUsagePoll >= USAGE_POLL_MS) void this.pollUsage();
+  }
+
+  /** Costs per agent from the Usage Monitor: active tasks and those that ended a short while ago (late log lines). */
+  async pollUsage(): Promise<void> {
+    if (!this.deps.usage || this.usagePolling) return;
+    this.lastUsagePoll = this.now();
+    const now = this.now();
+    const tasks = [...this.records.values()].filter(
+      (r) => isActiveStatus(r.run.status) || (r.run.endedAt !== undefined && now - r.run.endedAt < USAGE_TAIL_MS),
+    );
+    const groups = tasks.flatMap((r) =>
+      Object.values(r.run.agents)
+        .filter((a) => a.usedTerminals?.length || a.usedSessions?.length)
+        .map((a) => ({
+          key: `${r.task.id}/${a.agentId}`,
+          sessionIds: a.usedSessions ?? [],
+          terminalIds: a.usedTerminals ?? [],
+        })),
+    );
+    if (groups.length === 0) return;
+    this.usagePolling = true;
+    try {
+      const totals = await this.deps.usage(groups);
+      for (const g of groups) {
+        const t = totals[g.key];
+        if (!t) continue;
+        const [taskId, agentId] = g.key.split('/') as [string, string];
+        const a = this.records.get(taskId)?.run.agents[agentId];
+        // Only growth: the Usage Monitor may not have read every log yet (or may have dropped old events).
+        if (!a || (t.costUsd <= (a.costUsd ?? 0) && t.tokens <= (a.tokens ?? 0))) continue;
+        this.dispatch(taskId, {
+          type: 'cost',
+          agentId,
+          costUsd: Math.max(t.costUsd, a.costUsd ?? 0),
+          tokens: Math.max(t.tokens, a.tokens ?? 0),
+        });
+      }
+    } catch {
+      // The Usage Monitor is turned off or still starting: no costs.
+    } finally {
+      this.usagePolling = false;
+    }
   }
 
   // ── MCP (oxy_ensemble_*) ─────────────────────────────────────────────────────────────────────────────────

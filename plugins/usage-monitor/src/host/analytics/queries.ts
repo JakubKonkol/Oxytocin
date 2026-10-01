@@ -255,3 +255,31 @@ export function burnRate(db: Database, now: number, filter?: Filter): { usdPerHo
   const tenMinutes = summary(db, { from: now - 10 * 60_000, to: now + 1 }, filter);
   return { usdPerHour: hour.costUsd, tokensPerMinute: tenMinutes.tokens.total / 10 };
 }
+
+export interface UsageGroup {
+  key: string;
+  sessionIds?: string[];
+  terminalIds?: string[];
+}
+
+/** Cost and tokens per group of sessions/terminals (an agent of an Ensemble task); events counted once per group. */
+export function groupTotals(db: Database, groups: UsageGroup[]): Record<string, { costUsd: number; tokens: number }> {
+  const out: Record<string, { costUsd: number; tokens: number }> = {};
+  for (const g of groups) {
+    const sessionIds = (g.sessionIds ?? []).slice(0, 50);
+    const terminalIds = (g.terminalIds ?? []).slice(0, 50);
+    if (sessionIds.length === 0 && terminalIds.length === 0) continue;
+    const parts: string[] = [];
+    if (sessionIds.length) parts.push(`session_id IN (${sessionIds.map(() => '?').join(',')})`);
+    if (terminalIds.length) parts.push(`terminal_id IN (${terminalIds.map(() => '?').join(',')})`);
+    const row = db
+      .prepare(
+        `SELECT coalesce(sum(cost_usd), 0) AS cost,
+                coalesce(sum(input_tokens + output_tokens + cache_read_tokens + cache_write_5m_tokens + cache_write_1h_tokens), 0) AS tokens
+           FROM usage_events WHERE ${parts.join(' OR ')}`,
+      )
+      .get(...sessionIds, ...terminalIds) as { cost: number; tokens: number };
+    out[g.key] = { costUsd: row.cost, tokens: row.tokens };
+  }
+  return out;
+}

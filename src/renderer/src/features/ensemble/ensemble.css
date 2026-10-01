@@ -1,0 +1,188 @@
+/* Ensemble panel: animations and Markdown (colors only through tokens). */
+
+@keyframes ens-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+@keyframes ens-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--agent) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes ens-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ens-pulse {
+  animation: ens-pulse 1.8s ease-out infinite;
+}
+
+.ens-breathe {
+  animation: oxy-breathe 1.6s ease-in-out infinite;
+}
+
+.ens-fade-in {
+  animation: ens-fade-in var(--motion-normal) ease-out;
+}
+
+.ens-edge-active {
+  stroke-dasharray: 4 4;
+  animation: ens-flow 0.8s linear infinite;
+}
+
+.ens-dot {
+  background: var(--text-muted);
+}
+.ens-dot[data-state='working'] {
+  background: var(--agent);
+  animation: oxy-breathe 1.6s ease-in-out infinite;
+}
+.ens-dot[data-state='idle'] {
+  background: transparent;
+  border: 1.5px solid var(--text-secondary);
+}
+.ens-dot[data-state='waiting'] {
+  background: var(--warning);
+}
+.ens-dot[data-state='starting'],
+.ens-dot[data-state='unknown'] {
+  background: var(--info);
+}
+.ens-dot[data-state='exited'] {
+  background: var(--danger);
+}
+.ens-dot[data-state='done'] {
+  background: var(--success);
+}
+.ens-dot[data-state='not-started'] {
+  background: transparent;
+  border: 1.5px dashed var(--border-strong);
+}
+
+.ens-hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--warning) 70%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ens-pulse,
+  .ens-breathe,
+  .ens-dot[data-state='working'],
+  .ens-edge-active,
+  .ens-fade-in {
+    animation: none;
+  }
+}
+:root[data-reduce-motion='true'] .ens-pulse,
+:root[data-reduce-motion='true'] .ens-breathe,
+:root[data-reduce-motion='true'] .ens-dot[data-state='working'],
+:root[data-reduce-motion='true'] .ens-edge-active,
+:root[data-reduce-motion='true'] .ens-fade-in {
+  animation: none;
+}
+
+.ens-markdown {
+  user-select: text;
+  line-height: 1.55;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+.ens-markdown > :first-child {
+  margin-top: 0;
+}
+.ens-markdown > :last-child {
+  margin-bottom: 0;
+}
+.ens-markdown h1,
+.ens-markdown h2,
+.ens-markdown h3,
+.ens-markdown h4 {
+  margin: 1em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.ens-markdown h1 {
+  font-size: 1.25em;
+}
+.ens-markdown h2 {
+  font-size: 1.12em;
+}
+.ens-markdown h3,
+.ens-markdown h4 {
+  font-size: 1em;
+}
+.ens-markdown p,
+.ens-markdown ul,
+.ens-markdown ol,
+.ens-markdown pre,
+.ens-markdown blockquote,
+.ens-markdown table {
+  margin: 0.5em 0;
+}
+.ens-markdown ul,
+.ens-markdown ol {
+  padding-left: 1.4em;
+}
+.ens-markdown ul {
+  list-style: disc;
+}
+.ens-markdown ol {
+  list-style: decimal;
+}
+.ens-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-badge);
+  padding: 0 0.3em;
+}
+.ens-markdown pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 0.6em 0.8em;
+  overflow: auto;
+}
+.ens-markdown pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.ens-markdown blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 0.8em;
+  color: var(--text-secondary);
+}
+.ens-markdown a {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ens-markdown table {
+  border-collapse: collapse;
+}
+.ens-markdown th,
+.ens-markdown td {
+  border: 1px solid var(--border-default);
+  padding: 0.2em 0.5em;
+}

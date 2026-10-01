@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EnsembleRun, EnsembleTask } from '../domain/ensemble';
 import { initialRun, reduce } from './conductor';
-import { formatDuration, stepper, timeline, whoSeesWhat } from './flow';
+import { formatCost, formatDuration, formatTokens, stepper, timeline, whoSeesWhat } from './flow';
 import { taskFromTemplate } from './presets';
 
 function feature(): { task: EnsembleTask; run: EnsembleRun } {
@@ -69,5 +69,11 @@ describe('flow derivations', () => {
   it('formats durations', () => {
     expect(formatDuration(65_000)).toBe('1:05');
     expect(formatDuration(3_725_000)).toBe('1:02:05');
+    expect(formatCost(0.004)).toBe('<$0.01');
+    expect(formatCost(0)).toBe('$0.00');
+    expect(formatCost(12.3)).toBe('$12.30');
+    expect(formatTokens(950)).toBe('950');
+    expect(formatTokens(35_400)).toBe('35k');
+    expect(formatTokens(1_250_000)).toBe('1.3M');
   });
 });

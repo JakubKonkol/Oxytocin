@@ -105,8 +105,10 @@ export async function ensembleCommand(taskId: string, event: EnsembleUserEvent):
 export async function saveTask(task: EnsembleTask): Promise<EnsembleRecord | null> {
   try {
     const record = await ipc.invoke('ensemble:save', { task });
-    useEnsembleStore.getState().upsert(record);
-    useEnsembleStore.getState().setDraft(null, task.id);
+    const store = useEnsembleStore.getState();
+    store.upsert(record);
+    // Edits made while saving stay as the draft.
+    if (store.drafts[task.id] === task) store.setDraft(null, task.id);
     return record;
   } catch (e) {
     notify('error', 'The task could not be saved', { description: message(e) });

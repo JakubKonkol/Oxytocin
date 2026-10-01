@@ -1,9 +1,17 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { EnsembleRecord, EnsembleTask } from '../../src/shared/domain/ensemble';
-import { claudeConfigDir, gitIn, gitRepo, readLog, useFakeClaude, waitForStatus } from './helpers/ensemble';
+import {
+  claudeConfigDir,
+  ensembleRecords,
+  gitIn,
+  gitRepo,
+  readLog,
+  useFakeClaude,
+  waitForStatus,
+} from './helpers/ensemble';
 import { launchApp } from './helpers/launch';
 import { activeProjectId } from './helpers/terminal';
 
@@ -105,6 +113,93 @@ test("a two-agent Ensemble task runs in a worktree: the second agent gets the fi
     expect(await claude.hash()).toBe(before);
     expect(gitIn(repo, 'status', '--porcelain')).toBe('');
     expect(gitIn(repo, 'branch', '--list', 'ensemble/*')).toContain('ensemble/csv-export');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Ensemble agents ask each other and the user; answers reach the asking agent', async () => {
+  const repo = await gitRepo();
+  const claude = await claudeConfigDir();
+  const dir = await mkdtemp(join(tmpdir(), 'oxy-e2e-ens-log-'));
+  const log = join(dir, 'agents.jsonl');
+  const script = join(dir, 'script.json');
+  await writeFile(
+    script,
+    JSON.stringify({
+      Linus: [
+        {
+          asks: [
+            { to: 'Ada', question: 'Commas or semicolons?' },
+            { to: 'user', question: 'Which file name?' },
+          ],
+        },
+      ],
+    }),
+  );
+  const { app, win } = await launchApp({
+    project: repo,
+    env: { CLAUDE_CONFIG_DIR: claude.dir, FAKE_ENSEMBLE_LOG: log, FAKE_ENSEMBLE_SCRIPT: script },
+  });
+  try {
+    await useFakeClaude(win);
+    const projectId = await activeProjectId(win);
+    const created = (await win.evaluate(
+      (p) => window.oxy.invoke('ensemble:create', { projectId: p, templateId: 'feature', title: 'Questions' }),
+      projectId,
+    )) as EnsembleRecord;
+    const [ada, linus] = created.task.agents;
+    const task: EnsembleTask = {
+      ...created.task,
+      workspace: { ...created.task.workspace, mode: 'current-checkout' },
+      agents: [
+        { ...ada!, readOnly: true },
+        { ...linus!, readOnly: true },
+      ],
+      pipeline: [
+        {
+          id: 'plan',
+          kind: 'agent',
+          title: 'Plan',
+          instruction: '',
+          agentId: ada!.id,
+          output: 'plan',
+          freshSession: false,
+        },
+        {
+          id: 'impl',
+          kind: 'agent',
+          title: 'Implement',
+          instruction: '',
+          agentId: linus!.id,
+          output: 'implementation',
+          freshSession: false,
+        },
+      ],
+    };
+    await win.evaluate((t) => window.oxy.invoke('ensemble:save', { task: t }), task);
+    await win.evaluate(
+      (id) => window.oxy.invoke('ensemble:command', { taskId: id, event: { type: 'start' } }),
+      task.id,
+    );
+    // The question to the user waits in the inbox.
+    await expect
+      .poll(async () => (await ensembleRecords(win)).find((r) => r.task.id === task.id)?.run.needs.map((n) => n.kind), {
+        timeout: 60_000,
+      })
+      .toEqual(['question']);
+    const questionId = (await ensembleRecords(win)).find((r) => r.task.id === task.id)!.run.needs[0]!.questionId!;
+    await win.evaluate(
+      ([id, q]) => window.oxy.invoke('ensemble:answer', { taskId: id, questionId: q, answer: 'report.csv' }),
+      [task.id, questionId] as const,
+    );
+    const done = await waitForStatus(win, task.id, 'done');
+    const answers = (await readLog(log)).filter((e) => e.agent === 'Linus' && e.event === 'answer').map((e) => e.text);
+    expect(answers).toEqual(['Answer: Ada answers: use commas', 'Answer: report.csv']);
+    expect(done.run.questions.map((q) => [q.to, q.answer])).toEqual([
+      [ada!.id, 'Ada answers: use commas'],
+      ['user', 'report.csv'],
+    ]);
   } finally {
     await app.close();
   }

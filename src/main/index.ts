@@ -86,6 +86,8 @@ import { detectCommand } from './services/ensemble/cli-detect';
 import type { EnsembleRecord } from '@shared/domain/ensemble';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
+/** The answer of the Usage Monitor's `oxytocin.usage-monitor.totals` command (Ensemble costs). */
+const UsageTotalsSchema = z.record(z.string(), z.object({ costUsd: z.number(), tokens: z.number() }));
 
 const userDataOverride = resolveUserDataOverride(process.argv, process.env);
 if (userDataOverride) app.setPath('userData', userDataOverride);
@@ -817,6 +819,10 @@ function bootstrap(): void {
     },
     notify: (o) => ensembleNotify?.(o),
     platform: process.platform,
+    usage: async (groups) => {
+      if (plugins.get('oxytocin.usage-monitor')?.state !== 'active') throw new Error('The Usage Monitor is not active');
+      return UsageTotalsSchema.parse(await pluginHost.executeCommand('oxytocin.usage-monitor.totals', [{ groups }]));
+    },
   });
   mcpHub.setEnsemble({
     describe: (token) => ensemble.describe(token),
@@ -1254,11 +1260,7 @@ function bootstrap(): void {
         .catch(() => undefined)
         .then(() => sendEvent(win.webContents, 'ensemble:open', { projectId, taskId }));
     };
-    sendEvent(win.webContents, 'notifications:show', {
-      kind: level === 'info' ? 'success' : level,
-      message: title,
-      description: body,
-    });
+    sendEvent(win.webContents, 'ensemble:notify', { title, body, level, projectId, taskId });
     const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyWindowFocused'] : undefined;
     const focused = typeof scripted === 'boolean' ? scripted : win.isFocused();
     const s = settings.get();

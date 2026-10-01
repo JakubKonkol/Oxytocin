@@ -1237,6 +1237,10 @@ function handle(tx: Tx, e: ConductorEvent): void {
       s.lifecycle = 'running';
       s.terminalId = e.terminalId;
       if (e.cliSessionId) s.cliSessionId = e.cliSessionId;
+      // Every terminal and session the agent used, for its cost (Usage Monitor) across restarts.
+      s.usedTerminals = [...(s.usedTerminals ?? []).filter((t) => t !== e.terminalId), e.terminalId].slice(-20);
+      if (e.cliSessionId)
+        s.usedSessions = [...(s.usedSessions ?? []).filter((t) => t !== e.cliSessionId), e.cliSessionId].slice(-20);
       s.live = 'starting';
       s.liveSince = tx.now;
       tx.clearNeeds((n) => n.agentId === e.agentId && n.kind === 'exited');

@@ -43,6 +43,7 @@ import { addDays, startOfDay } from './analytics/periods';
 import {
   breakdown,
   burnRate,
+  groupTotals,
   sessionById,
   sessionEvents,
   sessions,
@@ -50,6 +51,7 @@ import {
   summary,
   timeseries,
   unknownModels,
+  type UsageGroup,
 } from './analytics/queries';
 import { type Database, getMeta, openDatabase, schemaVersion, setMeta, transaction } from './store/db';
 import { EventWriter, type IngestContext, recomputeCosts } from './store/events';
@@ -707,6 +709,11 @@ export class UsageEngine {
       session: { ...session, projectName: this.attribution.name(session.projectId) ?? null },
       events: sessionEvents(this.db, sessionId),
     };
+  }
+
+  /** Cost and tokens per group of sessions/terminals (the `usage.totals` command, used by Ensemble). */
+  totals(groups: UsageGroup[]) {
+    return groupTotals(this.db, groups);
   }
 
   pricingDetail() {

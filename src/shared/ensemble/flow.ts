@@ -183,3 +183,15 @@ export function formatDuration(ms: number): string {
   const sec = String(s % 60).padStart(2, '0');
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }
+
+/** A cost for the cards: "$0.42", "<$0.01", "$12.30"; tokens as "1.2M"/"35k". */
+export function formatCost(usd: number): string {
+  if (usd > 0 && usd < 0.01) return '<$0.01';
+  return `$${usd.toFixed(2)}`;
+}
+
+export function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}k`;
+  return String(n);
+}

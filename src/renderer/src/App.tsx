@@ -20,6 +20,7 @@ import { PluginConsentDialog } from './features/plugins/PluginConsentDialog';
 import { subscribeUpdates } from './features/updates/update-store';
 import { TooltipProvider } from './ui/Tooltip';
 import { subscribeMcp } from './features/agent-tools/mcp-store';
+import { subscribeEnsemble } from './features/ensemble/ensemble-store';
 
 export function App() {
   const [loaded, setLoaded] = useState(false);
@@ -34,6 +35,7 @@ export function App() {
     subscribeKeybindings();
     subscribeUpdates();
     subscribeMcp();
+    subscribeEnsemble();
     const unsubscribe = subscribeShellEvents();
     let mounted = true;
     Promise.all([

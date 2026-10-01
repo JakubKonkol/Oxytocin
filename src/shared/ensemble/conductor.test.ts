@@ -254,6 +254,28 @@ describe('conductor: sequential agent stages', () => {
   });
 });
 
+describe('conductor: costs and the budget', () => {
+  it('remembers every terminal and session of an agent, sums costs and pauses at the budget', () => {
+    const h = new Harness(makeTask([planStage], { limits: { maxConcurrentAgents: 3, maxCostUsd: 1 } }));
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'interrupted' });
+    h.send({ type: 'resume-interrupted' });
+    h.take('start-agent');
+    h.send({ type: 'agent-started', agentId: 'ada', terminalId: 't9', cliSessionId: 's-ada' });
+    expect(h.run.agents['ada']).toMatchObject({ usedTerminals: ['t1', 't9'], usedSessions: ['s-ada'] });
+    h.send({ type: 'cost', agentId: 'ada', costUsd: 0.4, tokens: 1000 });
+    h.send({ type: 'tick' });
+    expect(h.run.costUsd).toBeCloseTo(0.4, 6);
+    expect(h.run.status).toBe('running');
+    h.send({ type: 'cost', agentId: 'ada', costUsd: 1.2, tokens: 3000 });
+    h.send({ type: 'tick' });
+    expect(h.run.status).toBe('paused');
+    expect(h.run.pauseReason).toMatch(/budget of \$1 is reached/);
+  });
+});
+
 describe('conductor: loops, gates and commands', () => {
   const loop: Stage = {
     id: 'loop',

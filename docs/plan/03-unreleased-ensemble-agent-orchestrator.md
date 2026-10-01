@@ -1,8 +1,10 @@
 # Plan 03 — Ensemble: tasks run by a team of AI agents
 
-Status: **unreleased, not started** · Depends on: Oxytocin's MCP server (Plan 01, released in 0.6.5 —
-`src/main/services/mcp/`), background terminals (`CreateTerminalRequest.background`), agent states
-(`src/main/services/agents/`) and the Claude Code Bridge hooks (`plugins/claude-code-bridge/`).
+Status: **implemented, ships in 0.8.0** (steps 1–6 and the parallel reviewers of step 7; open: user and repository
+templates, *Competing implementations* / *Lead with helpers*, flow replay, rewind to a checkpoint, the J/K/P/A keys)
+· Depends on: Oxytocin's MCP server (Plan 01, released in 0.6.5 — `src/main/services/mcp/`), background terminals
+(`CreateTerminalRequest.background`), agent states (`src/main/services/agents/`) and the Claude Code Bridge hooks
+(`plugins/claude-code-bridge/`).
 
 This document is written for the agent (or person) who implements the feature. Read it completely, read the files
 listed in [Current state](#current-state-read-these-files-first), then follow
@@ -788,16 +790,28 @@ entry for user-visible changes, commit on `main` (Conventional Commits, authored
 
 ## Verification log
 
-Fill in while implementing.
+Checked against the CLI references and `--help` of the current versions while implementing; the E2E tests run a
+scriptable fake Claude Code (`tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/ensemble.js`).
 
-- Minimum Claude Code version for `--effort` with `xhigh`/`max`, and which models accept which levels: *(open)*
-- Claude Code behaviour when the MCP server name in `--mcp-config` equals a user-scope server: *(open)*
-- Header env interpolation for `X-Oxytocin-Ensemble` works like `X-Oxytocin-Terminal`: *(open)*
-- Folder trust dialog in a new worktree of a trusted repository: *(open)*
-- Bracketed paste + `\r` submits a prompt in Claude Code on Windows (ConPTY), macOS, Linux: *(open)*
-- Codex CLI: model, reasoning effort, read-only sandbox, MCP headers, paste/submit, session resume: *(open)*
-- Gemini CLI and OpenCode: same list: *(open)*
-- `claude --resume <id>` restores an Ensemble agent after an app restart with its prompt file still applied: *(open)*
+- `--effort` levels: passed as chosen in the builder (`low`…`max`); Claude Code rejects a level the model does not
+  support with a visible error in the agent's terminal, so the builder does not guess per model.
+- MCP server name: Ensemble's server is `oxytocin-ensemble` (never `oxytocin`), passed with `--mcp-config` next to
+  the user's servers, so a user-scope `oxytocin` server keeps working in the same session.
+- Authentication: instead of an interpolated `X-Oxytocin-Ensemble` header, every agent gets its role token as a
+  bearer token for the separate `/mcp/ensemble` endpoint (Claude Code and Gemini CLI: `headers` in the per-agent
+  config file, written 0600 and deleted on stop; Codex CLI: `bearer_token_env_var`; OpenCode:
+  `OPENCODE_CONFIG_CONTENT`). The main `/mcp` endpoint and its tool list are unchanged.
+- Folder trust in a new worktree: Gemini CLI gets `--skip-trust`; for the others nothing is typed while a trust, login
+  or [y/n] prompt is on screen: the delivery fails with "answer it there, then retry" in *Needs you*.
+- Bracketed paste + a delayed `\r`: works with the fake agent on Linux (E2E); on Windows (ConPTY) and macOS it is
+  covered by the Full tests workflow. Messages are only delivered while the agent is idle (registry/hooks states).
+- Codex CLI: `-m`, `-c model_reasoning_effort=…`, `-s read-only|workspace-write`, `-c mcp_servers.oxytocin_ensemble.*`
+  with `default_tools_approval_mode=approve`; no session resume (a restarted agent gets a fresh session and the
+  context again).
+- Gemini CLI: `--session-id`, `--skip-trust`, `--approval-mode`, settings through `GEMINI_CLI_SYSTEM_SETTINGS_PATH`;
+  OpenCode: `-m`, `--agent plan` for read-only agents, config through `OPENCODE_CONFIG_CONTENT`.
+- `claude --resume <id>` after an app restart: the run becomes *interrupted*; *Resume* starts the agents with
+  `--resume` and the same `--append-system-prompt-file` (rewritten on every start).
 
 ## References
 

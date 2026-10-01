@@ -5,6 +5,8 @@ import { useTerminalsStore } from '../../stores/terminals-store';
 import { ipc } from '../../lib/ipc-client';
 import { dismissToast, notify, notifyWithActions } from '../../ui/Toast';
 import { isTerminalVisible, revealTerminal } from './reveal';
+import { firstEnsembleNeed } from '../ensemble/EnsembleStatusItem';
+import { showEnsemble } from '../ensemble/ensemble-actions';
 
 /** Running terminals whose agent waits for the user, longest waiting first. */
 export function waitingTerminals(terminals: Record<string, TerminalInfo>): TerminalInfo[] {
@@ -19,6 +21,8 @@ let lastJumped: string | null = null;
 export async function jumpToWaitingAgent(): Promise<void> {
   const waiting = waitingTerminals(useTerminalsStore.getState().terminals);
   if (waiting.length === 0) {
+    const ensemble = firstEnsembleNeed();
+    if (ensemble) return showEnsemble(ensemble.projectId, ensemble.taskId);
     notify('info', 'No agent is waiting for you');
     return;
   }

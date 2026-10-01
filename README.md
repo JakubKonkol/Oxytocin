@@ -99,6 +99,18 @@ read-only transactions), *ask before writes* with the full statement in a dialog
 databases. Secret columns are masked, results are capped, and every query is kept in the call log. Claude Code
 sessions are told about the resources with their first prompt, so agents stop hunting for connection strings.
 
+### 🎼 Ensemble: a team of agents on one task
+
+Open **Ensemble** from the "+" menu, describe a task and pick a template — *Feature* (plan → your approval →
+implement ⇄ review → tests → your approval), *Bugfix*, *Review only*, *Research spike*, *Refactor with tests* or
+*Second opinion*. Each agent has its own CLI (Claude Code, Codex CLI, Gemini CLI, OpenCode or any command), model,
+effort and role; a conductor hands the plan to the implementer, sends review findings and failing tests back, and
+asks you at the gates. The flow view shows who works on what, who handed what to whom and why the conductor
+decided anything; peek at any agent's terminal or take it over. Agents ask each other — and you — questions, every
+task works in its own git worktree with a checkpoint per stage, and at the end you merge, squash, keep or discard
+its branch. Costs per agent come from the Usage Monitor, with a budget per task. Models and prompts are passed per
+session only: your CLI settings and other terminals are never changed.
+
 ### 🔍 Live changes
 
 A live tree of every file changed since `HEAD`, with line counts, and a Monaco diff viewer that updates while the

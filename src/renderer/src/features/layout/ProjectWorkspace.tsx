@@ -17,6 +17,7 @@ import { PluginsPanel } from '../plugins/PluginsPanel';
 import { KeybindingsPanel } from '../keybindings/KeybindingsPanel';
 import { SettingsPanel } from '../settings/SettingsPanel';
 import { ScratchpadPanel } from '../scratchpad/ScratchpadSection';
+import { EnsemblePanel } from '../ensemble/EnsemblePanel';
 import {
   dropPosition,
   isMovableComponent,
@@ -62,6 +63,7 @@ const components = {
   diff: withErrorBoundary(DiffPanelComponent, 'The diff panel'),
   plugin: withErrorBoundary(PluginPanelComponent, 'The plugin panel'),
   scratchpad: withErrorBoundary(ScratchpadPanel, 'The scratchpad'),
+  ensemble: withErrorBoundary(EnsemblePanel, 'Ensemble'),
   missing: MissingPanel,
   plugins: withErrorBoundary(PluginsPanel, 'The Plugins panel'),
   keybindings: withErrorBoundary(KeybindingsPanel, 'Keyboard Shortcuts'),

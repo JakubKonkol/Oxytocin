@@ -297,6 +297,9 @@ export const AgentRunStateSchema = z.looseObject({
   workedMs: z.number().default(0),
   tokens: z.number().optional(),
   costUsd: z.number().optional(),
+  /** Terminals and CLI sessions the agent ran in (its cost is summed over them). */
+  usedTerminals: z.array(z.string()).optional(),
+  usedSessions: z.array(z.string()).optional(),
   error: z.string().optional(),
 });
 export type AgentRunState = z.infer<typeof AgentRunStateSchema>;

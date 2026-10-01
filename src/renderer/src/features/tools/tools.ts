@@ -17,6 +17,7 @@ import { newPanelId } from '../layout/panel-registry';
 import { getActiveWorkspace, getWorkspaceApis } from '../layout/workspace-registry';
 import { openPluginPanel, type PluginPanelParams } from '../plugins/plugin-panels';
 import { viewStates } from '../plugins/view-bridge';
+import { ENSEMBLE_PANEL_TITLE, ENSEMBLE_TOOL_ID, openEnsemblePanel } from '../ensemble/ensemble-actions';
 
 export const SCRATCHPAD_TOOL_ID = 'scratchpad';
 export const SCRATCHPAD_PANEL_TITLE = 'Scratchpad';
@@ -28,6 +29,8 @@ export interface ToolDefinition {
   title: string;
   pluginId?: string;
   panelType?: string;
+  /** Opens in the workspace only (not in the sidebars). */
+  workspaceOnly?: boolean;
 }
 
 type PanelContribution = ReturnType<typeof usePluginsStore.getState>['contributions']['panels'][number];
@@ -35,6 +38,7 @@ type PanelContribution = ReturnType<typeof usePluginsStore.getState>['contributi
 export function availableTools(panels: PanelContribution[]): ToolDefinition[] {
   return [
     { id: SCRATCHPAD_TOOL_ID, title: SCRATCHPAD_PANEL_TITLE },
+    { id: ENSEMBLE_TOOL_ID, title: ENSEMBLE_PANEL_TITLE, workspaceOnly: true },
     ...panels
       .filter((p) => p.showInAddMenu)
       .map((p) => ({ id: `plugin:${p.type}`, title: p.title, pluginId: p.pluginId, panelType: p.type }))
@@ -346,6 +350,10 @@ export async function openToolInWorkspace(
   const position = target.group ? { referenceGroup: target.group, direction: 'within' as const } : undefined;
   if (def.id === SCRATCHPAD_TOOL_ID) {
     openScratchpadPanel(target.api, position);
+    return;
+  }
+  if (def.id === ENSEMBLE_TOOL_ID) {
+    openEnsemblePanel(target.api, target.projectId, position);
     return;
   }
   if (!def.panelType) return;

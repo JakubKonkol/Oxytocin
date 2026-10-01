@@ -140,6 +140,7 @@ export const EVENT_CHANNELS = [
   'ensemble:changed',
   'ensemble:removed',
   'ensemble:open',
+  'ensemble:notify',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

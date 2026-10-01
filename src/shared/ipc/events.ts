@@ -116,6 +116,14 @@ export const eventContract = {
   'ensemble:removed': z.object({ taskId: z.string(), projectId: ProjectIdSchema }),
   /** Open the Ensemble panel of a project at a task (a notification was clicked). */
   'ensemble:open': z.object({ projectId: ProjectIdSchema, taskId: z.string().optional() }),
+  /** A task needs the user or finished: a toast unless its Ensemble panel is on screen. */
+  'ensemble:notify': z.object({
+    title: z.string(),
+    body: z.string(),
+    level: z.enum(['info', 'warning', 'error']),
+    projectId: ProjectIdSchema,
+    taskId: z.string(),
+  }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

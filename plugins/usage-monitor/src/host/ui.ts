@@ -214,6 +214,11 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
     oxy.commands.register('usage.openDashboard', (target?: unknown) =>
       openDashboard(typeof target === 'object' && target !== null ? target : {}),
     ),
+    // For Oxytocin's Ensemble: cost and tokens per agent of a task (groups of session and terminal ids).
+    oxy.commands.register('oxytocin.usage-monitor.totals', (arg: unknown) => {
+      const groups = typeof arg === 'object' && arg !== null ? (arg as { groups?: unknown }).groups : undefined;
+      return client.request('usage.totals', { groups: Array.isArray(groups) ? groups : [] });
+    }),
     oxy.commands.register('usage.refreshPricing', async () => {
       const result = await client.request<string>('pricing.refresh');
       void oxy.ui.showNotification({

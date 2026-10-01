@@ -26,6 +26,7 @@ import { registerSettingsCommands } from './features/settings/SettingsPanel';
 import { registerProjectSettingsCommands } from './features/projects/ProjectSettingsDialog';
 import { flushAllWorkspaces } from './features/layout/persistence';
 import { registerUpdateCommands } from './features/updates/update-store';
+import { registerEnsembleCommands } from './features/ensemble/ensemble-actions';
 
 if (window.oxy.e2e) {
   document.documentElement.dataset['e2e'] = 'true';
@@ -56,6 +57,7 @@ registerKeybindingCommands();
 registerSettingsCommands();
 registerProjectSettingsCommands();
 registerUpdateCommands();
+registerEnsembleCommands();
 installGlobalKeybindings();
 // Called by main while quitting: layouts plus the debounced UI state (scratchpad text).
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = async () => {

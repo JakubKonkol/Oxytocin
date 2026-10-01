@@ -40,6 +40,8 @@ const emit = serveWorker(parentPort, {
   'dash.overview': async () => (await ready).overview(),
   'dash.sessions': async (opts: Parameters<UsageEngine['sessionList']>[0]) => (await ready).sessionList(opts ?? {}),
   'dash.session': async ({ id }: { id: string }) => (await ready).sessionDetail(id),
+  'usage.totals': async ({ groups }: { groups: Parameters<UsageEngine['totals']>[0] }) =>
+    (await ready).totals(Array.isArray(groups) ? groups : []),
   'dash.pricing': async () => (await ready).pricingDetail(),
   'dash.sources': async () => (await ready).sources(),
   'view.status': async () => (await ready).status(),

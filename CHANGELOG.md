@@ -7,10 +7,41 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
-- **Ensemble (in progress): tasks run by a team of AI agents.** The conductor, the agent adapters (Claude Code,
-  Codex CLI, Gemini CLI, OpenCode, a custom command), git worktrees per task and the `oxy_ensemble_*` tools on a
-  separate endpoint of Oxytocin's MCP server (`/mcp/ensemble`, only Ensemble's agents connect to it; the tools other
-  agents see are unchanged). Settings `ensemble.worktreeRoot` and `ensemble.commands`.
+- **Ensemble: tasks run by a team of AI agents.** A new tool in the "+" menu of a project's workspace. Describe a
+  task, pick a template (*Feature*, *Bugfix*, *Review only*, *Research spike*, *Refactor with tests*, *Second
+  opinion* or *Blank*) and adjust the team and the pipeline in the builder: every agent has its own CLI (Claude Code,
+  Codex CLI, Gemini CLI, OpenCode or a custom command), model, effort, permission mode, role prompt and can be made
+  read-only; stages are agent steps, *Implement ⇄ Review* loops with a round limit, parallel reviewers, tests
+  (a command that sends failures back to the implementer) and gates where you approve, edit the plan or request
+  changes. Checks and a prompt preview show what each agent will get before you start.
+- **Runs you can watch and steer.** The *Flow* view shows the stages, the agents with their live state, what each
+  agent handed to the next one and every decision of the conductor; click an agent to peek at its terminal, *Take
+  over* to type into it yourself and *Hand back* when done. *Agents* shows all agent terminals side by side,
+  *Activity* the whole timeline with a live log, *Changes* the diff of the task (or of one stage) and *Artifacts*
+  the plans, reviews and results. Pause, resume, stop, send an agent a message or mark a stage as done; a run that
+  was active when Oxytocin closed can be resumed with the agents' sessions.
+- **Agents talk to each other — and to you.** Agents ask teammates or you questions; yours wait in the *Needs you*
+  inbox together with open gates, and an optional advisor agent can be consulted at chosen moments. A status bar
+  item, the attention badge and Ctrl+Shift+J take you to what needs you; OS notifications arrive when the window is
+  in the background.
+- **Its own worktree per task.** By default a task runs on a new branch in a git worktree next to the repository
+  (setup commands and copied files such as `.env` are configurable; `ensemble.worktreeRoot` moves the folder),
+  with a checkpoint commit after each stage, so your checkout is never touched. *Finish* merges the branch, squashes
+  it into one commit, keeps the branch or discards everything; *Copy summary* gives a Markdown report for a pull
+  request. Read-only teams can also work in the current checkout.
+- **Costs and limits.** With the Usage Monitor running, every agent card shows what its sessions cost and the task
+  shows the total; a budget, a maximum running time and the number of agents working at once pause or queue the
+  task. The Usage Monitor offers the command `oxytocin.usage-monitor.totals` for this.
+- **Isolated by design.** Models, efforts and prompts are passed per session on the command line: your CLI
+  settings files, default model and other terminals stay exactly as they were. Agents reach Ensemble through a
+  separate endpoint of Oxytocin's MCP server (`/mcp/ensemble`, with a token per agent); the tools other agents see
+  are unchanged, and nothing runs unless you start a task. Settings `ensemble.worktreeRoot` and `ensemble.commands`
+  (the command per CLI).
+
+### Fixed
+
+- An API resource whose base URL comes from a Project Runner profile now resolves to the running app's URL; it
+  always fell back to the fallback URL before.
 
 ## [0.7.1] - 2026-10-01
 

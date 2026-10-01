@@ -1,6 +1,6 @@
 import type { DockviewApi, DockviewGroupPanel } from 'dockview-react';
 import { DropdownMenu } from 'radix-ui';
-import { Blocks, Bot, ChevronRight, NotebookPen, Plus, SquareTerminal } from 'lucide-react';
+import { Blocks, Bot, ChevronRight, NotebookPen, Plus, SquareTerminal, Workflow } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { ipc } from '../../lib/ipc-client';
@@ -24,6 +24,7 @@ const menuItem =
 const menuLabel = 'oxy-label px-2 pt-1.5 pb-1';
 
 function ToolIcon({ tool }: { tool: ToolDefinition }) {
+  if (tool.id === 'ensemble') return <Workflow size={14} className="flex-none text-agent" />;
   return tool.id === SCRATCHPAD_TOOL_ID ? (
     <NotebookPen size={14} className="flex-none text-fg-muted" />
   ) : (
@@ -143,7 +144,10 @@ export function SidebarAddToolMenu({ trigger, index }: { trigger: ReactNode; ind
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={4} className={menuContent} data-testid="sidebar-add-tool-menu">
           <DropdownMenu.Label className={menuLabel}>Add tool</DropdownMenu.Label>
-          <ToolItems tools={tools} onPick={(t) => addSidebarTool(sidebarToolFor(t), index)} />
+          <ToolItems
+            tools={tools.filter((t) => !t.workspaceOnly)}
+            onPick={(t) => addSidebarTool(sidebarToolFor(t), index)}
+          />
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

@@ -17,6 +17,7 @@ import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
 import { HelpDialogs } from '../features/help/HelpDialogs';
 import { focusScratchpad } from '../features/tools/tools';
+import { EnsembleStatusItem, useEnsembleNeedsCount } from '../features/ensemble/EnsembleStatusItem';
 
 /** "<project> — <active panel> — Oxytocin". */
 function useWindowTitle(): string {
@@ -26,7 +27,7 @@ function useWindowTitle(): string {
     panel?.terminalId ? s.terminals[panel.terminalId]?.title : undefined,
   );
   const panelTitle = terminalTitle ?? panel?.title;
-  const waiting = useWaitingCount();
+  const waiting = useWaitingCount() + useEnsembleNeedsCount();
   useAttentionBadge(waiting);
   const parts = [project?.name, project ? panelTitle : undefined, 'Oxytocin'].filter(Boolean);
   const title = `${waiting > 0 ? `(${waiting}) ` : ''}${parts.join(' — ')}`;
@@ -91,6 +92,7 @@ export function AppLayout() {
         left={
           <>
             <ActivityStatusItems />
+            <EnsembleStatusItem />
             <PluginStatusItems alignment="left" />
           </>
         }

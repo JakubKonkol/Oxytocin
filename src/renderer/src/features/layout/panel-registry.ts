@@ -1,6 +1,15 @@
 /** Center-area panel kinds. Params hold identifiers only. */
 export type PanelKind =
-  'terminal' | 'diff' | 'plugin' | 'scratchpad' | 'plugins' | 'keybindings' | 'settings' | 'welcome' | 'missing';
+  | 'terminal'
+  | 'diff'
+  | 'plugin'
+  | 'scratchpad'
+  | 'ensemble'
+  | 'plugins'
+  | 'keybindings'
+  | 'settings'
+  | 'welcome'
+  | 'missing';
 
 export interface TerminalPanelParams {
   terminalId: string;
