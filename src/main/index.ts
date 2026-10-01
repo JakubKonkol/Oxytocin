@@ -1,7 +1,7 @@
 import { homedir, release } from 'node:os';
 import { mkdir, readFile, realpath, stat } from 'node:fs/promises';
 import { z } from 'zod';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   app,
   type BrowserWindow,
@@ -24,7 +24,9 @@ import type { NotificationPayload } from '@shared/ipc/events';
 import { appPaths } from './app/paths';
 import { PLUGIN_SCHEME, registerAppProtocol, registerPrivilegedSchemes } from './app/protocols';
 import { createPluginProtocolHandler } from './app/plugin-protocol';
-import { installPermissionHandlers, isSafeExternalUrl } from './app/security';
+import { hardenNewWebContents, installPermissionHandlers, isSafeExternalUrl } from './app/security';
+import { installAppMenu } from './app/app-menu';
+import { RendererRecovery } from './app/renderer-recovery';
 import { resolveUserDataOverride } from './app/user-data';
 import { applyNativeTheme, createMainWindow, isTrustedShellUrl } from './app/window-manager';
 import { busyTerminals, describeQuit, type QuitPrompt } from './app/quit-guard';
@@ -109,8 +111,12 @@ function bootstrap(): void {
   initLogging();
   const log = createLogger('main');
   log.info(`Oxytocin ${appVersion} starting (Electron ${process.versions.electron}, ${process.platform})`);
-  // A forgotten rejection must not surface as Electron's blocking "JavaScript error" dialog: log it.
-  process.on('unhandledRejection', (reason) => log.error('Unhandled promise rejection', reason));
+  // Uncaught exceptions and unhandled rejections are logged by initLogging (electron-log, no blocking dialog).
+  hardenNewWebContents(app);
+  app.on('child-process-gone', (_event, details) => {
+    if (details.reason !== 'clean-exit')
+      log.warn(`Child process gone: ${details.type} (${details.reason}, exit code ${details.exitCode})`);
+  });
 
   const settings = new SettingsService(
     join(app.getPath('userData'), 'settings.json'),
@@ -1048,6 +1054,19 @@ function bootstrap(): void {
   // Dev runs use the generic Electron dock icon on macOS; packaged builds use the bundle icon.
   if (process.platform === 'darwin' && !app.isPackaged) app.dock?.setIcon(appPaths.windowIcon());
 
+  installAppMenu({
+    platform: process.platform,
+    appName: app.getName(),
+    dev: !app.isPackaged,
+    run: (command) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      sendEvent(mainWindow.webContents, 'app:menuCommand', { command });
+    },
+    openLogsFolder: () => void shell.openPath(dirname(logFilePath())),
+  });
+
   mainWindow = createMainWindow({
     bounds: resolveWindowBounds(initialUi.window, screen.getAllDisplays(), screen.getPrimaryDisplay()),
     maximized: initialUi.window.maximized,
@@ -1186,13 +1205,59 @@ function bootstrap(): void {
     confirms.cancelAll();
     notificationActions.cancelAll();
   });
-  win.webContents.on('render-process-gone', () => {
+  // A crashed renderer reloads by itself (terminals and agents live in the hosts and reattach); a hung one offers
+  // a reload. Native dialogs: the page cannot show its own.
+  const scriptedRecovery = (key: string) => {
+    const answer = e2e ? (globalThis as Record<string, unknown>)[key] : undefined;
+    return typeof answer === 'string' ? answer : undefined;
+  };
+  const recovery = new RendererRecovery({
+    isDestroyed: () => win.isDestroyed() || win.webContents.isDestroyed(),
+    reload: () => win.webContents.reload(),
+    quit: () => app.quit(),
+    askAfterCrashes: async (crashes) => {
+      const scripted = scriptedRecovery('__oxyCrashLoopAnswer');
+      if (e2e) return scripted === 'quit' ? 'quit' : 'reload';
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'error',
+        message: 'The Oxytocin window stopped working',
+        detail: `It crashed ${crashes} times in a row. Your terminals and agents keep running; reloading reconnects to them.`,
+        buttons: ['Reload', 'Quit'],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      return response === 1 ? 'quit' : 'reload';
+    },
+    askWhenUnresponsive: async (signal) => {
+      // Tests never get a native dialog by surprise (a slow CI machine can miss the responsiveness deadline).
+      if (e2e) return scriptedRecovery('__oxyUnresponsiveAnswer') === 'reload' ? 'reload' : 'wait';
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        message: 'Oxytocin is not responding',
+        detail: 'Your terminals and agents keep running. You can wait or reload the window.',
+        buttons: ['Wait', 'Reload'],
+        defaultId: 0,
+        cancelId: 0,
+        signal,
+      });
+      return response === 1 ? 'reload' : 'wait';
+    },
+    logger: createLogger('window'),
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
     link.shellDidUnload();
     quickPicks.cancelAll();
     confirms.cancelAll();
     notificationActions.cancelAll();
+    // While quitting the window goes away on purpose.
+    if (!quitting) recovery.onGone(details);
   });
+  win.on('unresponsive', () => {
+    if (!quitting) recovery.onUnresponsive();
+  });
+  win.on('responsive', () => recovery.onResponsive());
   win.on('closed', () => {
+    recovery.dispose();
     quickPicks.cancelAll();
     confirms.cancelAll();
     notificationActions.cancelAll();
@@ -1340,6 +1405,21 @@ function bootstrap(): void {
   }
 }
 
-void app.whenReady().then(bootstrap);
+void app
+  .whenReady()
+  .then(bootstrap)
+  .catch((e: unknown) => {
+    // Without a window the process would linger invisibly and hold the single-instance lock, so a new start
+    // would only focus nothing. Report it and exit instead.
+    try {
+      createLogger('main').error('Oxytocin could not start', e);
+      dialog.showErrorBox(
+        'Oxytocin could not start',
+        `${e instanceof Error ? (e.stack ?? e.message) : String(e)}\n\nThe log is in ${logFilePath()}.`,
+      );
+    } finally {
+      app.exit(1);
+    }
+  });
 
 app.on('window-all-closed', () => app.quit());

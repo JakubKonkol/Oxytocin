@@ -8,12 +8,8 @@ import { subscribeChanges } from './stores/changes-store';
 import { subscribePlugins, usePluginsStore } from './stores/plugins-store';
 import { subscribeKeybindings, useKeybindingsStore } from './features/keybindings/keybindings-store';
 import { ViewContextMenuHost } from './features/plugins/view-context-menu';
-import { showNotification } from './features/attention/attention';
-import { revealTerminal } from './features/attention/reveal';
-import { openEditorInTerminal } from './features/layout/editor-terminal';
-import { closePluginTerminalPanel, openPluginTerminal, runCoreCommand } from './features/layout/core-commands';
-import { ipc } from './lib/ipc-client';
 import { AppLayout } from './shell/AppLayout';
+import { subscribeShellEvents } from './shell/shell-events';
 import { Toaster } from './ui/Toast';
 import { DialogHost } from './ui/DialogHost';
 import { ProfilePicker } from './features/layout/ProfilePicker';
@@ -38,12 +34,8 @@ export function App() {
     subscribeKeybindings();
     subscribeUpdates();
     subscribeMcp();
-    ipc.on('notifications:show', showNotification);
-    ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId));
-    ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req));
-    ipc.on('terminals:openPanel', (req) => void openPluginTerminal(req));
-    ipc.on('terminals:closePanel', (req) => closePluginTerminalPanel(req));
-    ipc.on('commands:run', ({ id, args }) => runCoreCommand(id, args));
+    const unsubscribe = subscribeShellEvents();
+    let mounted = true;
     Promise.all([
       useUiStore.getState().load(),
       useSettingsStore.getState().load(),
@@ -54,10 +46,17 @@ export function App() {
       useKeybindingsStore.getState().load(),
     ])
       .then(() => {
+        if (!mounted) return;
         setLoaded(true);
         void reportSettingsProblems();
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => {
+        if (mounted) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
 
   if (error) return <div className="p-4 text-danger">Failed to start: {error}</div>;

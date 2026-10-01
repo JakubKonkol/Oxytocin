@@ -1,4 +1,4 @@
-import { shell, type Session, type WebContents, type WebPreferences } from 'electron';
+import { type App, shell, type Session, type WebContents, type WebPreferences } from 'electron';
 
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 const ALLOWED_PERMISSIONS = new Set(['clipboard-sanitized-write']);
@@ -46,4 +46,18 @@ export function installPermissionHandlers(session: Session): void {
     callback(ALLOWED_PERMISSIONS.has(permission));
   });
   session.setPermissionCheckHandler((_contents, permission) => ALLOWED_PERMISSIONS.has(permission));
+}
+
+/**
+ * Defense in depth for every web contents the app ever creates (the shell window, DevTools, anything added later):
+ * no `<webview>` and no new Electron windows; http(s)/mailto links open in the OS browser instead.
+ */
+export function hardenNewWebContents(electronApp: Pick<App, 'on'>): void {
+  electronApp.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (event) => event.preventDefault());
+    contents.setWindowOpenHandler(({ url }) => {
+      if (isSafeExternalUrl(url)) void shell.openExternal(url);
+      return { action: 'deny' };
+    });
+  });
 }

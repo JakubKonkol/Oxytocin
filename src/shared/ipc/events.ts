@@ -18,6 +18,7 @@ import { McpStateSchema } from '../domain/mcp';
 import { QuickPickRequestSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema } from '../domain/keybindings';
 import { UpdateStateSchema } from '../domain/updates';
+import { MenuCommandSchema } from '../domain/app-menu';
 import type { EventChannel } from './channels';
 
 /** In-app toast requested by main. */
@@ -105,6 +106,8 @@ export const eventContract = {
   }),
   /** A project's resources changed (context menu links, the Project settings dialog). */
   'resources:changed': z.object({ projectId: ProjectIdSchema }),
+  /** An item of the native application menu (macOS) was chosen. */
+  'app:menuCommand': z.object({ command: MenuCommandSchema }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

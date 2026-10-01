@@ -3,6 +3,26 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Fixed
+
+- **A crashed window comes back by itself.** If the window's renderer crashes (out of memory, a GPU or driver
+  problem), Oxytocin reloads it within a second; terminals, agents and running processes keep running and reconnect
+  with their output. After three crashes within a minute it asks whether to reload or quit instead of looping.
+- **A hung window can be reloaded.** When the window stops responding, a dialog offers *Wait* or *Reload* and
+  closes by itself if the window recovers.
+- **No more accidental reloads, DevTools or closing from stray shortcuts.** Electron's built-in menu acted on keys
+  the page did not handle: Ctrl+R / Cmd+R reloaded the whole window outside terminals, Ctrl+Shift+I opened the
+  DevTools and Ctrl+W asked to quit. Oxytocin now has its own menu: on macOS the native menu bar (*About*,
+  *Check for Updates…*, *Settings…* (Cmd+,), *Command Palette…*, editing, window and *Show Logs Folder* items); on
+  Windows and Linux only full screen (F11) remains.
+- A failed start now shows the error and exits instead of leaving an invisible process behind, which made new starts
+  do nothing until it was ended in the task manager.
+- In development builds each event from the app (toasts, "new terminal" from plugins) was handled twice.
+- Unhandled errors are logged once instead of twice, and crashes of Electron's helper processes (GPU, network) are
+  logged.
+
 ## [0.7.0] - 2026-09-30
 
 ### Added
