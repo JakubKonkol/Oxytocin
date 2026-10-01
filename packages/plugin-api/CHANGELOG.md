@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.6
+
+- `oxy.ui.showNotification({ …, signal })`: an `AbortSignal` withdraws a notification with `actions` (the question
+  was answered elsewhere or no longer applies); it closes and the promise resolves `undefined`.
+
 ## 0.1.5
 
 - Tools for AI agents: `contributes.mcp` (`prefix`, `tools`), the `mcp.tools` permission, the `onMcpTool:<name>`

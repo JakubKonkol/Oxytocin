@@ -139,6 +139,22 @@ export function deactivate(): void {}
   Heavy work belongs in a worker thread — a plugin that blocks the event loop for 15 s gets its Plugin Host restarted
   and, after the second time, is disabled until Oxytocin restarts.
 
+### Notifications with buttons
+
+```ts
+const controller = new AbortController();
+const answer = await oxy.ui.showNotification({
+  level: 'warning',
+  message: 'The dev server is waiting for your answer',
+  actions: [{ id: 'yes', title: 'Yes' }, { id: 'no', title: 'No' }],
+  signal: controller.signal, // since API 0.1.6
+});
+// 'yes' | 'no', or undefined when it was closed, timed out or withdrawn.
+```
+
+When the question is answered elsewhere (in your view, in the terminal) or no longer applies, call
+`controller.abort()`: the notification closes instead of leaving buttons that no longer do anything.
+
 ### Status bar items, commands and settings
 
 ```ts

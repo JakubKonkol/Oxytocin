@@ -8,7 +8,8 @@ vi.mock('../features/layout/core-commands', () => ({
   openPluginTerminal: vi.fn(),
   closePluginTerminalPanel: vi.fn(),
 }));
-vi.mock('../features/attention/attention', () => ({ showNotification: vi.fn() }));
+const dismissNotification = vi.fn();
+vi.mock('../features/attention/attention', () => ({ showNotification: vi.fn(), dismissNotification }));
 vi.mock('../features/attention/reveal', () => ({ revealTerminal: vi.fn() }));
 vi.mock('../features/layout/editor-terminal', () => ({ openEditorInTerminal: vi.fn() }));
 vi.mock('../ui/Toast', () => ({ notify: vi.fn() }));
@@ -41,6 +42,13 @@ describe('subscribeShellEvents', () => {
     const dispose = subscribeShellEvents();
     emit('app:menuCommand', { command: 'workbench.openSettings' });
     expect(executeCommand).toHaveBeenCalledWith('workbench.openSettings');
+    dispose();
+  });
+
+  it('closes toasts that main withdrew', () => {
+    const dispose = subscribeShellEvents();
+    emit('notifications:dismiss', { requestId: 'r1' });
+    expect(dismissNotification).toHaveBeenCalledWith('r1');
     dispose();
   });
 

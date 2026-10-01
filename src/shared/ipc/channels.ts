@@ -123,6 +123,7 @@ export const EVENT_CHANNELS = [
   'mcp:openFile',
   'resources:changed',
   'app:menuCommand',
+  'notifications:dismiss',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

@@ -92,7 +92,8 @@ export interface PluginCorePort {
   /** Shows a quick pick in the command palette; resolves the chosen index or null. */
   quickPick(items: QuickPickItem[], options: { placeholder?: string; source?: string }): Promise<number | null>;
   /** A toast with buttons; resolves the id of the clicked one, or null when it closed without a click. */
-  notifyWithActions(payload: NotificationPayload): Promise<string | null>;
+  /** `signal` withdraws the notification (it closes and resolves null). */
+  notifyWithActions(payload: NotificationPayload, signal?: AbortSignal): Promise<string | null>;
   /** Renderer-side effects (toasts, panels, core commands). */
   toRenderer(
     event:
@@ -181,6 +182,8 @@ const NotificationActionsSchema = z
   .array(z.object({ id: z.string().min(1).max(100), title: z.string().trim().min(1).max(60) }))
   .min(1)
   .max(3);
+/** Token a plugin withdraws a notification with (`showNotification({ signal })`). */
+const NotificationTokenSchema = z.string().min(1).max(100);
 const TerminalCreateParamsSchema = z.object({
   projectId: z.string().min(1),
   profileId: z.string().optional(),
@@ -239,6 +242,8 @@ export class PluginHostService implements Disposable {
   private readonly knownTerminals = new Set<string>();
   /** Terminal id → plugins of this host that watch its output. */
   private readonly outputWatches = new Map<string, Set<string>>();
+  /** `${pluginId}\0${token}` → controller of a withdrawable notification (`showNotification({ signal })`). */
+  private readonly withdrawableNotifications = new Map<string, AbortController>();
   readonly statusBarItems = new Map<string, StatusBarItemState>();
   private readonly statusEmitter = new Emitter<StatusBarItemState[]>();
   readonly onDidChangeStatusBar = this.statusEmitter.event;
@@ -611,6 +616,12 @@ export class PluginHostService implements Disposable {
 
   private clearPluginUi(pluginId: string): void {
     this.stopOutputWatches(pluginId);
+    // Its questions can no longer be answered.
+    for (const [key, controller] of [...this.withdrawableNotifications]) {
+      if (!key.startsWith(`${pluginId}\0`)) continue;
+      controller.abort();
+      this.withdrawableNotifications.delete(key);
+    }
     let changed = false;
     for (const [key, item] of [...this.statusBarItems]) {
       if (item.pluginId === pluginId) {
@@ -816,10 +827,29 @@ export class PluginHostService implements Disposable {
           const s = core.settings();
           if (s['notifications.os'] && !s['notifications.doNotDisturb']) core.osNotify(plugin.displayName, message);
         }
-        if (actions.success && actions.data.length > 0)
-          return await core.notifyWithActions({ ...toast, actions: actions.data });
+        if (actions.success && actions.data.length > 0) {
+          const token = NotificationTokenSchema.safeParse(p['token']);
+          if (!token.success) return await core.notifyWithActions({ ...toast, actions: actions.data });
+          // Withdrawable (`showNotification({ signal })`): `ui.dismissNotification` with the token closes it.
+          const key = `${plugin.id}\0${token.data}`;
+          const controller = new AbortController();
+          this.withdrawableNotifications.set(key, controller);
+          try {
+            return await core.notifyWithActions({ ...toast, actions: actions.data }, controller.signal);
+          } finally {
+            if (this.withdrawableNotifications.get(key) === controller) this.withdrawableNotifications.delete(key);
+          }
+        }
         core.toRenderer('toast', toast);
         return null;
+      }
+      case 'ui.dismissNotification': {
+        const token = NotificationTokenSchema.safeParse(p['token']);
+        if (!token.success) throw new OxyError('INVALID', 'Invalid notification token');
+        const key = `${plugin.id}\0${token.data}`;
+        this.withdrawableNotifications.get(key)?.abort();
+        this.withdrawableNotifications.delete(key);
+        return undefined;
       }
       case 'ui.showQuickPick': {
         const parsed = z

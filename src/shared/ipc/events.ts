@@ -108,6 +108,8 @@ export const eventContract = {
   'resources:changed': z.object({ projectId: ProjectIdSchema }),
   /** An item of the native application menu (macOS) was chosen. */
   'app:menuCommand': z.object({ command: MenuCommandSchema }),
+  /** A toast with buttons was withdrawn (answered elsewhere, no longer relevant, or timed out): close it. */
+  'notifications:dismiss': z.object({ requestId: z.string().min(1).max(100) }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

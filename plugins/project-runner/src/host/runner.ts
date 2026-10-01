@@ -38,6 +38,11 @@ interface Run {
   prompt?: RunPrompt;
   /** Checks for a question once the output has been quiet for a moment. */
   promptCheck?: ReturnType<typeof setTimeout>;
+  /**
+   * The last question that went away without an answer (new output, e.g. the app redrawing it). Found again, it
+   * keeps its id, so a notification about it still answers it.
+   */
+  unansweredPrompt?: RunPrompt;
 }
 
 export interface RunnerDeps {
@@ -180,6 +185,7 @@ export class RunManager implements Disposable {
     if (run.promptCheck) clearTimeout(run.promptCheck);
     run.promptCheck = undefined;
     delete run.prompt;
+    delete run.unansweredPrompt;
   }
 
   /** Starts a profile (no-op while it is already starting or running). */
@@ -276,6 +282,7 @@ export class RunManager implements Disposable {
     let changed = false;
     // New output: the question (if any) was answered or replaced; look again once the output is quiet.
     if (run.prompt && stripAnsi(data).trim()) {
+      run.unansweredPrompt = run.prompt;
       delete run.prompt;
       changed = true;
     }
@@ -301,7 +308,9 @@ export class RunManager implements Disposable {
     if ((run.status !== 'starting' && run.status !== 'running') || run.stopRequested || run.prompt) return;
     const found = detectPrompt(run.log.pending(), run.log.tail(4).slice(0, -1));
     if (!found) return;
-    run.prompt = { id: this.nextPromptId++, ...found };
+    const again = run.unansweredPrompt;
+    delete run.unansweredPrompt;
+    run.prompt = { id: again && again.text === found.text ? again.id : this.nextPromptId++, ...found };
     this.changed(run);
   }
 
@@ -315,6 +324,7 @@ export class RunManager implements Disposable {
       throw new Error('The app is not running.');
     if (promptId !== undefined && run.prompt?.id !== promptId) return this.snapshot(projectId, profileId);
     delete run.prompt;
+    delete run.unansweredPrompt;
     this.changed(run);
     await this.deps.terminals.sendText(run.terminalId, text);
     return this.snapshot(projectId, profileId);
@@ -402,6 +412,7 @@ export class RunManager implements Disposable {
     const run = this.find(projectId, profileId);
     if (!run || (run.status !== 'starting' && run.status !== 'running')) return this.snapshot(projectId, profileId);
     delete run.prompt;
+    delete run.unansweredPrompt;
     if (!run.terminalId || (run.status === 'starting' && !run.output)) {
       // Still being set up: start() sees the request and cancels.
       run.stopRequested = true;

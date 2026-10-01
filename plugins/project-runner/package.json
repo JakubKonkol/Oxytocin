@@ -10,7 +10,7 @@
     "displayName": "Project Runner",
     "description": "Detects runnable apps (Node.js, .NET, Python, Go, Rust, Java, …), runs them with one click, shows their status, URL and logs, and lets AI agents run them through Oxytocin's MCP server.",
     "publisher": "oxytocin",
-    "engine": "^0.1.5",
+    "engine": "^0.1.6",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup",

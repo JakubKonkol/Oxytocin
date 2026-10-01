@@ -1,6 +1,6 @@
 {
   "name": "@oxytocin/plugin-api",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Type definitions of the Oxytocin plugin backend API",
   "license": "MIT",
   "private": true,

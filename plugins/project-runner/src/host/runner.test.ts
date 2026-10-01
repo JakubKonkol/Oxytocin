@@ -262,6 +262,28 @@ describe('RunManager', () => {
     runs.dispose();
   });
 
+  it('keeps the id of a question the app shows again, so an earlier notification still answers it', async () => {
+    const t = fakeTerminals();
+    const runs = new RunManager({ terminals: t.api, settleMs: 3000, promptQuietMs: 500 });
+    await runs.start('/p', 'p1', profile, 'user');
+    const write = t.output.get('t1')!;
+    write('Would you like to use a different port? (Y/n) ');
+    await vi.advanceTimersByTimeAsync(500);
+    const first = runs.snapshot('p1', profile.id).prompt!;
+    // The app redraws the same question: it goes away for a moment and comes back with the same id.
+    write('\r\x1b[2KWould you like to use a different port? (Y/n) ');
+    expect(runs.snapshot('p1', profile.id).prompt).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(runs.snapshot('p1', profile.id).prompt).toEqual(first);
+    await runs.answer('p1', profile.id, 'y', first.id);
+    expect(t.api.sendText).toHaveBeenCalledWith('t1', 'y');
+    // A different question later is a new one.
+    write('y\r\nOverwrite the cache? (y/N) ');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(runs.snapshot('p1', profile.id).prompt?.id).not.toBe(first.id);
+    runs.dispose();
+  });
+
   it('does not take progress output or answered questions for a prompt', async () => {
     const t = fakeTerminals();
     const runs = new RunManager({ terminals: t.api, settleMs: 3000, promptQuietMs: 500 });

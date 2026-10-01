@@ -5,8 +5,18 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [0.7.1] - 2026-10-01
 
+### Added
+
+- Plugin API 0.1.6: `oxy.ui.showNotification({ …, signal })` withdraws a notification with buttons (it closes and
+  resolves `undefined`); notifications with buttons that time out now close instead of staying on screen.
+
 ### Fixed
 
+- **Run: a question of a starting app is asked once.** When an app asks something while starting (Angular's "Port
+  4200 is already in use… (Y/n)"), the question appeared both in the Run view and as a notification, and answering
+  one left the other behind, its buttons sometimes doing nothing. Now the notification only appears when no Run view
+  on screen shows the question, closes as soon as the question is answered (in the view, the notification or the
+  terminal) or the Run view is opened, and its buttons keep working when the app redraws the question.
 - **A crashed window comes back by itself.** If the window's renderer crashes (out of memory, a GPU or driver
   problem), Oxytocin reloads it within a second; terminals, agents and running processes keep running and reconnect
   with their output. After three crashes within a minute it asks whether to reload or quit instead of looping.

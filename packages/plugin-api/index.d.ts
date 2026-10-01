@@ -236,6 +236,11 @@ export interface UiApi {
     actions?: { id: string; title: Localized }[];
     /** Also as an OS notification (permission notifications.os). */
     os?: boolean;
+    /**
+     * Withdraws a notification with `actions` (the question was answered elsewhere or no longer applies): it closes
+     * and the promise resolves undefined. Since API 0.1.6.
+     */
+    signal?: AbortSignal;
   }): Promise<string | undefined>;
   /** http/https only */
   openExternal(url: string): Promise<void>;

@@ -3,7 +3,7 @@ import type { NotificationPayload } from '@shared/ipc/events';
 import { registerCommand } from '../../lib/commands';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { ipc } from '../../lib/ipc-client';
-import { notify, notifyWithActions } from '../../ui/Toast';
+import { dismissToast, notify, notifyWithActions } from '../../ui/Toast';
 import { isTerminalVisible, revealTerminal } from './reveal';
 
 /** Running terminals whose agent waits for the user, longest waiting first. */
@@ -28,11 +28,19 @@ export async function jumpToWaitingAgent(): Promise<void> {
   await revealTerminal(next.projectId, next.id);
 }
 
+const actionToastId = (requestId: string) => `request-${requestId}`;
+
+/** Main withdrew a toast with buttons (answered elsewhere, no longer relevant or timed out). */
+export function dismissNotification(requestId: string): void {
+  dismissToast(actionToastId(requestId));
+}
+
 /** Toast requested by main; skipped when it is about a terminal already on screen. */
 export function showNotification(n: NotificationPayload): void {
   if (n.actions?.length && n.requestId) {
     notifyWithActions(n.kind, n.message, {
       ...(n.description ? { description: n.description } : {}),
+      id: actionToastId(n.requestId),
       actions: n.actions,
       onDone: (actionId) => void ipc.invoke('notifications:action', { requestId: n.requestId!, actionId }),
     });

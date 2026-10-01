@@ -114,6 +114,7 @@ class RunnerService {
         this.projectEvents++;
         this.active = p;
         this.pushAll();
+        this.notifyPrompts();
       }),
       oxy.terminals.onDidChange((meta) => this.runs.onTerminalChange(meta)),
       oxy.terminals.onDidClose(({ id }) => this.runs.onTerminalClose(id)),
@@ -126,6 +127,7 @@ class RunnerService {
       oxy.settings.onDidChange('projectRunner.mcp', () => void this.applyLegacyMcp()),
       this.runs,
       { dispose: () => void this.legacyMcp.stop() },
+      { dispose: () => this.notifiedPrompts.forEach((controller) => controller?.abort()) },
     );
     const before = this.projectEvents;
     const [projects, active] = await Promise.all([oxy.projects.list(), oxy.projects.getActive()]);
@@ -343,6 +345,8 @@ class RunnerService {
   attach(view: PluginView): void {
     this.views.add(view);
     view.onDidDispose(() => this.views.delete(view));
+    // Opened on screen: it asks the open questions of its project itself.
+    if (view.visible) queueMicrotask(() => this.notifyPrompts());
     view.onRequest('load', async () => this.state(await this.projectOf(view)));
     view.onRequest<{ profileId: string }, RunSnapshot>('start', ({ profileId }) =>
       this.withProject(view, async (p) => this.start(p, await this.profileOrThrow(p, profileId), 'user')),
@@ -384,17 +388,28 @@ class RunnerService {
     );
     view.onRequest('openAgentTools', () => this.oxy.commands.execute('oxytocin.mcp.openSettings'));
     view.onDidChangeVisibility((visible) => {
-      if (visible) void this.send(view);
+      if (!visible) return;
+      void this.send(view);
+      // The view now asks the open questions itself.
+      this.notifyPrompts();
     });
   }
 
   // ── questions of starting apps ──
 
-  private readonly notifiedPrompts = new Set<number>();
+  /** Questions already announced (prompt id → the toast, until it is answered, withdrawn or no longer shown). */
+  private readonly notifiedPrompts = new Map<number, AbortController | null>();
+
+  /** A Run view on screen shows the project's runs, questions included. */
+  private shownInView(projectId: string): boolean {
+    return [...this.views].some((v) => v.visible && (v.projectId ?? this.active?.id) === projectId);
+  }
 
   /**
    * An app that asks something while starting (Angular's "Port 4200 is already in use… (Y/n)") would look like it
-   * hangs: tell the user once per question, with the answers and a way to its terminal.
+   * hangs: tell the user once per question, with the answers and a way to its terminal. Not when a Run view on
+   * screen already asks it; the toast closes once the question is answered (here or in the view), goes away, or a
+   * Run view shows it, so no button is left that does nothing.
    */
   private notifyPrompts(): void {
     const open = new Set<number>();
@@ -402,8 +417,17 @@ class RunnerService {
       const prompt = run.prompt;
       if (!prompt) continue;
       open.add(prompt.id);
-      if (this.notifiedPrompts.has(prompt.id)) continue;
-      this.notifiedPrompts.add(prompt.id);
+      const shown = this.shownInView(run.projectId);
+      if (this.notifiedPrompts.has(prompt.id)) {
+        if (shown) this.withdrawPrompt(prompt.id);
+        continue;
+      }
+      if (shown) {
+        this.notifiedPrompts.set(prompt.id, null);
+        continue;
+      }
+      const controller = new AbortController();
+      this.notifiedPrompts.set(prompt.id, controller);
       const project = this.project(run.projectId);
       const name = `${run.name ?? run.profileId}${project ? ` (${project.name})` : ''}`;
       void this.oxy.ui
@@ -420,6 +444,7 @@ class RunnerService {
               : []),
             { id: 'show', title: 'Show Terminal' },
           ],
+          signal: controller.signal,
         })
         .then(async (action) => {
           if (action === 'yes' || action === 'no')
@@ -428,7 +453,17 @@ class RunnerService {
         })
         .catch((e: unknown) => this.ctx.log.warn('Answering a run prompt failed', e));
     }
-    for (const id of [...this.notifiedPrompts]) if (!open.has(id)) this.notifiedPrompts.delete(id);
+    for (const id of [...this.notifiedPrompts.keys()]) {
+      if (open.has(id)) continue;
+      this.withdrawPrompt(id);
+      this.notifiedPrompts.delete(id);
+    }
+  }
+
+  /** Closes the toast of a question (it stays announced: it is not shown again). */
+  private withdrawPrompt(id: number): void {
+    this.notifiedPrompts.get(id)?.abort();
+    if (this.notifiedPrompts.has(id)) this.notifiedPrompts.set(id, null);
   }
 
   // ── status bar ──

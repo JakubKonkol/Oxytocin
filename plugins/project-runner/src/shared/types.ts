@@ -26,7 +26,7 @@ export type StartedBy = 'user' | 'agent';
 
 /** A question the app asks in its terminal and waits on (e.g. whether to use another port). */
 export interface RunPrompt {
-  /** Changes with every new question. */
+  /** Changes with every new question; the same question redrawn by the app keeps it. */
   id: number;
   text: string;
   /** Answered with yes or no. */

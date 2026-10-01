@@ -298,8 +298,8 @@ rl.once('line', (answer) => {
 });
 `;
 
-test('Project Runner: a question of a starting app is shown and answered; stopping it is no failure', async () => {
-  test.setTimeout(90_000);
+test('Project Runner: a question of a starting app is asked once, in the Run view or a toast; stopping it is no failure', async () => {
+  test.setTimeout(120_000);
   const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
   await writeFile(join(project, 'package.json'), JSON.stringify({ name: 'asking', scripts: { dev: 'node ask.js' } }));
   await writeFile(join(project, 'package-lock.json'), '{}');
@@ -314,38 +314,76 @@ test('Project Runner: a question of a starting app is shown and answered; stoppi
   const { app, win } = await launchApp({ userData, project });
   try {
     await waitForTerminal(win);
-    const frame = await runnerFrame(win);
-    const row = frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]');
-    await row.getByTestId('runner-start').click();
+    const runHeader = win.getByTestId('sidebar').getByTestId('section-header-tool-run');
+    // Collapsing the Run section and expanding it again can mount a new frame: look it up again each time.
+    let frame = await runnerFrame(win);
+    const row = () => frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]');
+    const prompt = () => frame.getByTestId('runner-prompt');
+    const expandRun = async () => {
+      await runHeader.click();
+      frame = await runnerFrame(win);
+    };
+    const status = win.getByTestId('status-item-projectRunner.status');
+    const toast = win.locator('[data-sonner-toast]').filter({ hasText: 'is waiting for your answer' });
+    const stop = async () => {
+      await row().getByTestId('runner-stop').click();
+      await expect(row()).toHaveAttribute('data-status', 'stopped', { timeout: 20_000 });
+    };
+    /** Starts the app from the command palette (the Run view may be collapsed). */
+    const startFromPalette = async () => {
+      void win
+        .evaluate(() => window.oxy.invoke('plugins:executeCommand', { id: 'projectRunner.run' }))
+        .catch(() => undefined);
+      await expect(win.getByTestId('command-palette-item').first()).toBeVisible();
+      await win.keyboard.press('Enter');
+    };
 
-    // The question shows in the Run view, the status bar and a toast instead of an endless "starting".
-    await expect(row).toHaveAttribute('data-prompt', 'true', { timeout: 30_000 });
-    await expect(row.getByTestId('runner-status')).toHaveText('waiting for input');
-    const prompt = frame.getByTestId('runner-prompt');
-    await expect(prompt.getByTestId('runner-prompt-text')).toHaveText(
+    // 1. The Run view is on screen: it shows the question (and the status bar), no toast repeats it.
+    await row().getByTestId('runner-start').click();
+    await expect(row()).toHaveAttribute('data-prompt', 'true', { timeout: 30_000 });
+    await expect(row().getByTestId('runner-status')).toHaveText('waiting for input');
+    await expect(prompt().getByTestId('runner-prompt-text')).toHaveText(
       'Port 4200 is already in use.\nWould you like to use a different port? (Y/n)',
     );
-    await expect(win.getByTestId('status-item-projectRunner.status')).toContainText('waiting for input');
-    const toast = win.locator('[data-sonner-toast]').filter({ hasText: 'is waiting for your answer' });
-    await expect(toast).toBeVisible();
-    await expect(toast.getByTestId('toast-action-yes')).toBeVisible();
-    await expect(toast.getByTestId('toast-action-show')).toBeVisible();
-
-    await prompt.getByTestId('runner-prompt-yes').click();
-    await expect(row).toHaveAttribute('data-status', 'running', { timeout: 20_000 });
-    await expect(frame.getByTestId('runner-prompt')).toHaveCount(0);
-    await expect(row.getByTestId('runner-url')).toHaveText(/^localhost:\d+\/$/);
-    // The toast's answer is stale now: it does nothing.
-    await toast.getByTestId('toast-action-no').click();
-    await win.waitForTimeout(500);
-    await expect(row).toHaveAttribute('data-status', 'running');
-
+    await expect(status).toContainText('waiting for input');
+    await win.waitForTimeout(1000);
+    await expect(toast).toHaveCount(0);
+    await prompt().getByTestId('runner-prompt-yes').click();
+    await expect(row()).toHaveAttribute('data-status', 'running', { timeout: 20_000 });
+    await expect(prompt()).toHaveCount(0);
+    await expect(row().getByTestId('runner-url')).toHaveText(/^localhost:\d+\/$/);
     // Stop: the app exits with 1 on Ctrl+C, which is a stop, not a failure.
     await win.waitForTimeout(1200);
-    await row.getByTestId('runner-stop').click();
-    await expect(row).toHaveAttribute('data-status', 'stopped', { timeout: 20_000 });
+    await stop();
     await win.waitForTimeout(1500);
     await expect(win.locator('[data-sonner-toast]').filter({ hasText: 'Command failed' })).toHaveCount(0);
+
+    // 2. The Run view is collapsed: a toast asks, and its answer reaches the app.
+    await runHeader.click();
+    await startFromPalette();
+    await expect(toast).toBeVisible({ timeout: 30_000 });
+    await expect(toast.getByTestId('toast-action-show')).toBeVisible();
+    await toast.getByTestId('toast-action-yes').click();
+    await expect(toast).toHaveCount(0);
+    await expect(status).toContainText('1 running', { timeout: 20_000 });
+    await expect(status).not.toContainText('waiting for input', { timeout: 20_000 });
+    await expandRun();
+    await expect(row()).toHaveAttribute('data-status', 'running');
+    await stop();
+
+    // 3. The toast asks, then the Run view is shown: the toast closes and the view asks.
+    await runHeader.click();
+    await startFromPalette();
+    await expect(toast).toBeVisible({ timeout: 30_000 });
+    await expandRun();
+    await expect(toast).toHaveCount(0);
+    await expect(row()).toHaveAttribute('data-prompt', 'true');
+    await prompt().getByTestId('runner-prompt-yes').click();
+    await expect(row()).toHaveAttribute('data-status', 'running', { timeout: 20_000 });
+    await win.waitForTimeout(500);
+    await expect(toast).toHaveCount(0);
+    await win.waitForTimeout(1200);
+    await stop();
   } finally {
     await app.close();
   }

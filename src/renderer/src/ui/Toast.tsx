@@ -50,9 +50,11 @@ export function notifyWithActions(
     actions: readonly { id: string; title: string }[];
     onDone: (actionId: string | null) => void;
     duration?: number;
+    /** Lets `dismissToast(id)` close it (e.g. main withdrew the question). */
+    id?: string;
   },
 ): void {
-  const id = `actions-${nextActionToast++}`;
+  const id = opts.id ?? `actions-${nextActionToast++}`;
   let done = false;
   const finish = (actionId: string | null) => {
     if (done) return;
@@ -90,4 +92,9 @@ export function notifyWithActions(
     onDismiss: () => finish(null),
     onAutoClose: () => finish(null),
   });
+}
+
+/** Closes a toast by id (a toast with buttons then reports null to its `onDone`). */
+export function dismissToast(id: string): void {
+  toast.dismiss(id);
 }

@@ -431,11 +431,19 @@ function bootstrap(): void {
     },
   );
   // Toasts with buttons (plugins' `showNotification` actions); settled before the plugin's call times out.
-  const notificationActions = new RendererRequests<NotificationPayload & { requestId: string }, string>((request) => {
-    if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
-    sendEvent(mainWindow.webContents, 'notifications:show', request);
-    return true;
-  }, 45_000);
+  const notificationActions = new RendererRequests<NotificationPayload & { requestId: string }, string>(
+    (request) => {
+      if (!mainWindow || mainWindow.isDestroyed() || !ptyPortLink?.loaded) return false;
+      sendEvent(mainWindow.webContents, 'notifications:show', request);
+      return true;
+    },
+    45_000,
+    // Withdrawn or timed out: the toast closes, so no button is left that does nothing.
+    (requestId) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        sendEvent(mainWindow.webContents, 'notifications:dismiss', { requestId });
+    },
+  );
 
   const pluginDeps: Omit<PluginHostServiceDeps, 'host' | 'plugins' | 'logger'> = {
     env: {
@@ -484,7 +492,7 @@ function bootstrap(): void {
       openExternal: (url) => shell.openExternal(url),
       openInEditor: (req) => editor.open(req),
       quickPick: (items, options) => quickPicks.show(items, options),
-      notifyWithActions: (payload) => notificationActions.ask(payload),
+      notifyWithActions: (payload, signal) => notificationActions.ask(payload, signal),
       toRenderer: (event, payload) => {
         const wc = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null;
         if (!wc) return;

@@ -213,6 +213,34 @@ describe('PluginHostService', () => {
     expect(s.notifyWithActions).toHaveBeenCalledTimes(1);
   });
 
+  it('withdraws a notification the plugin no longer needs', async () => {
+    const s = setup();
+    const signals: (AbortSignal | undefined)[] = [];
+    let answer: (a: string | null) => void = () => undefined;
+    s.notifyWithActions.mockImplementation(((_payload: unknown, signal?: AbortSignal) => {
+      signals.push(signal);
+      return new Promise<string | null>((resolve) => {
+        answer = resolve;
+        signal?.addEventListener('abort', () => resolve(null));
+      });
+    }) as never);
+    const actions = [{ id: 'yes', title: 'Yes' }];
+    const shown = s.api('b.two', 'ui.showNotification', { message: 'Ask', actions, token: 'tok-1' });
+    expect(signals[0]?.aborted).toBe(false);
+    // Another plugin cannot withdraw it.
+    await s.api('a.one', 'ui.dismissNotification', { token: 'tok-1' });
+    expect(signals[0]?.aborted).toBe(false);
+    await s.api('b.two', 'ui.dismissNotification', { token: 'tok-1' });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(await shown).toBe(null);
+    // Without a token it cannot be withdrawn; an invalid token is rejected.
+    const plain = s.api('b.two', 'ui.showNotification', { message: 'Ask', actions });
+    expect(signals[1]).toBeUndefined();
+    answer('yes');
+    expect(await plain).toBe('yes');
+    await expect(s.api('b.two', 'ui.dismissNotification', { token: '' })).rejects.toMatchObject({ code: 'INVALID' });
+  });
+
   it('attributes a hang to the busy plugin and excludes it after two incidents', async () => {
     const s = setup();
     await s.service.reload();

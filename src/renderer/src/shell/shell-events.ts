@@ -1,5 +1,5 @@
 import { MENU_COMMANDS } from '@shared/domain/app-menu';
-import { showNotification } from '../features/attention/attention';
+import { dismissNotification, showNotification } from '../features/attention/attention';
 import { revealTerminal } from '../features/attention/reveal';
 import { openEditorInTerminal } from '../features/layout/editor-terminal';
 import { closePluginTerminalPanel, openPluginTerminal, runCoreCommand } from '../features/layout/core-commands';
@@ -17,6 +17,7 @@ const menuCommands = new Set<string>(MENU_COMMANDS);
 export function subscribeShellEvents(): () => void {
   const listeners = [
     ipc.on('notifications:show', showNotification),
+    ipc.on('notifications:dismiss', ({ requestId }) => dismissNotification(requestId)),
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId)),
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req)),
     ipc.on('terminals:openPanel', (req) => void openPluginTerminal(req)),

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   AgentSnapshot,
   CommandsApi,
@@ -356,9 +357,19 @@ export function createApi(deps: ApiDeps): OxytocinApi {
         deps.track(toDisposable(() => item.dispose()));
         return item;
       },
-      showNotification: async (o) => {
+      showNotification: async ({ signal, ...o }) => {
         if (o.os) require('notifications.os');
-        return (await call<string | null>('ui.showNotification', o)) ?? undefined;
+        if (signal?.aborted) return undefined;
+        if (!signal || !o.actions?.length) return (await call<string | null>('ui.showNotification', o)) ?? undefined;
+        // The signal stays here; main gets a token to withdraw the notification with.
+        const token = randomUUID();
+        const withdraw = () => void call('ui.dismissNotification', { token }).catch(() => undefined);
+        signal.addEventListener('abort', withdraw, { once: true });
+        try {
+          return (await call<string | null>('ui.showNotification', { ...o, token })) ?? undefined;
+        } finally {
+          signal.removeEventListener('abort', withdraw);
+        }
       },
       openExternal: async (url) => {
         await call('ui.openExternal', { url });
