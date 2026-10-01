@@ -657,7 +657,7 @@ function bootstrap(): void {
     projects: resourceProjects,
     terminalProject: (id) => terminals.get(id)?.projectId,
     runProfileUrl: async (projectId, profileId) => {
-      const url = await pluginHost.executeCommand('projectRunner.resolveUrl', [{ projectId, profileId }]);
+      const url = await pluginHost.executeCommand('oxytocin.project-runner.resolveUrl', [{ projectId, profileId }]);
       return typeof url === 'string' && url ? url : null;
     },
     confirm: async ({ title, description, details, code, confirmLabel, cancelLabel, tone, signal }) => {

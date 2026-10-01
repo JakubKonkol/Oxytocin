@@ -1,10 +1,10 @@
 import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
 import { defaultUiState } from '../../src/shared/domain/ui-state';
 import { launchApp } from './helpers/launch';
-import { oxyTest, waitForTerminal } from './helpers/terminal';
+import { activeProjectId, oxyTest, waitForTerminal } from './helpers/terminal';
 
 const MCP_PORT = 47392;
 const LEGACY_PORT = 47393;
@@ -226,6 +226,22 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
     expect(started).toMatch(/"url": "http:\/\/localhost:\d+\/"/);
     const url = /"url": "(http:\/\/localhost:\d+\/)"/.exec(started)![1]!;
     expect(await (await fetch(url)).text()).toBe('hello from demo');
+    // A project API whose base URL is this run profile's URL reaches the running app.
+    await win.evaluate(
+      (id) =>
+        window.oxy.invoke('resources:save', {
+          projectId: id,
+          resources: { apis: [{ id: 'web', name: 'web', baseUrl: { runProfileId: 'node:' } }] },
+        }),
+      await activeProjectId(win),
+    );
+    const viaApi = toolText(
+      await mcp(hub, 'tools/call', {
+        name: 'oxy_api_request',
+        arguments: { project: basename(project), api: 'web', method: 'GET', path: '/' },
+      }),
+    );
+    expect(viaApi).toContain('hello from demo');
     await expect(row).toHaveAttribute('data-status', 'running');
     await expect(row.getByTestId('runner-agent-badge')).toBeVisible();
     // Without `cwd`: the active project.
