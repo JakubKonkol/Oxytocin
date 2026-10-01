@@ -310,6 +310,29 @@ export class TerminalSession {
     }
   }
 
+  /**
+   * Types a message into the program (Ensemble): with bracketed paste when the program turned it on (the text
+   * arrives as one paste, newlines included), otherwise as one line. With `submit`, Enter follows after a short
+   * pause (TUIs such as Claude Code treat an Enter inside the paste burst as a newline). Control characters are
+   * removed so a message can never act as keys.
+   */
+  paste(text: string, submit: boolean, submitDelayMs = 150): Promise<{ bracketed: boolean }> {
+    return new Promise((resolve) => {
+      this.mirror.whenParsed(() => {
+        if (!this._alive) return resolve({ bracketed: false });
+        const bracketed = this.mirror.bracketedPaste;
+        // eslint-disable-next-line no-control-regex
+        const clean = text.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+        this.pty.write(bracketed ? `\x1b[200~${clean}\x1b[201~` : clean.replace(/\n+/g, ' '));
+        if (!submit) return resolve({ bracketed });
+        setTimeout(() => {
+          this.write('\r');
+          resolve({ bracketed });
+        }, submitDelayMs);
+      });
+    });
+  }
+
   get lastOutput(): number {
     return this.lastOutputAt;
   }

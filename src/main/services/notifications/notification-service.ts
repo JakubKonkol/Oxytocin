@@ -25,6 +25,8 @@ export interface NotificationServiceDeps {
   /** OS notification; `onClick` reveals the terminal. */
   osNotify: (n: { title: string; body: string; onClick: () => void }) => void;
   reveal: (target: NotificationTarget) => void;
+  /** Terminals that report elsewhere (Ensemble agents and commands): no toasts for them. */
+  muted?: (terminalId: string) => boolean;
   now?: () => number;
 }
 
@@ -69,6 +71,7 @@ export class NotificationService implements Disposable {
     if (agentState === 'working') next.workingSince = prev?.agentState === 'working' ? prev.workingSince : this.now();
     this.last.set(info.id, next);
     if (!prev) return;
+    if (this.deps.muted?.(info.id)) return;
 
     const s = this.deps.settings();
     const target = { projectId: info.projectId, terminalId: info.id };

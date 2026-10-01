@@ -3,6 +3,15 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Ensemble (in progress): tasks run by a team of AI agents.** The conductor, the agent adapters (Claude Code,
+  Codex CLI, Gemini CLI, OpenCode, a custom command), git worktrees per task and the `oxy_ensemble_*` tools on a
+  separate endpoint of Oxytocin's MCP server (`/mcp/ensemble`, only Ensemble's agents connect to it; the tools other
+  agents see are unchanged). Settings `ensemble.worktreeRoot` and `ensemble.commands`.
+
 ## [0.7.1] - 2026-10-01
 
 ### Added

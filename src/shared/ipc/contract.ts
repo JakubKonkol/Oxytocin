@@ -31,7 +31,39 @@ import {
   SecretKeySchema,
   SecretsStatusSchema,
 } from '../domain/project-resources';
+import {
+  EnsembleChangeSchema,
+  EnsembleChecksSchema,
+  EnsembleCliSchema,
+  EnsembleRecordSchema,
+  FinishActionSchema,
+} from '../domain/ensemble';
 import type { InvokeChannel } from './channels';
+
+/** What the Ensemble panel may ask the conductor to do (the rest comes from agents or effects). */
+export const EnsembleUserEventSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('start') }),
+  z.object({ type: z.literal('pause') }),
+  z.object({ type: z.literal('resume') }),
+  z.object({ type: z.literal('stop') }),
+  z.object({ type: z.literal('resume-interrupted') }),
+  z.object({
+    type: z.literal('gate'),
+    stageId: z.string().max(64),
+    decision: z.enum(['approve', 'reject', 'stop']),
+    comment: z.string().max(20_000).optional(),
+    editedBody: z.string().max(200_000).optional(),
+  }),
+  z.object({ type: z.literal('resolve-need'), needId: z.string().max(64), action: z.string().max(40) }),
+  z.object({ type: z.literal('message'), to: z.string().max(64), text: z.string().min(1).max(8000) }),
+  z.object({ type: z.literal('note'), by: z.literal('user'), text: z.string().min(1).max(4000) }),
+  z.object({ type: z.literal('mark-done'), agentId: z.string().max(64), summary: z.string().max(4000) }),
+  z.object({ type: z.literal('take-over'), agentId: z.string().max(64) }),
+  z.object({ type: z.literal('hand-back'), agentId: z.string().max(64) }),
+  z.object({ type: z.literal('restart-agent'), agentId: z.string().max(64) }),
+  z.object({ type: z.literal('advisor-enabled'), enabled: z.boolean() }),
+]);
+export type EnsembleUserEvent = z.infer<typeof EnsembleUserEventSchema>;
 
 interface InvokeSpec {
   req: z.ZodType;
@@ -239,6 +271,68 @@ export const invokeContract = {
   'secrets:delete': {
     req: z.object({ projectId: ProjectIdSchema, resourceId: z.string().min(1).max(64), key: SecretKeySchema }),
     res: SecretsStatusSchema,
+  },
+  /** Ensemble (Plan 03): the tasks of a project (latest events only). */
+  'ensemble:list': { req: z.object({ projectId: ProjectIdSchema.optional() }), res: z.array(EnsembleRecordSchema) },
+  /** A new draft from a template. */
+  'ensemble:create': {
+    req: z.object({
+      projectId: ProjectIdSchema,
+      templateId: z.string().max(64),
+      title: z.string().max(120).optional(),
+      description: z.string().max(50_000).optional(),
+    }),
+    res: EnsembleRecordSchema,
+  },
+  /** Saves the builder's task (validated in main; a running task only takes a new title). */
+  'ensemble:save': { req: z.object({ task: z.unknown() }), res: EnsembleRecordSchema },
+  'ensemble:delete': { req: z.object({ taskId: z.string().max(64) }), res: z.void() },
+  'ensemble:duplicate': { req: z.object({ taskId: z.string().max(64) }), res: EnsembleRecordSchema },
+  /** Start, pause, a gate decision, an answer to an item of the inbox… */
+  'ensemble:command': {
+    req: z.object({ taskId: z.string().max(64), event: EnsembleUserEventSchema }),
+    res: z.object({ error: z.string().optional() }),
+  },
+  /** The user answers an agent's question. */
+  'ensemble:answer': {
+    req: z.object({ taskId: z.string().max(64), questionId: z.string().max(64), answer: z.string().min(1).max(8000) }),
+    res: z.object({ error: z.string().optional() }),
+  },
+  /** Builder checks: CLIs installed, MCP server, Claude Code Bridge, git repository. */
+  'ensemble:checks': {
+    req: z.object({ projectId: ProjectIdSchema, clis: z.array(EnsembleCliSchema).max(12) }),
+    res: EnsembleChecksSchema,
+  },
+  /** Files changed in the task's worktree: whole task (base → now) or between two checkpoints. */
+  'ensemble:changes': {
+    req: z.object({
+      taskId: z.string().max(64),
+      from: z.string().max(80).optional(),
+      to: z.string().max(80).optional(),
+    }),
+    res: z.array(EnsembleChangeSchema),
+  },
+  'ensemble:fileDiff': {
+    req: z.object({
+      taskId: z.string().max(64),
+      path: z.string().min(1).max(4096),
+      oldPath: z.string().max(4096).optional(),
+      from: z.string().max(80).optional(),
+      to: z.string().max(80).optional(),
+    }),
+    res: z.object({ original: z.string().nullable(), modified: z.string().nullable() }),
+  },
+  /** Merge, squash, keep or discard the task's branch. */
+  'ensemble:finish': {
+    req: z.object({ taskId: z.string().max(64), action: FinishActionSchema }),
+    res: z.object({ detail: z.string() }),
+  },
+  /** A Markdown report of the run (a PR description). */
+  'ensemble:report': { req: z.object({ taskId: z.string().max(64) }), res: z.object({ text: z.string() }) },
+  /** Opens the task's working folder in the editor or the file manager. */
+  'ensemble:openFolder': {
+    req: z.object({ taskId: z.string().max(64), target: z.enum(['editor', 'files']) }),
+    res: z.void(),
   },
 } as const satisfies Record<InvokeChannel, InvokeSpec>;
 

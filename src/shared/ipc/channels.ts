@@ -88,6 +88,19 @@ export const INVOKE_CHANNELS = [
   'secrets:status',
   'secrets:set',
   'secrets:delete',
+  'ensemble:list',
+  'ensemble:create',
+  'ensemble:save',
+  'ensemble:delete',
+  'ensemble:duplicate',
+  'ensemble:command',
+  'ensemble:answer',
+  'ensemble:checks',
+  'ensemble:changes',
+  'ensemble:fileDiff',
+  'ensemble:finish',
+  'ensemble:report',
+  'ensemble:openFolder',
 ] as const;
 
 export const EVENT_CHANNELS = [
@@ -124,6 +137,9 @@ export const EVENT_CHANNELS = [
   'resources:changed',
   'app:menuCommand',
   'notifications:dismiss',
+  'ensemble:changed',
+  'ensemble:removed',
+  'ensemble:open',
 ] as const;
 
 export type InvokeChannel = (typeof INVOKE_CHANNELS)[number];

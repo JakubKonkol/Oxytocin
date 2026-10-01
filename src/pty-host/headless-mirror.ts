@@ -125,6 +125,11 @@ export class HeadlessMirror implements Disposable {
     return this.term.rows;
   }
 
+  /** The application turned bracketed paste on (`CSI ?2004h`). */
+  get bracketedPaste(): boolean {
+    return this.term.modes.bracketedPasteMode;
+  }
+
   write(data: string, callback?: () => void): void {
     this.term.write(data, callback);
   }

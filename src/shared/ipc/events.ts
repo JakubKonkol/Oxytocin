@@ -19,6 +19,7 @@ import { QuickPickRequestSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema } from '../domain/keybindings';
 import { UpdateStateSchema } from '../domain/updates';
 import { MenuCommandSchema } from '../domain/app-menu';
+import { EnsembleRecordSchema } from '../domain/ensemble';
 import type { EventChannel } from './channels';
 
 /** In-app toast requested by main. */
@@ -110,6 +111,11 @@ export const eventContract = {
   'app:menuCommand': z.object({ command: MenuCommandSchema }),
   /** A toast with buttons was withdrawn (answered elsewhere, no longer relevant, or timed out): close it. */
   'notifications:dismiss': z.object({ requestId: z.string().min(1).max(100) }),
+  /** An Ensemble task or its run changed (latest events only). */
+  'ensemble:changed': EnsembleRecordSchema,
+  'ensemble:removed': z.object({ taskId: z.string(), projectId: ProjectIdSchema }),
+  /** Open the Ensemble panel of a project at a task (a notification was clicked). */
+  'ensemble:open': z.object({ projectId: ProjectIdSchema, taskId: z.string().optional() }),
 } as const satisfies Record<EventChannel, z.ZodType>;
 
 export type EventPayload<E extends EventChannel> = z.output<(typeof eventContract)[E]>;

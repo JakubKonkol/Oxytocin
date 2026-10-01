@@ -31,6 +31,8 @@ import {
 import { buildCoreTools, type CoreTool, type CoreToolsDeps } from './core-tools';
 import type { ResourceTool, ResourceToolNeed } from './resource-tools';
 import { type ListedTool, McpHttpServer, type ToolCall } from './http-server';
+import { ENSEMBLE_MCP_PATH } from '@shared/ensemble/clis';
+import type { McpToolDefinition } from '@shared/domain/mcp';
 import { McpToolRegistry, type PluginToolSource, type RegistryEntry } from './tool-registry';
 
 const LOG_LIMIT = 200;
@@ -44,6 +46,22 @@ export interface AskPolicyRequest {
   caller: string | undefined;
   args: Record<string, unknown>;
   signal: AbortSignal;
+}
+
+/**
+ * Ensemble's endpoint (`/mcp/ensemble`): only its agents connect, each with its role token as the bearer token; only
+ * the `oxy_ensemble_*` tools are listed there. The main endpoint and its tool list are unchanged.
+ */
+export interface EnsembleMcp {
+  /** The call log label of the agent a role token belongs to (null: not a live Ensemble agent). */
+  describe(token: string): { label: string; projectId?: string; terminalId?: string } | null;
+  tools(): McpToolDefinition[];
+  call(
+    name: string,
+    args: Record<string, unknown>,
+    o: { token: string; signal: AbortSignal; sessionId: string },
+  ): Promise<McpToolResult | string>;
+  instructions(token: string | undefined): string;
 }
 
 /** The user's answer to a tool with the `ask` policy (null: no answer in time, or the window is gone). */
@@ -437,6 +455,108 @@ export class McpHub implements Disposable {
       timeoutMs,
       signal,
     });
+  }
+
+  // ── Ensemble endpoint ──
+
+  private ensemble: EnsembleMcp | undefined;
+
+  /** Serves Ensemble's tools on `/mcp/ensemble` (Plan 03). */
+  setEnsemble(ensemble: EnsembleMcp): void {
+    this.ensemble = ensemble;
+    const listed = () => ensemble.tools();
+    this.server.addEndpoint({
+      path: ENSEMBLE_MCP_PATH,
+      authorize: (bearer) => ensemble.describe(bearer) !== null,
+      handler: {
+        info: () => ({
+          name: 'oxytocin-ensemble',
+          version: this.deps.appVersion,
+          instructions: ensemble.instructions(undefined),
+        }),
+        listTools: () =>
+          listed().map((t) => ({
+            name: t.name,
+            ...(t.title ? { title: t.title } : {}),
+            description: t.description,
+            inputSchema: t.inputSchema,
+            ...(t.annotations ? { annotations: t.annotations } : {}),
+          })),
+        hasTool: (name) => listed().some((t) => t.name === name),
+        callTool: (name, args, call) => this.callEnsemble(name, args, call),
+      },
+    });
+  }
+
+  /** The Ensemble endpoint's URL while the server runs. */
+  ensembleUrl(): string | null {
+    return this.server.port === null ? null : `http://127.0.0.1:${this.server.port}${ENSEMBLE_MCP_PATH}`;
+  }
+
+  /** Whether the server runs (Ensemble checks). */
+  serverStatus(): { enabled: boolean; running: boolean; error: string | null } {
+    return {
+      enabled: this.deps.settings()['mcp.enabled'],
+      running: this.server.port !== null,
+      error: this.server.error,
+    };
+  }
+
+  /** A role token was revoked: its open sessions end. */
+  endEnsembleSessions(token: string): void {
+    this.server.endSessionsOf(token);
+  }
+
+  private async callEnsemble(name: string, args: Record<string, unknown>, call: ToolCall): Promise<McpToolResult> {
+    const ensemble = this.ensemble;
+    const token = call.principal ?? '';
+    const who = ensemble?.describe(token) ?? null;
+    const started = Date.now();
+    const definition = ensemble?.tools().find((t) => t.name === name);
+    const finish = (outcome: McpCallOutcome, result: McpToolResult, error?: string): McpToolResult => {
+      this.record({
+        at: started,
+        tool: name,
+        source: 'Ensemble',
+        ...(who ? { caller: who.label } : {}),
+        durationMs: Date.now() - started,
+        outcome,
+        ...(error ? { error: error.slice(0, 300) } : {}),
+        ...(who?.projectId ? { projectId: who.projectId } : {}),
+      });
+      return result;
+    };
+    if (!ensemble || !who || !definition)
+      return finish('error', toolError('This terminal is not part of an Ensemble task.'), 'Not an Ensemble agent');
+    const timeoutMs = definition.timeoutMs ?? MCP_DEFAULT_TIMEOUT_MS;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    call.signal.addEventListener('abort', abort, { once: true });
+    const timer = setTimeout(abort, timeoutMs);
+    try {
+      const run = ensemble.call(name, args, { token, signal: controller.signal, sessionId: call.sessionId });
+      const aborted = new Promise<'aborted'>((resolve) => {
+        if (controller.signal.aborted) resolve('aborted');
+        else controller.signal.addEventListener('abort', () => resolve('aborted'), { once: true });
+      });
+      const result = await Promise.race([run, aborted]);
+      if (result === 'aborted') {
+        run.catch(() => undefined);
+        if (call.signal.aborted) return finish('cancelled', toolError('Cancelled.'), 'Cancelled by the agent');
+        return finish('error', toolError(`${name} did not finish in time.`), 'Timeout');
+      }
+      const normalized = normalizeToolResult(result);
+      const text = normalized.isError
+        ? normalized.content.find((c): c is { type: 'text'; text: string } => c.type === 'text')?.text
+        : undefined;
+      return finish(normalized.isError ? 'error' : 'ok', normalized, text);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      return finish('error', toolError(message), message);
+    } finally {
+      clearTimeout(timer);
+      call.signal.removeEventListener('abort', abort);
+    }
   }
 
   // ── settings UI ──

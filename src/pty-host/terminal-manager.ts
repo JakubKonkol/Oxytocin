@@ -143,6 +143,10 @@ export class TerminalManager {
     this.require(id).write(data);
   }
 
+  paste(id: string, text: string, submit: boolean): Promise<{ bracketed: boolean }> {
+    return this.require(id).paste(text, submit);
+  }
+
   resize(id: string, cols: number, rows: number): void {
     this.require(id).resize(cols, rows);
   }

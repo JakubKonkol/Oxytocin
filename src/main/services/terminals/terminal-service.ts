@@ -10,7 +10,7 @@ import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import type { UtilityHost } from '../../hosts/utility-host';
 import { composeEnv, type EnvLayer } from './env-composer';
-import type { ProfileService } from './profiles';
+import type { ProfileService, ShellType } from './profiles';
 import { injectShellIntegration, type ShellIntegrationScripts } from './shell-integration';
 
 /** Runtime classification from the AgentService; `undefined` removes a field. */
@@ -28,6 +28,29 @@ export interface ProjectContext {
 }
 
 export type RestoredBuffer = NonNullable<SpawnOptions['restore']>;
+
+/** Main-only options of `create` (Ensemble). */
+export interface CreateOptions {
+  /** The command typed into the shell, built for its type (quoting differs per shell). */
+  initialCommandFor?: (shellType: ShellType) => string;
+  /** Runs this command line as the terminal's process (the default shell's "run a command" form, no prompt). */
+  runCommand?: string;
+}
+
+/** The default shell's arguments that run one command line and exit with its exit code. */
+export function runCommandArgs(shellType: ShellType, shellArgs: readonly string[], command: string): string[] {
+  switch (shellType) {
+    case 'pwsh':
+    case 'powershell':
+      return ['-NoLogo', '-NoProfile', '-Command', command];
+    case 'cmd':
+      return ['/d', '/s', '/c', command];
+    case 'wsl':
+      return [...shellArgs, '--', 'sh', '-c', command];
+    default:
+      return ['-c', command];
+  }
+}
 
 export interface TerminalServiceDeps {
   ptyHost: Pick<UtilityHost<PtyHostMethods, PtyHostEvents>, 'call' | 'onEvent' | 'onDidBecomeReady'>;
@@ -162,11 +185,15 @@ export class TerminalService implements Disposable {
     return info;
   }
 
-  create(req: CreateTerminalRequest): Promise<TerminalInfo> {
-    return this.createWith(req);
+  create(req: CreateTerminalRequest, opts: CreateOptions = {}): Promise<TerminalInfo> {
+    return this.createWith(req, undefined, opts);
   }
 
-  private async createWith(req: CreateTerminalRequest, restoreOverride?: RestoredBuffer): Promise<TerminalInfo> {
+  private async createWith(
+    req: CreateTerminalRequest,
+    restoreOverride?: RestoredBuffer,
+    opts: CreateOptions = {},
+  ): Promise<TerminalInfo> {
     const project = this.deps.resolveProject(req.projectId);
     if (!project) throw new OxyError('NOT_FOUND', `Project ${req.projectId} not found`);
     const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
@@ -198,12 +225,16 @@ export class TerminalService implements Disposable {
         req.env ?? {},
       ],
     });
-    const initialCommand = req.initialCommand ?? (req.skipInitialCommand ? undefined : launch.initialCommand);
+    const initialCommand = opts.runCommand
+      ? undefined
+      : (opts.initialCommandFor?.(launch.shellType) ??
+        req.initialCommand ??
+        (req.skipInitialCommand ? undefined : launch.initialCommand));
     // Shell integration (04 §11): scripts injected into bash/zsh/fish/PowerShell.
-    let args = launch.args;
+    let args = opts.runCommand ? runCommandArgs(launch.shellType, launch.args, opts.runCommand) : launch.args;
     let spawnEnv = env;
     let shellIntegration = false;
-    if (settings['terminal.shellIntegration'] && this.deps.shellIntegration) {
+    if (settings['terminal.shellIntegration'] && this.deps.shellIntegration && !opts.runCommand) {
       const scripts = await this.deps.shellIntegration().catch(() => null);
       if (scripts) {
         const injection = injectShellIntegration({
@@ -246,7 +277,7 @@ export class TerminalService implements Disposable {
       cwd,
       shellType: launch.shellType,
       // A restored agent terminal (no agent command typed) starts as a plain shell.
-      kind: launch.profile.kind === 'agent' && initialCommand ? 'agent' : 'shell',
+      kind: opts.runCommand ? 'process' : launch.profile.kind === 'agent' && initialCommand ? 'agent' : 'shell',
       state: 'running',
       createdAt: Date.now(),
       envStale: false,

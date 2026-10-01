@@ -28,6 +28,8 @@ export interface ListedTool {
 
 export interface ToolCall {
   sessionId: string;
+  /** Ensemble endpoint: the bearer token the session authenticated with (an agent's role token). */
+  principal?: string;
   /** `X-Oxytocin-Terminal` header (a hint: the id of the terminal the agent runs in). */
   terminalHeader?: string;
   /** Aborted when the client cancels the call or ends its session, or the server stops. */
@@ -54,8 +56,22 @@ type JsonRpcResponse =
   | { jsonrpc: '2.0'; id: string | number | null; result: unknown }
   | { jsonrpc: '2.0'; id: string | number | null; error: { code: number; message: string } };
 
+/**
+ * A second endpoint on the same server (`/mcp/ensemble`): its own tools and its own authentication (the bearer token
+ * must be accepted by `authorize`). Its sessions never see the main tools and get no list-changed notifications.
+ */
+export interface McpEndpoint {
+  path: string;
+  authorize(bearer: string): boolean;
+  handler: McpHandler;
+}
+
 interface Session {
   id: string;
+  /** Endpoint path the session belongs to. */
+  endpoint: string;
+  /** Bearer token of an extra endpoint's session (its principal). */
+  principal?: string;
   lastSeen: number;
   stream?: ServerResponse;
   heartbeat?: ReturnType<typeof setInterval>;
@@ -105,11 +121,23 @@ export class McpHttpServer {
   /** Tool calls served. */
   calls = 0;
 
+  private readonly endpoints = new Map<string, McpEndpoint>();
+
   constructor(
     private readonly handler: McpHandler,
     private readonly token: () => string,
     private readonly options: { heartbeatMs?: number; maxSessions?: number; portSetting?: string } = {},
   ) {}
+
+  /** Adds an endpoint next to `/mcp` (Ensemble). */
+  addEndpoint(endpoint: McpEndpoint): void {
+    this.endpoints.set(endpoint.path, endpoint);
+  }
+
+  /** Ends the sessions of an extra endpoint whose principal is no longer accepted (a run ended). */
+  endSessionsOf(principal: string): void {
+    for (const s of [...this.sessions.values()]) if (s.principal === principal) this.endSession(s.id);
+  }
 
   get sessionCount(): number {
     return this.sessions.size;
@@ -165,6 +193,7 @@ export class McpHttpServer {
     const data = `event: message\ndata: ${JSON.stringify(message)}\n\n`;
     let sent = 0;
     for (const session of this.sessions.values()) {
+      if (session.endpoint !== MCP_PATH) continue;
       if (!session.stream || session.stream.writableEnded) continue;
       session.stream.write(data);
       sent++;
@@ -198,7 +227,7 @@ export class McpHttpServer {
     this.sessionsEmitter.fire(this.sessions.size);
   }
 
-  private createSession(): Session {
+  private createSession(endpoint: string, principal?: string): Session {
     const max = this.options.maxSessions ?? MAX_SESSIONS;
     if (this.sessions.size >= max) {
       // Clients that went away without DELETE leave sessions behind: the least recently used one goes.
@@ -207,6 +236,8 @@ export class McpHttpServer {
     }
     const session: Session = {
       id: randomBytes(16).toString('base64url'),
+      endpoint,
+      ...(principal !== undefined ? { principal } : {}),
       lastSeen: Date.now(),
       inflight: new Map(),
     };
@@ -216,14 +247,15 @@ export class McpHttpServer {
   }
 
   /** The request's session: 400 without an id, 404 for an unknown or ended one (the client then initializes again). */
-  private sessionOf(req: IncomingMessage, res: ServerResponse): Session | null {
+  private sessionOf(req: IncomingMessage, res: ServerResponse, endpoint: string, principal?: string): Session | null {
     const id = req.headers['mcp-session-id'];
     if (typeof id !== 'string' || !id) {
       this.send(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Missing Mcp-Session-Id' } });
       return null;
     }
     const session = this.sessions.get(id);
-    if (!session) {
+    // A session belongs to one endpoint and one principal.
+    if (!session || session.endpoint !== endpoint || session.principal !== principal) {
       this.send(res, 404, { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Session not found' } });
       return null;
     }
@@ -232,11 +264,20 @@ export class McpHttpServer {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const path = (req.url ?? '').split('?')[0];
-    if (path !== MCP_PATH) return this.send(res, 404);
+    const path = (req.url ?? '').split('?')[0] ?? '';
+    const extra = this.endpoints.get(path);
+    if (path !== MCP_PATH && !extra) return this.send(res, 404);
     if (!isAllowedOrigin(req.headers.origin) || !isAllowedHost(req.headers.host)) return this.send(res, 403);
-    if (!sameSecret(String(req.headers['authorization'] ?? ''), `Bearer ${this.token()}`))
+    const authorization = String(req.headers['authorization'] ?? '');
+    let principal: string | undefined;
+    if (extra) {
+      const bearer = /^Bearer (.+)$/.exec(authorization)?.[1]?.trim() ?? '';
+      if (!bearer || !extra.authorize(bearer))
+        return this.send(res, 401, { error: 'unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
+      principal = bearer;
+    } else if (!sameSecret(authorization, `Bearer ${this.token()}`))
       return this.send(res, 401, { error: 'unauthorized' }, { 'WWW-Authenticate': 'Bearer' });
+    const endpoint = extra ? path : MCP_PATH;
     const version = req.headers['mcp-protocol-version'];
     if (typeof version === 'string' && !PROTOCOL_VERSIONS.includes(version))
       return this.send(res, 400, {
@@ -246,11 +287,11 @@ export class McpHttpServer {
       });
     switch (req.method) {
       case 'POST':
-        return this.handlePost(req, res);
+        return this.handlePost(req, res, endpoint, principal);
       case 'GET':
-        return this.openStream(req, res);
+        return this.openStream(req, res, endpoint, principal);
       case 'DELETE': {
-        const session = this.sessionOf(req, res);
+        const session = this.sessionOf(req, res, endpoint, principal);
         if (!session) return;
         this.endSession(session.id);
         return this.send(res, 204);
@@ -260,10 +301,10 @@ export class McpHttpServer {
     }
   }
 
-  private openStream(req: IncomingMessage, res: ServerResponse): void {
+  private openStream(req: IncomingMessage, res: ServerResponse, endpoint: string, principal?: string): void {
     if (!String(req.headers.accept ?? '').includes('text/event-stream'))
       return this.send(res, 406, undefined, { Allow: 'GET, POST, DELETE' });
-    const session = this.sessionOf(req, res);
+    const session = this.sessionOf(req, res, endpoint, principal);
     if (!session) return;
     // One stream per session: a new GET replaces the old one.
     if (session.heartbeat) clearInterval(session.heartbeat);
@@ -291,7 +332,12 @@ export class McpHttpServer {
     });
   }
 
-  private async handlePost(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async handlePost(
+    req: IncomingMessage,
+    res: ServerResponse,
+    endpoint: string,
+    principal?: string,
+  ): Promise<void> {
     const chunks: Buffer[] = [];
     let size = 0;
     let body: unknown;
@@ -309,9 +355,9 @@ export class McpHttpServer {
     const messages = (batch ? body : [body]) as JsonRpcMessage[];
     const initializing = messages.some((m) => m && typeof m === 'object' && m.method === 'initialize');
     let session: Session | null;
-    if (initializing) session = this.createSession();
+    if (initializing) session = this.createSession(endpoint, principal);
     else {
-      session = this.sessionOf(req, res);
+      session = this.sessionOf(req, res, endpoint, principal);
       if (!session) return;
     }
     const terminal = req.headers['x-oxytocin-terminal'];
@@ -339,15 +385,16 @@ export class McpHttpServer {
       return null;
     }
     const id = m.id;
+    const handler = (session.endpoint !== MCP_PATH && this.endpoints.get(session.endpoint)?.handler) || this.handler;
     const ok = (result: unknown): JsonRpcResponse => ({ jsonrpc: '2.0', id, result });
     const fail = (code: number, message: string): JsonRpcResponse => ({ jsonrpc: '2.0', id, error: { code, message } });
     switch (m.method) {
       case 'initialize': {
         const requested = str(m.params?.['protocolVersion']);
-        const info = this.handler.info(terminalHeader || undefined);
+        const info = handler.info(terminalHeader || undefined);
         return ok({
           protocolVersion: PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0],
-          capabilities: { tools: { listChanged: true } },
+          capabilities: { tools: { listChanged: handler === this.handler } },
           serverInfo: { name: info.name, version: info.version },
           ...(info.instructions ? { instructions: info.instructions } : {}),
         });
@@ -355,21 +402,22 @@ export class McpHttpServer {
       case 'ping':
         return ok({});
       case 'tools/list':
-        return ok({ tools: this.handler.listTools() });
+        return ok({ tools: handler.listTools() });
       case 'tools/call': {
         const name = str(m.params?.['name']);
-        if (!this.handler.hasTool(name)) return fail(-32602, `Unknown tool: ${name}`);
+        if (!handler.hasTool(name)) return fail(-32602, `Unknown tool: ${name}`);
         const args = m.params?.['arguments'];
         const controller = new AbortController();
         const key = requestKey(id);
         session.inflight.set(key, controller);
         this.calls++;
         try {
-          const result = await this.handler.callTool(
+          const result = await handler.callTool(
             name,
             args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : {},
             {
               sessionId: session.id,
+              ...(session.principal !== undefined ? { principal: session.principal } : {}),
               ...(terminalHeader ? { terminalHeader } : {}),
               signal: controller.signal,
             },

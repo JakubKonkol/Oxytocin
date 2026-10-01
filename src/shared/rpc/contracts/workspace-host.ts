@@ -1,4 +1,5 @@
 import type { FileDiffContent, GitInstallation, RepoInfo, RepoStatus } from '../../domain/git';
+import type { EnsembleChange, FinishAction } from '../../domain/ensemble';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
 
 export type RefreshReason = 'fs' | 'gitdir' | 'manual' | 'focus' | 'periodic' | 'initial';
@@ -25,6 +26,48 @@ export type WorkspaceHostMethods = HostBaseMethods & {
   'git:getStatus': (o: { projectId: string }) => RepoStatus | null;
   /** HEAD and working-tree content of a changed file. */
   'git:getFileDiff': (o: { projectId: string; path: string; oldPath?: string; maxBytes: number }) => FileDiffContent;
+  // Ensemble (Plan 03): worktrees, checkpoints, changes, finishing. Writes are serialized per repository.
+  'ensemble:repoInfo': (o: { gitPath: string; cwd: string }) => {
+    isRepo: boolean;
+    toplevel: string | null;
+    branch: string | null;
+    head: string | null;
+    dirty: number;
+    localFiles: string[];
+    error?: string;
+  };
+  'ensemble:addWorktree': (o: {
+    gitPath: string;
+    repoRoot: string;
+    path: string;
+    branch: string;
+    baseRef?: string;
+  }) => { branch: string; baseRef: string; baseCommit: string };
+  'ensemble:removeWorktree': (o: { gitPath: string; repoRoot: string; path: string; force: boolean }) => void;
+  'ensemble:copyFiles': (o: { from: string; to: string; files: string[] }) => string[];
+  'ensemble:commitAll': (o: { gitPath: string; cwd: string; message: string }) => {
+    commit: string | null;
+    files: number;
+  };
+  'ensemble:changes': (o: { gitPath: string; cwd: string; base: string; head?: string }) => EnsembleChange[];
+  'ensemble:fileAt': (o: {
+    gitPath: string;
+    cwd: string;
+    ref: string;
+    path: string;
+    maxBytes: number;
+  }) => string | null;
+  'ensemble:finish': (o: {
+    gitPath: string;
+    action: FinishAction;
+    repoRoot: string;
+    worktreePath: string;
+    branch: string;
+    baseRef: string;
+    message: string;
+    removeWorktree: boolean;
+  }) => { detail: string };
+  'ensemble:resetTo': (o: { gitPath: string; cwd: string; commit: string }) => void;
 };
 
 export type WorkspaceHostEvents = HostBaseEvents & {

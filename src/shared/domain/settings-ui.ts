@@ -44,6 +44,7 @@ const SECTION_NAMES: Record<string, string> = {
   notifications: 'Notifications',
   plugins: 'Plugins',
   mcp: 'Agent Tools',
+  ensemble: 'Ensemble',
   updates: 'Updates',
   diagnostics: 'Diagnostics',
 };

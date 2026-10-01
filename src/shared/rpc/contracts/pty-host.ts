@@ -10,6 +10,8 @@ export interface PtyTerminalListEntry {
 export type PtyHostMethods = HostBaseMethods & {
   spawn: (o: SpawnOptions) => { pid: number };
   write: (o: { id: TerminalId; data: string }) => void;
+  /** Types a message into the program: bracketed paste when it turned that on, then Enter with `submit`. */
+  paste: (o: { id: TerminalId; text: string; submit?: boolean }) => { bracketed: boolean };
   resize: (o: { id: TerminalId; cols: number; rows: number }) => void;
   /** force → kill the whole process tree immediately; otherwise a graceful kill with a 3 s tree-kill fallback. */
   kill: (o: { id: TerminalId; force?: boolean }) => void;

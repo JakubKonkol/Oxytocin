@@ -4,6 +4,7 @@ import type { WorkspaceHostEvents, WorkspaceHostMethods } from '@shared/rpc/cont
 import type { Logger } from '@shared/logging/logger';
 import { isGitVersionSupported, parseGitVersion, runGit } from './git/exec';
 import { RepoRegistry } from './git/repo-registry';
+import * as ensembleGit from './git/ensemble-git';
 
 // Utility process entry: the Workspace Host (git status, file watchers).
 const parentPort = process.parentPort;
@@ -46,6 +47,15 @@ const impl: Impl<Omit<WorkspaceHostMethods, 'ping' | 'shutdown'>> = {
   'git:refresh': ({ projectId, reason }) => registry.request(projectId, reason),
   'git:getStatus': ({ projectId }) => registry.get(projectId)?.status ?? null,
   'git:getFileDiff': (req) => registry.fileDiff(req),
+  'ensemble:repoInfo': ({ gitPath, cwd }) => ensembleGit.repoInfo(gitPath, cwd),
+  'ensemble:addWorktree': (o) => ensembleGit.addWorktree(o),
+  'ensemble:removeWorktree': (o) => ensembleGit.removeWorktree(o),
+  'ensemble:copyFiles': (o) => ensembleGit.copyLocalFiles(o),
+  'ensemble:commitAll': (o) => ensembleGit.commitAll(o),
+  'ensemble:changes': (o) => ensembleGit.changes(o),
+  'ensemble:fileAt': (o) => ensembleGit.fileAt(o),
+  'ensemble:finish': (o) => ensembleGit.finish(o),
+  'ensemble:resetTo': (o) => ensembleGit.resetTo(o),
 };
 
 const { rpc, log } = startHostRuntime<WorkspaceHostEvents>({

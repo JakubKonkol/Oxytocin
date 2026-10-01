@@ -295,6 +295,16 @@ export const CORE_SETTINGS = {
     {},
     'Per tool: runs without asking, asks you first, or is blocked (managed in Agent tools).',
   ),
+  'ensemble.worktreeRoot': def(
+    z.string().nullable(),
+    null,
+    'Folder for the git worktrees of Ensemble tasks (one per task). Empty = next to the repository, in "<repository>.worktrees".',
+  ),
+  'ensemble.commands': def(
+    z.partialRecord(z.enum(['claude-code', 'codex', 'gemini-cli', 'opencode']), z.string().max(2000)),
+    {},
+    'The command Ensemble starts per CLI when it is not the default ("claude", "codex", "gemini", "opencode"), e.g. a full path.',
+  ),
   'updates.checkAutomatically': def(
     z.boolean(),
     true,

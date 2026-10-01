@@ -81,6 +81,9 @@ import type { McpToolResult } from '@shared/domain/mcp';
 import { SecretStore } from './services/secrets/secret-store';
 import { ResourceService } from './services/resources/resource-service';
 import { ResourcesController } from './services/resources/resources-controller';
+import { EnsembleService } from './services/ensemble/ensemble-service';
+import { detectCommand } from './services/ensemble/cli-detect';
+import type { EnsembleRecord } from '@shared/domain/ensemble';
 
 const e2e = process.env['OXYTOCIN_E2E'] === '1';
 
@@ -772,6 +775,56 @@ function bootstrap(): void {
     },
   });
   void Promise.all([pluginsReady, resourcesReady]).then(() => mcpHub.start());
+
+  // Ensemble (Plan 03): tasks run by a team of AI agents in background terminals, through `/mcp/ensemble`.
+  let ensembleNotify:
+    | ((o: {
+        title: string;
+        body: string;
+        level: 'info' | 'warning' | 'error';
+        projectId: string;
+        taskId: string;
+      }) => void)
+    | null = null;
+  const ensemble = new EnsembleService({
+    dir: join(app.getPath('userData'), 'ensemble'),
+    logger: createLogger('ensemble'),
+    settings: () => settings.get(),
+    projects: {
+      get: (id) => {
+        const p = projects.get(id);
+        return p ? { id: p.id, name: p.name, rootPath: p.rootPath } : undefined;
+      },
+    },
+    terminals,
+    agents,
+    pty: {
+      paste: (id, text, submit) => hosts.pty.call('paste', { id, text, submit }),
+      write: (id, data) => hosts.pty.call('write', { id, data }),
+      text: (id) => hosts.pty.call('getText', { id }),
+      onActivity: (listener) => hosts.pty.onEvent('terminal:activity', listener),
+    },
+    workspace: (method, params, opts) => hosts.workspace.call(method, params as never, opts) as never,
+    mcp: {
+      url: () => mcpHub.ensembleUrl(),
+      status: () => mcpHub.serverStatus(),
+      endSessions: (token) => mcpHub.endEnsembleSessions(token),
+    },
+    detect: (command) => detectCommand(command, () => shellEnv),
+    bridgeEnabled: () => {
+      const p = plugins.get('oxytocin.claude-code-bridge');
+      return p?.state === 'enabled' || p?.state === 'active';
+    },
+    notify: (o) => ensembleNotify?.(o),
+    platform: process.platform,
+  });
+  mcpHub.setEnsemble({
+    describe: (token) => ensemble.describe(token),
+    tools: () => ensemble.tools(),
+    call: (name, args, o) => ensemble.callTool(name, args, o),
+    instructions: () => ensemble.instructions(),
+  });
+  void projectsReady.then(() => ensemble.ready);
   // The resource tools are listed once the resources are loaded (and whenever projects come and go).
   void resourcesReady.then(() => resources.touch());
   projects.onDidChange(() => resources.touch());
@@ -1018,6 +1071,33 @@ function bootstrap(): void {
         await secretStore.set(projectId, resourceId, key, value);
         return secretStore.status(projectId);
       },
+      'ensemble:list': async ({ projectId }) => {
+        await ensemble.ready;
+        return ensemble.list(projectId);
+      },
+      'ensemble:create': (req) => ensemble.create(req),
+      'ensemble:save': async ({ task }) => {
+        await ensemble.ready;
+        return ensemble.save(task);
+      },
+      'ensemble:delete': ({ taskId }) => ensemble.remove(taskId),
+      'ensemble:duplicate': ({ taskId }) => ensemble.duplicate(taskId),
+      'ensemble:command': ({ taskId, event }) => ensemble.command(taskId, event),
+      'ensemble:answer': ({ taskId, questionId, answer }) => ensemble.answer(taskId, questionId, answer),
+      'ensemble:checks': ({ projectId, clis }) => ensemble.checks(projectId, clis),
+      'ensemble:changes': ({ taskId, from, to }) => ensemble.changes(taskId, from, to),
+      'ensemble:fileDiff': ({ taskId, path, oldPath, from, to }) =>
+        ensemble.fileDiff(taskId, path, { oldPath, from, to }),
+      'ensemble:finish': ({ taskId, action }) => ensemble.finish(taskId, action),
+      'ensemble:report': ({ taskId }) => ({ text: ensemble.report(taskId) }),
+      'ensemble:openFolder': async ({ taskId, target }) => {
+        const record = ensemble.get(taskId);
+        const folder =
+          record?.run.worktree?.path ?? (record ? projects.get(record.task.projectId)?.rootPath : undefined);
+        if (!folder) throw new OxyError('NOT_FOUND', 'The task has no working folder yet.');
+        if (target === 'editor') await editor.open({ path: folder });
+        else if (!e2e) await shell.openPath(folder);
+      },
       'secrets:delete': async ({ projectId, resourceId, key }) => {
         await resourcesReady;
         await secretStore.delete(projectId, resourceId, key);
@@ -1095,6 +1175,8 @@ function bootstrap(): void {
   pluginHost.onDidChangeStatusBar((items) => sendEvent(win.webContents, 'plugins:statusBar', items));
   mcpHub.onDidChangeState((state) => sendEvent(win.webContents, 'mcp:state', state));
   resourcesController.onDidChange((projectId) => sendEvent(win.webContents, 'resources:changed', { projectId }));
+  ensemble.onDidChange((record: EnsembleRecord) => sendEvent(win.webContents, 'ensemble:changed', record));
+  ensemble.onDidRemove((e) => sendEvent(win.webContents, 'ensemble:removed', e));
   // The first project shown is checked once the window can show the question.
   win.webContents.once(
     'did-finish-load',
@@ -1158,7 +1240,43 @@ function bootstrap(): void {
       n.show();
     },
     reveal,
+    // Ensemble agents and commands report through the Ensemble inbox, not one toast per terminal.
+    muted: (terminalId) => ensemble.ownsTerminal(terminalId),
   });
+  ensembleNotify = ({ title, body, level, projectId, taskId }) => {
+    const open = () => {
+      if (win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      void projects
+        .setActive(projectId)
+        .catch(() => undefined)
+        .then(() => sendEvent(win.webContents, 'ensemble:open', { projectId, taskId }));
+    };
+    sendEvent(win.webContents, 'notifications:show', {
+      kind: level === 'info' ? 'success' : level,
+      message: title,
+      description: body,
+    });
+    const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyWindowFocused'] : undefined;
+    const focused = typeof scripted === 'boolean' ? scripted : win.isFocused();
+    const s = settings.get();
+    if (focused || !s['notifications.os'] || s['notifications.doNotDisturb']) return;
+    if (e2e) {
+      osNotifications.push({ title, body, click: open });
+      return;
+    }
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body, icon: appPaths.windowIcon() });
+    liveNotifications.add(n);
+    n.on('click', () => {
+      liveNotifications.delete(n);
+      open();
+    });
+    n.on('close', () => liveNotifications.delete(n));
+    n.show();
+  };
   win.on('focus', () => {
     notifications.onWindowFocus();
     git.onWindowFocus();
@@ -1370,6 +1488,7 @@ function bootstrap(): void {
         // Open SSE streams would keep the MCP server from closing.
         await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
         resourcesController.dispose();
+        await withTimeout(ensemble.flush(), 3000).catch(() => undefined);
         await Promise.all([uiState.flush(), projects.flush(), resources.flush(), secretStore.flush(), hosts.stopAll()]);
       } catch (e) {
         log.error('Error during quit', e);
@@ -1409,6 +1528,7 @@ function bootstrap(): void {
       resources,
       resourcesController,
       secretStore,
+      ensemble,
     };
   }
 }

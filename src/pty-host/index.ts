@@ -46,6 +46,7 @@ const { rpc, log } = startHostRuntime<PtyHostEvents, PtyHostInboundEvents>({
   impl: {
     spawn: (o: unknown) => manager.spawn(SpawnOptionsSchema.parse(o)),
     write: (o: { id: string; data: string }) => manager.write(o.id, o.data),
+    paste: (o: { id: string; text: string; submit?: boolean }) => manager.paste(o.id, o.text, o.submit ?? false),
     resize: (o: { id: string; cols: number; rows: number }) => manager.resize(o.id, o.cols, o.rows),
     kill: (o: { id: string; force?: boolean }) => manager.kill(o.id, o.force ?? false),
     dispose: (o: { id: string }) => manager.dispose(o.id),
