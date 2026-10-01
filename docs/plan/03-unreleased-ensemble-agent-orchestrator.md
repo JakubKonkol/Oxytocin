@@ -174,7 +174,7 @@ unreadable or lose fields — see how `src/main/services/resources/resource-serv
 
 ```ts
 const AgentKind = z.enum(['claude-code', 'codex', 'gemini-cli', 'opencode', 'custom']);
-const RolePreset = z.enum(['planner', 'implementer', 'reviewer', 'tester', 'researcher', 'docs', 'custom']);
+const RolePreset = z.enum(['planner', 'implementer', 'reviewer', 'tester', 'researcher', 'docs', 'advisor', 'custom']);
 
 const EnsembleAgent = z.object({
   id: z.string(),                                   // stable within the task: a-z0-9-
@@ -197,7 +197,7 @@ const EnsembleAgent = z.object({
   customCommand: z.string().optional(),             // cli = custom: template with {{model}} {{promptFile}} …
 });
 
-const OutputKind = z.enum(['plan', 'implementation', 'review', 'test-report', 'research', 'free']);
+const OutputKind = z.enum(['plan', 'implementation', 'review', 'test-report', 'research', 'advice', 'free']);
 const StageBase = z.object({ id: z.string(), title: z.string().max(60), instruction: z.string().max(20_000) });
 const Stage = z.discriminatedUnion('kind', [
   StageBase.extend({ kind: z.literal('agent'), agentId: z.string(), output: OutputKind }),
@@ -228,6 +228,11 @@ const EnsembleTask = z.object({
   }),
   agents: z.array(EnsembleAgent).min(1).max(12),
   pipeline: z.array(Stage).min(1).max(30),
+  advisor: z.object({                               // optional agent on call, see "Advisor"
+    agentId: z.string(),
+    moments: z.array(z.enum(['before-plan', 'repeated-error', 'before-gate', 'before-done'])).min(1),
+    maxInterventions: z.number().int().min(1).max(20).default(5),
+  }).optional(),
   limits: z.object({
     maxCostUsd: z.number().positive().optional(),
     maxDurationMin: z.number().int().positive().optional(),
@@ -534,6 +539,141 @@ close drawer, `P` pause/resume, `A` approve the open gate. Add them to the keybi
 **Empty state:** a short explanation with an illustration of a three-stage pipeline, the template cards and
 *Create your first task*.
 
+### Flow view: seeing the whole run at a glance
+
+The owner's reference for how a running task should *feel* is a terminal mockup of a Claude Code "agent tree"
+(a main session that plans and decides, an advisor on call, a decision layer, three delegated subagents, the merge
+back into the main session, a session timeline, a live log and a "who sees what" panel — all on one screen). Ensemble
+does **not** copy its console look: it is built from the normal UI kit and tokens. What it takes over is the idea —
+**one screen that shows the whole flow: who works now, what was handed to whom, where the run is in its plan, and
+what happened over time**. The Pipeline tab of a running task is this *Flow view*; the other tabs are details.
+
+```
+┌ CSV export for reports · ● Running 02:14 · $1.84 / $10 ──────────────────────────────────────────────────────────┐
+│ Team: Ada Planner·Opus xhigh  Linus/Mia/Joe Implementers·Opus medium  Grace Reviewer·Sonnet high  Fable advisor │
+│ ✓ Plan  ›  ✓ Approve  ›  ✓ Split  ›  ● Implement (3)  ›  ○ Merge  ›  ○ Review  ›  ○ Finish                      │
+├ Advisor ──────────┬ Flow ──────────────────────────────────────────────────────────────────────────────────────┤
+│ Fable · on call   │            ┌ Ada · Planner · Opus xhigh ─ plans + decides ┐                                │
+│ ◆ Before the plan │ ┄┄┄┄┄┄┄┄┄▶ │ ✓ plan approved · 3 work packages            │                                │
+│   Right approach? │            └──────────────────────┬───────────────────────┘                                │
+│   » Run the       │   ┌ Decisions ─────────────────────┴────────────────────────────────────── 14 decisions ┐  │
+│     migration     │   │ next stage      plan approved            → split into 3 packages        rule       │  │
+│     first ✓ taken │   │ command failed  npm test exit 1 (1/3)    → back to Linus                rule       │  │
+│ │ listening       │   │ agent idle      no submit after 20 s     → reminder sent                rule       │  │
+│ ◆ Error again     │   └──────────┬──────────────────────────┬──────────────────────────┬───────────────────┘  │
+│   Wrong place?    │   ┌ Linus ───┴────────┐      ┌ Mia ──────┴────────┐      ┌ Joe ─────┴─────────┐           │
+│   » Stop retrying │   │ Opus · medium     │      │ Opus · medium      │      │ Opus · medium      │           │
+│     ○ pending     │   │ ● working 01:12   │      │ ✓ submitted        │      │ ● waiting · perm.  │           │
+│                   │   │ Editing csv.ts    │      │ 3 files changed    │      │ Needs you ▸        │           │
+│ calls 2 · 64k tok │   └─────────┬─────────┘      └─────────┬──────────┘      └─────────┬──────────┘           │
+│ silent on routine │             └──────────────────────────┼───────────────────────────┘                      │
+│ turns, never      │                     ┌ Merge → Ada · review + verify ┴─ 3 diffs · no edits until you approve ┐│
+│ writes code       │                     └────────────────────────────────────────────────────────────────────┘│
+├ Timeline ─────────┴──────────────────────────────────────────────────────────────────┬ Who sees what ─────────┤
+│ advisor   ·◆·································◆···········│······························ │ conductor ██████████ │
+│ Ada       ████████·······██····██·██████·················│······························ │  every event          │
+│ conductor ·········▮▮▮▮▮·▮·▮▮▮·▮▮▮▮··························│······························ │ Ada       ███▏        │
+│ Linus     ·······························███✕✕✕███████████│                                │  plan + merged diffs  │
+│ Mia       ·······························████████████······│                                │ advisor   █▏          │
+│ Joe       ·······························██████████▒▒▒▒▒▒▒│                                │  2 moments            │
+│           Plan        Approve     Split   Implement       ▲ now    Merge   Review  Finish  │                       │
+├ Live log ────────────────────────────────────────────────────────────────────────────────┴───────────────────────┤
+│ 02:06 Linus    Edit src/export/csv.ts      02:07 advisor  "error again" → reviewed      02:08 Mia  submitted ✓  │
+└ stage Implement · agents 3/5 active · advisor on call · 14 decisions · $1.84 · 1 needs you ─────────────────────┘
+```
+
+**Parts of the Flow view** (each maps to data the conductor already has; nothing is scraped from terminal output):
+
+- **Header and team strip.** Task title, status pill, elapsed time, cost with budget meter (as in the panel header),
+  and a compact team summary: every agent as a chip with name, role color, `Model · effort`. A chip pulses while its
+  agent works.
+- **Stage stepper.** The pipeline as a one-line breadcrumb: done stages with a check, the current one highlighted,
+  later ones numbered and muted. Loops show `round 2/3`, parallel stages the number of agents. Click a stage → the
+  flow scrolls to it and the timeline highlights its time band. It is derived from `stageStates[]`, not configured
+  separately.
+- **Flow canvas (the centre).** The stages as cards connected by edges, laid out top-down: a single-agent stage is one
+  card, a `parallel` stage **fans out** into one card per agent and **fans in** again into a join node (*"Merge →
+  Ada · review + verify · 3 diffs"*), a `loop` draws its cycle between worker and checker. Each agent card: avatar,
+  role, `Model · effort`, live state dot and time in state, the last progress line (`oxy_ensemble_progress`, else the
+  Bridge's last tool activity), a progress bar when the agent reports `percent`, and its outcome (*submitted*,
+  *3 findings*, *needs you*). The edge that carries a handoff animates once while it is delivered; edges of finished
+  work stay solid, future ones dashed. Hover → terminal thumbnail, click → the peek drawer (see *Pipeline view*).
+- **Decisions lane.** Between stages, a collapsible lane lists the conductor's routing decisions, newest first: what
+  happened (*plan approved*, *npm test exit 1*, *agent idle without submit*), the inputs that decided it (verdict,
+  round, exit code, attempt), the outcome (*→ split into 3 packages*, *→ back to Linus*, *→ reminder sent*,
+  *→ needs you*) and who decided: **rule** (the deterministic conductor — the agents never see it) or **you** (a gate
+  or an answer). A counter shows the total. This makes the deterministic conductor visible and explains every
+  handoff; it is the mockup's "fork layer" without probabilities, because the conductor does not guess. Data:
+  conductor events, each effect carries a short `reason`.
+- **Advisor rail (left).** Shown when the task has an advisor (see [Advisor](#advisor-an-agent-on-call)). A vertical
+  "listening" line with a marker for every intervention: the moment (*Before the plan*, *Error again*, *Before
+  finishing*), the question it answered (*Right approach?*), its advice in one line (*» Run the migration first*), the
+  agent it went to, and whether it was taken (the target acknowledged it in its next submit) or is still pending. A
+  dashed edge goes from the marker to the stage card it influenced. Footer: number of calls, tokens and cost, and the
+  advisor's rules (*silent on routine turns, never writes code*).
+- **Timeline (swimlanes).** One lane per agent plus `conductor` and `advisor`, time on the x axis with stage bands
+  (*Plan · Approve · Split · Implement · …*) and a **now** cursor. Lanes show state segments: working (solid, role
+  color), idle (dotted), waiting / needs you (warning hatch), error (danger marks), plus point markers for handoffs,
+  advisor interventions, gate decisions and conductor decisions. Zoom with the mouse wheel, *Fit run*, follow mode.
+  Click a segment or marker → the matching event opens in the Activity tab. Data: agent state changes and run
+  `events[]` (timestamps are already recorded).
+- **Who sees what.** A small panel with one bar per participant: how much of the run each one actually saw. The
+  conductor sees every event; an agent sees what `oxy_ensemble_context` gave it (its assignments, the handoffs routed
+  to it, the notes board) plus its own work; the advisor sees the event digests of the moments it was called. Each
+  bar has a one-line caption (*plan + merged diffs*, *2 moments*) and opens the list of items. This answers *"why did
+  Grace not know about X?"* without reading prompts. Data: the context tool logs what it returned per call.
+- **Live log.** A compact, follow-mode tail of the event stream at the bottom (relative timestamps, agent name in its
+  role color, one line per event; scrolling up pauses following, *Jump to live* resumes). It is a mini Activity tab;
+  monospace is fine here.
+- **Status line.** The last row repeats the essentials for small windows: current stage, active agents `x/y`, advisor
+  state (*on call · thinking · off*), number of decisions, cost, *needs you* count (clickable → inbox).
+
+**Layout and behaviour rules**
+
+- Wide window: advisor rail · flow canvas · *who sees what* side by side, timeline and log below (as sketched).
+  Narrow window or sidebar: the stepper, the flow canvas and a *needs you* banner only; the other parts move behind a
+  *Details* toggle. The flow canvas pans and zooms when the pipeline does not fit.
+- The view stays calm on routine turns: no blinking, one animation per handoff, state changes fade in. With
+  `prefers-reduced-motion` handoffs only change edge style.
+- Everything that needs the user is visible in the flow itself (a warning ring on the card plus the banner), not only
+  in the inbox.
+- Selection is shared: selecting an agent highlights its card, its lane, its log lines and its *who sees what* bar.
+- Rendering budget: the canvas and timeline update at most a few times per second from batched `ensemble:event`s;
+  terminal thumbnails follow the wall's throttling rules.
+- After the run the Flow view stays as a replay: the now cursor becomes a scrubber over the recorded events, and the
+  canvas shows the state at that moment (from `events[]`).
+
+**Lead with helpers (the mockup's flow as a template).** The mockup's flow — *plan → split → delegate → work → merge
+→ review → ship* — needs no LLM lead: it is a template made from existing stage kinds. `agent` (the lead plans and
+splits the work into packages, `output: plan` with a `packages[]` list) → optional `gate` → `parallel` (one helper
+per package, each gets its package as the instruction) → `agent` (the **same** lead session reviews and verifies the
+merged result, so it keeps its planning context) → `gate` (*no edits until you approve*) → finish. Helpers that write
+code need separate worktrees, so the template becomes available with step 7; before that it runs with read-only
+helpers (research, review lenses).
+
+### Advisor: an agent on call
+
+An optional, task-level **advisor**: a strong model (e.g. Claude Code with Fable or Opus at high effort) that does not
+work on the task itself, but is consulted by the conductor at a few defined moments and gives short advice to the
+agent that is about to act.
+
+- Configured in the builder's **Team** section as a special card (*Add advisor*), one per task:
+  `advisor: { agentId, moments: ('before-plan' | 'repeated-error' | 'before-gate' | 'before-done')[],
+  maxInterventions: number }`. The agent behind it is a normal `EnsembleAgent` with role preset `advisor` and
+  `readOnly: true` forced (no Edit/Write; the protocol text says it never writes code).
+- **Moments:** *before-plan* (before the planner's plan is submitted — "right approach?"), *repeated-error* (the same
+  command or tool failure twice in a row — "wrong place? stop retrying?"), *before-gate* (before a gate opens — "what
+  should the user look at?"), *before-done* (before the last stage finishes — "what did we miss?"). The conductor
+  decides when a moment happens; the advisor is not called on routine turns.
+- **Input:** a digest built by the conductor (stage, the relevant handoff, the last errors, the diff stat, the notes)
+  through `oxy_ensemble_context` — the advisor does not get every terminal byte. **Output:**
+  `oxy_ensemble_submit({ kind: 'advice', summary, body?, target })`; the advice is delivered to the target agent as a
+  message marked *from the advisor* (an agent, not the user — it cannot approve anything) and shown in the advisor
+  rail. *Silent* is a valid answer (`summary: 'no concerns'`) and is shown as a small tick, not as a message.
+- The advisor's session lives for the whole run (it keeps its picture of the task) and counts against the task's cost
+  limit like any agent. `maxInterventions` (default 5) caps it; the user can switch the advisor off while the run is
+  going.
+
 ### More features worth having (prioritized into the steps below)
 
 - **Templates** — built-in, user, and shared in the repository (`.oxytocin/ensemble/*.json`).
@@ -544,6 +684,9 @@ close drawer, `P` pause/resume, `A` approve the open gate. Add them to the keybi
 - **Checkpoints and rewind** — commit per stage, diff per stage, rewind.
 - **Cross-vendor second opinion** — the *Second opinion* template: Codex or Gemini reviews Claude's work.
 - **Competing implementations** — N implementers in separate worktrees, then a judge agent or the user picks one.
+- **Advisor on call** — a read-only strong model consulted at defined moments (see
+  [Advisor](#advisor-an-agent-on-call)).
+- **Flow replay** — after a run, scrub the Flow view's timeline to see the state at any moment.
 - **Report** — Markdown summary (brief, plan, rounds, findings fixed, tests, cost, time) for a PR description.
 - **Send message** — the user writes to one agent or broadcasts to all from the panel.
 - **Task from elsewhere** — from the scratchpad selection or a terminal selection; later from GitHub issues.
@@ -586,7 +729,9 @@ entry for user-visible changes, commit on `main` (Conventional Commits, authored
    MCP header; `oxy_ensemble_context`, `oxy_ensemble_submit`, `oxy_ensemble_progress`; PTY Host `paste` RPC and
    `PromptDelivery`; the panel in the "+" menu with the task list, builder (brief, general prompt, team cards with
    model/effort/permission/read-only/role prompt, sequential stages, prompt preview, checks) and the pipeline view
-   with live states and the peek drawer; *current checkout* workspace mode only, with its warning; pause/stop/take
+   (first version of the [Flow view](#flow-view-seeing-the-whole-run-at-a-glance): header with the team strip,
+   stage stepper, flow canvas with agent cards and handoff edges, status line) with live states and the peek
+   drawer; *current checkout* workspace mode only, with its warning; pause/stop/take
    over; `interrupted` + *Resume* after a restart. E2E with a fake Claude Code that logs its argv, calls the MCP tools
    and writes registry states: create a two-agent task, start it, both stages finish in order, the second agent got
    the first one's output, argv contains `--model`/`--effort`, the fake `settings.json` is unchanged.
@@ -594,10 +739,13 @@ entry for user-visible changes, commit on `main` (Conventional Commits, authored
    copied files; checkpoints; Changes tab (whole task / per stage); finish dialog (merge / keep / squash / discard /
    copy summary). E2E against a temporary repository.
 3. **Loops, gates, commands and the inbox.** `loop`, `gate`, `command` stages; gate dialog with comments; *Needs you*
-   inbox, status bar item, attention badge, OS notifications; *Mark as done*; reminders. E2E: a review loop that
+   inbox, status bar item, attention badge, OS notifications; *Mark as done*; reminders; the Flow view's
+   **decisions lane** (every conductor effect carries a `reason`) and loop/gate drawing. E2E: a review loop that
    needs two rounds, a gate approval, a failing then passing command.
 4. **Agents talk to each other.** `oxy_ensemble_ask`, `oxy_ensemble_answer`, `oxy_ensemble_note`; *Send message*;
-   the Activity tab with the full timeline; the Markdown report. E2E: the fake reviewer asks the fake planner a
+   the Activity tab with the full timeline; the Flow view's **timeline swimlanes**, **live log** and **who sees
+   what** panel (the context tool logs what it returned); the Markdown report; the **advisor** (role preset,
+   `advice` output, the four moments, the advisor rail). E2E: the fake reviewer asks the fake planner a
    question and the answer reaches it.
 5. **Other CLIs.** Codex CLI, Gemini CLI, OpenCode and *custom command* adapters after verifying their flags,
    MCP header support and paste behaviour (verification log); the *Second opinion* template.
@@ -606,7 +754,8 @@ entry for user-visible changes, commit on `main` (Conventional Commits, authored
    Agents wall.
 7. **Templates and parallel work.** Built-in, user and repository templates (with the trust prompt), role presets;
    `parallel` stages with a worktree per writing agent and merging of their branches into the task branch; the
-   *Competing implementations* template with a judge stage.
+   *Competing implementations* template with a judge stage; the *Lead with helpers* template with fan-out/fan-in
+   drawing in the flow canvas; flow replay after a run.
 8. **Wrap up.** README section and screenshots (`npm run screenshots`), docs for the protocol text, performance check
    with 6 agents, Windows verification, and after the release that contains the feature, rename this file to
    `03-released-…` (or delete it).
@@ -618,7 +767,8 @@ entry for user-visible changes, commit on `main` (Conventional Commits, authored
   shell (quoting snapshots for PowerShell, cmd, bash, fish), the slash-command guard, schemas round-trip with unknown
   fields, role-token checks in the tools, delivery logic against a fake agent state stream (never at `waiting`,
   retry, reminder).
-- **Unit (`unit-web`):** builder validation, pipeline view states, keyboard handling.
+- **Unit (`unit-web`):** builder validation, pipeline view states, keyboard handling, Flow view derivations
+  (stepper from `stageStates[]`, fan-out/fan-in layout, timeline segments and *who sees what* bars from `events[]`).
 - **Integration:** `EnsembleService` with a fake PTY Host and a fake MCP caller; Workspace Host worktree RPCs against
   a temporary repository.
 - **E2E:** extend the fake Claude Code fixture into a scriptable fake agent: logs argv to a file, renders a prompt,
