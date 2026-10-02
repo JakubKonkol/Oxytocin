@@ -4,6 +4,8 @@ export interface ModelOption {
   id: string;
   label: string;
   hint?: string;
+  /** The picker's group: current models, aliases (always the latest of a family) and older models. */
+  group?: 'current' | 'alias' | 'older';
 }
 
 /** What the builder knows about each CLI (verified against the versions in the plan's verification log). */
@@ -31,13 +33,24 @@ export const CLI_INFO: Record<EnsembleCli, CliInfo> = {
     displayName: 'Claude Code',
     command: 'claude',
     models: [
-      { id: 'opus', label: 'Opus', hint: 'latest Opus' },
-      { id: 'sonnet', label: 'Sonnet', hint: 'latest Sonnet' },
-      { id: 'haiku', label: 'Haiku', hint: 'fast and cheap' },
-      { id: 'fable', label: 'Fable', hint: 'latest Fable' },
-      { id: 'best', label: 'Best', hint: 'the most capable model available' },
-      { id: 'opus[1m]', label: 'Opus 1M', hint: '1M context' },
-      { id: 'sonnet[1m]', label: 'Sonnet 1M', hint: '1M context' },
+      { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'planning, hard coding work', group: 'current' },
+      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'fast everyday coding', group: 'current' },
+      {
+        id: 'claude-fable-5-1',
+        label: 'Claude Fable 5.1',
+        hint: 'the most capable, the most expensive',
+        group: 'current',
+      },
+      { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', hint: 'fast and cheap', group: 'current' },
+      { id: 'opus', label: 'opus', hint: 'the latest Opus', group: 'alias' },
+      { id: 'sonnet', label: 'sonnet', hint: 'the latest Sonnet', group: 'alias' },
+      { id: 'fable', label: 'fable', hint: 'the latest Fable', group: 'alias' },
+      { id: 'haiku', label: 'haiku', hint: 'the latest Haiku', group: 'alias' },
+      { id: 'claude-opus-5', label: 'Claude Opus 5', group: 'older' },
+      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', group: 'older' },
+      { id: 'claude-fable-5', label: 'Claude Fable 5', group: 'older' },
+      { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', group: 'older' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', group: 'older' },
     ],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     permissionModes: ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'],
@@ -82,7 +95,8 @@ export const CLI_INFO: Record<EnsembleCli, CliInfo> = {
     displayName: 'OpenCode',
     command: 'opencode',
     models: [
-      { id: 'anthropic/claude-sonnet-4-5', label: 'anthropic/claude-sonnet-4-5' },
+      { id: 'anthropic/claude-opus-5-5', label: 'anthropic/claude-opus-5-5' },
+      { id: 'anthropic/claude-sonnet-5-5', label: 'anthropic/claude-sonnet-5-5' },
       { id: 'openai/gpt-5.5', label: 'openai/gpt-5.5' },
     ],
     efforts: [],

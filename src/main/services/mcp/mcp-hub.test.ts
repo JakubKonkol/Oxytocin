@@ -241,3 +241,69 @@ describe('McpHub resource tools', () => {
     expect(instructions()).toContain('call oxy_project_resources');
   });
 });
+
+describe('McpHub Ensemble endpoint', () => {
+  it("serves the resource bridge to Ensemble agents for their task's project, without cwd/project arguments", async () => {
+    const seen: unknown[] = [];
+    const apiTool: ResourceTool = {
+      needs: 'api',
+      definition: {
+        name: 'oxy_api_request',
+        description: 'Calls an API.',
+        inputSchema: { type: 'object', properties: { path: { type: 'string' }, cwd: {}, project: {} } },
+      },
+      logDetail: () => undefined,
+      run: ({ args, caller }) => {
+        seen.push({ args, context: caller.context });
+        return 'HTTP 200';
+      },
+    };
+    const sqlTool: ResourceTool = {
+      ...apiTool,
+      needs: 'sql',
+      definition: { ...apiTool.definition, name: 'oxy_db_query' },
+    };
+    const { hub } = setup({
+      resources: {
+        tools: [apiTool, sqlTool],
+        kinds: () => new Set(['api']),
+        onDidChange: () => ({ dispose: () => undefined }),
+        brief: () => '',
+      },
+    });
+    hub.setEnsemble({
+      describe: (token) =>
+        token === 'role-token' ? { label: 'Tim · Weather', projectId: 'p2', terminalId: 't-9' } : null,
+      tools: () => [{ name: 'oxy_ensemble_context', description: 'Context.', inputSchema: { type: 'object' } }],
+      call: () => Promise.resolve('ctx'),
+      instructions: () => 'Ensemble',
+    });
+    await hub.start();
+    let session: string | null = null;
+    const rpc = async (method: string, params: unknown = {}) => {
+      const res = await fetch(hub.ensembleUrl()!, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer role-token',
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          ...(session ? { 'Mcp-Session-Id': session } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      });
+      session ??= res.headers.get('mcp-session-id');
+      return ((await res.json()) as { result: Record<string, unknown> }).result;
+    };
+    await rpc('initialize', { protocolVersion: '2025-06-18' });
+    const { tools } = (await rpc('tools/list')) as { tools: { name: string; inputSchema: { properties: object } }[] };
+    expect(tools.map((t) => t.name)).toEqual(['oxy_ensemble_context', 'oxy_api_request']);
+    expect(Object.keys(tools[1]!.inputSchema.properties)).toEqual(['path']);
+    const result = (await rpc('tools/call', {
+      name: 'oxy_api_request',
+      arguments: { path: '/weather', project: 'p1' },
+    })) as McpToolResult;
+    expect(result.content).toEqual([{ type: 'text', text: 'HTTP 200' }]);
+    expect(seen).toEqual([{ args: { path: '/weather' }, context: { projectId: 'p2', terminalId: 't-9' } }]);
+    expect(hub.state().log[0]).toMatchObject({ tool: 'oxy_api_request', projectId: 'p2' });
+  });
+});

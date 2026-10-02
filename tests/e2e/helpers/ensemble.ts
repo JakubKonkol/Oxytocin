@@ -60,10 +60,14 @@ export async function readLog(
   file: string,
 ): Promise<{ agent: string; event: string; args?: string[]; text?: string; tool?: string; cwd?: string }[]> {
   const text = await readFile(file, 'utf8').catch(() => '');
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as { agent: string; event: string });
+  return (
+    text
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { agent: string; event: string; text?: string })
+      // On Windows messages are typed as one line ("↵" for line breaks): compare them as lines.
+      .map((e) => (e.text ? { ...e, text: e.text.replace(/ ?↵ ?/g, '\n') } : e))
+  );
 }
 
 export const ensembleRecords = (win: Page) =>

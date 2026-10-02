@@ -5,12 +5,13 @@ import {
   type AgentLive,
   type AgentRunState,
   type EnsembleAgent,
+  type EnsembleCli,
   ROLE_COLORS,
   type RoleColor,
   type RunStatus,
   RUN_STATUS_LABELS,
 } from '@shared/domain/ensemble';
-import { CLI_INFO } from '@shared/ensemble/clis';
+import { CLI_INFO, type ModelOption } from '@shared/ensemble/clis';
 import { formatDuration } from '@shared/ensemble/flow';
 import { cn } from '../../lib/cn';
 import { confirmDialogEx } from '../../stores/dialog-store';
@@ -178,3 +179,79 @@ export async function askText(o: {
 /** The settings input without its full width (for inputs that set their own width). */
 export const inputSized =
   'h-7 rounded-control border border-line bg-input px-2 text-ui text-fg placeholder:text-fg-muted';
+
+const CUSTOM_MODEL = '__custom__';
+const MODEL_GROUPS: { group: ModelOption['group']; label: string }[] = [
+  { group: 'current', label: 'Models' },
+  { group: 'alias', label: 'Aliases (always the latest)' },
+  { group: 'older', label: 'Older models' },
+];
+
+/**
+ * The model of an agent: every known model of its CLI (full API ids first, then aliases), the CLI's default, or any
+ * other id typed in ("Other…").
+ */
+export function ModelPicker({
+  cli,
+  value,
+  onChange,
+  testId,
+  className,
+}: {
+  cli: EnsembleCli;
+  value: string | undefined;
+  onChange: (model: string | undefined) => void;
+  testId?: string;
+  className?: string;
+}) {
+  const models = CLI_INFO[cli].models;
+  const known = !value || models.some((m) => m.id === value);
+  const [custom, setCustom] = useState(!known);
+  const showInput = custom || !known;
+  return (
+    <div className={cn('flex min-w-0 gap-1.5', className)}>
+      <select
+        data-testid={testId}
+        aria-label="Model"
+        value={showInput ? CUSTOM_MODEL : (value ?? '')}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM_MODEL) {
+            setCustom(true);
+            return;
+          }
+          setCustom(false);
+          onChange(e.target.value || undefined);
+        }}
+        className={cn(inputSized, 'min-w-0 flex-1 font-mono')}
+      >
+        <option value="">default (the CLI&apos;s own setting)</option>
+        {MODEL_GROUPS.map(({ group, label }) => {
+          const list = models.filter((m) => (m.group ?? 'current') === group);
+          if (!list.length) return null;
+          return (
+            <optgroup key={group} label={label}>
+              {list.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id}
+                  {m.hint ? ` — ${m.hint}` : ''}
+                </option>
+              ))}
+            </optgroup>
+          );
+        })}
+        <option value={CUSTOM_MODEL}>Other…</option>
+      </select>
+      {showInput && (
+        <input
+          data-testid={testId ? `${testId}-custom` : undefined}
+          aria-label="Model id"
+          value={value ?? ''}
+          autoFocus={custom && known}
+          placeholder="model id"
+          onChange={(e) => onChange(e.target.value.trim() || undefined)}
+          className={cn(inputSized, 'w-40 min-w-0 font-mono')}
+        />
+      )}
+    </div>
+  );
+}

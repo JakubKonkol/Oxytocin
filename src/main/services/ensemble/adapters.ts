@@ -58,8 +58,12 @@ function claude(agent: EnsembleAgent, ctx: LaunchContext): LaunchSpec {
   args.push('--append-system-prompt-file', ctx.promptFile);
   // A server of its own for this session: the user's MCP servers (including `oxytocin`) stay as they are.
   args.push('--mcp-config', ctx.configFile);
-  // Calls of the Ensemble tools never wait for a permission prompt.
-  args.push('--allowedTools', `mcp__${ENSEMBLE_MCP_SERVER}`);
+  // Calls of the Ensemble tools never wait for a permission prompt (an API researcher also reads web pages).
+  args.push(
+    '--allowedTools',
+    `mcp__${ENSEMBLE_MCP_SERVER}`,
+    ...(agent.role.preset === 'api-researcher' ? ['WebFetch'] : []),
+  );
   if (agent.readOnly) args.push('--disallowedTools', 'Edit,Write,NotebookEdit');
   if (agent.permissionMode !== 'default') args.push('--permission-mode', agent.permissionMode);
   args.push(...agent.extraArgs);

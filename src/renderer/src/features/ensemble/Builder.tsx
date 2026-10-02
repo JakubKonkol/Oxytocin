@@ -46,7 +46,7 @@ import { IconButton } from '../../ui/IconButton';
 import { Kbd } from '../../ui/Kbd';
 import { Check, Field, input, Segmented } from '../projects/settings/controls';
 import { saveTask, useEnsembleStore } from './ensemble-store';
-import { AgentAvatar, roleColor, inputSized } from './ui';
+import { AgentAvatar, ModelPicker, roleColor, inputSized } from './ui';
 
 const menuContent = 'z-50 min-w-56 max-w-96 rounded-control border border-line bg-elevated p-1 shadow-lg';
 const menuItem =
@@ -176,7 +176,6 @@ function AgentCard({
   const set = (patch: Partial<EnsembleAgent>) => onChange({ ...agent, ...patch });
   const isAdvisor = task.advisor?.agentId === agent.id;
   const used = usedAgentIds(task).has(agent.id);
-  const listId = `ens-models-${agent.id}`;
   return (
     <div
       data-testid="ensemble-agent-card"
@@ -205,7 +204,7 @@ function AgentCard({
             ) : used ? (
               'in the pipeline'
             ) : (
-              'not in the pipeline yet'
+              'helper: works when a teammate delegates to it'
             )}
           </div>
         </div>
@@ -275,6 +274,7 @@ function AgentCard({
             const next = CLI_INFO[cli];
             set({
               cli,
+              // Model ids are per CLI: a Claude model means nothing to Codex.
               model: next.models.some((m) => m.id === agent.model) ? agent.model : undefined,
               effort: next.efforts.includes(agent.effort ?? '') ? agent.effort : undefined,
               permissionMode: next.permissionModes.includes(agent.permissionMode) ? agent.permissionMode : 'default',
@@ -304,23 +304,13 @@ function AgentCard({
         </Field>
       )}
       {agent.cli !== 'custom' && (
-        <Field label="Model" hint={agent.model ? undefined : "Empty: the CLI's default model"}>
-          <input
-            data-testid="ensemble-agent-model"
-            list={listId}
-            value={agent.model ?? ''}
-            placeholder="default"
-            onChange={(e) => set({ model: e.target.value || undefined })}
-            className={cn(input, 'font-mono')}
+        <Field label="Model">
+          <ModelPicker
+            cli={agent.cli}
+            value={agent.model}
+            onChange={(model) => set({ model })}
+            testId="ensemble-agent-model"
           />
-          <datalist id={listId}>
-            {info.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-                {m.hint ? ` — ${m.hint}` : ''}
-              </option>
-            ))}
-          </datalist>
         </Field>
       )}
       {info.efforts.length > 0 && (

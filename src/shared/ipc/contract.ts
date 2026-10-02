@@ -38,6 +38,7 @@ import {
   EnsembleRecordSchema,
   FinishActionSchema,
 } from '../domain/ensemble';
+import { QUICK_ROLES } from '../ensemble/presets';
 import type { InvokeChannel } from './channels';
 
 /** What the Ensemble panel may ask the conductor to do (the rest comes from agents or effects). */
@@ -281,6 +282,22 @@ export const invokeContract = {
       templateId: z.string().max(64),
       title: z.string().max(120).optional(),
       description: z.string().max(50_000).optional(),
+    }),
+    res: EnsembleRecordSchema,
+  },
+  /** The quick start: one prompt and a team; the pipeline follows from the team (`quickTask`). */
+  'ensemble:createQuick': {
+    req: z.object({
+      projectId: ProjectIdSchema,
+      prompt: z.string().trim().min(1).max(50_000),
+      title: z.string().max(120).optional(),
+      team: z.object({
+        roles: z.array(z.enum(QUICK_ROLES)).max(QUICK_ROLES.length),
+        approvePlan: z.boolean(),
+        testCommand: z.string().max(500).optional(),
+      }),
+      /** Work in the project folder instead of a worktree (a folder that is not a git repository). */
+      currentCheckout: z.boolean().optional(),
     }),
     res: EnsembleRecordSchema,
   },

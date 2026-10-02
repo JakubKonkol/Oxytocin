@@ -16,6 +16,7 @@ export interface EnsembleToolHost {
   ): Promise<{ error?: string; answer?: string; questionId?: string }>;
   answer(taskId: string, agentId: string, questionId: string, answer: string): { reply?: string; error?: string };
   note(taskId: string, agentId: string, text: string): { reply?: string; error?: string };
+  delegate(taskId: string, agentId: string, to: string, work: string): { reply?: string; error?: string };
 }
 
 const ok = (text: string, structured?: Record<string, unknown>): McpToolResult => ({
@@ -101,6 +102,21 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
     timeoutMs: 600_000,
   },
   {
+    name: 'oxy_ensemble_delegate',
+    title: 'Ensemble: delegate work to a teammate',
+    description:
+      "Hands a piece of your current work to another agent of the team (by name or role), e.g. the planner asks the API researcher to map the endpoints the task needs, or a researcher to find how something works in the code. Describe exactly what you need back. Returns at once; the teammate's report is delivered to you as a message when it submits (and appears in oxy_ensemble_context). Delegate to several teammates in parallel, then wait for their reports before you submit your own result.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'A teammate: its name or role ("API researcher").' },
+        work: { type: 'string', description: 'What to do and what to report back (Markdown).' },
+      },
+      required: ['to', 'work'],
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: 'oxy_ensemble_answer',
     title: 'Ensemble: answer a question',
     description: 'Answers a question another agent asked you (its id is in the message and in oxy_ensemble_context).',
@@ -175,6 +191,13 @@ export async function runEnsembleTool(
       if (!questionId || !answer) return fail('Pass `questionId` and `answer`.');
       const r = host.answer(taskId, agentId, questionId, answer);
       return r.error ? fail(r.error) : ok(r.reply ?? 'Answered.');
+    }
+    case 'oxy_ensemble_delegate': {
+      const to = str(args['to']).trim();
+      const work = str(args['work']).trim();
+      if (!to || !work) return fail('Pass `to` and `work`.');
+      const r = host.delegate(taskId, agentId, to, work);
+      return r.error ? fail(r.error) : ok(r.reply ?? 'Delegated.');
     }
     case 'oxy_ensemble_note': {
       const text = str(args['text']).trim();

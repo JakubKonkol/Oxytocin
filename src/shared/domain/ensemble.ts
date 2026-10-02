@@ -20,6 +20,7 @@ export const RolePresetSchema = z.enum([
   'reviewer',
   'tester',
   'researcher',
+  'api-researcher',
   'docs',
   'advisor',
   'custom',
@@ -243,7 +244,9 @@ export const AssignmentSchema = z.looseObject({
   id: z.string(),
   stageId: z.string(),
   /** What the agent is asked to do. */
-  kind: z.enum(['task', 'revision', 'review', 'fix', 'advice', 'reminder']),
+  kind: z.enum(['task', 'revision', 'review', 'fix', 'advice', 'reminder', 'delegated']),
+  /** Delegated work: the agent that asked for it (its report goes back to that agent). */
+  delegatedBy: z.string().optional(),
   output: OutputKindSchema,
   round: z.number().int().optional(),
   createdAt: z.number(),
@@ -297,6 +300,8 @@ export const AgentRunStateSchema = z.looseObject({
   workedMs: z.number().default(0),
   tokens: z.number().optional(),
   costUsd: z.number().optional(),
+  /** This session already got the Ensemble protocol with an assignment (CLIs without a system prompt file). */
+  introduced: z.boolean().optional(),
   /** Terminals and CLI sessions the agent ran in (its cost is summed over them). */
   usedTerminals: z.array(z.string()).optional(),
   usedSessions: z.array(z.string()).optional(),

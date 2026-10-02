@@ -159,6 +159,36 @@ describe('conductor: sequential agent stages', () => {
     expect(h.run.stages.map((s) => s.status)).toEqual(['done', 'done']);
   });
 
+  it('types the whole context with an assignment: instruction, brief and earlier results, no tool call needed', () => {
+    const h = new Harness(makeTask([planStage, implStage]));
+    h.start();
+    h.boot();
+    const [plan] = h.deliverAll();
+    expect(plan!.text).toContain('## Your assignment — stage "Plan"');
+    expect(plan!.text).toContain('## The brief\n\nAdd CSV export to the reports page.');
+    expect(plan!.text).toContain('Use TypeScript.');
+    expect(plan!.text).toContain('call oxy_ensemble_submit with kind "plan"');
+    expect(h.run.events.some((e) => e.type === 'context' && e.agentId === 'ada')).toBe(true);
+    h.submit('ada', { kind: 'plan', summary: 'Plan ready', body: '1. Add exporter' });
+    h.boot();
+    const [impl] = h.deliverAll();
+    expect(impl!.text).toMatch(/### The plan \(by Ada\)\s+1\. Add exporter/);
+  });
+
+  it('gives CLIs without a system prompt file the protocol and the brief once per session', () => {
+    const task = makeTask([planStage]);
+    task.agents[0] = { ...task.agents[0]!, cli: 'codex' };
+    const h = new Harness(task);
+    h.start();
+    h.boot();
+    const [first] = h.deliverAll();
+    expect(first!.text).toContain('# Ensemble — you are Ada');
+    expect(h.run.agents['ada']!.introduced).toBe(true);
+    // A new session (restart) is introduced again.
+    h.send({ type: 'agent-started', agentId: 'ada', terminalId: 't7', cliSessionId: 'other' });
+    expect(h.run.agents['ada']!.introduced).toBeUndefined();
+  });
+
   it('rejects a submission of the wrong kind and a submission without an assignment', () => {
     const h = new Harness(makeTask([planStage]));
     h.start();
@@ -251,6 +281,82 @@ describe('conductor: sequential agent stages', () => {
     h.send({ type: 'agent-started', agentId: 'ada', terminalId: 't9' });
     h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
     expect(h.take('deliver')).toHaveLength(1);
+  });
+});
+
+describe('conductor: delegation', () => {
+  const withApi = () => {
+    const task = makeTask([planStage, implStage]);
+    task.agents.push(agentFromPreset('api-researcher', task.agents));
+    return task;
+  };
+
+  it('the planner delegates to the API researcher, gets the report back and is not reminded while waiting', () => {
+    const h = new Harness(withApi());
+    h.start();
+    h.boot();
+    h.deliverAll();
+    const r = h.send({ type: 'delegate', from: 'ada', to: 'API researcher', work: 'Map GET /users and its shape.' });
+    expect(r.error).toBeUndefined();
+    expect(r.reply).toMatch(/Delegated to Tim/);
+    const tim = h.run.agents['tim']!;
+    expect(tim.assignment).toMatchObject({
+      kind: 'delegated',
+      delegatedBy: 'ada',
+      output: 'research',
+      stageId: 'plan',
+    });
+    // Tim starts and gets the work with the brief.
+    h.boot();
+    const [work] = h.deliverAll();
+    expect(work!.text).toMatch(/^\[Ensemble\] Ada \(Planner\) delegated work to you, Tim \(API researcher\)/);
+    expect(work!.text).toContain('Map GET /users and its shape.');
+    expect(work!.text).toContain('## The brief');
+    // Ada is idle and waits: no reminder.
+    h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
+    h.now += REMINDER_AFTER_MS + 1000;
+    h.send({ type: 'tick' });
+    expect(h.run.agents['ada']!.outbox).toEqual([]);
+    // The report reaches Ada with its line breaks; the stage is still Ada's.
+    const sub = h.submit('tim', {
+      kind: 'research',
+      summary: 'GET /users is paged',
+      body: '```ts\ntype User = { id: number }\n```',
+    });
+    expect(sub.reply).toMatch(/goes to Ada/);
+    expect(h.run.stageIndex).toBe(0);
+    const [report] = h.deliverAll();
+    expect(report!.text).toMatch(/^\[Ensemble\] Report from Tim/);
+    expect(report!.text).toContain('```ts\ntype User = { id: number }\n```');
+    expect(h.run.handoffs.at(-1)).toMatchObject({ agentId: 'tim', kind: 'research', stageId: 'plan' });
+    // Ada submits the plan: the next stage gets Tim's report too.
+    h.submit('ada', { kind: 'plan', summary: 'Plan', body: '1. Use GET /users' });
+    h.boot();
+    const [impl] = h.deliverAll();
+    expect(impl!.text).toContain('Tim — Research');
+  });
+
+  it('refuses unknown, busy or self delegation and delegation of delegated work', () => {
+    const h = new Harness(withApi());
+    h.start();
+    h.boot();
+    h.deliverAll();
+    expect(h.send({ type: 'delegate', from: 'ada', to: 'nobody', work: 'x' }).error).toMatch(/No agent "nobody"/);
+    expect(h.send({ type: 'delegate', from: 'ada', to: 'Ada', work: 'x' }).error).toMatch(/yourself/);
+    expect(h.send({ type: 'delegate', from: 'linus', to: 'tim', work: 'x' }).error).toMatch(/Only an agent working/);
+    h.send({ type: 'delegate', from: 'ada', to: 'tim', work: 'x' });
+    expect(h.send({ type: 'delegate', from: 'ada', to: 'tim', work: 'y' }).error).toMatch(/Tim is busy/);
+    expect(h.send({ type: 'delegate', from: 'tim', to: 'grace', work: 'z' }).error).toMatch(/Only an agent working/);
+  });
+
+  it('open delegated work ends with the stage', () => {
+    const h = new Harness(withApi());
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'delegate', from: 'ada', to: 'tim', work: 'x' });
+    h.submit('ada', { kind: 'plan', summary: 'Plan without waiting' });
+    expect(h.run.agents['tim']!.assignment).toBeUndefined();
   });
 });
 

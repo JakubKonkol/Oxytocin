@@ -103,8 +103,16 @@ test("a two-agent Ensemble task runs in a worktree: the second agent gets the fi
     // The implementer's context contained the planner's result.
     const submit = entries.find((e) => e.agent === 'Linus' && e.tool === 'oxy_ensemble_submit');
     expect(submit?.text).toMatch(/Thanks/);
-    const linusContext = entries.find((e) => e.agent === 'Linus' && e.tool === 'oxy_ensemble_context')!;
-    expect(linusContext.text).toMatch(/### The plan \(by Ada\)\s+Ada saw:/);
+    // Every assignment message carries the brief and the results so far: no agent needed oxy_ensemble_context.
+    const linusMessage = entries.find((e) => e.agent === 'Linus' && e.event === 'message')!;
+    expect(linusMessage.text).toMatch(/### The plan \(by Ada\)\s+Ada saw:/);
+    const adaMessage = entries.find((e) => e.agent === 'Ada' && e.event === 'message')!;
+    expect(adaMessage.text).toContain('## The brief\n\nAdd CSV export to the reports page.');
+    expect(entries.some((e) => e.tool === 'oxy_ensemble_context')).toBe(false);
+    // The first message waited for the agent's MCP connection.
+    const connected = entries.findIndex((e) => e.agent === 'Ada' && e.event === 'mcp-connected');
+    expect(connected).toBeGreaterThanOrEqual(0);
+    expect(connected).toBeLessThan(entries.indexOf(adaMessage));
     expect(done.run.handoffs.map((h) => h.summary)).toEqual(['Ada: plan done', 'Linus: implementation done']);
     expect(done.run.stages.map((s) => s.status)).toEqual(['done', 'done']);
 

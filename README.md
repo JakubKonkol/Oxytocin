@@ -101,14 +101,16 @@ sessions are told about the resources with their first prompt, so agents stop hu
 
 ### 🎼 Ensemble: a team of agents on one task
 
-Open **Ensemble** from the "+" menu, describe a task and pick a template — *Feature* (plan → your approval →
-implement ⇄ review → tests → your approval), *Bugfix*, *Review only*, *Research spike*, *Refactor with tests* or
-*Second opinion*. Each agent has its own CLI (Claude Code, Codex CLI, Gemini CLI, OpenCode or any command), model,
-effort and role; a conductor hands the plan to the implementer, sends review findings and failing tests back, and
-asks you at the gates. The flow view shows who works on what, who handed what to whom and why the conductor
-decided anything; peek at any agent's terminal or take it over. Agents ask each other — and you — questions, every
-task works in its own git worktree with a checkpoint per stage, and at the end you merge, squash, keep or discard
-its branch. Costs per agent come from the Usage Monitor, with a budget per task. Models and prompts are passed per
+Open **Ensemble** from the "+" menu, describe the task in one prompt and pick the team — the planner leads,
+implementer, reviewer, API researcher, researcher and tester are toggles — then press *Start*. The planner breaks the
+task down and delegates research to its helpers (the API researcher maps the endpoints and their shapes, through the
+project's APIs or a URL from the prompt), you approve the plan, and the implementer builds it in a loop with the
+reviewer. *Customize first* opens the builder for the rest: a model per agent (`claude-opus-5-5`,
+`claude-sonnet-5-5`, …), a prompt per role, Codex CLI, Gemini CLI, OpenCode or any command, stages, gates, test
+commands, templates (*Feature*, *Bugfix*, *Review only*, *Research spike*, …). The flow view shows who works on what,
+who handed what to whom and why the conductor decided anything; peek at any agent's terminal or take it over. Every
+task works in its own git worktree with a checkpoint per stage, and at the end you merge, squash, keep or discard its
+branch. Costs per agent come from the Usage Monitor, with a budget per task. Models and prompts are passed per
 session only: your CLI settings and other terminals are never changed.
 
 ### 🔍 Live changes

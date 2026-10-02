@@ -69,6 +69,32 @@ class Collector implements Subscriber {
 }
 
 describe('PTY Host terminal sessions', () => {
+  // Windows: Ensemble types messages as one line there (whether paste markers survive ConPTY is not guaranteed).
+  it.skipIf(process.platform === 'win32')(
+    'pastes a long multi-line message as one bracketed paste and submits it with Enter (Ensemble)',
+    async () => {
+      setup();
+      // A raw-mode program like a TUI: bracketed paste on, reports what one paste contained when Enter arrives.
+      const program = [
+        "process.stdin.setRawMode(true); process.stdin.setEncoding('utf8');",
+        "process.stdout.write('\\x1b[?2004hready\\r\\n');",
+        "let buf = '';",
+        "process.stdin.on('data', (d) => { buf += d; if (buf.endsWith('\\r')) {",
+        '  const m = /\\x1b\\[200~([\\s\\S]*)\\x1b\\[201~\\r$/.exec(buf);',
+        "  process.stdout.write(m ? 'PASTE ' + m[1].length + ' lines ' + m[1].split('\\n').length + '\\r\\n' : 'BAD ' + buf.length + '\\r\\n');",
+        "  buf = ''; } });",
+      ].join('\n');
+      const o = opts(['-e', program]);
+      manager.spawn(o);
+      await waitFor(async () => (await manager.getText(o.id)).includes('ready'));
+      const text = Array.from({ length: 400 }, (_, i) => `line ${i} ${'x'.repeat(50)}`).join('\n');
+      const r = await manager.paste(o.id, text, true);
+      expect(r.bracketed).toBe(true);
+      await waitFor(async () => /PASTE \d+ lines \d+/.test(await manager.getText(o.id)));
+      expect(await manager.getText(o.id)).toContain(`PASTE ${text.length} lines 400`);
+    },
+  );
+
   it('spawns a process, mirrors its output and reports the exit code', async () => {
     setup();
     const o = opts(['-e', "console.log('hello from pty'); process.exit(3)"]);

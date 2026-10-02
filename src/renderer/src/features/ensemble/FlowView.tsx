@@ -101,6 +101,10 @@ function AgentNode({
   const handoff = [...run.handoffs].reverse().find((h) => h.agentId === agentId && h.stageId === stageId);
   const needs = run.needs.filter((n) => n.agentId === agentId);
   const progress = onThisStage ? state?.lastProgress : undefined;
+  // Delegated work this agent waits for.
+  const waitingFor = onThisStage
+    ? task.agents.filter((a) => run.agents[a.id]?.assignment?.delegatedBy === agentId).map((a) => a.name)
+    : [];
   return (
     <button
       type="button"
@@ -129,6 +133,11 @@ function AgentNode({
         {liveLabel(kind)}
         {state?.liveSince && (kind === 'working' || kind === 'waiting') ? ` ${since(state.liveSince, now)}` : ''}
         {state?.takenOver && <span className="text-warning">· taken over</span>}
+        {waitingFor.length > 0 && (
+          <span className="truncate text-agent" data-testid="ensemble-agent-waiting-for">
+            · waiting for {waitingFor.join(', ')}
+          </span>
+        )}
         {state?.costUsd !== undefined && (
           <span
             className="ml-auto font-mono text-[10px] text-fg-muted"
@@ -290,6 +299,34 @@ function StageBlock({
       break;
     }
   }
+  // Teammates an agent of this stage delegated work to.
+  const own = new Set<string>(
+    stage.kind === 'agent'
+      ? [stage.agentId]
+      : stage.kind === 'parallel'
+        ? stage.agentIds
+        : stage.kind === 'loop'
+          ? [stage.workerId, stage.checkerId]
+          : stage.kind === 'command' && stage.onFail.agentId
+            ? [stage.onFail.agentId]
+            : [],
+  );
+  const helpers = record.task.agents.filter(
+    (a) =>
+      !own.has(a.id) &&
+      ((run.agents[a.id]?.assignment?.kind === 'delegated' && run.agents[a.id]?.assignment?.stageId === stage.id) ||
+        run.handoffs.some((h) => h.stageId === stage.id && h.agentId === a.id)),
+  );
+  if (helpers.length)
+    body = (
+      <div className="flex flex-col items-center gap-1.5">
+        {body}
+        <span className="font-mono text-[10px] text-fg-muted">delegated to</span>
+        <div className="flex flex-wrap justify-center gap-2" data-testid="ensemble-stage-helpers">
+          {helpers.map((a) => node(a.id))}
+        </div>
+      </div>
+    );
   return (
     <section
       ref={anchor}

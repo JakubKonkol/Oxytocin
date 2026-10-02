@@ -9,6 +9,10 @@ import { HeadlessMirror } from './headless-mirror';
 import type { Osc633 } from './osc-parsers';
 import { isAlive, killProcessTree } from './process-tree';
 
+/** Ensemble pastes: slice size and the pause between slices. */
+const PASTE_CHUNK = 2048;
+const PASTE_CHUNK_PAUSE_MS = 8;
+
 export type SpawnPty = (file: string, args: string[], options: IPtyForkOptions | IWindowsPtyForkOptions) => IPty;
 
 export interface Subscriber {
@@ -323,12 +327,29 @@ export class TerminalSession {
         const bracketed = this.mirror.bracketedPaste;
         // eslint-disable-next-line no-control-regex
         const clean = text.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
-        this.pty.write(bracketed ? `\x1b[200~${clean}\x1b[201~` : clean.replace(/\n+/g, ' '));
-        if (!submit) return resolve({ bracketed });
-        setTimeout(() => {
-          this.write('\r');
-          resolve({ bracketed });
-        }, submitDelayMs);
+        const data = bracketed ? `\x1b[200~${clean}\x1b[201~` : clean.replace(/\n+/g, ' ');
+        // A long message (an assignment with its whole context) goes in slices: input pipes (ConPTY) and TUIs take
+        // a burst better in pieces, and the program gets time to take the paste in before Enter.
+        const chunks: string[] = [];
+        for (let i = 0; i < data.length; i += PASTE_CHUNK) chunks.push(data.slice(i, i + PASTE_CHUNK));
+        const next = (i: number) => {
+          if (!this._alive) return resolve({ bracketed });
+          if (i < chunks.length) {
+            this.pty.write(chunks[i]!);
+            if (i + 1 < chunks.length) setTimeout(() => next(i + 1), PASTE_CHUNK_PAUSE_MS);
+            else next(i + 1);
+            return;
+          }
+          if (!submit) return resolve({ bracketed });
+          setTimeout(
+            () => {
+              this.write('\r');
+              resolve({ bracketed });
+            },
+            submitDelayMs + Math.min(1500, Math.floor(data.length / 50)),
+          );
+        };
+        next(0);
       });
     });
   }

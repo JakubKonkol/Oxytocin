@@ -24,7 +24,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'violet',
     name: 'Ada',
     cli: 'claude-code',
-    model: 'opus',
+    model: 'claude-opus-5-5',
     effort: 'xhigh',
     readOnly: true,
     permissionMode: 'default',
@@ -38,7 +38,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'blue',
     name: 'Linus',
     cli: 'claude-code',
-    model: 'opus',
+    model: 'claude-opus-5-5',
     effort: 'medium',
     readOnly: false,
     permissionMode: 'acceptEdits',
@@ -52,7 +52,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'green',
     name: 'Grace',
     cli: 'claude-code',
-    model: 'sonnet',
+    model: 'claude-sonnet-5-5',
     effort: 'high',
     readOnly: true,
     permissionMode: 'default',
@@ -66,7 +66,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'amber',
     name: 'Margaret',
     cli: 'claude-code',
-    model: 'sonnet',
+    model: 'claude-sonnet-5-5',
     effort: 'medium',
     readOnly: false,
     permissionMode: 'acceptEdits',
@@ -80,7 +80,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'sky',
     name: 'Rosalind',
     cli: 'claude-code',
-    model: 'sonnet',
+    model: 'claude-sonnet-5-5',
     effort: 'high',
     readOnly: true,
     permissionMode: 'default',
@@ -89,12 +89,31 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
       'You investigate: read the code, the docs and the history, compare options and report findings with evidence (files, lines, links). Separate facts from guesses. You do not edit files.',
   },
   {
+    preset: 'api-researcher',
+    label: 'API researcher',
+    color: 'teal',
+    name: 'Tim',
+    cli: 'claude-code',
+    model: 'claude-sonnet-5-5',
+    effort: 'medium',
+    readOnly: true,
+    permissionMode: 'default',
+    hint: 'Maps the endpoints and their shapes',
+    rolePrompt: [
+      'You research HTTP APIs the task depends on and report what the team needs to use them correctly.',
+      "- Find the API: the project's APIs (oxy_project_resources lists them; call them with oxy_api_describe and oxy_api_request, which add the credentials) or a URL or document named in the brief or by the teammate who asked.",
+      '- Read the OpenAPI/Swagger document when there is one, then confirm the real behaviour with safe requests (GET, HEAD). Never call endpoints that create, change or delete data unless the brief explicitly allows it.',
+      '- Report per endpoint: method and path, purpose, parameters (path, query, headers), authentication, request body and response shapes (as TypeScript types plus a trimmed JSON example), status codes and errors, pagination, rate limits and anything surprising.',
+      '- Separate what you verified with a request from what only the documentation says. You do not edit files.',
+    ].join('\n'),
+  },
+  {
     preset: 'docs',
     label: 'Docs writer',
     color: 'pink',
     name: 'Ken',
     cli: 'claude-code',
-    model: 'sonnet',
+    model: 'claude-sonnet-5-5',
     effort: 'low',
     readOnly: false,
     permissionMode: 'acceptEdits',
@@ -108,7 +127,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'teal',
     name: 'Fable',
     cli: 'claude-code',
-    model: 'fable',
+    model: 'claude-fable-5-1',
     effort: 'high',
     readOnly: true,
     permissionMode: 'default',
@@ -547,4 +566,171 @@ export function newStage(kind: Stage['kind'], task: Pick<EnsembleTask, 'agents' 
         onFail: { ...(writer ? { agentId: writer.id } : {}), maxAttempts: 2 },
       };
   }
+}
+
+// ── quick start ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Roles the quick start offers next to the planner, who always leads. */
+export const QUICK_ROLES = ['implementer', 'reviewer', 'api-researcher', 'researcher', 'tester'] as const;
+export type QuickRole = (typeof QUICK_ROLES)[number];
+
+export interface QuickTeam {
+  roles: readonly QuickRole[];
+  /** A gate after the plan (the default): you read and approve the plan before anyone codes. */
+  approvePlan: boolean;
+  /** Runs after the implementation; failures go back to the implementer. */
+  testCommand?: string | undefined;
+}
+
+export const DEFAULT_QUICK_TEAM: QuickTeam = { roles: ['implementer', 'reviewer'], approvePlan: true };
+
+/** A title from the first line of a prompt ("Add CSV export to the reports page"). */
+export function titleFromPrompt(prompt: string): string {
+  const line =
+    prompt
+      .split('\n')
+      .map((l) => l.replace(/^[#>*\-\s]+/, '').trim())
+      .find(Boolean) ?? '';
+  const sentence = line.split(/(?<=[.!?])\s/)[0] ?? line;
+  return sentence.length > 60 ? `${sentence.slice(0, 57).trimEnd()}…` : sentence.replace(/[.!?]$/, '');
+}
+
+/** The planner's instruction when it leads helpers: break the task down, delegate the research, then plan. */
+export function leadInstruction(helpers: readonly EnsembleAgent[], builders: readonly EnsembleAgent[]): string {
+  const lines = [
+    'You lead this task. Read the brief and the relevant code, then break the task down: what must be found out first, and what must be built.',
+  ];
+  if (helpers.length)
+    lines.push(
+      '',
+      'Delegate what must be found out to your helpers with oxy_ensemble_delegate — in parallel when the questions are independent — and say exactly what you need back:',
+      ...helpers.map((h) => `- ${h.name} (${h.role.label}): ${rolePreset(h.role.preset).hint.toLowerCase()}`),
+      'Wait for their reports (they arrive as messages), then write the plan on top of them.',
+    );
+  lines.push(
+    '',
+    'The plan: the approach and why, the steps in order with the files to change, what each step needs from the research (endpoints, shapes, constraints), edge cases, risks and how to test it.',
+  );
+  if (builders.length)
+    lines.push(
+      `Write it for ${builders.map((b) => `${b.name} (${b.role.label})`).join(' and ')}, who carry it out after your plan is approved.`,
+    );
+  lines.push('Do not change code. Submit the plan with kind "plan" (the full plan in `body`).');
+  return lines.join('\n');
+}
+
+/**
+ * The quick start: one prompt and a team; the pipeline follows from the team. The planner leads (delegating to the
+ * researchers), you approve the plan, the implementer builds it (in a loop with the reviewer), the tester and the
+ * test command check it.
+ */
+export function quickTask(o: {
+  id: string;
+  projectId: string;
+  prompt: string;
+  title?: string | undefined;
+  team: QuickTeam;
+  now: number;
+}): EnsembleTask {
+  const roles = QUICK_ROLES.filter((r) => o.team.roles.includes(r));
+  const agents = team('planner', ...roles);
+  const [planner] = agents;
+  const byRole = (r: QuickRole) => agents.find((a) => a.role.preset === r);
+  const implementer = byRole('implementer');
+  const reviewer = byRole('reviewer');
+  const tester = byRole('tester');
+  const helpers = agents.filter((a) => a.role.preset === 'api-researcher' || a.role.preset === 'researcher');
+  const builders = [implementer, tester].filter((a): a is EnsembleAgent => !!a);
+  const pipeline: Stage[] = [
+    stage({
+      id: 'plan',
+      kind: 'agent',
+      title: helpers.length ? 'Plan (with research)' : 'Plan',
+      instruction: leadInstruction(helpers, builders),
+      agentId: planner!.id,
+      output: 'plan',
+      freshSession: false,
+    }),
+  ];
+  if (o.team.approvePlan)
+    pipeline.push(
+      stage({
+        id: 'approve-plan',
+        kind: 'gate',
+        title: 'Approve the plan',
+        show: ['plan'],
+        onReject: 'back-to-previous',
+      }),
+    );
+  if (implementer)
+    pipeline.push(
+      reviewer
+        ? stage({
+            id: 'implement',
+            kind: 'loop',
+            title: 'Implement ⇄ Review',
+            workerId: implementer.id,
+            checkerId: reviewer.id,
+            maxRounds: 3,
+            checkerInstruction: '',
+          })
+        : stage({
+            id: 'implement',
+            kind: 'agent',
+            title: 'Implement',
+            agentId: implementer.id,
+            output: 'implementation',
+            freshSession: false,
+          }),
+    );
+  else if (reviewer)
+    pipeline.push(
+      stage({
+        id: 'review',
+        kind: 'agent',
+        title: 'Review',
+        agentId: reviewer.id,
+        output: 'review',
+        freshSession: false,
+      }),
+    );
+  if (tester)
+    pipeline.push(
+      stage({
+        id: 'tests',
+        kind: 'agent',
+        title: 'Tests',
+        agentId: tester.id,
+        output: 'test-report',
+        freshSession: false,
+      }),
+    );
+  const command = o.team.testCommand?.trim();
+  if (command && (implementer ?? tester))
+    pipeline.push(
+      stage({
+        id: 'run-tests',
+        kind: 'command',
+        title: 'Run the tests',
+        command,
+        onFail: { agentId: (implementer ?? tester)!.id, maxAttempts: 2 },
+      }),
+    );
+  const writes = agents.some((a) => !a.readOnly);
+  return {
+    v: 1,
+    id: o.id,
+    projectId: o.projectId,
+    title: o.title?.trim() || titleFromPrompt(o.prompt) || 'New task',
+    description: o.prompt.trim(),
+    generalPrompt: '',
+    attachments: [],
+    workspace: { mode: writes ? 'worktree' : 'current-checkout', setupCommands: [], copyFiles: [] },
+    agents,
+    pipeline,
+    limits: { maxConcurrentAgents: 3 },
+    createdAt: o.now,
+    updatedAt: o.now,
+    templateId: 'quick',
+  };
 }

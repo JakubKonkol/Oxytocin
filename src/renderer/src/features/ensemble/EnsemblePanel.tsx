@@ -7,7 +7,9 @@ import { TASK_TEMPLATES } from '@shared/ensemble/presets';
 import { cn } from '../../lib/cn';
 import { Button } from '../../ui/Button';
 import { IconButton } from '../../ui/IconButton';
+import { Segmented } from '../projects/settings/controls';
 import { createTask, projectRecords, useEnsembleStore } from './ensemble-store';
+import { QuickStart } from './QuickStart';
 import { TaskView } from './TaskView';
 
 export interface EnsemblePanelParams {
@@ -166,7 +168,7 @@ function Shape({ steps }: { steps: string[] }) {
   );
 }
 
-/** "Create a task": template cards, title and brief. */
+/** "Create a task": the quick start (one prompt, a team) or a template in the builder. */
 export function NewTask({
   projectId,
   onCreated,
@@ -176,6 +178,48 @@ export function NewTask({
   onCreated: () => void;
   onCancel?: () => void;
 }) {
+  const [mode, setMode] = useState<'quick' | 'template'>('quick');
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-6" data-testid="ensemble-new-task-view">
+      <div className="flex items-start gap-3">
+        <span className="flex size-10 flex-none items-center justify-center rounded-card bg-agent/15 text-agent">
+          <Workflow size={22} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-[17px] font-semibold text-fg">New Ensemble task</h2>
+          <p className="max-w-2xl text-fg-secondary">
+            A team of AI agents works on one task in its own git worktree. The planner breaks it down, delegates
+            research to helpers and writes the plan; after your approval the others build it. You can watch or take over
+            any agent at any time.
+          </p>
+        </div>
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
+      </div>
+      <Segmented
+        label="How to start"
+        testId="ensemble-new-mode"
+        value={mode}
+        options={[
+          { value: 'quick', label: 'Quick start' },
+          { value: 'template', label: 'From a template' },
+        ]}
+        onChange={setMode}
+      />
+      {mode === 'quick' ? (
+        <QuickStart projectId={projectId} onCreated={onCreated} />
+      ) : (
+        <TemplateStart projectId={projectId} onCreated={onCreated} />
+      )}
+    </div>
+  );
+}
+
+/** A template: the builder opens with its team and pipeline. */
+function TemplateStart({ projectId, onCreated }: { projectId: string; onCreated: () => void }) {
   const [templateId, setTemplateId] = useState('feature');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -190,20 +234,7 @@ export function NewTask({
     if (r) onCreated();
   };
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-6" data-testid="ensemble-new-task-view">
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 flex-none items-center justify-center rounded-card bg-agent/15 text-agent">
-          <Workflow size={22} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-[17px] font-semibold text-fg">New Ensemble task</h2>
-          <p className="max-w-2xl text-fg-secondary">
-            A team of AI agents works on one task: a planner plans, an implementer builds, a reviewer checks — each with
-            its own CLI, model and effort, in its own git worktree. Oxytocin conducts the pipeline; you approve at the
-            gates and can watch or take over any agent at any time.
-          </p>
-        </div>
-      </div>
+    <div className="flex flex-col gap-5" data-testid="ensemble-template-start">
       <div
         className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-2"
         role="radiogroup"
@@ -253,11 +284,6 @@ export function NewTask({
         />
       </label>
       <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button variant="ghost" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
         <Button variant="primary" data-testid="ensemble-create" disabled={busy} onClick={() => void create()}>
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Create task
         </Button>

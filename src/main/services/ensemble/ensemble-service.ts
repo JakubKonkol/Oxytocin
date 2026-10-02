@@ -24,7 +24,7 @@ import type { TerminalInfo } from '@shared/domain/terminal';
 import { CLI_INFO } from '@shared/ensemble/clis';
 import { type ConductorEvent, type Effect, initialRun, reduce, validateTask } from '@shared/ensemble/conductor';
 import { agentContext, runReport } from '@shared/ensemble/context';
-import { taskFromTemplate, slugId } from '@shared/ensemble/presets';
+import { quickTask, type QuickTeam, slugId, taskFromTemplate, titleFromPrompt } from '@shared/ensemble/presets';
 import { systemPromptText } from '@shared/ensemble/prompts';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
@@ -90,6 +90,8 @@ export interface EnsembleServiceDeps {
     groups: { key: string; sessionIds: string[]; terminalIds: string[] }[],
   ): Promise<Record<string, { costUsd: number; tokens: number }>>;
   now?: () => number;
+  /** How long the first delivery waits for the agent's MCP connection (default 20 s). */
+  mcpWaitMs?: number;
   /** Background timer period (ms); 0 disables it (tests call `tick()`). */
   tickMs?: number;
 }
@@ -109,6 +111,8 @@ interface LiveAgent {
   reported?: AgentLive;
   delivering: boolean;
   secretFiles: string[];
+  /** The agent's CLI connected to the Ensemble endpoint (its first request). */
+  mcpSeenAt?: number;
 }
 
 interface CommandRun {
@@ -120,10 +124,24 @@ interface CommandRun {
 const MAX_RENDERER_EVENTS = 600;
 const PROGRESS_INTERVAL_MS = 4000;
 const USAGE_POLL_MS = 15_000;
+const MCP_WAIT_MS = 20_000;
 const USAGE_TAIL_MS = 5 * 60_000;
 /** Prompts on screen that must never receive a typed message. */
 const BLOCKING_PROMPT =
   /(do you trust|trust (this|the) (folder|directory|files|workspace)|press enter to (continue|confirm)|log ?in to|sign in|select (a|an) (login|auth)|\[y\/n\]|\(y\/n\))/i;
+
+/**
+ * A message as one line. On Windows a multi-line message is not typed as is: whether the paste markers survive the
+ * console (ConPTY) up to the CLI is not guaranteed, and without them every line break would be an Enter that sends a
+ * fragment. Line breaks become "↵"; oxy_ensemble_context serves the same text formatted.
+ */
+export const oneLine = (text: string): string =>
+  text
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l, i, all) => l !== '' || (i > 0 && all[i - 1] !== ''))
+    .join(' ↵ ')
+    .replace(/( ↵ ){2,}/g, ' ↵ ↵ ');
 
 const projectSlug = (name: string) => slugId(name, [], 'project');
 
@@ -244,6 +262,29 @@ export class EnsembleService implements Disposable {
       ...(o.description ? { description: o.description } : {}),
       now: this.now(),
     });
+    const record: EnsembleRecord = { task, run: initialRun(task) };
+    this.put(record);
+    return this.forRenderer(record);
+  }
+
+  /** The quick start: one prompt and a team (the pipeline follows from the team). */
+  async createQuick(o: {
+    projectId: string;
+    prompt: string;
+    title?: string | undefined;
+    team: QuickTeam;
+    currentCheckout?: boolean | undefined;
+  }): Promise<EnsembleRecord> {
+    await this.ready;
+    if (!this.deps.projects.get(o.projectId)) throw new OxyError('NOT_FOUND', 'Project not found');
+    const title = o.title?.trim() || titleFromPrompt(o.prompt);
+    const id = slugId(
+      `${(title || 'task').slice(0, 16)}-${randomBytes(3).toString('hex')}`,
+      this.records.keys(),
+      'task',
+    );
+    const task = quickTask({ id, projectId: o.projectId, prompt: o.prompt, title, team: o.team, now: this.now() });
+    if (o.currentCheckout) task.workspace = { ...task.workspace, mode: 'current-checkout' };
     const record: EnsembleRecord = { task, run: initialRun(task) };
     this.put(record);
     return this.forRenderer(record);
@@ -782,6 +823,13 @@ export class EnsembleService implements Disposable {
     if (a.delivering) return;
     a.delivering = true;
     try {
+      // The first message waits (a while) for the agent's MCP connection: CLIs connect their MCP servers in the
+      // background after start-up, and an agent without the Ensemble tools cannot submit.
+      if (a.mcpSeenAt === undefined) await this.waitForMcp(a);
+      if (!this.live.has(a.terminalId)) {
+        this.dispatch(taskId, { type: 'delivery-failed', agentId, deliveryId, error: 'The agent is not running.' });
+        return;
+      }
       // A question on screen (trust, login, y/n) must never receive the message.
       const screen = await this.deps.pty.text(a.terminalId).catch(() => '');
       const tail = screen.split('\n').slice(-25).join('\n');
@@ -800,7 +848,7 @@ export class EnsembleService implements Disposable {
         lastOutputAt: () => a.lastOutputAt,
         lastWorkingAt: () => a.lastWorkingAt,
         paste: async (t) => {
-          await this.deps.pty.paste(a.terminalId, t, true);
+          await this.deps.pty.paste(a.terminalId, this.deps.platform === 'win32' ? oneLine(t) : t, true);
         },
         enter: async () => {
           await this.deps.pty.write(a.terminalId, '\r');
@@ -811,6 +859,14 @@ export class EnsembleService implements Disposable {
     } finally {
       a.delivering = false;
     }
+  }
+
+  private async waitForMcp(a: LiveAgent): Promise<void> {
+    const until = this.now() + (this.deps.mcpWaitMs ?? MCP_WAIT_MS);
+    while (a.mcpSeenAt === undefined && this.live.has(a.terminalId) && this.now() < until)
+      await new Promise((r) => setTimeout(r, 200));
+    // Its tool list follows the handshake.
+    if (a.mcpSeenAt !== undefined) await new Promise((r) => setTimeout(r, 500));
   }
 
   // ── timers ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -868,6 +924,7 @@ export class EnsembleService implements Disposable {
   describe(token: string): { label: string; projectId: string; terminalId: string } | null {
     const a = this.tokens.get(token);
     if (!a) return null;
+    a.mcpSeenAt ??= this.now();
     const r = this.records.get(a.taskId);
     const agent = r?.task.agents.find((x) => x.id === a.agentId);
     if (!r || !agent) return null;
@@ -949,6 +1006,10 @@ export class EnsembleService implements Disposable {
         },
         note: (taskId, agentId, text) => {
           const result = this.dispatch(taskId, { type: 'note', by: agentId, text });
+          return { ...(result.reply ? { reply: result.reply } : {}), ...(result.error ? { error: result.error } : {}) };
+        },
+        delegate: (taskId, agentId, to, work) => {
+          const result = this.dispatch(taskId, { type: 'delegate', from: agentId, to, work });
           return { ...(result.reply ? { reply: result.reply } : {}), ...(result.error ? { error: result.error } : {}) };
         },
       },

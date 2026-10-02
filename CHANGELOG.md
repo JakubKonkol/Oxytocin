@@ -3,6 +3,44 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Ensemble quick start.** A new task now starts from one prompt: describe what the team should do, pick who works
+  on it (the planner always leads; implementer, reviewer, API researcher, researcher and tester are toggles), choose
+  whether you approve the plan and optionally a test command, and press *Start* (or Ctrl+Enter). The pipeline follows
+  from the team. *Customize first* opens the same task in the builder — models, a precise prompt per role, stages —
+  and the templates are still one click away under *From a template*.
+- **The planner delegates.** Agents hand parts of their work to teammates with the new `oxy_ensemble_delegate` tool:
+  the planner breaks the task down, sends research to its helpers (in parallel), waits for their reports — delivered
+  to it as messages, without reminders meanwhile — and writes the plan on top of them. Helpers appear under the stage
+  in the Flow view ("delegated to"), the waiting agent shows "waiting for …", and agents outside the pipeline are
+  marked as helpers in the builder.
+- **API researcher**, a new role: it maps the endpoints a task needs — method and path, parameters, authentication,
+  request and response shapes as TypeScript types with examples, errors and pagination — from an OpenAPI document,
+  a URL in the prompt or the project's APIs, which Ensemble agents now call through Oxytocin's resource tools
+  (`oxy_project_resources`, `oxy_api_describe`, `oxy_api_request` and the database tools) with the access rules from
+  *Project settings*. In Claude Code it may read web pages without asking.
+
+### Changed
+
+- The model of an agent is chosen from a list of real model ids — `claude-opus-5-5`, `claude-sonnet-5-5`,
+  `claude-fable-5-1`, `claude-haiku-4-5`, the aliases and older models (and the current ids for Codex CLI, Gemini CLI
+  and OpenCode) — or typed in with *Other…*. The role presets use the full ids.
+
+### Fixed
+
+- **Agents always know the task.** An agent started without the brief and could ask what the task was about: its
+  first message only said to fetch the details with a tool, and the CLI connects its MCP tools in the background
+  after start-up. Now the brief is part of every agent's system prompt, each assignment is typed into the agent with
+  its whole context (instruction, brief, the results of earlier stages), and the first message waits until the
+  agent's CLI has connected to Ensemble (up to 20 seconds). Codex CLI, Gemini CLI and OpenCode also get the Ensemble
+  rules with their first assignment. Long messages are typed in slices; on Windows they are typed as one line (line
+  breaks shown as ↵), so a line break can never send half a message.
+- The model field offered only the models matching what was already typed (with `opus` set: just `opus` and
+  `opus[1m]`).
+
 ## [0.8.0] - 2026-10-02
 
 ### Added

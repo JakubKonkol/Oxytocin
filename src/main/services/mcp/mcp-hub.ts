@@ -356,13 +356,24 @@ export class McpHub implements Disposable {
   }
 
   async callTool(name: string, args: Record<string, unknown>, call: ToolCall): Promise<McpToolResult> {
-    const entry = this.registry.resolve(name);
-    if (!entry) return toolError(`The tool ${name} is not available.`);
-    const started = Date.now();
+    if (!this.registry.resolve(name)) return toolError(`The tool ${name} is not available.`);
     const caller = await resolveCaller(this.deps.caller, {
       ...(call.terminalHeader ? { terminalHeader: call.terminalHeader } : {}),
       args,
     });
+    return this.callToolAs(name, args, call, caller);
+  }
+
+  /** Runs a listed tool for a resolved caller: the user's policy, the call log, the timeout. */
+  private async callToolAs(
+    name: string,
+    args: Record<string, unknown>,
+    call: ToolCall,
+    caller: ResolvedCaller,
+  ): Promise<McpToolResult> {
+    const entry = this.registry.resolve(name);
+    if (!entry) return toolError(`The tool ${name} is not available.`);
+    const started = Date.now();
     const callerLabel = this.callerLabel(caller);
     let detail: string | undefined;
     try {
@@ -464,7 +475,9 @@ export class McpHub implements Disposable {
   /** Serves Ensemble's tools on `/mcp/ensemble` (Plan 03). */
   setEnsemble(ensemble: EnsembleMcp): void {
     this.ensemble = ensemble;
-    const listed = () => ensemble.tools();
+    // Ensemble agents also get the project resource bridge (databases, APIs, logs): an API researcher calls the
+    // project's APIs through it. Only the tools the main endpoint lists (resources exist, not turned off).
+    const listed = () => [...ensemble.tools(), ...this.ensembleBridgeTools()];
     this.server.addEndpoint({
       path: ENSEMBLE_MCP_PATH,
       authorize: (bearer) => ensemble.describe(bearer) !== null,
@@ -486,6 +499,21 @@ export class McpHub implements Disposable {
         callTool: (name, args, call) => this.callEnsemble(name, args, call),
       },
     });
+  }
+
+  private ensembleBridgeTools(): McpToolDefinition[] {
+    const names = new Set((this.deps.resources?.tools ?? []).map((t) => t.definition.name));
+    return this.registry
+      .listed()
+      .filter((e) => names.has(e.name))
+      .map((e) => {
+        // The project is the task's: no `cwd`/`project` arguments.
+        const schema = e.definition.inputSchema as { properties?: Record<string, unknown> };
+        const properties = { ...(schema.properties ?? {}) };
+        delete properties['cwd'];
+        delete properties['project'];
+        return { ...e.definition, inputSchema: { ...e.definition.inputSchema, properties } };
+      });
   }
 
   /** The Ensemble endpoint's URL while the server runs. */
@@ -511,6 +539,16 @@ export class McpHub implements Disposable {
     const ensemble = this.ensemble;
     const token = call.principal ?? '';
     const who = ensemble?.describe(token) ?? null;
+    if (who && this.ensembleBridgeTools().some((t) => t.name === name)) {
+      const { cwd: _cwd, project: _project, ...rest } = args;
+      return this.callToolAs(name, rest, call, {
+        context: {
+          ...(who.projectId ? { projectId: who.projectId } : {}),
+          ...(who.terminalId ? { terminalId: who.terminalId } : {}),
+        },
+        label: who.label,
+      });
+    }
     const started = Date.now();
     const definition = ensemble?.tools().find((t) => t.name === name);
     const finish = (outcome: McpCallOutcome, result: McpToolResult, error?: string): McpToolResult => {
