@@ -108,6 +108,48 @@ describe('RunManager', () => {
     expect(runs.snapshot('p1', profile.id)).toMatchObject({ status: 'starting', startedBy: 'agent' });
   });
 
+  it('runs a profile that wants its own terminal in a new terminal tab every time', async () => {
+    const { t, runs } = setup();
+    const script: RunProfile = {
+      id: 'custom-1',
+      name: 'build',
+      command: 'cmd /c "build.bat"',
+      cwd: 'scripts',
+      kind: 'script',
+      source: 'custom',
+      script: { file: 'scripts/build.bat' },
+      newTerminal: true,
+    };
+    await runs.start('/p', 'p1', script, 'user');
+    expect(t.api.create).toHaveBeenCalledWith({
+      projectId: 'p1',
+      cwd: '/p/scripts',
+      title: 'build',
+      command: 'cmd /c "build.bat"',
+      reveal: true,
+    });
+    t.update('t1', { background: false });
+    runs.onTerminalChange(t.update('t1', { command: { startedAt: 1_000_050 } }));
+    // PAUSE at the end of the script: a question answered with Enter.
+    t.output.get('t1')!('Done.\r\nPress any key to continue . . . ');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(runs.snapshot('p1', script.id).prompt).toMatchObject({ text: 'Press any key to continue . . .', key: true });
+    await runs.answer('p1', script.id, '');
+    expect(t.api.sendText).toHaveBeenCalledWith('t1', '');
+    runs.onTerminalChange(
+      t.update('t1', {
+        command: undefined,
+        lastCommand: { exitCode: 0, durationMs: 10, finishedAt: 1_002_000 },
+      }),
+    );
+    expect(runs.snapshot('p1', script.id).status).toBe('stopped');
+    // Run again: a new tab, even though the old one is idle (it stays open).
+    await runs.start('/p', 'p1', script, 'user');
+    expect(t.api.create).toHaveBeenCalledTimes(2);
+    expect(t.api.close).not.toHaveBeenCalled();
+    expect(runs.snapshot('p1', script.id).terminalId).toBe('t2');
+  });
+
   it('stops with Ctrl+C and escalates to a forced kill', async () => {
     const { t, runs } = setup();
     await runs.start('/p', 'p1', profile, 'user');

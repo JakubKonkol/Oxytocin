@@ -210,8 +210,10 @@ export class RunManager implements Disposable {
     const setup = JSON.stringify([cwd, profile.env ?? {}]);
     try {
       const existing = await this.terminal(run);
-      // Reused only while its shell is idle in the profile's folder (the user may have `cd`-ed elsewhere).
+      // Reused only while its shell is idle in the profile's folder (the user may have `cd`-ed elsewhere). A profile
+      // that runs in a new terminal never reuses one.
       const idle =
+        !profile.newTerminal &&
         existing &&
         existing.status === 'running' &&
         !existing.command &&
@@ -223,7 +225,8 @@ export class RunManager implements Disposable {
         this.watchOutput(run, existing.id);
         await this.deps.terminals.sendText(existing.id, profile.command);
       } else {
-        // A finished background terminal is replaced; one the user opened stays where it is.
+        // A finished background terminal is replaced; one the user opened (or a new terminal tab of an earlier run)
+        // stays where it is.
         if (existing?.background) await this.deps.terminals.close(existing.id).catch(() => undefined);
         const meta = await this.deps.terminals.create({
           projectId,
@@ -231,7 +234,7 @@ export class RunManager implements Disposable {
           title: profile.name,
           command: profile.command,
           ...(profile.env ? { env: profile.env } : {}),
-          reveal: false,
+          reveal: !!profile.newTerminal,
         });
         run.terminalId = meta.id;
         run.terminalSetup = setup;

@@ -43,9 +43,29 @@ The project folder (3 levels deep by default, `projectRunner.scanDepth`) is sear
 ## Run profiles
 
 Detected apps can be edited (name, command, folder, environment variables, URL) and hidden; your own profiles are
-added with **+**. Profiles are stored per project in the plugin's storage (`plugin-data/oxytocin.project-runner`) and
+added with **+** → **Run Profile…**. Profiles are stored per project in the plugin's storage (`plugin-data/oxytocin.project-runner`) and
 kept across restarts. Detection runs again when the Run tool is shown after 30 seconds; **Detect apps again**
 rescans at once.
+
+## Custom scripts
+
+**+** → **Custom Script…** adds a script next to the detected apps (detection keeps working as before):
+
+- **Script file** — any script of the project (or an absolute path): type it (the field suggests the `.bat`, `.cmd`,
+  `.ps1`, `.sh`, `.bash`, `.zsh` and `.command` files of the project) or pick it with **Choose…**. It runs in its own
+  folder unless you set another one. Batch files run with `cmd /c`, PowerShell scripts with
+  `powershell -ExecutionPolicy Bypass -File` (`pwsh` outside Windows), shell scripts with `bash`, `.py` with Python
+  and `.js`/`.mjs` with Node.js; other files run as programs. **Open Script** in the row's menu opens the file.
+- **Write a script** — a batch (cmd), PowerShell or shell script typed into the form. It is saved to the plugin's
+  project folder (`plugin-data/oxytocin.project-runner/projects/<id>/scripts`) and run from there, in the project
+  root unless you set another folder.
+- **Visible to AI agents** (on by default) — off, the agents' tools neither list nor run the script.
+- **Always run in a new terminal tab** — every run opens a new terminal tab and shows it, instead of the background
+  terminal that **Show logs** opens.
+
+A script that waits for a key — `PAUSE` at the end of a batch file ("Press any key to continue . . .") — shows
+*waiting for input* with **Continue**, which presses Enter in its terminal; **Stop** answers cmd's "Terminate batch
+job (Y/N)?" itself. Agents continue it with `run_answer_prompt` and an empty answer.
 
 ## Tools for agents
 

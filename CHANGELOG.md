@@ -3,6 +3,21 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Custom scripts in the Run tool.** **+** now offers *Run Profile…* and *Custom Script…*. A custom script is an
+  existing script file of the project — a `.bat`, `.cmd`, `.ps1`, `.sh` (typed with suggestions, or picked with
+  *Choose…*) — or a script written right in the form (batch, PowerShell or shell). It is listed below the detected
+  apps, which are found as before, and runs, stops and shows its logs like them. Two options per script: *Visible to
+  AI agents* (on by default; off, the agents' Run tools neither list nor start it) and *Always run in a new terminal
+  tab* (every run opens a new terminal tab instead of a background terminal). *Open Script* in the row's menu opens
+  the file.
+- **Scripts that wait for a key.** A script that ends with `PAUSE` ("Press any key to continue . . .") shows *waiting
+  for input* with a **Continue** button (also in its notification); agents continue it with `run_answer_prompt` and
+  an empty answer.
+
 ## [0.8.1] - 2026-10-02
 
 ### Added

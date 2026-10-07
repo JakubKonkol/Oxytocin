@@ -262,7 +262,7 @@
                 },
                 "answer": {
                   "type": "string",
-                  "description": "The text to type, e.g. \"y\" or \"n\"."
+                  "description": "The text to type, e.g. \"y\" or \"n\" (\"\" only presses Enter)."
                 },
                 "cwd": {
                   "type": "string",

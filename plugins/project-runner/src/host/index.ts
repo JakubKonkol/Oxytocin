@@ -1,12 +1,13 @@
 import { randomBytes } from 'node:crypto';
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join } from 'node:path';
 import type { OxytocinApi, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
 import { type DetectedProfile, type DetectFs, detectProfiles } from './detect';
 import { McpServer } from './mcp';
 import { fromShellPath, pathCandidates } from './paths';
 import { buildTools, LEGACY_TOOL_NAMES, type RunnerTools } from './tools';
 import {
+  agentProfiles,
   emptyConfig,
   findProfile,
   mergeProfiles,
@@ -15,8 +16,21 @@ import {
   type ProfileInput,
   type ProjectRunConfig,
   type RunProfile,
+  type ScriptSpec,
   validateProfileInput,
+  validateScriptInput,
 } from './profiles';
+import {
+  defaultLanguage,
+  fileScriptCommand,
+  findScripts,
+  inlineFileName,
+  inlineFileText,
+  normalizeScriptFile,
+  scriptCommand,
+  scriptFilePath,
+  scriptFolder,
+} from './scripts';
 import type { RunnerState } from '../shared/types';
 import { RunManager, type RunSnapshot, type StartedBy, type TerminalLink } from './runner';
 
@@ -251,6 +265,7 @@ class RunnerService {
   }
 
   async saveProfile(project: ProjectInfo, id: string | undefined, input: ProfileInput): Promise<RunProfile> {
+    if (input.script !== undefined) return this.saveScript(project, id, input);
     const valid = validateProfileInput(input);
     const config = this.config(project.id);
     const detected = (await this.detect(project)).find((d) => d.id === id);
@@ -275,8 +290,76 @@ class RunnerService {
     return (await this.profiles(project)).find((p) => p.id === (detected?.id ?? id))!;
   }
 
+  // ── custom scripts ──
+
+  /** Where a written script is saved (and run from). */
+  private inlineScriptPath(projectId: string, profileId: string, script: ScriptSpec): string {
+    const language = script.language ?? defaultLanguage(this.oxy.env.platform);
+    return join(this.ctx.storage.projectDir(projectId), 'scripts', inlineFileName(profileId, language));
+  }
+
+  private async writeInlineScript(projectId: string, profileId: string, script: ScriptSpec): Promise<string> {
+    const path = this.inlineScriptPath(projectId, profileId, script);
+    await mkdir(dirname(path), { recursive: true });
+    const language = script.language ?? defaultLanguage(this.oxy.env.platform);
+    await writeFile(path, inlineFileText(script.inline ?? '', language));
+    return path;
+  }
+
+  /** Saves a custom script: an existing script file (checked to exist) or a written one (saved to a file). */
+  async saveScript(project: ProjectInfo, id: string | undefined, input: ProfileInput): Promise<RunProfile> {
+    const platform = this.oxy.env.platform;
+    const valid = validateScriptInput(input, defaultLanguage(platform));
+    const config = this.config(project.id);
+    const index = config.custom.findIndex((p) => p.id === id);
+    const before = index >= 0 ? config.custom[index] : undefined;
+    const profileId = before?.id ?? `custom-${randomBytes(4).toString('hex')}`;
+    let script: ScriptSpec;
+    let cwd: string;
+    let command: string;
+    if ('file' in valid.script) {
+      const file = normalizeScriptFile(valid.script.file, project.rootPath, platform);
+      const info = await stat(scriptFilePath(file, project.rootPath, platform)).catch(() => null);
+      if (!info?.isFile()) throw new Error(`There is no script file ${file}.`);
+      script = { file };
+      cwd = valid.cwd ?? scriptFolder(file, platform);
+      command = fileScriptCommand(file, cwd, platform);
+    } else {
+      script = { inline: valid.script.inline, language: valid.script.language };
+      cwd = valid.cwd ?? '';
+      command = scriptCommand(await this.writeInlineScript(project.id, profileId, script), platform);
+    }
+    const profile: RunProfile = {
+      id: profileId,
+      name: valid.name,
+      command,
+      cwd,
+      kind: 'script',
+      source: 'custom',
+      script,
+      ...(valid.env ? { env: valid.env } : {}),
+      ...(valid.url ? { url: valid.url } : {}),
+      ...(valid.hiddenFromAgents ? { hiddenFromAgents: true } : {}),
+      ...(valid.newTerminal ? { newTerminal: true } : {}),
+    };
+    if (index >= 0) config.custom[index] = profile;
+    else config.custom.push(profile);
+    await this.saveConfig(project.id, config);
+    // A written script that became a file (or changed its language) leaves no file behind.
+    if (before?.script?.inline !== undefined) {
+      const old = this.inlineScriptPath(project.id, profileId, before.script);
+      if (!script.inline || old !== this.inlineScriptPath(project.id, profileId, script))
+        await rm(old, { force: true }).catch(() => undefined);
+    }
+    this.push(project.id);
+    return (await this.profiles(project)).find((p) => p.id === profileId)!;
+  }
+
   async deleteProfile(project: ProjectInfo, id: string): Promise<void> {
     const config = this.config(project.id);
+    const script = config.custom.find((p) => p.id === id)?.script;
+    if (script?.inline !== undefined)
+      await rm(this.inlineScriptPath(project.id, id, script), { force: true }).catch(() => undefined);
     if (config.custom.some((p) => p.id === id)) config.custom = config.custom.filter((p) => p.id !== id);
     else if (!config.hidden.includes(id)) config.hidden.push(id);
     delete config.overrides[id];
@@ -298,11 +381,24 @@ class RunnerService {
   // ── running ──
 
   async start(project: ProjectInfo, profile: RunProfile, by: StartedBy): Promise<RunSnapshot> {
+    await this.prepare(project, profile);
     return this.runs.start(project.rootPath, project.id, profile, by);
   }
 
   async restart(project: ProjectInfo, profile: RunProfile, by: StartedBy): Promise<RunSnapshot> {
+    await this.prepare(project, profile);
     return this.runs.restart(project.rootPath, project.id, profile, by);
+  }
+
+  /** A written script is saved again before it runs (its file may have been removed or edited by hand). */
+  private async prepare(project: ProjectInfo, profile: RunProfile): Promise<void> {
+    if (profile.script?.inline !== undefined) await this.writeInlineScript(project.id, profile.id, profile.script);
+  }
+
+  /** Script files of a project, for the custom script form. */
+  async scripts(project: ProjectInfo): Promise<string[]> {
+    const depth = this.oxy.settings.get<number>('projectRunner.scanDepth') ?? 3;
+    return findScripts(nodeDetectFs(project.rootPath), { maxDepth: Math.max(4, depth) });
   }
 
   // ── views ──
@@ -314,6 +410,7 @@ class RunnerService {
       project: project ? { id: project.id, name: project.name, rootPath: project.rootPath } : null,
       profiles: profiles.map((p) => ({ ...p, run: this.runs.snapshot(project!.id, p.id) })),
       scanning: project ? this.scanning.has(project.id) : false,
+      platform: this.oxy.env.platform,
     };
   }
 
@@ -386,6 +483,25 @@ class RunnerService {
         this.push(p.id);
       }),
     );
+    view.onRequest('scripts', () => this.withProject(view, (p) => this.scripts(p)));
+    view.onRequest<void, string | null>('pickScript', () =>
+      this.withProject(view, async (p) => {
+        const files = await this.scripts(p);
+        if (files.length === 0) throw new Error(`No script files (.bat, .cmd, .ps1, .sh, …) found in ${p.name}.`);
+        const picked = await this.oxy.ui.showQuickPick(
+          files.map((file) => ({ label: file.split('/').at(-1)!, description: file, file })),
+          { placeholder: `Choose a script of ${p.name}` },
+        );
+        return picked?.file ?? null;
+      }),
+    );
+    view.onRequest<{ profileId: string }, void>('openScript', ({ profileId }) =>
+      this.withProject(view, async (p) => {
+        const file = (await this.profileOrThrow(p, profileId)).script?.file;
+        if (!file) throw new Error('This profile runs no script file.');
+        await this.oxy.ui.openInEditor(scriptFilePath(file, p.rootPath, this.oxy.env.platform));
+      }),
+    );
     view.onRequest('openAgentTools', () => this.oxy.commands.execute('oxytocin.mcp.openSettings'));
     view.onDidChangeVisibility((visible) => {
       if (!visible) return;
@@ -441,15 +557,18 @@ class RunnerService {
                   { id: 'yes', title: 'Yes' },
                   { id: 'no', title: 'No' },
                 ]
-              : []),
+              : prompt.key
+                ? [{ id: 'continue', title: 'Continue' }]
+                : []),
             { id: 'show', title: 'Show Terminal' },
           ],
           signal: controller.signal,
         })
         .then(async (action) => {
-          if (action === 'yes' || action === 'no')
-            await this.runs.answer(run.projectId, run.profileId, action === 'yes' ? 'y' : 'n', prompt.id);
-          else if (action === 'show') await this.runs.showLogs(run.projectId, run.profileId);
+          if (action === 'yes' || action === 'no' || action === 'continue') {
+            const text = action === 'continue' ? '' : action === 'yes' ? 'y' : 'n';
+            await this.runs.answer(run.projectId, run.profileId, text, prompt.id);
+          } else if (action === 'show') await this.runs.showLogs(run.projectId, run.profileId);
         })
         .catch((e: unknown) => this.ctx.log.warn('Answering a run prompt failed', e));
     }
@@ -541,8 +660,13 @@ class RunnerService {
         if (projects.length === 1) return projects[0]!;
         throw new Error('Pass `cwd` (your working directory) or `project` to choose a project.');
       },
-      profiles: (p) => this.profiles(p),
-      profile: (p, id) => this.profileOrThrow(p, id),
+      // Profiles the user keeps from agents are neither listed nor run for them.
+      profiles: async (p) => agentProfiles(await this.profiles(p)),
+      profile: async (p, id) => {
+        const profile = findProfile(agentProfiles(await this.profiles(p)), id);
+        if (!profile) throw new Error(`No run profile "${id}" in ${p.name}.`);
+        return profile;
+      },
       snapshot: (p, id) => this.runs.snapshot(p.id, id),
       start: (p, profile) => this.start(p, profile, 'agent'),
       restart: (p, profile) => this.restart(p, profile, 'agent'),

@@ -45,7 +45,8 @@ export interface DetectOptions {
   rootName?: string;
 }
 
-const SKIPPED_DIRS = new Set([
+/** Folders that hold dependencies, build output or caches: never searched. */
+export const SKIPPED_DIRS = new Set([
   'node_modules',
   'bin',
   'obj',

@@ -187,8 +187,9 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
     await expect(row).toHaveAttribute('data-status', 'stopped', { timeout: 20_000 });
     await expect(win.getByTestId('status-item-projectRunner.status')).toHaveCount(0);
 
-    // A custom profile from the form.
+    // A custom profile from the form ("+" → Run Profile…).
     await frame.getByTestId('runner-add').click();
+    await win.getByTestId('plugin-context-menu').getByRole('menuitem', { name: 'Run Profile…' }).click();
     await frame.getByTestId('runner-form-name').fill('worker');
     await frame.getByTestId('runner-form-command').fill('node -e "setInterval(() => {}, 1000)"');
     await frame.getByTestId('runner-form-cwd').fill('../outside');
@@ -297,6 +298,125 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
     );
   } finally {
     await again.app.close();
+  }
+});
+
+test('Project Runner: custom scripts — a script file of the project in a new terminal tab, hidden from agents, and a written script', async () => {
+  test.setTimeout(150_000);
+  const win32 = process.platform === 'win32';
+  const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
+  await writeFile(
+    join(project, 'package.json'),
+    JSON.stringify({ name: 'demo-web', scripts: { dev: 'node server.js' } }),
+  );
+  await writeFile(join(project, 'package-lock.json'), '{}');
+  await writeFile(join(project, 'server.js'), SERVER);
+  await mkdir(join(project, 'tools'));
+  // A script that ends with PAUSE (cmd) or its bash twin: it waits for a key after its work.
+  const scriptName = win32 ? 'hello.bat' : 'hello.sh';
+  await writeFile(
+    join(project, 'tools', scriptName),
+    win32
+      ? '@echo off\r\necho Hello from the script in %CD%\r\npause\r\n'
+      : 'echo "Hello from the script in $PWD"\nread -n 1 -s -r -p "Press any key to continue . . . "\necho\n',
+  );
+  const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  const port = MCP_PORT + 3;
+  await writeFile(
+    join(userData, 'settings.json'),
+    JSON.stringify({ 'mcp.port': port, 'projectRunner.mcp.enabled': false }),
+  );
+  await withRunInLeftSidebar(userData);
+  const { app, win } = await launchApp({ userData, project });
+  try {
+    await waitForTerminal(win);
+    const t = oxyTest(win);
+    const frame = await runnerFrame(win);
+    const detected = frame.locator('[data-testid="runner-profile"][data-profile-id="node:"]');
+    await expect(detected).toContainText('demo-web');
+    const panels = async () => (await t.workspace())!.panels.length;
+    expect(await panels()).toBe(1);
+
+    // "+" → Custom Script…: the script file is chosen from the project's scripts.
+    await frame.getByTestId('runner-add').click();
+    await win.getByTestId('plugin-context-menu').getByRole('menuitem', { name: 'Custom Script…' }).click();
+    await expect(frame.getByTestId('runner-script-form')).toBeVisible();
+    await frame.getByTestId('runner-script-choose').click();
+    await win.getByTestId('command-palette-item').filter({ hasText: scriptName }).click();
+    await expect(frame.getByTestId('runner-script-file')).toHaveValue(`tools/${scriptName}`);
+    await expect(frame.getByTestId('runner-script-name')).toHaveValue('hello');
+    await frame.getByTestId('runner-script-name').fill('Say hello');
+    await frame.getByTestId('runner-script-new-terminal').check();
+    await expect(frame.getByTestId('runner-script-agents')).toBeChecked();
+    await frame.getByTestId('runner-script-agents').uncheck();
+    await frame.getByTestId('runner-form-save').click();
+
+    // The detected profile stays; the script is listed below it.
+    const rows = frame.getByTestId('runner-profile');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0)).toHaveAttribute('data-profile-id', 'node:');
+    const hello = rows.nth(1);
+    await expect(hello).toContainText('Say hello');
+    await expect(hello).toContainText(`tools/${scriptName}`);
+    await expect(hello.getByTestId('runner-tag-new-terminal')).toBeVisible();
+    await expect(hello.getByTestId('runner-tag-no-agents')).toBeVisible();
+
+    // Run: a new terminal tab opens and shows the script's output (run in the script's folder); PAUSE shows
+    // "Continue".
+    await hello.getByTestId('runner-start').click();
+    await expect.poll(panels, { timeout: 20_000 }).toBe(2);
+    await expect(hello).toHaveAttribute('data-prompt', 'true', { timeout: 30_000 });
+    await expect(frame.getByTestId('runner-prompt-text')).toHaveText('Press any key to continue . . .');
+    const runTerminal = (await t.workspace())!.panels
+      .map((p) => p.terminalId)
+      .filter(Boolean)
+      .at(-1)!;
+    expect(await t.text(runTerminal)).toMatch(/Hello from the script in .*tools/);
+    await frame.getByTestId('runner-prompt-continue').click();
+    await expect(hello).toHaveAttribute('data-status', 'stopped', { timeout: 20_000 });
+    // Again: another new tab (the first one stays open).
+    await hello.getByTestId('runner-start').click();
+    await expect.poll(panels, { timeout: 20_000 }).toBe(3);
+    await expect(hello).toHaveAttribute('data-prompt', 'true', { timeout: 30_000 });
+    await frame.getByTestId('runner-prompt-continue').click();
+    await expect(hello).toHaveAttribute('data-status', 'stopped', { timeout: 20_000 });
+
+    // A written script (visible to agents, run in the background).
+    await frame.getByTestId('runner-add').click();
+    await win.getByTestId('plugin-context-menu').getByRole('menuitem', { name: 'Custom Script…' }).click();
+    await frame.getByTestId('runner-script-name').fill('inline');
+    await frame.getByTestId('runner-script-source-inline').check();
+    await expect(frame.getByTestId('runner-script-language')).toHaveValue(win32 ? 'cmd' : 'sh');
+    await frame.getByTestId('runner-script-inline').fill(win32 ? '@echo off\necho inline-ok' : 'echo inline-ok');
+    await frame.getByTestId('runner-form-save').click();
+    const inline = rows.filter({ hasText: 'inline' });
+    await expect(inline).toContainText(win32 ? 'written batch script' : 'written shell script');
+    await inline.getByTestId('runner-start').click();
+    await expect(inline).toHaveAttribute('data-status', 'stopped', { timeout: 30_000 });
+    expect(await panels()).toBe(3);
+
+    // Agents see the written script, not the one hidden from them.
+    await expect.poll(() => readFile(join(userData, 'mcp.json'), 'utf8').catch(() => '')).toContain('token');
+    const { token } = JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string };
+    const hub = { port, token, session: {} as { id?: string } };
+    await mcp(hub, 'initialize', { protocolVersion: '2025-06-18' });
+    const listed = toolText(await mcp(hub, 'tools/call', { name: 'run_list_profiles', arguments: { cwd: project } }));
+    expect(listed).toContain('"name": "demo-web"');
+    expect(listed).toContain('"name": "inline"');
+    expect(listed).not.toContain('Say hello');
+    const logs = toolText(await mcp(hub, 'tools/call', { name: 'run_get_logs', arguments: { profile: 'inline' } }));
+    expect(logs).toContain('inline-ok');
+    const refused = await mcp(hub, 'tools/call', { name: 'run_start_profile', arguments: { profile: 'Say hello' } });
+    expect(JSON.stringify(refused)).toContain('No run profile');
+
+    // Edit: the script form comes back with the saved options.
+    await hello.getByTestId('runner-more').click();
+    await win.getByTestId('plugin-context-menu').getByRole('menuitem', { name: 'Edit…' }).click();
+    await expect(frame.getByTestId('runner-script-file')).toHaveValue(`tools/${scriptName}`);
+    await expect(frame.getByTestId('runner-script-new-terminal')).toBeChecked();
+    await expect(frame.getByTestId('runner-script-agents')).not.toBeChecked();
+  } finally {
+    await app.close();
   }
 });
 

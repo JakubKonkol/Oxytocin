@@ -240,6 +240,59 @@ button.primary {
   width: 100%;
   resize: vertical;
 }
+.form label.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.form label.check input {
+  width: auto;
+  margin: 0;
+}
+.segmented {
+  display: flex;
+  gap: 12px;
+}
+.segmented label {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-primary);
+}
+.segmented input {
+  width: auto;
+  margin: 0;
+}
+.file-row {
+  display: flex;
+  gap: 6px;
+}
+.file-row input {
+  flex: 1;
+  min-width: 0;
+}
+.file-row button {
+  flex: none;
+}
+/* A row with tags keeps its name whole; the tags give way in a narrow sidebar. */
+.title[data-tags] {
+  overflow: hidden;
+}
+.title[data-tags] .name {
+  flex-shrink: 0;
+  max-width: 100%;
+}
+.tag {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
 .form-actions {
   display: flex;
   justify-content: flex-end;

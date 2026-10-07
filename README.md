@@ -73,7 +73,9 @@ The **Project Runner** finds what a project can run — `package.json` scripts (
 projects with their launch URLs, Django/FastAPI/Flask apps, Go, Rust, Spring Boot, Laravel, Rails, Docker Compose —
 and starts it with one click. Add the **Run** tool to a sidebar (**Add tool** in the right sidebar, then move it to the
 left one if you like): it shows every app's status and the URL it serves; its output stays in a terminal you can open
-at any time. Add your own run profiles (command, folder, environment) per project.
+at any time. Add your own run profiles (command, folder, environment) per project, or custom scripts — a `.bat`,
+`.cmd`, `.ps1` or `.sh` file of the project, or a script written right in the Run tool — that can run in their own
+terminal tab and be kept from agents.
 
 Agents can use it too: through Oxytocin's MCP server Claude Code can list, start, restart and stop your apps and read
 their logs — and you see in the Run tool what the agent started.

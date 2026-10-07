@@ -3,7 +3,7 @@ import '@oxytocin/plugin-sdk/theme.css';
 import { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './runner.css';
-import type { ProfileState, RunnerState } from '../shared/types';
+import type { ProfileState, RunnerState, ScriptLanguage } from '../shared/types';
 import { formatEnv, statusLabel } from './format';
 
 type View = NonNullable<ReturnType<typeof useOxyView>>;
@@ -127,6 +127,232 @@ function ProfileForm(props: { draft: Draft; onSave: (d: Draft) => Promise<void>;
   );
 }
 
+interface ScriptDraft {
+  id?: string;
+  name: string;
+  source: 'file' | 'inline';
+  file: string;
+  inline: string;
+  language: ScriptLanguage;
+  cwd: string;
+  env: string;
+  hiddenFromAgents: boolean;
+  newTerminal: boolean;
+}
+
+const LANGUAGES: { id: ScriptLanguage; label: string; short: string }[] = [
+  { id: 'cmd', label: 'Batch (cmd)', short: 'batch' },
+  { id: 'powershell', label: 'PowerShell', short: 'PowerShell' },
+  { id: 'sh', label: 'Shell (sh/bash)', short: 'shell' },
+];
+
+const emptyScript = (platform: string | undefined): ScriptDraft => ({
+  name: '',
+  source: 'file',
+  file: '',
+  inline: '',
+  language: platform === 'win32' ? 'cmd' : 'sh',
+  cwd: '',
+  env: '',
+  hiddenFromAgents: false,
+  newTerminal: false,
+});
+
+/** A custom script: an existing script file of the project (.bat, .sh, …) or a script written here. */
+function ScriptForm(props: {
+  draft: ScriptDraft;
+  view: View;
+  onSave: (d: ScriptDraft) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const { view } = props;
+  const [draft, setDraft] = useState(props.draft);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [files, setFiles] = useState<string[]>([]);
+  useEffect(() => {
+    void view
+      .request<string[]>('scripts')
+      .then(setFiles)
+      .catch(() => undefined);
+  }, [view]);
+  const set = (patch: Partial<ScriptDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const text = (key: 'name' | 'file' | 'inline' | 'cwd' | 'env') => ({
+    value: draft[key],
+    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set({ [key]: e.target.value }),
+  });
+  const choose = async () => {
+    try {
+      const file = await view.request<string | null>('pickScript');
+      if (file)
+        set({
+          file,
+          ...(draft.name
+            ? {}
+            : {
+                name: file
+                  .split('/')
+                  .at(-1)!
+                  .replace(/\.[^.]+$/, ''),
+              }),
+        });
+    } catch (err) {
+      setError(messageOf(err));
+    }
+  };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onSave(draft);
+    } catch (err) {
+      setError(messageOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="form" onSubmit={(e) => void submit(e)} data-testid="runner-script-form">
+      <div className="form-title">{draft.id ? 'Edit custom script' : 'New custom script'}</div>
+      <label>
+        Name
+        <input {...text('name')} placeholder="deploy" autoFocus data-testid="runner-script-name" />
+      </label>
+      <div className="segmented" role="radiogroup" aria-label="Script">
+        <label>
+          <input
+            type="radio"
+            name="source"
+            checked={draft.source === 'file'}
+            onChange={() => set({ source: 'file' })}
+            data-testid="runner-script-source-file"
+          />
+          Script file
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="source"
+            checked={draft.source === 'inline'}
+            onChange={() => set({ source: 'inline' })}
+            data-testid="runner-script-source-inline"
+          />
+          Write a script
+        </label>
+      </div>
+      {draft.source === 'file' ? (
+        <label>
+          Script file <span className="muted">(in the project, or an absolute path)</span>
+          <span className="file-row">
+            <input
+              {...text('file')}
+              list="runner-script-files"
+              placeholder="scripts/start.bat"
+              className="mono"
+              data-testid="runner-script-file"
+            />
+            <button type="button" onClick={() => void choose()} data-testid="runner-script-choose">
+              Choose…
+            </button>
+          </span>
+          <datalist id="runner-script-files">
+            {files.map((f) => (
+              <option key={f} value={f} />
+            ))}
+          </datalist>
+        </label>
+      ) : (
+        <>
+          <label>
+            Language
+            <select
+              value={draft.language}
+              onChange={(e) => set({ language: e.target.value as ScriptLanguage })}
+              data-testid="runner-script-language"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Script
+            <textarea
+              {...text('inline')}
+              rows={7}
+              className="mono"
+              spellCheck={false}
+              placeholder={
+                draft.language === 'cmd'
+                  ? '@echo off\necho Building…\nnpm run build\npause'
+                  : draft.language === 'powershell'
+                    ? 'Write-Host "Building…"\nnpm run build'
+                    : 'echo "Building…"\nnpm run build'
+              }
+              data-testid="runner-script-inline"
+            />
+          </label>
+        </>
+      )}
+      <label>
+        Folder <span className="muted">(relative to the project root)</span>
+        <input
+          {...text('cwd')}
+          placeholder={draft.source === 'file' ? "the script's folder" : 'the project root'}
+          className="mono"
+          data-testid="runner-script-cwd"
+        />
+      </label>
+      <label>
+        Environment <span className="muted">(KEY=value per line)</span>
+        <textarea
+          {...text('env')}
+          rows={2}
+          className="mono"
+          placeholder="MODE=release"
+          data-testid="runner-script-env"
+        />
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={!draft.hiddenFromAgents}
+          onChange={(e) => set({ hiddenFromAgents: !e.target.checked })}
+          data-testid="runner-script-agents"
+        />
+        <span>
+          Visible to AI agents <span className="muted">(they can list and run it)</span>
+        </span>
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={draft.newTerminal}
+          onChange={(e) => set({ newTerminal: e.target.checked })}
+          data-testid="runner-script-new-terminal"
+        />
+        <span>Always run in a new terminal tab</span>
+      </label>
+      {error && (
+        <div className="error" data-testid="runner-form-error">
+          {error}
+        </div>
+      )}
+      <div className="form-actions">
+        <button type="button" onClick={props.onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className="primary" disabled={busy} data-testid="runner-form-save">
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** The question a starting app waits on, with its answers (the app would otherwise look like it hangs). */
 function PromptBar(props: { p: ProfileState; view: View; onError: (message: string) => void }) {
   const { p, view, onError } = props;
@@ -143,7 +369,11 @@ function PromptBar(props: { p: ProfileState; view: View; onError: (message: stri
         {prompt.text}
       </div>
       <div className="prompt-actions">
-        {prompt.yesNo ? (
+        {prompt.key ? (
+          <button type="button" className="primary" onClick={() => answer('')} data-testid="runner-prompt-continue">
+            Continue
+          </button>
+        ) : prompt.yesNo ? (
           <>
             <button type="button" className="primary" onClick={() => answer('y')} data-testid="runner-prompt-yes">
               Yes
@@ -188,6 +418,13 @@ function PromptBar(props: { p: ProfileState; view: View; onError: (message: stri
   );
 }
 
+/** What a script profile shows instead of its command: the file, or the language of a written script. */
+function scriptLabel(p: ProfileState): string | undefined {
+  if (p.script?.file) return p.script.file;
+  if (p.script) return `written ${LANGUAGES.find((l) => l.id === p.script!.language)?.short ?? ''} script`;
+  return undefined;
+}
+
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/^Error: /, '');
 
 function ProfileRow(props: {
@@ -205,6 +442,7 @@ function ProfileRow(props: {
   const menu = async (e: React.MouseEvent) => {
     const items = [
       { id: 'edit', label: 'Edit…' },
+      ...(p.script?.file ? [{ id: 'open', label: 'Open Script' }] : []),
       { id: 'copy', label: 'Copy Command' },
       ...(p.edited ? [{ id: 'reset', label: 'Reset to Detected' }] : []),
       { id: 'sep', label: '', separator: true },
@@ -213,6 +451,7 @@ function ProfileRow(props: {
     try {
       const picked = await view.showContextMenu(items, { x: e.clientX, y: e.clientY });
       if (picked === 'edit') props.onEdit(p);
+      else if (picked === 'open') await view.request('openScript', { profileId: p.id });
       else if (picked === 'copy') await view.copyToClipboard(p.command);
       else if (picked === 'reset') await view.request('reset', { profileId: p.id });
       else if (picked === 'delete') await view.request('delete', { profileId: p.id });
@@ -235,9 +474,19 @@ function ProfileRow(props: {
       >
         <span className="dot" data-status={run.status} title={statusLabel(run)} />
         <div className="main">
-          <div className="title">
+          <div className="title" data-tags={p.newTerminal || p.hiddenFromAgents ? 'true' : undefined}>
             <span className="name">{p.name}</span>
             {p.framework && <span className="framework">{p.framework}</span>}
+            {p.newTerminal && (
+              <span className="tag" title="Runs in a new terminal tab" data-testid="runner-tag-new-terminal">
+                new tab
+              </span>
+            )}
+            {p.hiddenFromAgents && (
+              <span className="tag" title="AI agents do not see it" data-testid="runner-tag-no-agents">
+                no agents
+              </span>
+            )}
             {run.startedBy === 'agent' && active && (
               <span className="agent" title="Started by an AI agent (MCP)" data-testid="runner-agent-badge">
                 agent
@@ -258,7 +507,7 @@ function ProfileRow(props: {
               </a>
             ) : (
               <span className="mono muted command" title={p.cwd ? `${p.cwd}: ${p.command}` : p.command}>
-                {p.command}
+                {scriptLabel(p) ?? p.command}
               </span>
             )}
             <span className="status-text" data-testid="runner-status">
@@ -329,6 +578,7 @@ function App() {
   const view = useOxyView();
   const [state, setState] = useState<RunnerState | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [scriptDraft, setScriptDraft] = useState<ScriptDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -374,6 +624,25 @@ function App() {
     [view],
   );
 
+  const saveScript = useCallback(
+    async (d: ScriptDraft) => {
+      if (!view) return;
+      await view.request('save', {
+        ...(d.id ? { id: d.id } : {}),
+        input: {
+          name: d.name,
+          cwd: d.cwd,
+          env: d.env,
+          script: d.source === 'file' ? { file: d.file } : { inline: d.inline, language: d.language },
+          hiddenFromAgents: d.hiddenFromAgents,
+          newTerminal: d.newTerminal,
+        },
+      });
+      setScriptDraft(null);
+    },
+    [view],
+  );
+
   if (!view || (!state && !error)) return <div className="empty muted">Loading…</div>;
   if (!state) return <div className="empty error">{error}</div>;
   if (!state.project)
@@ -382,7 +651,47 @@ function App() {
         Open a project to run its apps.
       </div>
     );
-  const edit = (p: ProfileState) =>
+  const platform = state.platform;
+  const addScript = () => {
+    setDraft(null);
+    setScriptDraft(emptyScript(platform));
+  };
+  const addProfile = () => {
+    setScriptDraft(null);
+    setDraft(emptyDraft());
+  };
+  const add = async (e: React.MouseEvent) => {
+    const picked = await view
+      .showContextMenu(
+        [
+          { id: 'profile', label: 'Run Profile…' },
+          { id: 'script', label: 'Custom Script…' },
+        ],
+        { x: e.clientX, y: e.clientY },
+      )
+      .catch(() => undefined);
+    if (picked === 'profile') addProfile();
+    else if (picked === 'script') addScript();
+  };
+  const edit = (p: ProfileState) => {
+    if (p.script) {
+      setDraft(null);
+      setScriptDraft({
+        ...emptyScript(platform),
+        id: p.id,
+        name: p.name,
+        source: p.script.file !== undefined ? 'file' : 'inline',
+        file: p.script.file ?? '',
+        inline: p.script.inline ?? '',
+        ...(p.script.language ? { language: p.script.language } : {}),
+        cwd: p.cwd,
+        env: formatEnv(p.env),
+        hiddenFromAgents: !!p.hiddenFromAgents,
+        newTerminal: !!p.newTerminal,
+      });
+      return;
+    }
+    setScriptDraft(null);
     setDraft({
       id: p.id,
       name: p.name,
@@ -391,6 +700,7 @@ function App() {
       env: formatEnv(p.env),
       url: p.url ?? '',
     });
+  };
   return (
     <div className="runner" data-testid="runner" data-project={state.project.id}>
       <div className="header">
@@ -399,7 +709,7 @@ function App() {
         </span>
         {state.scanning && <span className="muted">scanning…</span>}
         <span className="spacer" />
-        <IconButton icon="add" label="Add run profile" onClick={() => setDraft(emptyDraft())} testId="runner-add" />
+        <IconButton icon="add" label="Add a run profile or script" onClick={(e) => void add(e)} testId="runner-add" />
         <IconButton
           icon="rescan"
           label="Detect apps again"
@@ -412,15 +722,23 @@ function App() {
           {notice}
         </div>
       )}
-      {draft ? (
+      {scriptDraft ? (
+        <ScriptForm draft={scriptDraft} view={view} onSave={saveScript} onCancel={() => setScriptDraft(null)} />
+      ) : draft ? (
         <ProfileForm draft={draft} onSave={save} onCancel={() => setDraft(null)} />
       ) : state.profiles.length === 0 ? (
         <div className="empty muted" data-testid="runner-empty">
           {state.scanning ? 'Looking for apps…' : 'No runnable apps found.'}{' '}
           {!state.scanning && (
-            <button type="button" className="link" onClick={() => setDraft(emptyDraft())}>
-              Add a run profile
-            </button>
+            <>
+              <button type="button" className="link" onClick={addProfile}>
+                Add a run profile
+              </button>{' '}
+              or{' '}
+              <button type="button" className="link" onClick={addScript} data-testid="runner-empty-add-script">
+                a custom script
+              </button>
+            </>
           )}
         </div>
       ) : (

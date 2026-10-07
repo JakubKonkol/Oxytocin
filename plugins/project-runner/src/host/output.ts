@@ -90,8 +90,11 @@ export interface DetectedPrompt {
   text: string;
   /** Answered with yes or no. */
   yesNo: boolean;
+  /** Waits for a key (cmd's `PAUSE`: "Press any key to continue . . ."): Enter answers it. */
+  key?: boolean;
 }
 
+const PRESS_KEY = /\bpress (?:any key|enter|return)\b/i;
 const YES_NO = /[([]\s*(?:y(?:es)?\s*\/\s*n(?:o)?|n(?:o)?\s*\/\s*y(?:es)?)\s*[)\]]\s*[?:›>]?\s*$/i;
 const QUESTION = [
   // "Would you like to use a different port?", "? Project name ›", "Continue? ›"
@@ -117,5 +120,5 @@ export function detectPrompt(pendingLine: string, previousLines: readonly string
     .find((l) => l.trim().length > 0)
     ?.trim();
   const text = before && /^[?!✖]\s/.test(before) && !/^[?!✖]\s/.test(line) ? `${before}\n${line}` : line;
-  return { text: text.replace(/^[?]\s+/, ''), yesNo };
+  return { text: text.replace(/^[?]\s+/, ''), yesNo, ...(!yesNo && PRESS_KEY.test(line) ? { key: true } : {}) };
 }

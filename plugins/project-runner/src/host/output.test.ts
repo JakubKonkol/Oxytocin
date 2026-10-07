@@ -54,7 +54,13 @@ describe('output', () => {
       text: 'Enter the port to use:',
       yesNo: false,
     });
-    expect(detectPrompt('Press any key to continue . . .', [])).toMatchObject({ yesNo: false });
+    // cmd's PAUSE (e.g. at the end of a batch script) waits for a key: Enter answers it.
+    expect(detectPrompt('Press any key to continue . . . ', [])).toEqual({
+      text: 'Press any key to continue . . .',
+      yesNo: false,
+      key: true,
+    });
+    expect(detectPrompt('Enter the port to use: ', [])).not.toHaveProperty('key');
     for (const progress of ['Building... 42%', '[=====>    ] 12/40', 'webpack compiling', ''])
       expect(detectPrompt(progress, [])).toBeUndefined();
   });

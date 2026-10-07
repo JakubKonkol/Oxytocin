@@ -1,7 +1,8 @@
-import type { RunProfile } from '../shared/types';
+import type { RunProfile, ScriptLanguage, ScriptSpec } from '../shared/types';
 import type { DetectedProfile } from './detect';
+import { SCRIPT_LANGUAGES } from './scripts';
 
-export type { RunProfile };
+export type { RunProfile, ScriptSpec };
 
 /** User edits of a detected profile (only the fields that differ). */
 export interface ProfileOverride {
@@ -32,16 +33,34 @@ export function normalizeConfig(value: unknown): ProjectRunConfig {
       )
     : [];
   return {
-    custom: custom.map((p) => ({
-      ...p,
-      cwd: typeof p.cwd === 'string' ? p.cwd : '',
-      source: 'custom',
-      kind: 'custom',
-    })),
+    custom: custom.map((p) => {
+      const script = normalizeScript(p.script);
+      const profile: RunProfile = {
+        ...p,
+        cwd: typeof p.cwd === 'string' ? p.cwd : '',
+        source: 'custom',
+        kind: script ? 'script' : 'custom',
+      };
+      if (script) profile.script = script;
+      else delete profile.script;
+      return profile;
+    }),
     hidden: Array.isArray(v.hidden) ? v.hidden.filter((h): h is string => typeof h === 'string') : [],
     overrides: v.overrides && typeof v.overrides === 'object' ? v.overrides : {},
   };
 }
+
+function normalizeScript(value: unknown): ScriptSpec | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const v = value as ScriptSpec;
+  if (typeof v.file === 'string' && v.file) return { file: v.file };
+  if (typeof v.inline === 'string')
+    return { inline: v.inline, ...(SCRIPT_LANGUAGES.includes(v.language!) ? { language: v.language! } : {}) };
+  return undefined;
+}
+
+/** The profiles AI agents see (the user can keep a profile from them). */
+export const agentProfiles = (profiles: RunProfile[]) => profiles.filter((p) => !p.hiddenFromAgents);
 
 /** Detected profiles (minus hidden ones, with the user's edits) followed by the user's own profiles. */
 export function mergeProfiles(detected: DetectedProfile[], config: ProjectRunConfig): RunProfile[] {
@@ -65,6 +84,10 @@ export interface ProfileInput {
   cwd?: unknown;
   env?: unknown;
   url?: unknown;
+  /** A custom script instead of a command: `{ file }` or `{ inline, language }`. */
+  script?: unknown;
+  hiddenFromAgents?: unknown;
+  newTerminal?: unknown;
 }
 
 export interface ValidProfileInput {
@@ -88,19 +111,30 @@ export function parseEnvLines(text: string): Record<string, string> {
   return env;
 }
 
-/** Validates a profile from the UI or an agent; throws a readable error. */
-export function validateProfileInput(input: ProfileInput): ValidProfileInput {
-  const name = typeof input.name === 'string' ? input.name.trim() : '';
-  const command = typeof input.command === 'string' ? input.command.trim() : '';
-  let cwd = typeof input.cwd === 'string' ? input.cwd.trim().replace(/\\/g, '/') : '';
+/** A folder relative to the project root (`/` separators, `''` = the root); throws for anything else. */
+function validateFolder(input: unknown): string {
+  let cwd = typeof input === 'string' ? input.trim().replace(/\\/g, '/') : '';
   cwd = cwd.replace(/^(\.\/+)+/, '').replace(/\/+$/, '');
   if (cwd === '.') cwd = '';
-  if (!name) throw new Error('A profile needs a name.');
-  if (name.length > 80) throw new Error('The name is longer than 80 characters.');
-  if (!command) throw new Error('A profile needs a command.');
-  if (command.length > 2000) throw new Error('The command is longer than 2000 characters.');
   if (/^([a-zA-Z]:)?\//.test(cwd) || cwd.split('/').includes('..'))
     throw new Error('The folder must be relative to the project root (e.g. "apps/web").');
+  return cwd;
+}
+
+function validateName(input: unknown): string {
+  const name = typeof input === 'string' ? input.trim() : '';
+  if (!name) throw new Error('A profile needs a name.');
+  if (name.length > 80) throw new Error('The name is longer than 80 characters.');
+  return name;
+}
+
+/** Validates a profile from the UI or an agent; throws a readable error. */
+export function validateProfileInput(input: ProfileInput): ValidProfileInput {
+  const name = validateName(input.name);
+  const command = typeof input.command === 'string' ? input.command.trim() : '';
+  if (!command) throw new Error('A profile needs a command.');
+  if (command.length > 2000) throw new Error('The command is longer than 2000 characters.');
+  const cwd = validateFolder(input.cwd);
   let env: Record<string, string> | undefined;
   if (typeof input.env === 'string') env = parseEnvLines(input.env);
   else if (input.env && typeof input.env === 'object')
@@ -119,6 +153,48 @@ export function validateProfileInput(input: ProfileInput): ValidProfileInput {
     cwd,
     ...(env && Object.keys(env).length > 0 ? { env } : {}),
     ...(url ? { url } : {}),
+  };
+}
+
+export const MAX_INLINE_SCRIPT = 20_000;
+
+/** A custom script from the UI, before its file is checked and its command is built (see index.ts). */
+export interface ValidScriptInput {
+  name: string;
+  /** `undefined` when no folder was given: the script file's folder is used. */
+  cwd: string | undefined;
+  env?: Record<string, string>;
+  url?: string;
+  /** `file` as typed (normalized against the project root later) or the written script. */
+  script: { file: string } | { inline: string; language: ScriptLanguage };
+  hiddenFromAgents: boolean;
+  newTerminal: boolean;
+}
+
+/** Validates a custom script from the UI; throws a readable error. */
+export function validateScriptInput(input: ProfileInput, fallbackLanguage: ScriptLanguage): ValidScriptInput {
+  const name = validateName(input.name);
+  const raw = (input.script ?? {}) as { file?: unknown; inline?: unknown; language?: unknown };
+  let script: ValidScriptInput['script'];
+  if (typeof raw.inline === 'string') {
+    if (!raw.inline.trim()) throw new Error('Write the script or choose a script file.');
+    if (raw.inline.length > MAX_INLINE_SCRIPT)
+      throw new Error(`The script is longer than ${MAX_INLINE_SCRIPT} characters; save it as a file of the project.`);
+    const language = SCRIPT_LANGUAGES.find((l) => l === raw.language) ?? fallbackLanguage;
+    script = { inline: raw.inline, language };
+  } else if (typeof raw.file === 'string' && raw.file.trim()) script = { file: raw.file.trim() };
+  else throw new Error('Choose a script file.');
+  const blankFolder = typeof input.cwd !== 'string' || input.cwd.trim() === '';
+  // Everything but the command is checked like a run profile's.
+  const { env, url } = validateProfileInput({ ...input, name, command: '-' });
+  return {
+    name,
+    cwd: blankFolder ? undefined : validateFolder(input.cwd),
+    ...(env ? { env } : {}),
+    ...(url ? { url } : {}),
+    script,
+    hiddenFromAgents: input.hiddenFromAgents === true,
+    newTerminal: input.newTerminal === true,
   };
 }
 

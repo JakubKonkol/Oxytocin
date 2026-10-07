@@ -81,6 +81,7 @@ function describeRun(profile: RunProfile, run: RunSnapshot): Record<string, unkn
     ...(run.ports.length ? { ports: run.ports } : {}),
     ...(run.exitCode !== undefined ? { exitCode: run.exitCode } : {}),
     ...(run.startedBy ? { startedBy: run.startedBy } : {}),
+    ...(profile.script?.file ? { script: profile.script.file } : {}),
     ...(run.prompt ? { waitingForInput: run.prompt.text } : {}),
   };
 }
@@ -93,7 +94,9 @@ function report(names: ToolNames, profile: RunProfile, run: RunSnapshot, logs: s
   const lines = [JSON.stringify(describeRun(profile, run), null, 2)];
   if (run.prompt)
     lines.push(
-      `The app is waiting for an answer in its terminal: "${run.prompt.text}". Ask the user (it is also shown in Oxytocin) or answer with ${names.answer}.`,
+      run.prompt.key
+        ? `The app waits for a key in its terminal: "${run.prompt.text}". Continue with ${names.answer} and an empty answer (Enter).`
+        : `The app is waiting for an answer in its terminal: "${run.prompt.text}". Ask the user (it is also shown in Oxytocin) or answer with ${names.answer}.`,
     );
   else if (run.status === 'starting')
     lines.push(`Still starting — call ${names.logs} or ${names.list} later to check it.`);
@@ -218,7 +221,7 @@ export function buildTools(r: RunnerTools, names: ToolNames = TOOL_NAMES): McpTo
         type: 'object',
         properties: {
           profile: PROFILE_ARG,
-          answer: { type: 'string', description: 'The text to type, e.g. "y" or "n".' },
+          answer: { type: 'string', description: 'The text to type, e.g. "y" or "n" ("" only presses Enter).' },
           ...PROJECT_ARGS,
           wait_seconds: { type: 'number' },
         },
