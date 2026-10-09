@@ -61,7 +61,7 @@ const fingerprint = (value: unknown) =>
   createHash('sha256').update(JSON.stringify(value)).digest('base64url').slice(0, 22);
 
 /**
- * Project resources (Plan 02): stored in `project-resources.json` (not in projects.json, so a resource written by a
+ * Project resources: stored in `project-resources.json` (not in projects.json, so a resource written by a
  * newer version can never make the project list unreadable), secrets in the SecretStore. Knows which resources an
  * agent in a project may use: its own exposed ones plus those of related projects shared with related projects.
  */

@@ -251,7 +251,7 @@ export const invokeContract = {
     res: McpCliResultSchema.extend({ migrated: z.boolean() }).nullable(),
   },
   'mcp:clearLog': { req: z.null().optional(), res: z.void() },
-  /** A project's resources (Plan 02) with which secrets are set; never the secrets themselves. */
+  /** A project's resources with which secrets are set; never the secrets themselves. */
   'resources:get': {
     req: z.object({ projectId: ProjectIdSchema }),
     res: z.object({
@@ -317,7 +317,7 @@ export const invokeContract = {
     req: z.object({ projectId: ProjectIdSchema, resourceId: z.string().min(1).max(64), key: SecretKeySchema }),
     res: SecretsStatusSchema,
   },
-  /** Ensemble (Plan 03): the tasks of a project (latest events only). */
+  /** Ensemble: the tasks of a project (latest events only). */
   'ensemble:list': { req: z.object({ projectId: ProjectIdSchema.optional() }), res: z.array(EnsembleRecordSchema) },
   /** A new draft from a template. */
   'ensemble:create': {

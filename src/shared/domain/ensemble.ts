@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Ensemble (Plan 03): a task run by a team of AI agents. A deterministic conductor (src/shared/ensemble) hands each
+ * Ensemble: a task run by a team of AI agents. A deterministic conductor (src/shared/ensemble) hands each
  * pipeline stage to the right agent, carries results from one agent to the next and asks the user at gates.
  *
  * Everything read back from disk is tolerant: unknown fields are kept (`looseObject`), so a file written by a newer

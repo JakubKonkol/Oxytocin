@@ -6,7 +6,7 @@ import { runGit } from './exec';
 import { serialized } from './serialize';
 
 /**
- * Git operations of Ensemble (Plan 03): worktrees, checkpoint commits, the task's changes and finishing a task.
+ * Git operations of Ensemble: worktrees, checkpoint commits, the task's changes and finishing a task.
  * Reads use `--no-optional-locks` (runGit); writes take git's locks, so they are serialized per repository.
  */
 

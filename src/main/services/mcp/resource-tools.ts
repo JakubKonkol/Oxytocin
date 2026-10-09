@@ -147,7 +147,7 @@ function describeAccessible(a: Accessible, url: string | undefined) {
   };
 }
 
-/** Oxytocin's bridge to the project's databases, APIs and logs (Plan 02), as core MCP tools. */
+/** Oxytocin's bridge to the project's databases, APIs and logs, as core MCP tools. */
 export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
   const database = (caller: ResolvedCaller, args: Record<string, unknown>) =>
     deps.resources.find(projectOf(deps, caller).id, 'database', args['database']);

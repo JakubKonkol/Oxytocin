@@ -180,7 +180,7 @@ function bootstrap(): void {
   });
   const projectsReady = projects.load();
 
-  // Project resources (Plan 02): databases, APIs, links and logs for AI agents; secrets encrypted with safeStorage.
+  // Project resources: databases, APIs, links and logs for AI agents; secrets encrypted with safeStorage.
   const secretStore = new SecretStore(
     join(app.getPath('userData'), 'secrets.json'),
     safeStorage,
@@ -788,7 +788,7 @@ function bootstrap(): void {
   });
   void Promise.all([pluginsReady, resourcesReady]).then(() => mcpHub.start());
 
-  // Ensemble (Plan 03): tasks run by a team of AI agents in background terminals, through `/mcp/ensemble`.
+  // Ensemble: tasks run by a team of AI agents in background terminals, through `/mcp/ensemble`.
   let ensembleNotify:
     | ((o: {
         title: string;

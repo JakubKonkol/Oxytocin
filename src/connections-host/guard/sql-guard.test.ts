@@ -14,7 +14,7 @@ const classify = (dialect: SqlDialect, sql: string, allowUserFunctions = false) 
 const readOnly = (dialect: SqlDialect, sql: string, allowUserFunctions = false) =>
   decide('read-only', classify(dialect, sql, allowUserFunctions), 'db').action;
 
-/** The rejection corpus of Plan 02, per dialect where the syntax exists. */
+/** The rejection corpus of the SQL guard, per dialect where the syntax exists. */
 const MUST_REJECT: Record<SqlDialect, string[]> = {
   postgresql: [
     'WITH x AS (DELETE FROM users RETURNING *) SELECT * FROM x',

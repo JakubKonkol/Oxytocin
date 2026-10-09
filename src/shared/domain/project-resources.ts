@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * Project resources (Plan 02): the databases, HTTP APIs, links and log files of a project, which AI agents use through
+ * Project resources: the databases, HTTP APIs, links and log files of a project, which AI agents use through
  * Oxytocin's MCP tools (the "bridge"). The configuration never contains secrets: passwords, tokens and connection URLs
  * live in the encrypted secret store (main process only).
  *

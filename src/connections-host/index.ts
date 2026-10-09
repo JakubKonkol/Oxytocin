@@ -5,7 +5,7 @@ import { ApiService } from './http/api-service';
 import { ImportScanner } from './import/scan';
 import { tailLog } from './logs/tail';
 
-// Utility process entry: the Connections Host (Plan 02). Database drivers, HTTP requests to project APIs, log files
+// Utility process entry: the Connections Host. Database drivers, HTTP requests to project APIs, log files
 // and project scans run here so a slow or crashing driver never blocks the main process.
 const parentPort = process.parentPort;
 

@@ -97,7 +97,7 @@ export interface McpHubDeps {
   askPolicy(request: AskPolicyRequest): Promise<AskPolicyAnswer>;
   cli: RunCli;
   logger: Logger;
-  /** Project resources (Plan 02): their tools are listed only while a project has such a resource. */
+  /** Project resources: their tools are listed only while a project has such a resource. */
   resources?: {
     tools: ResourceTool[];
     /** Which kinds of exposed resources exist in any project. */
@@ -472,7 +472,7 @@ export class McpHub implements Disposable {
 
   private ensemble: EnsembleMcp | undefined;
 
-  /** Serves Ensemble's tools on `/mcp/ensemble` (Plan 03). */
+  /** Serves Ensemble's tools on `/mcp/ensemble`. */
   setEnsemble(ensemble: EnsembleMcp): void {
     this.ensemble = ensemble;
     // Ensemble agents also get the project resource bridge (databases, APIs, logs): an API researcher calls the

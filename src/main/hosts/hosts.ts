@@ -42,7 +42,7 @@ export class Hosts {
   readonly workspace: UtilityHost<WorkspaceHostMethods, WorkspaceHostEvents>;
   readonly plugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
   readonly externalPlugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
-  /** Database drivers and API requests of project resources (Plan 02); started on first use. */
+  /** Database drivers and API requests of project resources; started on first use. */
   readonly connections: UtilityHost<ConnectionsHostMethods, ConnectionsHostEvents>;
   private readonly statusEmitter = new Emitter<HostStatus[]>();
   readonly onDidChangeStatus = this.statusEmitter.event;

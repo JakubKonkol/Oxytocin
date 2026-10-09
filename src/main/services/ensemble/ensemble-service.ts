@@ -145,7 +145,7 @@ export const oneLine = (text: string): string =>
 
 const projectSlug = (name: string) => slugId(name, [], 'project');
 
-/** Ensemble (Plan 03): tasks run by a team of AI agents. One conductor per task; effects run here. */
+/** Ensemble: tasks run by a team of AI agents. One conductor per task; effects run here. */
 export class EnsembleService implements Disposable {
   private readonly store: EnsembleStore;
   private readonly records = new Map<string, EnsembleRecord>();
