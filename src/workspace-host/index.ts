@@ -57,6 +57,7 @@ const impl: Impl<Omit<WorkspaceHostMethods, 'ping' | 'shutdown'>> = {
   'files:write': (o) => files.writeFileContent(o),
   'files:create': (o) => files.createEntry(o),
   'files:rename': (o) => files.renameEntry(o),
+  'files:trashTarget': (o) => files.trashTarget(o),
   'ensemble:repoInfo': ({ gitPath, cwd }) => ensembleGit.repoInfo(gitPath, cwd),
   'ensemble:addWorktree': (o) => ensembleGit.addWorktree(o),
   'ensemble:removeWorktree': (o) => ensembleGit.removeWorktree(o),

@@ -12,6 +12,7 @@ import { Kbd } from '../../ui/Kbd';
 import { ProjectWorkspace } from '../layout/ProjectWorkspace';
 import { addProjectViaDialog, locateProjectFolder, removeProject } from './project-actions';
 import { addDroppedFolders } from './ProjectsSection';
+import { hasUnsavedEdits } from '../layout/unsaved-registry';
 
 /** First-run screen: add a project with the button, the shortcut or by dropping a folder. */
 function Welcome() {
@@ -91,7 +92,7 @@ export function WorkspaceArea() {
   const activeId = project && !project.missing ? project.id : null;
 
   useEffect(() => {
-    if (activeId) useWorkspacesStore.getState().activate(activeId, keepAlive);
+    if (activeId) useWorkspacesStore.getState().activate(activeId, keepAlive, hasUnsavedEdits);
   }, [activeId, keepAlive]);
 
   useEffect(() => {

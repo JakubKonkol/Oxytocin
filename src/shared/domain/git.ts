@@ -105,6 +105,13 @@ export type FileDiffRequest = z.infer<typeof FileDiffRequestSchema>;
 /** Paths of a git action: project-relative, '/' separators. */
 const ActionPathsSchema = z.array(z.string().min(1).max(4096)).min(1).max(5000);
 
+/** A branch name; never an option (`-x`). git checks the rest (`check-ref-format`). */
+const BranchNameSchema = z
+  .string()
+  .min(1)
+  .max(250)
+  .refine((n) => !n.startsWith('-'), 'Invalid branch name');
+
 /** Something the user does to the repository from the CHANGES section, a diff or the review. */
 export const GitActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('stage'), paths: ActionPathsSchema }),
@@ -128,8 +135,8 @@ export const GitActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('fetch') }),
   z.object({ kind: z.literal('stash'), message: z.string().max(500).optional() }),
   z.object({ kind: z.literal('stashPop') }),
-  z.object({ kind: z.literal('checkout'), branch: z.string().min(1).max(250) }),
-  z.object({ kind: z.literal('createBranch'), name: z.string().min(1).max(250) }),
+  z.object({ kind: z.literal('checkout'), branch: BranchNameSchema }),
+  z.object({ kind: z.literal('createBranch'), name: BranchNameSchema }),
 ]);
 export type GitAction = z.infer<typeof GitActionSchema>;
 export type GitActionKind = GitAction['kind'];

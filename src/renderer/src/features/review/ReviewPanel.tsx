@@ -25,6 +25,7 @@ import { ipc } from '../../lib/ipc-client';
 import { useChangesStore } from '../../stores/changes-store';
 import { useSettingsStore } from '../../stores/settings-store';
 import { Button } from '../../ui/Button';
+import { CheckPill } from '../../ui/CheckBox';
 import { EmptyState } from '../../ui/EmptyState';
 import { IconButton } from '../../ui/IconButton';
 import { askAgent } from '../ask-agent/ask-agent-store';
@@ -224,39 +225,22 @@ function FileSection({
           icon={<Undo2 size={13} />}
           onClick={() => void discardFiles(projectId, [file])}
         />
-        <label
-          className="flex h-6 flex-none cursor-default items-center gap-1 rounded-control px-1.5 text-small text-fg-secondary hover:bg-card-hover"
+        <CheckPill
+          testId="review-stage"
+          state={stage}
           title="Staged for the next commit"
+          onToggle={() => void toggleStaged(projectId, [file])}
         >
-          <input
-            type="checkbox"
-            data-testid="review-stage"
-            checked={stage === 'all'}
-            ref={(el) => {
-              if (el) el.indeterminate = stage === 'some';
-            }}
-            onChange={() => void toggleStaged(projectId, [file])}
-            className="accent-(--accent)"
-          />
           Staged
-        </label>
-        <label
-          className={cn(
-            'flex h-6 flex-none cursor-default items-center gap-1 rounded-control border px-1.5 text-small',
-            viewed
-              ? 'border-accent bg-accent-muted text-fg'
-              : 'border-line-subtle text-fg-secondary hover:bg-card-hover',
-          )}
+        </CheckPill>
+        <CheckPill
+          testId="review-viewed"
+          state={viewed ? 'all' : 'none'}
+          title="Viewed: collapses the file until it changes again"
+          onToggle={() => onViewed(!viewed)}
         >
-          <input
-            type="checkbox"
-            data-testid="review-viewed"
-            checked={viewed}
-            onChange={(e) => onViewed(e.target.checked)}
-            className="accent-(--accent)"
-          />
           Viewed
-        </label>
+        </CheckPill>
       </header>
       {!collapsed && <FileDiffBody projectId={projectId} file={file} options={options} scrollRoot={scrollRoot} />}
     </section>
@@ -392,7 +376,10 @@ export function ReviewPanel(props: IDockviewPanelProps<{ projectId: string }>) {
           disabled={comments.length === 0}
           onClick={sendReview}
         >
-          <Send size={12} /> Send {comments.length || ''} comment{comments.length === 1 ? '' : 's'}
+          <Send size={12} />{' '}
+          {comments.length === 0
+            ? 'Send comments'
+            : `Send ${comments.length} comment${comments.length === 1 ? '' : 's'}`}
         </Button>
       </div>
       <div className="flex min-h-0 flex-1">

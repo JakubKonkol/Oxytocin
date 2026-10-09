@@ -1,6 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -11,7 +10,6 @@ import {
   List,
   ListChecks,
   ListTree,
-  Minus,
   RotateCw,
   Search,
   Undo2,
@@ -27,6 +25,7 @@ import { changesUi, LIVE_MS, useChangesStore } from '../../stores/changes-store'
 import { activeProject, useProjectsStore } from '../../stores/projects-store';
 import { EmptyState } from '../../ui/EmptyState';
 import { IconButton } from '../../ui/IconButton';
+import { CheckBox, type CheckState } from '../../ui/CheckBox';
 import { SectionBody } from '../../ui/Section';
 import { absolutePath, copyText, openInEditor, refreshChanges, revealInFolder } from './change-actions';
 import { openDiff, openDiffInNewGroup } from '../diff/diff-actions';
@@ -35,7 +34,7 @@ import { openFile } from '../editor/editor-actions';
 import { openReview } from '../review/review-actions';
 import { BranchBar, stashChanges } from './BranchBar';
 import { CommitBox } from './CommitBox';
-import { discardAll, discardFiles, gitAction, stageState, toggleStaged } from './git-actions';
+import { discardAll, discardFiles, gitAction, stageState, toggleStaged, undoLastCommit } from './git-actions';
 import { fileOpenersFor, openWithOpener } from '../plugins/plugin-commands';
 import {
   allDirPaths,
@@ -92,6 +91,8 @@ export function ChangesCount() {
 function MoreActionsMenu({ projectId }: { projectId: string }) {
   const count = useChangesStore((s) => s.status[projectId]?.files.length ?? 0);
   const ok = useChangesStore((s) => s.status[projectId]?.state === 'ok');
+  const hasHead = useChangesStore((s) => s.status[projectId]?.hasHead ?? false);
+  const headSubject = useChangesStore((s) => s.status[projectId]?.headCommit?.subject);
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
@@ -125,6 +126,14 @@ function MoreActionsMenu({ projectId }: { projectId: string }) {
             onSelect={() => void discardAll(projectId, count)}
           >
             Discard All Changes…
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            data-testid="changes-undo-commit"
+            className={menuItem}
+            disabled={!hasHead}
+            onSelect={() => void undoLastCommit(projectId, headSubject)}
+          >
+            Undo Last Commit…
           </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
           <DropdownMenu.Item className={menuItem} disabled={count === 0} onSelect={() => void stashChanges(projectId)}>
@@ -327,32 +336,16 @@ function DirContextMenu({
   );
 }
 
-/** Tri-state staging checkbox of a row (a file, or every file of a folder). */
-function StageBox({ state, onToggle, label }: { state: 'all' | 'some' | 'none'; onToggle: () => void; label: string }) {
+/** Staging checkbox of a row (a file, or every file of a folder). */
+function StageBox({ state, onToggle, label }: { state: CheckState; onToggle: () => void; label: string }) {
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={state === 'all' ? true : state === 'some' ? 'mixed' : false}
-      aria-label={label}
+    <CheckBox
+      state={state}
+      onToggle={onToggle}
+      label={label}
       title={state === 'all' ? 'Staged — click to unstage' : 'Click to stage'}
-      data-testid="changes-stage"
-      data-state={state}
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      onDoubleClick={(e) => e.stopPropagation()}
-      className={cn(
-        'flex size-3.5 flex-none items-center justify-center rounded-[3px] border transition-colors',
-        state === 'none'
-          ? 'border-line-strong bg-input hover:border-accent'
-          : 'border-accent bg-accent text-fg-inverse hover:brightness-110',
-      )}
-    >
-      {state === 'all' && <Check size={10} strokeWidth={3} />}
-      {state === 'some' && <Minus size={10} strokeWidth={3} />}
-    </button>
+      testId="changes-stage"
+    />
   );
 }
 
@@ -401,7 +394,7 @@ function RowView({
   expanded: boolean;
   now: number;
   liveTouches: Record<string, number>;
-  stage: 'all' | 'some' | 'none';
+  stage: CheckState;
   onToggleStage: () => void;
   /** Buttons shown while hovering the row (instead of the line counts). */
   actions: React.ReactNode;
@@ -442,7 +435,7 @@ function RowView({
           aria-label={STATUS_LABELS[node.status]}
           className={cn('size-1.5 flex-none rounded-full', STATUS_BG[node.status])}
         />
-        <span className="ml-1 flex w-3.5 flex-none justify-center">
+        <span className="ml-1 flex w-4 flex-none justify-center">
           <StageBox state={stage} onToggle={onToggleStage} label={`Stage ${node.name}`} />
         </span>
       </div>
@@ -498,7 +491,7 @@ function RowView({
       >
         {STATUS_LETTERS[f.status]}
       </span>
-      <span className="flex w-3.5 flex-none justify-center">
+      <span className="flex w-4 flex-none justify-center">
         <StageBox state={stage} onToggle={onToggleStage} label={`Stage ${node.name}`} />
       </span>
     </div>
@@ -766,7 +759,7 @@ export function ChangesSection() {
     body = (
       <>
         <BranchBar projectId={project.id} status={status} />
-        <CommitBox projectId={project.id} status={status} />
+        {status.files.length > 0 && <CommitBox projectId={project.id} status={status} />}
         {!status.hasHead && status.files.length > 0 && (
           <div className="mb-1 text-small text-fg-muted">No commits yet — all files are new</div>
         )}

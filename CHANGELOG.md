@@ -44,7 +44,15 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 - Diffs can be edited: the right side (the file on disk) is editable, the arrows between the sides revert single
   changes and **Ctrl+S** saves. The diff toolbar adds *Staged*, *Discard changes*, *Ask agent*, *Review all changes*
   and *Open file* (the built-in editor at the current change); *Open in external editor* keeps opening your IDE.
-- Diff and code editor tabs carry an icon so the two tabs of one file are told apart.
+- Diff, code editor and review tabs carry an icon, so the diff and the file of the same name are told apart.
+- The scratchpad (and *Ask agent*) remove control characters such as escape sequences from what they paste into an
+  agent's terminal, so text taken from a file can never end the paste early and type input of its own.
+
+### Security
+
+- The built-in editor and the FILES section only change files inside the project: saving, creating, renaming or
+  deleting through a symbolic link that leads outside the project folder is refused (reading through links still
+  works).
 
 ## [0.8.2] - 2026-10-07
 

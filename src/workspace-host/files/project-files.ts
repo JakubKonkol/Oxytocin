@@ -1,5 +1,5 @@
 import type { Dirent } from 'node:fs';
-import { mkdir, open, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { FileContent, FileEntry, FileList, FileStat } from '@shared/domain/files';
 import { OxyError } from '@shared/errors';
@@ -21,6 +21,41 @@ export function resolveInside(root: string, path: string): string {
   const rel = relative(root, absolute);
   if (rel.startsWith('..') || isAbsolute(rel)) throw new OxyError('PERMISSION', 'Path outside the project');
   return absolute;
+}
+
+const isInside = (root: string, path: string) => {
+  const rel = relative(root, path);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+};
+
+/** The real path of `path`, or of its nearest existing ancestor (for paths about to be created). */
+async function nearestRealpath(path: string): Promise<string> {
+  for (let current = path; ; current = dirname(current)) {
+    try {
+      return await realpath(current);
+    } catch {
+      if (dirname(current) === current) throw new OxyError('NOT_FOUND', `Cannot resolve ${path}`);
+    }
+  }
+}
+
+/**
+ * Before changing something on disk: the folder it is in (and the entry itself when `followEntry`, i.e. a file
+ * written through a symlink) must really be inside the project, so a symlink in an untrusted repository cannot
+ * make a save, a rename or a delete reach files outside it. Reading through symlinks stays allowed.
+ */
+export async function assertWritable(root: string, absolute: string, followEntry: boolean): Promise<void> {
+  const realRoot = await realpath(root);
+  let target = followEntry ? absolute : dirname(absolute);
+  if (followEntry && (await lstat(absolute).catch(() => null))?.isSymbolicLink()) {
+    // A dangling link would be created at its target: resolve it fully or refuse.
+    target = await realpath(absolute).catch(() => {
+      throw new OxyError('PERMISSION', 'The file is a symbolic link to a missing target.');
+    });
+  }
+  const real = await nearestRealpath(target);
+  if (!isInside(realRoot, real))
+    throw new OxyError('PERMISSION', 'The path leads outside the project (through a symbolic link).');
 }
 
 const isBinary = (buf: Buffer) => buf.subarray(0, 8192).includes(0);
@@ -178,6 +213,7 @@ export async function writeFileContent(o: {
   expectedMtimeMs?: number | undefined;
 }): Promise<FileStat> {
   const absolute = resolveInside(o.root, o.path);
+  await assertWritable(o.root, absolute, true);
   if (o.expectedMtimeMs !== undefined) {
     const current = await stat(absolute).catch(() => null);
     if (current && Math.abs(current.mtimeMs - o.expectedMtimeMs) > 1)
@@ -191,7 +227,8 @@ export async function writeFileContent(o: {
 /** A new empty file or folder (its parent folders are created); fails when the path exists. */
 export async function createEntry(o: { root: string; path: string; kind: 'file' | 'dir' }): Promise<void> {
   const absolute = resolveInside(o.root, o.path);
-  if (await stat(absolute).catch(() => null)) throw new OxyError('INVALID', `${o.path} already exists.`);
+  if (await lstat(absolute).catch(() => null)) throw new OxyError('INVALID', `${o.path} already exists.`);
+  await assertWritable(o.root, absolute, false);
   if (o.kind === 'dir') await mkdir(absolute, { recursive: true });
   else {
     await mkdir(dirname(absolute), { recursive: true });
@@ -204,8 +241,19 @@ export async function renameEntry(o: { root: string; from: string; to: string })
   const from = resolveInside(o.root, o.from);
   const to = resolveInside(o.root, o.to);
   if (from === o.root) throw new OxyError('INVALID', 'The project folder cannot be renamed here.');
+  await assertWritable(o.root, from, false);
+  await assertWritable(o.root, to, false);
   const sameEntry = from.toLowerCase() === to.toLowerCase() && from !== to;
   if (!sameEntry && (await stat(to).catch(() => null))) throw new OxyError('INVALID', `${o.to} already exists.`);
   await mkdir(dirname(to), { recursive: true });
   await rename(from, to);
+}
+
+/** The absolute path of an entry to move to the trash (the entry itself; a symlink is trashed, not its target). */
+export async function trashTarget(o: { root: string; path: string }): Promise<string> {
+  if (!o.path) throw new OxyError('INVALID', 'The project folder cannot be deleted here.');
+  const absolute = resolveInside(o.root, o.path);
+  if (!(await lstat(absolute).catch(() => null))) throw new OxyError('NOT_FOUND', `${o.path} does not exist.`);
+  await assertWritable(o.root, absolute, false);
+  return absolute;
 }

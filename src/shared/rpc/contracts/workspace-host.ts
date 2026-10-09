@@ -52,6 +52,8 @@ export type WorkspaceHostMethods = HostBaseMethods & {
   }) => FileStat;
   'files:create': (o: { root: string; path: string; kind: 'file' | 'dir' }) => void;
   'files:rename': (o: { root: string; from: string; to: string }) => void;
+  /** Checks an entry may be deleted and returns its absolute path (main moves it to the trash). */
+  'files:trashTarget': (o: { root: string; path: string }) => string;
   // Ensemble (Plan 03): worktrees, checkpoints, changes, finishing. Writes are serialized per repository.
   'ensemble:repoInfo': (o: { gitPath: string; cwd: string }) => {
     isRepo: boolean;

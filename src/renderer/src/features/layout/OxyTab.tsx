@@ -1,5 +1,5 @@
 import type { IDockviewPanelHeaderProps } from 'dockview-react';
-import { FileCode2, GitCompare, RotateCw, X } from 'lucide-react';
+import { FileCode2, GitCompare, ListChecks, RotateCw, X } from 'lucide-react';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { cn } from '../../lib/cn';
 import { useTerminalsStore } from '../../stores/terminals-store';
@@ -215,6 +215,11 @@ export function OxyTab(props: IDockviewPanelHeaderProps) {
         <CodeTabContent props={props as IDockviewPanelHeaderProps<CodePanelParams>} />
       ) : props.api.component === 'plugin' ? (
         <PluginTabContent props={props} />
+      ) : props.api.component === 'review' ? (
+        <>
+          <ListChecks size={12} aria-hidden className="flex-none text-fg-muted" />
+          <span className="min-w-0 truncate">{props.api.title}</span>
+        </>
       ) : (
         <span className="min-w-0 truncate">{props.api.title}</span>
       )}

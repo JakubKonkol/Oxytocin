@@ -1,5 +1,6 @@
 /** Panels with edits that are not saved yet (code editors, edited diffs) — asked about before they close. */
 export interface UnsavedPanel {
+  projectId: string;
   /** File name shown in the question. */
   name: string;
   isDirty(): boolean;
@@ -8,6 +9,11 @@ export interface UnsavedPanel {
 }
 
 export const unsavedRegistry = new Map<string, UnsavedPanel>();
+
+/** Whether a project's workspace has panels with unsaved edits (it must stay mounted). */
+export function hasUnsavedEdits(projectId: string): boolean {
+  return [...unsavedRegistry.values()].some((p) => p.projectId === projectId && p.isDirty());
+}
 
 /** Names of the files with unsaved edits in any open panel. */
 export function unsavedFiles(): string[] {

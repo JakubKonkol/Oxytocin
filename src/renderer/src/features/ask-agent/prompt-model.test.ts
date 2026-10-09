@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPrompt,
+  escapeMarkdown,
   fenced,
   lineRange,
   presetInstruction,
@@ -67,5 +68,9 @@ describe('prompt model', () => {
     expect(reviewPrompt([comment({ code: '' })])).toMatch(
       /this review comment[\s\S]*1\. `src\/a.ts`, line 3\n\nRename x\.$/,
     );
+  });
+
+  it('escapes Markdown in comments shown in hovers', () => {
+    expect(escapeMarkdown('[x](http://e.vil) **b** <img>')).toBe('\\[x\\]\\(http://e\\.vil\\) \\*\\*b\\*\\* \\<img\\>');
   });
 });

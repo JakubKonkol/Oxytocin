@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -11,6 +11,7 @@ import {
   renameEntry,
   resolveInside,
   statFile,
+  trashTarget,
   writeFileContent,
 } from '../../src/workspace-host/files/project-files';
 
@@ -99,5 +100,31 @@ describe('project files', () => {
     expect(() => resolveInside(root, '../outside.txt')).toThrow(/outside the project/);
     expect(() => resolveInside(root, '/etc/passwd')).toThrow(/outside the project/);
     expect(resolveInside(root, '')).toBe(root);
+  });
+
+  it('never writes, creates, renames or deletes outside the project through symbolic links', async () => {
+    const outside = await realpath(await mkdtemp(join(tmpdir(), 'oxy-outside-')));
+    try {
+      await writeFile(join(outside, 'secret.txt'), 'keep\n');
+      // A folder link works without privileges on Windows (junction).
+      await symlink(outside, join(root, 'linked'), process.platform === 'win32' ? 'junction' : 'dir');
+      await expect(writeFileContent({ root, path: 'linked/secret.txt', content: 'x' })).rejects.toThrow(/outside/);
+      await expect(createEntry({ root, path: 'linked/new.txt', kind: 'file' })).rejects.toThrow(/outside/);
+      await expect(renameEntry({ root, from: 'README.md', to: 'linked/README.md' })).rejects.toThrow(/outside/);
+      await expect(trashTarget({ root, path: 'linked/secret.txt' })).rejects.toThrow(/outside/);
+      // The link itself may go; reading through it stays possible.
+      expect(await trashTarget({ root, path: 'linked' })).toBe(join(root, 'linked'));
+      expect((await readFileContent({ root, path: 'linked/secret.txt', maxBytes: 100 })).content).toBe('keep\n');
+      if (process.platform !== 'win32') {
+        await symlink(join(outside, 'secret.txt'), join(root, 'file-link.txt'));
+        await expect(writeFileContent({ root, path: 'file-link.txt', content: 'x' })).rejects.toThrow(/outside/);
+        await symlink(join(outside, 'missing.txt'), join(root, 'dangling.txt'));
+        await expect(writeFileContent({ root, path: 'dangling.txt', content: 'x' })).rejects.toThrow(/symbolic link/);
+      }
+      expect(await readFile(join(outside, 'secret.txt'), 'utf8')).toBe('keep\n');
+      await expect(trashTarget({ root, path: '' })).rejects.toThrow(/cannot be deleted/);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 });

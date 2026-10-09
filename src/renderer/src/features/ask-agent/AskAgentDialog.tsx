@@ -246,6 +246,11 @@ function AskAgentDialog({ request }: { request: AskAgentRequest }) {
               </DropdownMenu.Portal>
             </DropdownMenu.Root>
           )}
+          {chosen && chosen.projectId !== request.projectId && (
+            <span data-testid="ask-agent-other-project" className="text-small text-warning">
+              works in another project
+            </span>
+          )}
           <span className="flex-1" />
           <label className="flex items-center gap-1.5 text-small text-fg-secondary">
             <input

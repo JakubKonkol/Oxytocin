@@ -6,7 +6,7 @@ import { notify } from '../../ui/Toast';
 import { revealTerminal } from '../attention/reveal';
 import { getActiveTerminalId } from '../terminals/terminal-actions';
 import { terminalRegistry } from '../terminals/terminal-registry';
-import { type AgentTarget, agentTargets, resolveAgentTarget } from './send-target';
+import { type AgentTarget, agentTargets, resolveAgentTarget, sanitizeForPaste } from './send-target';
 
 /** Agent chosen in the scratchpad's target menu (cleared when that terminal goes away). */
 let chosenTargetId: string | null = null;
@@ -36,7 +36,8 @@ export async function sendToAgent(
   text: string,
   opts: { submit?: boolean } = {},
 ): Promise<boolean> {
-  if (!text.trim()) return false;
+  const safe = sanitizeForPaste(text);
+  if (!safe.trim()) return false;
   const revealed = await revealTerminal(target.projectId, target.terminalId);
   const deadline = performance.now() + 3000;
   let entry = terminalRegistry.get(target.terminalId);
@@ -48,7 +49,7 @@ export async function sendToAgent(
     notify('error', 'The agent terminal is not available');
     return false;
   }
-  entry.term.paste(text);
+  entry.term.paste(safe);
   entry.focus();
   if (opts.submit) {
     // Agents read a paste as a whole before Enter submits it.

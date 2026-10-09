@@ -143,3 +143,6 @@ export function reviewPrompt(comments: readonly ReviewComment[], intro?: string)
   });
   return [head, ...items].join('\n\n');
 }
+
+/** Text shown as typed in a Markdown hover (review comments): Markdown characters are escaped. */
+export const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, '\\$&');

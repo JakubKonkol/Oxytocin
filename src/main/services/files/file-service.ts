@@ -76,8 +76,7 @@ export class FileService {
 
   async trash(projectId: string, path: string): Promise<void> {
     if (!path) throw new OxyError('INVALID', 'The project folder cannot be deleted here.');
-    const root = this.root(projectId);
-    const sep = root.includes('\\') ? '\\' : '/';
-    await this.deps.trash(`${root.replace(/[\\/]+$/, '')}${sep}${path.split('/').join(sep)}`);
+    const absolute = await this.deps.host.call('files:trashTarget', { root: this.root(projectId), path });
+    await this.deps.trash(absolute);
   }
 }

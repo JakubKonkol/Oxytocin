@@ -120,7 +120,10 @@ async function discardAll(input: GitActionInput): Promise<void> {
   const spec = projectSpec(input);
   if (input.hasHead) {
     await gitOk(input, ['reset', '-q', 'HEAD', '--', spec]);
-    await gitOk(input, ['checkout', '-q', 'HEAD', '--', spec]);
+    // A project folder with nothing committed yet has nothing to restore.
+    const restore = await git(input, ['checkout', '-q', 'HEAD', '--', spec]);
+    if (restore.code !== 0 && !/did not match/.test(restore.err))
+      throw new OxyError('UNAVAILABLE', gitMessage(restore));
   } else {
     await gitOk(input, ['rm', '--cached', '-r', '-q', '--ignore-unmatch', '--', spec]);
   }

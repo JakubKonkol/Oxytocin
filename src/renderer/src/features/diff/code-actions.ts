@@ -1,5 +1,5 @@
 import { askAgent } from '../ask-agent/ask-agent-store';
-import type { CodeContext, ReviewComment } from '../ask-agent/prompt-model';
+import { type CodeContext, escapeMarkdown, type ReviewComment } from '../ask-agent/prompt-model';
 import { addReviewComment } from '../review/CommentDialog';
 import { useReviewStore } from '../review/review-store';
 import { monaco } from './monaco-env';
@@ -158,7 +158,7 @@ export function trackCommentDecorations(
           isWholeLine: true,
           className: 'oxy-review-line',
           linesDecorationsClassName: 'oxy-review-gutter',
-          hoverMessage: { value: `**Review comment**\n\n${c.text}` },
+          hoverMessage: { value: `**Review comment**\n\n${escapeMarkdown(c.text)}` },
           overviewRuler: { color: accent(), position: monaco.editor.OverviewRulerLane.Left },
         },
       })),

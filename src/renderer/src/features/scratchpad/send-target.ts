@@ -55,3 +55,13 @@ export function resolveAgentTarget(
   const local = targets.filter((t) => t.inActiveProject);
   return local.length === 1 ? local[0]! : null;
 }
+
+/**
+ * Text that is safe to paste into a terminal: control characters (ESC, C1 controls, NUL…) are removed, so pasted code
+ * from a file cannot end the bracketed paste early (`ESC[201~`) and have the rest typed as input. Line breaks become
+ * `\n` and tabs stay.
+ */
+export function sanitizeForPaste(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+}

@@ -127,7 +127,8 @@ test('the review shows every change, takes comments and sends them to an agent',
     await expect(panel.getByTestId('review-comment')).toContainText('Use a named constant here.');
 
     // Viewed files collapse and count.
-    await first.getByTestId('review-viewed').check();
+    await first.getByTestId('review-viewed').click();
+    await expect(first.getByTestId('review-viewed')).toHaveAttribute('aria-checked', 'true');
     await expect(panel.getByTestId('review-progress')).toContainText('1/2 viewed');
 
     // Send the review: the prompt carries the comment and goes to the running agent.

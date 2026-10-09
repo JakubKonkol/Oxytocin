@@ -9,4 +9,9 @@ describe('touchLru', () => {
     expect(touchLru(['c', 'b'], 'b', 2)).toEqual(['b', 'c']);
     expect(touchLru(['a', 'b'], 'c', 0)).toEqual(['c']);
   });
+
+  it('keeps workspaces with unsaved edits mounted beyond the limit', () => {
+    expect(touchLru(['b', 'a'], 'c', 2, (id) => id === 'a')).toEqual(['c', 'b', 'a']);
+    expect(touchLru(['c', 'b', 'a'], 'd', 2, (id) => id === 'a')).toEqual(['d', 'c', 'a']);
+  });
 });

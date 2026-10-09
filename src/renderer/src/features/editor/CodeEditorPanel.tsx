@@ -185,7 +185,12 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
       revealInFiles: () => revealInFiles(projectId, path),
       focus: () => viewApi.current?.focus(),
     });
-    unsavedRegistry.set(panelId, { name: fileName(path), isDirty: () => dirtyRef.current, save: () => save() });
+    unsavedRegistry.set(panelId, {
+      projectId,
+      name: fileName(path),
+      isDirty: () => dirtyRef.current,
+      save: () => save(),
+    });
     return () => {
       codeRegistry.delete(panelId);
       unsavedRegistry.delete(panelId);

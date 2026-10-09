@@ -25,6 +25,7 @@ import { useSettingsStore } from '../../stores/settings-store';
 import { EmptyState } from '../../ui/EmptyState';
 import { IconButton } from '../../ui/IconButton';
 import { Button } from '../../ui/Button';
+import { CheckPill } from '../../ui/CheckBox';
 import { absolutePath, openInEditor } from '../changes/change-actions';
 import { discardFiles, stageState, toggleStaged } from '../changes/git-actions';
 import { STATUS_LABELS, STATUS_LETTERS, STATUS_TEXT_CLASS } from '../changes/tree-model';
@@ -178,11 +179,16 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
   );
 
   useEffect(() => {
-    unsavedRegistry.set(panelId, { name: path.split('/').at(-1) ?? path, isDirty: () => dirtyRef.current, save });
+    unsavedRegistry.set(panelId, {
+      projectId,
+      name: path.split('/').at(-1) ?? path,
+      isDirty: () => dirtyRef.current,
+      save,
+    });
     return () => {
       unsavedRegistry.delete(panelId);
     };
-  }, [panelId, path, save, dirtyRef]);
+  }, [panelId, projectId, path, save, dirtyRef]);
 
   useEffect(() => {
     if (dirty) pinDiff(props.containerApi, panelId);
@@ -300,22 +306,14 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
           />
         )}
         {file && (
-          <label
-            className="flex h-6 flex-none cursor-default items-center gap-1 rounded-control px-1.5 text-fg-secondary hover:bg-card-hover"
+          <CheckPill
+            testId="diff-stage"
+            state={stageState([file])}
             title="Staged for the next commit"
+            onToggle={() => void toggleStaged(projectId, [file])}
           >
-            <input
-              type="checkbox"
-              data-testid="diff-stage"
-              checked={stageState([file]) === 'all'}
-              ref={(el) => {
-                if (el) el.indeterminate = stageState([file]) === 'some';
-              }}
-              onChange={() => void toggleStaged(projectId, [file])}
-              className="accent-(--accent)"
-            />
             Staged
-          </label>
+          </CheckPill>
         )}
         <IconButton
           data-testid="diff-discard"

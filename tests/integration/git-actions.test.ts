@@ -144,4 +144,24 @@ describe('git actions', () => {
     expect(() => checkPaths(['C:/x'])).toThrow(/Invalid path/);
     expect(() => checkPaths(['src/a.ts'])).not.toThrow();
   });
+
+  it('discards everything in a project folder that has no commit yet', async () => {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(join(dir, 'pkg'));
+    await writeFile(join(dir, 'pkg', 'new.txt'), 'new\n');
+    const s = await computeStatus({
+      projectId: 'p',
+      gitPath: 'git',
+      toplevel: dir,
+      pathspec: 'pkg',
+      hasHead: true,
+      maxFiles: 100,
+    });
+    expect(s.files.map((f) => f.path)).toEqual(['new.txt']);
+    await runGitAction(
+      { gitPath: 'git', toplevel: dir, pathspec: 'pkg', hasHead: true, files: s.files, branch: s.branch },
+      { kind: 'discardAll' },
+    );
+    await expect(stat(join(dir, 'pkg', 'new.txt'))).rejects.toThrow();
+  });
 });
