@@ -3,11 +3,17 @@ import type { Project } from '@shared/domain/project';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { fuzzyMatch } from './fuzzy';
 
-/** Quick Open prefixes: none = everything, `>` commands, `@` terminals, `#` changed files. */
-export type PaletteMode = 'all' | 'commands' | 'terminals' | 'files';
+/** Quick Open prefixes: none = everything, `>` commands, `@` terminals, `#` changed files, `%` all files. */
+export type PaletteMode = 'all' | 'commands' | 'terminals' | 'files' | 'projectFiles';
 
-const PREFIXES: Record<string, PaletteMode> = { '>': 'commands', '@': 'terminals', '#': 'files' };
-export const MODE_PREFIX: Record<PaletteMode, string> = { all: '', commands: '>', terminals: '@', files: '#' };
+const PREFIXES: Record<string, PaletteMode> = { '>': 'commands', '@': 'terminals', '#': 'files', '%': 'projectFiles' };
+export const MODE_PREFIX: Record<PaletteMode, string> = {
+  all: '',
+  commands: '>',
+  terminals: '@',
+  files: '#',
+  projectFiles: '%',
+};
 
 export function parseQuery(input: string): { mode: PaletteMode; text: string } {
   const mode = PREFIXES[input.charAt(0)];
@@ -19,6 +25,8 @@ export type PaletteAction =
   | { kind: 'project'; projectId: string }
   | { kind: 'terminal'; projectId: string; terminalId: string }
   | { kind: 'file'; projectId: string; path: string; oldPath?: string }
+  /** A file of the project, opened in the built-in code editor. */
+  | { kind: 'openFile'; projectId: string; path: string }
   | { kind: 'pick'; index: number };
 
 export interface PaletteItem {
@@ -40,6 +48,7 @@ export interface PaletteItem {
     | { kind: 'project'; project: Pick<Project, 'name' | 'color' | 'icon'> }
     | { kind: 'terminal'; agent: boolean }
     | { kind: 'file'; status: FileChange['status'] }
+    | { kind: 'document' }
     | { kind: 'none' };
   action: PaletteAction;
 }
@@ -55,6 +64,8 @@ export interface QuickOpenSources {
   activeProjectId: string | null;
   terminals: readonly TerminalInfo[];
   changes: readonly FileChange[];
+  /** Every file of the active project (loaded when Quick Open opens). */
+  projectFiles?: readonly string[];
   shortcutFor: (commandId: string) => string | undefined;
 }
 
@@ -65,6 +76,7 @@ export const GROUPS = {
   projects: 'Projects',
   terminals: 'Terminals',
   files: 'Changed files',
+  projectFiles: 'Files',
 } as const;
 
 /** "Terminal: Split Right" → category "Terminal", label "Split Right". */
@@ -154,6 +166,24 @@ function fileItems(s: QuickOpenSources): PaletteItem[] {
   });
 }
 
+function projectFileItems(s: QuickOpenSources): PaletteItem[] {
+  const projectId = s.activeProjectId;
+  if (!projectId || !s.projectFiles) return [];
+  return s.projectFiles.map((path) => {
+    const slash = path.lastIndexOf('/');
+    return {
+      id: `open:${path}`,
+      group: GROUPS.projectFiles,
+      label: path.slice(slash + 1),
+      ...(slash > 0 ? { detail: path.slice(0, slash) } : {}),
+      matchText: path,
+      labelOffset: slash + 1,
+      icon: { kind: 'document' },
+      action: { kind: 'openFile', projectId, path },
+    };
+  });
+}
+
 export function buildItems(mode: PaletteMode, s: QuickOpenSources): PaletteItem[] {
   switch (mode) {
     case 'commands':
@@ -162,8 +192,10 @@ export function buildItems(mode: PaletteMode, s: QuickOpenSources): PaletteItem[
       return terminalItems(s);
     case 'files':
       return fileItems(s);
+    case 'projectFiles':
+      return projectFileItems(s);
     case 'all':
-      return [...projectItems(s), ...terminalItems(s), ...fileItems(s)];
+      return [...projectItems(s), ...terminalItems(s), ...fileItems(s), ...projectFileItems(s)];
   }
 }
 

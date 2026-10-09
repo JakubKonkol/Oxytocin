@@ -13,6 +13,7 @@ import { SectionHeader } from '../ui/Section';
 import { IconButton } from '../ui/IconButton';
 import { ProjectsSection } from '../features/projects/ProjectsSection';
 import { ChangesCount, ChangesHeaderActions, ChangesSection } from '../features/changes/ChangesSection';
+import { FilesHeaderActions, FilesSection } from '../features/editor/FilesSection';
 import { registerCommand } from '../lib/commands';
 import { addProjectViaDialog } from '../features/projects/project-actions';
 import { useProjectsStore } from '../stores/projects-store';
@@ -39,12 +40,15 @@ interface SectionDefinition {
   title: string;
   size: number;
   order: number;
+  /** Starts collapsed until the user expands it. */
+  collapsedByDefault?: boolean;
 }
 
 /** Core sidebar sections; plugin views are inserted by their `order`. */
 const CORE_SECTIONS: SectionDefinition[] = [
   { id: 'projects', title: 'PROJECTS', size: 200, order: 0 },
   { id: 'changes', title: 'CHANGES', size: 380, order: 100 },
+  { id: 'files', title: 'FILES', size: 320, order: 150, collapsedByDefault: true },
 ];
 
 const pluginPaneId = (pluginId: string, viewId: string) => `plugin:${pluginId}:${viewId}`;
@@ -86,7 +90,9 @@ function PaneHeader(props: IPaneviewPanelProps) {
         ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> }
         : props.api.id === 'changes'
           ? { actions: <ChangesHeaderActions />, count: <ChangesCount /> }
-          : {};
+          : props.api.id === 'files'
+            ? { actions: <FilesHeaderActions /> }
+            : {};
   return (
     <SectionHeader
       testId={`section-header-${props.api.id}`}
@@ -103,6 +109,7 @@ const components = {
   'plugin-view': PluginSidebarView,
   projects: () => <ProjectsSection />,
   changes: () => <ChangesSection />,
+  files: () => <FilesSection />,
 };
 
 function readPaneviewState(api: PaneviewApi): PaneviewState {
@@ -224,7 +231,7 @@ export function Sidebar() {
         component: id,
         headerComponent: 'section',
         title: section.title,
-        isExpanded: !state.collapsed.includes(id),
+        isExpanded: state.order.includes(id) ? !state.collapsed.includes(id) : !section.collapsedByDefault,
         size: state.sizes[id] ?? section.size,
         headerSize: SIDEBAR_HEADER_SIZE,
         minimumBodySize: 80,
@@ -236,6 +243,14 @@ export function Sidebar() {
       run: () => {
         event.api.getPanel('changes')?.api.setExpanded(true);
         requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="changes-tree"]')?.focus());
+      },
+    });
+    registerCommand({
+      id: 'workbench.focusFiles',
+      title: 'View: Focus Files',
+      run: () => {
+        event.api.getPanel('files')?.api.setExpanded(true);
+        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="files-tree"]')?.focus());
       },
     });
     // Tools dragged from the right sidebar (section headers) or the workspace (tabs) can be dropped here.

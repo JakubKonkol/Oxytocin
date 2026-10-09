@@ -26,8 +26,9 @@
 You run Claude Code in one terminal, Codex in another and a dev server in a third — across four projects. Which agent
 is waiting for your answer? What did it just change? How much has it cost today?
 
-**Oxytocin** puts all of that in one window. It is **not** a code editor — keep using the editor you like. It is the
-place where your projects, agent terminals, live git changes and token usage live side by side.
+**Oxytocin** puts all of that in one window: your projects, agent terminals, live git changes and token usage side by
+side. It is not trying to replace your IDE — but when you only want to read the code, fix one line, review what an
+agent did and commit it, you no longer have to leave.
 
 <p align="center">
   <a href="https://github.com/JakubKonkol/Oxytocin/releases/latest"><strong>Download for Windows, macOS or Linux →</strong></a>
@@ -115,11 +116,30 @@ task works in its own git worktree with a checkpoint per stage, and at the end y
 branch. Costs per agent come from the Usage Monitor, with a budget per task. Models and prompts are passed per
 session only: your CLI settings and other terminals are never changed.
 
-### 🔍 Live changes
+### 🔍 Live changes, review and git actions
 
 A live tree of every file changed since `HEAD`, with line counts, and a Monaco diff viewer that updates while the
-agent writes. One click opens the file in VS Code, Cursor, Windsurf, Zed, JetBrains IDEs, Sublime Text or a terminal
-editor.
+agent writes.
+
+- **Git actions** right in the CHANGES section: stage and unstage files or whole folders with their checkboxes,
+  discard changes, commit (everything, or only what is staged), *Commit & Push*, amend and undo the last commit,
+  push, pull, fetch, stash, and switch or create branches.
+- **Review** opens every changed file's diff one below the other: mark files as viewed, stage or discard them, and
+  select code to add **review comments** — *Send comments* hands the whole review to an agent as one prompt.
+- **Ask agent:** select code in a diff or a file and press `Ctrl+L` (or the ✦ button next to the selection) — pick
+  *Fix*, *Explain*, *Review*, *Refactor*, *Add tests* or write your own instruction, and the prompt with the code goes
+  to the agent's terminal.
+- Diffs are editable: change the right side, revert single changes with the arrows between the sides and save with
+  `Ctrl+S`.
+
+### 📝 Built-in code editor
+
+The **FILES** section browses the project (git status colours, ignored files dimmed); files open in a Monaco editor
+with syntax highlighting, find and replace, multiple cursors, folding and the minimap. Edit, save with `Ctrl+S`, and
+Oxytocin keeps you safe from agents writing the same file: an unedited file follows the disk, an edited one asks
+before anything is overwritten. `Ctrl+Shift+O` then `%` finds any file of the project. Prefer your IDE? *Open in
+external editor* opens VS Code, Cursor, Windsurf, Zed, JetBrains IDEs, Sublime Text or a terminal editor — or set
+`editor.preset` to `oxytocin` to make the built-in editor the default.
 
 ### 📊 Usage Monitor
 
@@ -150,7 +170,7 @@ Start your own with `npm create oxytocin-plugin` — see the [plugin developer g
 
 ### ⌨️ Keyboard first
 
-A **command palette** (`Ctrl+Shift+P`), **Quick Open** for projects, terminals and changed files (`Ctrl+Shift+O`), a
+A **command palette** (`Ctrl+Shift+P`), **Quick Open** for projects, terminals and files (`Ctrl+Shift+O`), a
 keyboard shortcut editor, a settings UI generated from the settings schema, and dark, light and system themes.
 
 ## Installation

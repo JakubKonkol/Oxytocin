@@ -5,6 +5,7 @@ import type { Logger } from '@shared/logging/logger';
 import { isGitVersionSupported, parseGitVersion, runGit } from './git/exec';
 import { RepoRegistry } from './git/repo-registry';
 import * as ensembleGit from './git/ensemble-git';
+import * as files from './files/project-files';
 
 // Utility process entry: the Workspace Host (git status, file watchers).
 const parentPort = process.parentPort;
@@ -47,6 +48,15 @@ const impl: Impl<Omit<WorkspaceHostMethods, 'ping' | 'shutdown'>> = {
   'git:refresh': ({ projectId, reason }) => registry.request(projectId, reason),
   'git:getStatus': ({ projectId }) => registry.get(projectId)?.status ?? null,
   'git:getFileDiff': (req) => registry.fileDiff(req),
+  'git:action': ({ projectId, action }) => registry.action(projectId, action),
+  'git:branches': ({ projectId }) => registry.branches(projectId),
+  'files:list': (o) => files.listDir(o),
+  'files:find': (o) => files.findFiles(o),
+  'files:stat': (o) => files.statFile(o),
+  'files:read': (o) => files.readFileContent(o),
+  'files:write': (o) => files.writeFileContent(o),
+  'files:create': (o) => files.createEntry(o),
+  'files:rename': (o) => files.renameEntry(o),
   'ensemble:repoInfo': ({ gitPath, cwd }) => ensembleGit.repoInfo(gitPath, cwd),
   'ensemble:addWorktree': (o) => ensembleGit.addWorktree(o),
   'ensemble:removeWorktree': (o) => ensembleGit.removeWorktree(o),

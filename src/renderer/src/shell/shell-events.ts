@@ -2,6 +2,7 @@ import { MENU_COMMANDS } from '@shared/domain/app-menu';
 import { dismissNotification, showNotification } from '../features/attention/attention';
 import { revealTerminal } from '../features/attention/reveal';
 import { openEditorInTerminal } from '../features/layout/editor-terminal';
+import { showFile } from '../features/editor/editor-actions';
 import { closePluginTerminalPanel, openPluginTerminal, runCoreCommand } from '../features/layout/core-commands';
 import { executeCommand } from '../lib/commands';
 import { ipc } from '../lib/ipc-client';
@@ -20,6 +21,11 @@ export function subscribeShellEvents(): () => void {
     ipc.on('notifications:dismiss', ({ requestId }) => dismissNotification(requestId)),
     ipc.on('terminals:reveal', ({ projectId, terminalId }) => void revealTerminal(projectId, terminalId)),
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req)),
+    ipc.on(
+      'editor:openBuiltin',
+      ({ projectId, path, line, column }) =>
+        void showFile(projectId, path, { ...(line ? { line } : {}), ...(column ? { column } : {}) }),
+    ),
     ipc.on('terminals:openPanel', (req) => void openPluginTerminal(req)),
     ipc.on('terminals:closePanel', (req) => closePluginTerminalPanel(req)),
     ipc.on('commands:run', ({ id, args }) => runCoreCommand(id, args)),

@@ -115,3 +115,21 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Code editors: lines with review comments and the toolbar next to a selection. */
+.monaco-editor .oxy-review-line {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.monaco-editor .oxy-review-gutter {
+  margin-left: 2px;
+  width: 3px !important;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.monaco-editor .oxy-selection-toolbar {
+  z-index: 20;
+  width: max-content;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  transform: translateY(-4px);
+}

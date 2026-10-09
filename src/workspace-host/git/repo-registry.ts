@@ -1,9 +1,10 @@
-import type { FileDiffContent, RepoInfo, RepoStatus } from '@shared/domain/git';
+import type { BranchList, FileDiffContent, GitAction, GitActionResult, RepoInfo, RepoStatus } from '@shared/domain/git';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
 import type { RefreshReason, WatchRepoRequest } from '@shared/rpc/contracts/workspace-host';
 import { computeStatus } from './compute-status';
 import { getFileDiff } from './file-diff';
+import { listBranches, runGitAction } from './git-actions';
 import { discoverRepo } from './discover';
 import { RefreshQueue, RefreshScheduler } from './refresh-scheduler';
 import { RepoWatcher, type SubscribeFn } from './repo-watcher';
@@ -230,6 +231,38 @@ export class RepoRegistry {
       status: known?.status ?? 'modified',
       maxBytes: req.maxBytes,
     });
+  }
+
+  private repoEntry(projectId: string): RepoEntry & { info: { toplevel: string } } {
+    const entry = this.entries.get(projectId);
+    if (!entry) throw new OxyError('NOT_FOUND', `Project ${projectId} is not watched`);
+    if (entry.info.state !== 'ok' || !entry.info.toplevel) throw new OxyError('NOT_A_REPO', 'Not a git repository');
+    return entry as RepoEntry & { info: { toplevel: string } };
+  }
+
+  /** Runs a git action; the status is refreshed afterwards (also when it failed half-way). */
+  async action(projectId: string, action: GitAction): Promise<GitActionResult> {
+    const entry = this.repoEntry(projectId);
+    try {
+      return await runGitAction(
+        {
+          gitPath: entry.req.gitPath,
+          toplevel: entry.info.toplevel,
+          pathspec: entry.info.pathspec,
+          hasHead: entry.info.hasHead,
+          files: entry.status?.files ?? [],
+          branch: entry.status?.branch,
+        },
+        action,
+      );
+    } finally {
+      entry.scheduler.request('manual');
+    }
+  }
+
+  branches(projectId: string): Promise<BranchList> {
+    const entry = this.repoEntry(projectId);
+    return listBranches({ gitPath: entry.req.gitPath, toplevel: entry.info.toplevel });
   }
 
   async dispose(): Promise<void> {

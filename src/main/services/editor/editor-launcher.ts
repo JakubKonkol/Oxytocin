@@ -13,7 +13,9 @@ export interface OpenRequest {
 export type LaunchPlan =
   | { kind: 'spawn'; file: string; args: string[]; verbatim?: boolean }
   | { kind: 'system'; path: string }
-  | { kind: 'terminal'; projectId: string | null; cwd: string; command: string };
+  | { kind: 'terminal'; projectId: string | null; cwd: string; command: string }
+  /** Oxytocin's own code editor (files inside a project). */
+  | { kind: 'builtin'; projectId: string; path: string; line?: number; column?: number };
 
 export interface EditorLauncherDeps {
   settings: () => Settings;
@@ -24,6 +26,8 @@ export interface EditorLauncherDeps {
   spawn: (file: string, args: string[], opts: { verbatim: boolean }) => void;
   openPath: (path: string) => Promise<string>;
   openInTerminal: (req: { projectId: string | null; cwd: string; command: string }) => void;
+  /** Shows a project file in the built-in code editor. */
+  openBuiltin: (req: { projectId: string; path: string; line?: number; column?: number }) => void;
   platform: NodeJS.Platform;
   logger: Logger;
   /** Record launches instead of running them (E2E). */
@@ -31,6 +35,16 @@ export interface EditorLauncherDeps {
 }
 
 const dirname = (path: string) => path.replace(/[\\/][^\\/]*$/, '') || path;
+
+/** `file` relative to `root` with '/' separators, or null when it is not inside it. */
+export function relativeTo(root: string, file: string, caseInsensitive: boolean): string | null {
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const r = norm(root);
+  const f = norm(file);
+  const same = (a: string, b: string) => (caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b);
+  if (f.length <= r.length + 1 || !same(f.slice(0, r.length), r) || f[r.length] !== '/') return null;
+  return f.slice(r.length + 1);
+}
 
 /**
  * "Open in editor": presets with `auto` detection, custom templates,
@@ -96,6 +110,17 @@ export class EditorLauncher {
     const preset = s['editor.preset'];
     const template = s['editor.command'].trim();
     switch (preset) {
+      case 'oxytocin': {
+        const path = project ? relativeTo(project.rootPath, req.path, this.deps.platform !== 'linux') : null;
+        if (!project || !path) return { kind: 'system', path: req.path };
+        return {
+          kind: 'builtin',
+          projectId: project.id,
+          path,
+          ...(req.line ? { line: req.line } : {}),
+          ...(req.column ? { column: req.column } : {}),
+        };
+      }
       case 'system':
         return { kind: 'system', path: req.path };
       case 'custom':
@@ -125,12 +150,18 @@ export class EditorLauncher {
     }
   }
 
+  private openBuiltin(plan: Extract<LaunchPlan, { kind: 'builtin' }>): void {
+    const { kind: _kind, ...req } = plan;
+    this.deps.openBuiltin(req);
+  }
+
   async open(req: OpenRequest): Promise<void> {
     if (!(await this.deps.isFile(req.path))) throw new OxyError('NOT_FOUND', `File not found: ${req.path}`);
     const plan = await this.plan(req);
     if (this.deps.dryRun) {
       this.recorded.push({ ...req, plan });
       if (plan.kind === 'terminal') this.deps.openInTerminal(plan);
+      if (plan.kind === 'builtin') this.openBuiltin(plan);
       return;
     }
     switch (plan.kind) {
@@ -146,6 +177,9 @@ export class EditorLauncher {
         return;
       case 'terminal':
         this.deps.openInTerminal(plan);
+        return;
+      case 'builtin':
+        this.openBuiltin(plan);
         return;
       case 'system': {
         const error = await this.deps.openPath(plan.path);

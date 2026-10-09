@@ -74,6 +74,10 @@ export function setSidebarPaneviewApi(api: PaneviewApi | null, side: SidebarSide
   paneviewApis[side] = api;
 }
 
+export function getSidebarPaneviewApi(side: SidebarSide): PaneviewApi | null {
+  return paneviewApis[side];
+}
+
 const toolsOf = (side: SidebarSide): SidebarTool[] => {
   const state = useUiStore.getState().state;
   return side === 'left' ? state.primaryTools : state.secondaryTools;

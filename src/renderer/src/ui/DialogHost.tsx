@@ -74,7 +74,13 @@ function DialogInput({
       data-testid="dialog-answer"
       autoFocus
       value={value}
-      rows={3}
+      rows={input.singleLine ? 1 : 3}
+      onFocus={(e) => {
+        // A prefilled name: select it without the extension (like file managers do).
+        if (!input.value) return;
+        const dot = input.value.lastIndexOf('.');
+        e.currentTarget.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+      }}
       placeholder={input.placeholder ?? 'Your answer'}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {
@@ -83,7 +89,10 @@ function DialogInput({
           onSubmit();
         }
       }}
-      className="w-full resize-y rounded-control border border-line bg-input px-2 py-1.5 text-ui text-fg placeholder:text-fg-muted"
+      className={cn(
+        'w-full rounded-control border border-line bg-input px-2 py-1.5 text-ui text-fg placeholder:text-fg-muted',
+        input.singleLine ? 'resize-none font-mono' : 'resize-y',
+      )}
     />
   );
 }
@@ -92,7 +101,7 @@ function PendingDialog() {
   const current = useDialogStore((s) => s.queue[0])!;
   const settle = useDialogStore((s) => s.settle);
   const [checked, setChecked] = useState(current.checkbox?.defaultChecked ?? false);
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(current.input?.kind === 'text' ? (current.input.value ?? '') : '');
   const answer = current.input ? { value: current.input.kind === 'text' ? value.trim() : value } : {};
   const confirm = () => settle(current.id, { confirmed: true, checked, ...answer });
   return (

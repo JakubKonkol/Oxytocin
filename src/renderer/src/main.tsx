@@ -25,8 +25,11 @@ import { registerKeybindingCommands } from './features/keybindings/KeybindingsPa
 import { registerSettingsCommands } from './features/settings/SettingsPanel';
 import { registerProjectSettingsCommands } from './features/projects/ProjectSettingsDialog';
 import { flushAllWorkspaces } from './features/layout/persistence';
+import { saveAllUnsaved, unsavedFiles } from './features/layout/unsaved-registry';
 import { registerUpdateCommands } from './features/updates/update-store';
 import { registerEnsembleCommands } from './features/ensemble/ensemble-actions';
+import { registerEditorCommands } from './features/editor/editor-actions';
+import { registerReviewCommands } from './features/review/review-actions';
 
 if (window.oxy.e2e) {
   document.documentElement.dataset['e2e'] = 'true';
@@ -58,11 +61,15 @@ registerSettingsCommands();
 registerProjectSettingsCommands();
 registerUpdateCommands();
 registerEnsembleCommands();
+registerEditorCommands();
+registerReviewCommands();
 installGlobalKeybindings();
 // Called by main while quitting: layouts plus the debounced UI state (scratchpad text).
 (window as unknown as { __oxyFlushWorkspaces: () => Promise<void> }).__oxyFlushWorkspaces = async () => {
   await Promise.all([flushAllWorkspaces(), flushUiState()]);
 };
+// Asked by main before quitting: files with unsaved edits in code editors and edited diffs.
+Object.assign(window, { __oxyUnsavedFiles: unsavedFiles, __oxySaveAll: saveAllUnsaved });
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Missing #root element');

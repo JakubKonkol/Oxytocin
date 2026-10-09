@@ -83,7 +83,7 @@ test('command palette runs commands, remembers them and Quick Open jumps to proj
     // No match: an empty state.
     await win.keyboard.press('Control+Shift+O');
     await win.keyboard.type('zzzzqqq');
-    await expect(palette(win).getByText('No matching projects, terminals or changed files')).toBeVisible();
+    await expect(palette(win).getByText('No matching projects, terminals or files')).toBeVisible();
     await win.keyboard.press('Escape');
   } finally {
     await app.close();

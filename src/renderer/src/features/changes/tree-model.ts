@@ -61,6 +61,17 @@ export const STATUS_TEXT_CLASS: Record<ChangeStatus, string> = {
   typechange: 'text-git-modified',
 };
 
+/** Tailwind background colour per status (dots). */
+export const STATUS_BG: Record<ChangeStatus, string> = {
+  added: 'bg-git-added',
+  modified: 'bg-git-modified',
+  deleted: 'bg-git-deleted',
+  renamed: 'bg-git-renamed',
+  untracked: 'bg-git-untracked',
+  conflicted: 'bg-git-conflict',
+  typechange: 'bg-git-modified',
+};
+
 export const STATUS_LABELS: Record<ChangeStatus, string> = {
   added: 'Added',
   modified: 'Modified',

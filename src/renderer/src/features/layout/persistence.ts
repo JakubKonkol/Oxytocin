@@ -18,6 +18,8 @@ import { usePluginsStore } from '../../stores/plugins-store';
 const KNOWN_COMPONENTS = new Set([
   'terminal',
   'diff',
+  'code',
+  'review',
   'plugin',
   'scratchpad',
   'ensemble',

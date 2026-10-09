@@ -1,5 +1,5 @@
 import type { IDockviewPanelHeaderProps } from 'dockview-react';
-import { RotateCw, X } from 'lucide-react';
+import { FileCode2, GitCompare, RotateCw, X } from 'lucide-react';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { cn } from '../../lib/cn';
 import { useTerminalsStore } from '../../stores/terminals-store';
@@ -12,6 +12,7 @@ import { useRenameStore } from './rename-store';
 import { ipc } from '../../lib/ipc-client';
 import { useChangesStore } from '../../stores/changes-store';
 import { type DiffPanelParams, pinDiff } from '../diff/diff-actions';
+import { type CodePanelParams, pinCodePanel } from '../editor/editor-actions';
 import { STATUS_LETTERS, STATUS_TEXT_CLASS } from '../changes/tree-model';
 import { usePluginViewMeta } from '../plugins/view-meta-store';
 import { Badge } from '../../ui/Badge';
@@ -120,10 +121,11 @@ function DiffTabContent({ props }: { props: IDockviewPanelHeaderProps<DiffPanelP
   const status = useChangesStore((s) => s.status[projectId]?.files.find((f) => f.path === path)?.status);
   return (
     <>
+      <GitCompare size={12} aria-hidden className="flex-none text-fg-muted" />
       <span
         data-testid="tab-title"
         data-preview={preview}
-        title={preview ? `${path} (preview — double-click to keep open)` : path}
+        title={preview ? `${path} — diff (preview, double-click to keep open)` : `${path} — diff`}
         className={cn('min-w-0 truncate', preview && 'italic')}
         onDoubleClick={(e) => {
           e.stopPropagation();
@@ -131,6 +133,35 @@ function DiffTabContent({ props }: { props: IDockviewPanelHeaderProps<DiffPanelP
         }}
       >
         {props.api.title ?? path}
+      </span>
+      {status && (
+        <span className={cn('flex-none font-mono text-small font-semibold', STATUS_TEXT_CLASS[status])}>
+          {STATUS_LETTERS[status]}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Code editor tab: preview tabs in italics (double-click keeps them), unsaved edits (●) and the git status. */
+function CodeTabContent({ props }: { props: IDockviewPanelHeaderProps<CodePanelParams> }) {
+  const { projectId, path, preview } = props.params;
+  const status = useChangesStore((s) => s.status[projectId]?.files.find((f) => f.path === path)?.status);
+  const title = usePanelTitle(props);
+  return (
+    <>
+      <FileCode2 size={12} aria-hidden className="flex-none text-fg-muted" />
+      <span
+        data-testid="tab-title"
+        data-preview={preview}
+        title={preview ? `${path} (preview — double-click to keep open)` : path}
+        className={cn('min-w-0 truncate', preview && 'italic')}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          pinCodePanel(props.containerApi, props.api.id);
+        }}
+      >
+        {title}
       </span>
       {status && (
         <span className={cn('flex-none font-mono text-small font-semibold', STATUS_TEXT_CLASS[status])}>
@@ -180,6 +211,8 @@ export function OxyTab(props: IDockviewPanelHeaderProps) {
         <TerminalTabContent props={props as IDockviewPanelHeaderProps<TerminalPanelParams>} />
       ) : props.api.component === 'diff' ? (
         <DiffTabContent props={props as IDockviewPanelHeaderProps<DiffPanelParams>} />
+      ) : props.api.component === 'code' ? (
+        <CodeTabContent props={props as IDockviewPanelHeaderProps<CodePanelParams>} />
       ) : props.api.component === 'plugin' ? (
         <PluginTabContent props={props} />
       ) : (

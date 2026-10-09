@@ -32,16 +32,19 @@ export function detectEol(text: string): FileDiffContent['eol'] {
   return crlf > 0 ? 'crlf' : 'lf';
 }
 
-async function readDisk(absolute: string, maxBytes: number): Promise<{ size: number; data: Buffer | null } | null> {
+async function readDisk(
+  absolute: string,
+  maxBytes: number,
+): Promise<{ size: number; data: Buffer | null; mtimeMs: number } | null> {
   try {
     const info = await stat(absolute);
     if (!info.isFile()) return null;
-    if (info.size > maxBytes) return { size: info.size, data: null };
+    if (info.size > maxBytes) return { size: info.size, data: null, mtimeMs: info.mtimeMs };
     const handle = await open(absolute, 'r');
     try {
       const data = Buffer.alloc(info.size);
       await handle.read(data, 0, info.size, 0);
-      return { size: info.size, data };
+      return { size: info.size, data, mtimeMs: info.mtimeMs };
     } finally {
       await handle.close();
     }
@@ -96,5 +99,13 @@ export async function getFileDiff(input: FileDiffInput): Promise<FileDiffContent
   const original = head?.data ? decode(head.data) : null;
   const modified = disk?.data ? decode(disk.data) : null;
   const eol = detectEol(modified ?? original ?? '');
-  return { ...base, original, modified, ...(eol ? { eol } : {}) };
+  const bom = !!disk?.data && disk.data[0] === 0xef && disk.data[1] === 0xbb && disk.data[2] === 0xbf;
+  return {
+    ...base,
+    original,
+    modified,
+    ...(eol ? { eol } : {}),
+    ...(disk ? { mtimeMs: disk.mtimeMs } : {}),
+    ...(bom ? { bom } : {}),
+  };
 }

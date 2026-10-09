@@ -86,6 +86,13 @@ export const eventContract = {
   }),
   /** Terminal editor preset: open a terminal panel running the editor command. */
   'editor:openInTerminal': z.object({ projectId: ProjectIdSchema.nullable(), cwd: z.string(), command: z.string() }),
+  /** "Open in editor" with the built-in editor (`editor.preset: oxytocin`): show a project file. */
+  'editor:openBuiltin': z.object({
+    projectId: ProjectIdSchema,
+    path: z.string().min(1),
+    line: z.number().int().optional(),
+    column: z.number().int().optional(),
+  }),
   'git:fileTouched': z.object({ projectId: ProjectIdSchema, paths: z.array(z.string()), at: z.number() }),
   /** Show a plugin's quick pick in the command palette; answered with `ui:quickPickResult`. */
   'ui:quickPick': QuickPickRequestSchema,

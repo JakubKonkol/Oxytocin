@@ -19,7 +19,10 @@ export interface ConfirmOptions {
   /** Monospace text in a scrollable block (e.g. a tool's arguments). */
   code?: string;
   /** Asks for an answer: one of `options`, or free text (returned as `value`; confirming needs one). */
-  input?: { kind: 'options'; options: string[] } | { kind: 'text'; placeholder?: string };
+  input?:
+    | { kind: 'options'; options: string[] }
+    /** `value` is the text to start with (selected); `singleLine` for names. */
+    | { kind: 'text'; placeholder?: string; value?: string; singleLine?: boolean };
 }
 
 export interface ConfirmResult {

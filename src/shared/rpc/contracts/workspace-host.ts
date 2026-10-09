@@ -1,4 +1,13 @@
-import type { FileDiffContent, GitInstallation, RepoInfo, RepoStatus } from '../../domain/git';
+import type { FileContent, FileEntry, FileList, FileStat } from '../../domain/files';
+import type {
+  BranchList,
+  FileDiffContent,
+  GitAction,
+  GitActionResult,
+  GitInstallation,
+  RepoInfo,
+  RepoStatus,
+} from '../../domain/git';
 import type { EnsembleChange, FinishAction } from '../../domain/ensemble';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
 
@@ -26,6 +35,23 @@ export type WorkspaceHostMethods = HostBaseMethods & {
   'git:getStatus': (o: { projectId: string }) => RepoStatus | null;
   /** HEAD and working-tree content of a changed file. */
   'git:getFileDiff': (o: { projectId: string; path: string; oldPath?: string; maxBytes: number }) => FileDiffContent;
+  /** Stage, discard, commit, push… in a watched project's repository; the status refreshes afterwards. */
+  'git:action': (o: { projectId: string; action: GitAction }) => GitActionResult;
+  'git:branches': (o: { projectId: string }) => BranchList;
+  // Project files (built-in code editor, FILES section). `root` is a project folder; paths are relative to it.
+  'files:list': (o: { root: string; path: string; gitPath: string }) => FileEntry[];
+  'files:find': (o: { root: string; gitPath: string; ignoredFolders: string[]; limit: number }) => FileList;
+  'files:stat': (o: { root: string; path: string }) => FileStat | null;
+  'files:read': (o: { root: string; path: string; maxBytes: number }) => FileContent;
+  'files:write': (o: {
+    root: string;
+    path: string;
+    content: string;
+    bom?: boolean;
+    expectedMtimeMs?: number;
+  }) => FileStat;
+  'files:create': (o: { root: string; path: string; kind: 'file' | 'dir' }) => void;
+  'files:rename': (o: { root: string; from: string; to: string }) => void;
   // Ensemble (Plan 03): worktrees, checkpoints, changes, finishing. Writes are serialized per repository.
   'ensemble:repoInfo': (o: { gitPath: string; cwd: string }) => {
     isRepo: boolean;

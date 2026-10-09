@@ -2,6 +2,8 @@
 export type PanelKind =
   | 'terminal'
   | 'diff'
+  | 'code'
+  | 'review'
   | 'plugin'
   | 'scratchpad'
   | 'ensemble'
@@ -23,7 +25,7 @@ export interface MissingPanelParams {
 
 let counter = 0;
 /** Short random panel ids: term-xxxxxxxx. */
-export function newPanelId(kind: 'term' | 'diff' | 'plg' | 'tool'): string {
+export function newPanelId(kind: 'term' | 'diff' | 'code' | 'plg' | 'tool'): string {
   counter = (counter + 1) % 1_000_000;
   const rand = crypto.getRandomValues(new Uint32Array(1))[0]!.toString(36);
   return `${kind}-${rand}${counter.toString(36)}`;

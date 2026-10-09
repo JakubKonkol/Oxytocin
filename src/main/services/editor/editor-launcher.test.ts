@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { resolveSettings } from '@shared/domain/settings';
 import { cmdLine, expandArgs, parseCommandTemplate, quoteCmdArg, quoteForShell } from './command-template';
-import { EditorLauncher, type EditorLauncherDeps } from './editor-launcher';
+import { EditorLauncher, type EditorLauncherDeps, relativeTo } from './editor-launcher';
 
 describe('command templates', () => {
   it('parses quoted arguments without escape sequences', () => {
@@ -50,6 +50,7 @@ function launcher(settings: Record<string, unknown>, opts: Partial<EditorLaunche
     spawn: vi.fn(),
     openPath: vi.fn(() => Promise.resolve('')),
     openInTerminal: vi.fn(),
+    openBuiltin: vi.fn(),
     platform: 'linux',
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     ...opts,
@@ -108,6 +109,22 @@ describe('EditorLauncher', () => {
       ['/d', '/s', '/c', '"C:\\VS^ Code\\bin\\code.cmd ^"--goto^" ^"C:\\p\\a^ ^&^ b.ts:2:1^""'],
       { verbatim: true },
     );
+  });
+
+  it('opens project files in the built-in editor with the oxytocin preset', async () => {
+    const { launcher: l, deps } = launcher({ 'editor.preset': 'oxytocin' });
+    await l.open({ path: '/proj/src/a.ts', line: 4 });
+    expect(deps.openBuiltin).toHaveBeenCalledWith({ projectId: 'p', path: 'src/a.ts', line: 4 });
+    // Outside every project: the system default application.
+    const outside = launcher({ 'editor.preset': 'oxytocin' }, { projectFor: () => undefined });
+    expect(await outside.launcher.plan({ path: '/tmp/x.txt' })).toEqual({ kind: 'system', path: '/tmp/x.txt' });
+  });
+
+  it('computes paths relative to a project folder', () => {
+    expect(relativeTo('/proj', '/proj/src/a.ts', false)).toBe('src/a.ts');
+    expect(relativeTo('C:\\Proj\\', 'c:\\proj\\src\\a.ts', true)).toBe('src/a.ts');
+    expect(relativeTo('/proj', '/project/a.ts', false)).toBeNull();
+    expect(relativeTo('/proj', '/proj', false)).toBeNull();
   });
 
   it('refuses missing files', async () => {

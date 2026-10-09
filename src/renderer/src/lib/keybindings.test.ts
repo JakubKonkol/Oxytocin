@@ -70,6 +70,15 @@ describe('KeybindingResolver', () => {
     expect(winResolver.resolve(ev('Equal', { ctrl: true }), 'global')?.command).toBe('workbench.zoomIn');
   });
 
+  it('leaves Alt+arrows to the code editor (move lines) and keeps them for panels elsewhere', () => {
+    expect(winResolver.resolve(ev('ArrowUp', { alt: true }), 'editorFocus')).toBeNull();
+    expect(winResolver.resolve(ev('ArrowUp', { alt: true, shift: true }), 'editorFocus')).toBeNull();
+    expect(winResolver.resolve(ev('ArrowUp', { alt: true }), 'diffFocus')?.command).toBe('panel.focusUp');
+    expect(winResolver.resolve(ev('KeyP', { ctrl: true, shift: true }), 'editorFocus')?.command).toBe(
+      'workbench.commandPalette',
+    );
+  });
+
   it('uses macOS chords on darwin', () => {
     const mac = new KeybindingResolver(DEFAULT_KEYBINDINGS, 'darwin');
     expect(mac.resolve(ev('KeyB', { meta: true, shift: true }), 'global')?.command).toBe('workbench.toggleSidebar');

@@ -1,6 +1,7 @@
 import { getActiveWorkspace } from '../features/layout/workspace-registry';
 import { getLastProjectSwitchMs } from './perf';
 import { diffRegistry } from '../features/diff/diff-registry';
+import { codeRegistry } from '../features/editor/code-registry';
 import { openPluginPanel } from '../features/plugins/plugin-panels';
 import { getActiveTerminalId } from '../features/terminals/terminal-actions';
 import { terminalRegistry, terminalText } from '../features/terminals/terminal-registry';
@@ -19,6 +20,12 @@ export function installTestHooks(): void {
     diff: (panelId: string) => {
       const handle = diffRegistry.get(panelId);
       return handle ? { ...handle.text(), changes: handle.changeCount() } : null;
+    },
+    /** Text and state of a code editor panel (null while Monaco loads). */
+    code: (panelId: string) => {
+      const handle = codeRegistry.get(panelId);
+      const text = handle?.text();
+      return handle && text != null ? { text, dirty: handle.isDirty(), path: handle.path } : null;
     },
     lastSwitchMs: () => getLastProjectSwitchMs(),
     activeTerminalId: () => getActiveTerminalId(),

@@ -1,9 +1,10 @@
 import { Command } from 'cmdk';
-import { Bot, ChevronRight, SquareTerminal } from 'lucide-react';
+import { Bot, ChevronRight, File as FileIcon, SquareTerminal } from 'lucide-react';
 import { Dialog } from 'radix-ui';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { executeCommand, paletteCommands } from '../../lib/commands';
+import { ipc } from '../../lib/ipc-client';
 import { shortcutFor } from '../../lib/keyboard';
 import { useChangesStore } from '../../stores/changes-store';
 import { useProjectsStore } from '../../stores/projects-store';
@@ -14,6 +15,7 @@ import { notify } from '../../ui/Toast';
 import { revealTerminal } from '../attention/reveal';
 import { STATUS_LABELS, STATUS_LETTERS, STATUS_TEXT_CLASS } from '../changes/tree-model';
 import { openDiff } from '../diff/diff-actions';
+import { showFile } from '../editor/editor-actions';
 import { activateProject } from '../projects/project-actions';
 import { ProjectAvatar } from '../projects/ProjectAvatar';
 import { highlightRuns } from './fuzzy';
@@ -31,18 +33,44 @@ import {
 } from './quick-open-model';
 
 const PLACEHOLDERS: Record<PaletteMode, string> = {
-  all: 'Search projects, terminals and changed files (> commands, @ terminals, # changed files)',
+  all: 'Search projects, terminals and files (> commands, @ terminals, # changed files, % files)',
   commands: 'Type the name of a command',
   terminals: 'Go to a terminal',
   files: 'Go to a changed file of the active project',
+  projectFiles: 'Go to a file of the active project',
 };
 
 const EMPTY: Record<PaletteMode, string> = {
-  all: 'No matching projects, terminals or changed files',
+  all: 'No matching projects, terminals or files',
   commands: 'No matching commands',
   terminals: 'No matching terminals',
   files: 'No matching changed files',
+  projectFiles: 'No matching files',
 };
+
+/** Files of a project for Quick Open, read when it opens (kept for 30 s). */
+const fileCache = new Map<string, { at: number; files: string[] }>();
+
+function useProjectFiles(projectId: string | null, enabled: boolean): string[] | undefined {
+  const cached = projectId ? fileCache.get(projectId) : undefined;
+  const [files, setFiles] = useState<string[] | undefined>(cached?.files);
+  useEffect(() => {
+    if (!projectId || !enabled) return;
+    if (cached && Date.now() - cached.at < 30_000) return;
+    let alive = true;
+    void ipc.invoke('files:find', { projectId }).then(
+      (r) => {
+        fileCache.set(projectId, { at: Date.now(), files: r.files });
+        if (alive) setFiles(r.files);
+      },
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [projectId, enabled, cached]);
+  return files;
+}
 
 const PICK_LIMIT = 500;
 
@@ -65,6 +93,9 @@ function runAction(action: PaletteAction): void {
     case 'file':
       activateProject(action.projectId);
       openDiff(action.projectId, { path: action.path, ...(action.oldPath ? { oldPath: action.oldPath } : {}) });
+      return;
+    case 'openFile':
+      void showFile(action.projectId, action.path);
       return;
     case 'pick':
       resolvePick(action.index);
@@ -131,6 +162,8 @@ function ItemIcon({ item }: { item: PaletteItem }) {
           {STATUS_LETTERS[item.icon.status]}
         </span>
       );
+    case 'document':
+      return <FileIcon size={14} className="flex-none text-fg-muted" />;
     case 'none':
       return null;
   }
@@ -162,6 +195,7 @@ function PaletteDialog() {
   const recentCommands = useUiStore((s) => s.state.recentCommands);
 
   const { mode, text } = pick ? { mode: 'all' as const, text: input.trim() } : parseQuery(input);
+  const projectFiles = useProjectFiles(activeProjectId, !pick && (mode === 'all' || mode === 'projectFiles'));
   // Commands are read once per mode switch: their `when` conditions reflect the state before the palette opened.
   const commands = useMemo(
     () => (mode === 'commands' ? paletteCommands().map((c) => ({ id: c.id, title: c.title })) : []),
@@ -176,9 +210,10 @@ function PaletteDialog() {
       activeProjectId,
       terminals: Object.values(terminals),
       changes: status?.state === 'ok' ? status.files : [],
+      ...(projectFiles ? { projectFiles } : {}),
       shortcutFor,
     });
-  }, [pick, mode, commands, recentCommands, projects, activeProjectId, terminals, status]);
+  }, [pick, mode, commands, recentCommands, projects, activeProjectId, terminals, status, projectFiles]);
   const ranked = useMemo(() => rankItems(items, text, pick ? PICK_LIMIT : undefined), [items, text, pick]);
 
   // Typing resets the selection to the first result; a selection that disappeared falls back to it too.

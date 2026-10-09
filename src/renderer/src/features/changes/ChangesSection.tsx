@@ -1,20 +1,25 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
+  Ellipsis,
   File,
+  FileCode2,
   Folder,
-  GitBranch,
   List,
+  ListChecks,
   ListTree,
+  Minus,
   RotateCw,
   Search,
+  Undo2,
   X,
 } from 'lucide-react';
-import { ContextMenu } from 'radix-ui';
+import { ContextMenu, DropdownMenu } from 'radix-ui';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import type { ChangeStatus, RepoStatus } from '@shared/domain/git';
+import type { FileChange, RepoStatus } from '@shared/domain/git';
 import type { Project } from '@shared/domain/project';
 import { cn } from '../../lib/cn';
 import { currentPlatform } from '../../lib/platform';
@@ -23,9 +28,14 @@ import { activeProject, useProjectsStore } from '../../stores/projects-store';
 import { EmptyState } from '../../ui/EmptyState';
 import { IconButton } from '../../ui/IconButton';
 import { SectionBody } from '../../ui/Section';
-import { SplitBar } from '../../ui/SplitBar';
 import { absolutePath, copyText, openInEditor, refreshChanges, revealInFolder } from './change-actions';
 import { openDiff, openDiffInNewGroup } from '../diff/diff-actions';
+import { askAgent } from '../ask-agent/ask-agent-store';
+import { openFile } from '../editor/editor-actions';
+import { openReview } from '../review/review-actions';
+import { BranchBar, stashChanges } from './BranchBar';
+import { CommitBox } from './CommitBox';
+import { discardAll, discardFiles, gitAction, stageState, toggleStaged } from './git-actions';
 import { fileOpenersFor, openWithOpener } from '../plugins/plugin-commands';
 import {
   allDirPaths,
@@ -35,6 +45,7 @@ import {
   flattenTree,
   parentRowIndex,
   type Row,
+  STATUS_BG,
   STATUS_LABELS,
   STATUS_LETTERS,
   STATUS_TEXT_CLASS,
@@ -42,16 +53,6 @@ import {
 
 const ROW_HEIGHT = 24;
 const DEFAULT_EXPAND_LIMIT = 50;
-
-const STATUS_BG: Record<ChangeStatus, string> = {
-  added: 'bg-git-added',
-  modified: 'bg-git-modified',
-  deleted: 'bg-git-deleted',
-  renamed: 'bg-git-renamed',
-  untracked: 'bg-git-untracked',
-  conflicted: 'bg-git-conflict',
-  typechange: 'bg-git-modified',
-};
 
 const menuItem =
   'flex h-7 cursor-default items-center gap-2 rounded-badge px-2 text-ui text-fg outline-none data-[disabled]:text-fg-muted data-[highlighted]:bg-accent-muted';
@@ -88,6 +89,66 @@ export function ChangesCount() {
   return count ? <>{count}</> : null;
 }
 
+function MoreActionsMenu({ projectId }: { projectId: string }) {
+  const count = useChangesStore((s) => s.status[projectId]?.files.length ?? 0);
+  const ok = useChangesStore((s) => s.status[projectId]?.state === 'ok');
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <IconButton data-testid="changes-more" label="More actions" icon={<Ellipsis size={13} />} disabled={!ok} />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={4}
+          data-testid="changes-more-menu"
+          className="z-50 min-w-52 rounded-control border border-line bg-elevated p-1 shadow-lg"
+        >
+          <DropdownMenu.Item
+            className={menuItem}
+            disabled={count === 0}
+            onSelect={() => void gitAction(projectId, { kind: 'stageAll' })}
+          >
+            Stage All Changes
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            className={menuItem}
+            disabled={count === 0}
+            onSelect={() => void gitAction(projectId, { kind: 'unstageAll' })}
+          >
+            Unstage All Changes
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            data-testid="changes-discard-all"
+            className={cn(menuItem, 'text-danger')}
+            disabled={count === 0}
+            onSelect={() => void discardAll(projectId, count)}
+          >
+            Discard All Changes…
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <DropdownMenu.Item className={menuItem} disabled={count === 0} onSelect={() => void stashChanges(projectId)}>
+            Stash Changes…
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItem} onSelect={() => void gitAction(projectId, { kind: 'stashPop' })}>
+            Pop Stash
+          </DropdownMenu.Item>
+          <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <DropdownMenu.Item className={menuItem} onSelect={() => void gitAction(projectId, { kind: 'fetch' })}>
+            Fetch
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItem} onSelect={() => void gitAction(projectId, { kind: 'pull' })}>
+            Pull
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItem} onSelect={() => void gitAction(projectId, { kind: 'push' })}>
+            Push
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 export function ChangesHeaderActions() {
   const id = useActiveProjectId();
   const mode = useChangesStore((s) => (id ? (s.ui[id]?.mode ?? 'tree') : 'tree'));
@@ -95,6 +156,12 @@ export function ChangesHeaderActions() {
   const setUi = useChangesStore.getState().setUi;
   return (
     <>
+      <IconButton
+        data-testid="changes-review"
+        label="Review all changes"
+        icon={<ListChecks size={13} />}
+        onClick={() => void openReview(id)}
+      />
       <IconButton label="Filter" icon={<Search size={13} />} onClick={() => setUi(id, { filterOpen: true })} />
       <IconButton
         label={mode === 'tree' ? 'View as list' : 'View as tree'}
@@ -107,51 +174,18 @@ export function ChangesHeaderActions() {
         onClick={() => setUi(id, { expanded: [] })}
       />
       <IconButton label="Refresh" icon={<RotateCw size={13} />} onClick={() => refreshChanges(id)} />
+      <MoreActionsMenu projectId={id} />
     </>
   );
 }
 
-function BranchSummary({ status }: { status: RepoStatus }) {
-  const b = status.branch;
-  const head = b?.detached ? `detached @ ${b.oid?.slice(0, 7) ?? '?'}` : (b?.head ?? 'no branch');
-  const tooltip = [
-    b?.upstream ? `Upstream: ${b.upstream} (↑${b.ahead} ↓${b.behind})` : 'No upstream',
-    status.headCommit
-      ? `${status.headCommit.oid.slice(0, 7)} ${status.headCommit.subject} · ${new Date(status.headCommit.date).toLocaleString()}`
-      : undefined,
-  ]
-    .filter(Boolean)
-    .join('\n');
-  return (
-    <div className="flex flex-none flex-col gap-1.5 pt-1.5 pb-2">
-      <div className="flex min-w-0 items-center gap-1.5 text-small">
-        <GitBranch size={12} className="flex-none text-fg-muted" />
-        <span data-testid="changes-branch" className="min-w-0 truncate font-mono text-fg-secondary" title={tooltip}>
-          {head}
-        </span>
-        {b?.upstream && (b.ahead > 0 || b.behind > 0) && (
-          <span className="flex-none font-mono text-fg-muted">
-            {b.ahead > 0 ? `↑${b.ahead}` : ''}
-            {b.behind > 0 ? ` ↓${b.behind}` : ''}
-          </span>
-        )}
-        <span className="flex-1" />
-        <span data-testid="changes-totals" className="flex flex-none items-center gap-1 font-mono">
-          <span className="text-git-added">+{status.totals.additions}</span>
-          <span className="text-git-deleted">−{status.totals.deletions}</span>
-          <span className="text-fg-muted">
-            · {status.totals.files} file{status.totals.files === 1 ? '' : 's'}
-          </span>
-        </span>
-      </div>
-      <SplitBar added={status.totals.additions} deleted={status.totals.deletions} />
-    </div>
-  );
-}
+/** Files of a folder (all changed files below it). */
+const filesUnder = (files: readonly FileChange[], dir: string) => files.filter((f) => f.path.startsWith(`${dir}/`));
 
 function FileContextMenu({ project, node, children }: { project: Project; node: FileNode; children: React.ReactNode }) {
   const deleted = node.file.status === 'deleted';
   const reveal = currentPlatform() === 'darwin' ? 'Reveal in Finder' : 'Reveal in Explorer';
+  const staged = node.file.staged && !node.file.unstaged;
   return (
     <ContextMenu.Root>
       <ContextMenu.Trigger asChild>
@@ -161,13 +195,20 @@ function FileContextMenu({ project, node, children }: { project: Project; node: 
       <ContextMenu.Portal>
         <ContextMenu.Content
           data-testid="changes-context-menu"
-          className="z-50 min-w-48 rounded-control border border-line bg-elevated p-1 shadow-lg"
+          className="z-50 min-w-52 rounded-control border border-line bg-elevated p-1 shadow-lg"
         >
           <ContextMenu.Item className={menuItem} onSelect={() => openDiff(project.id, node.file, { pinned: true })}>
-            Open diff
+            Open Diff
           </ContextMenu.Item>
           <ContextMenu.Item className={menuItem} onSelect={() => openDiffInNewGroup(project.id, node.file)}>
-            Open diff in new group
+            Open Diff to the Side
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItem}
+            disabled={deleted}
+            onSelect={() => openFile(project.id, node.path, { pinned: true })}
+          >
+            Open File
           </ContextMenu.Item>
           {!deleted &&
             fileOpenersFor(node.path).map((opener) => (
@@ -182,24 +223,162 @@ function FileContextMenu({ project, node, children }: { project: Project; node: 
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
           <ContextMenu.Item
             className={menuItem}
+            onSelect={() => void gitAction(project.id, { kind: staged ? 'unstage' : 'stage', paths: [node.path] })}
+          >
+            {staged ? 'Unstage' : 'Stage'}
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={cn(menuItem, 'text-danger')}
+            onSelect={() => void discardFiles(project.id, [node.file])}
+          >
+            Discard Changes…
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <ContextMenu.Item
+            className={menuItem}
+            onSelect={() =>
+              askAgent({ projectId: project.id, contexts: [{ kind: 'changes', changes: { path: node.path } }] })
+            }
+          >
+            Ask Agent About Changes…
+          </ContextMenu.Item>
+          <ContextMenu.Item className={menuItem} onSelect={() => void openReview(project.id, node.path)}>
+            Review in Context
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <ContextMenu.Item
+            className={menuItem}
             disabled={deleted}
             onSelect={() => void openInEditor(project, node.path)}
           >
-            Open in editor
+            Open in External Editor
           </ContextMenu.Item>
           <ContextMenu.Item className={menuItem} disabled={deleted} onSelect={() => revealInFolder(project, node.path)}>
             {reveal}
           </ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
           <ContextMenu.Item className={menuItem} onSelect={() => void copyText(absolutePath(project, node.path))}>
-            Copy path
+            Copy Path
           </ContextMenu.Item>
           <ContextMenu.Item className={menuItem} onSelect={() => void copyText(node.path)}>
-            Copy relative path
+            Copy Relative Path
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
+  );
+}
+
+function DirContextMenu({
+  project,
+  files,
+  children,
+}: {
+  project: Project;
+  files: readonly FileChange[];
+  children: React.ReactNode;
+}) {
+  const state = stageState(files);
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <div>{children}</div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          data-testid="changes-dir-context-menu"
+          className="z-50 min-w-52 rounded-control border border-line bg-elevated p-1 shadow-lg"
+        >
+          <ContextMenu.Item
+            className={menuItem}
+            disabled={state === 'all'}
+            onSelect={() => void gitAction(project.id, { kind: 'stage', paths: files.map((f) => f.path) })}
+          >
+            Stage Folder
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={menuItem}
+            disabled={state === 'none'}
+            onSelect={() => void gitAction(project.id, { kind: 'unstage', paths: files.map((f) => f.path) })}
+          >
+            Unstage Folder
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className={cn(menuItem, 'text-danger')}
+            onSelect={() => void discardFiles(project.id, files)}
+          >
+            Discard Folder Changes…
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <ContextMenu.Item
+            className={menuItem}
+            onSelect={() =>
+              askAgent({
+                projectId: project.id,
+                contexts: files.slice(0, 30).map((f) => ({ kind: 'changes', changes: { path: f.path } })),
+              })
+            }
+          >
+            Ask Agent About Changes…
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+/** Tri-state staging checkbox of a row (a file, or every file of a folder). */
+function StageBox({ state, onToggle, label }: { state: 'all' | 'some' | 'none'; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={state === 'all' ? true : state === 'some' ? 'mixed' : false}
+      aria-label={label}
+      title={state === 'all' ? 'Staged — click to unstage' : 'Click to stage'}
+      data-testid="changes-stage"
+      data-state={state}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className={cn(
+        'flex size-3.5 flex-none items-center justify-center rounded-[3px] border transition-colors',
+        state === 'none'
+          ? 'border-line-strong bg-input hover:border-accent'
+          : 'border-accent bg-accent text-fg-inverse hover:brightness-110',
+      )}
+    >
+      {state === 'all' && <Check size={10} strokeWidth={3} />}
+      {state === 'some' && <Minus size={10} strokeWidth={3} />}
+    </button>
+  );
+}
+
+function RowAction({
+  label,
+  icon,
+  onClick,
+  testId,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  testId: string;
+}) {
+  return (
+    <IconButton
+      data-testid={testId}
+      label={label}
+      icon={icon}
+      className="size-5"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+    />
   );
 }
 
@@ -210,6 +389,9 @@ function RowView({
   expanded,
   now,
   liveTouches,
+  stage,
+  onToggleStage,
+  actions,
   onClick,
   onDoubleClick,
 }: {
@@ -219,6 +401,10 @@ function RowView({
   expanded: boolean;
   now: number;
   liveTouches: Record<string, number>;
+  stage: 'all' | 'some' | 'none';
+  onToggleStage: () => void;
+  /** Buttons shown while hovering the row (instead of the line counts). */
+  actions: React.ReactNode;
   onClick: () => void;
   onDoubleClick?: () => void;
 }) {
@@ -238,7 +424,7 @@ function RowView({
         onClick={onClick}
         style={indent}
         className={cn(
-          'flex h-6 cursor-default items-center gap-1 rounded-badge pr-1.5 text-ui text-fg-secondary select-none hover:bg-card-hover',
+          'group/row flex h-6 cursor-default items-center gap-1 rounded-badge pr-1 text-ui text-fg-secondary select-none hover:bg-card-hover',
           selected && 'bg-accent-muted text-fg',
         )}
       >
@@ -250,11 +436,15 @@ function RowView({
         <Folder size={13} className="flex-none text-fg-muted" />
         <span className="min-w-0 flex-1 truncate">{node.name}</span>
         {live && <span data-testid="changes-live" className="size-1.5 flex-none rounded-full bg-accent" />}
+        <span className="hidden flex-none items-center group-hover/row:flex">{actions}</span>
         <span className="flex-none font-mono text-small text-fg-muted">{node.fileCount}</span>
         <span
           aria-label={STATUS_LABELS[node.status]}
           className={cn('size-1.5 flex-none rounded-full', STATUS_BG[node.status])}
         />
+        <span className="ml-1 flex w-3.5 flex-none justify-center">
+          <StageBox state={stage} onToggle={onToggleStage} label={`Stage ${node.name}`} />
+        </span>
       </div>
     );
   }
@@ -275,7 +465,7 @@ function RowView({
       style={indent}
       title={f.oldPath ? `${f.path}\nfrom: ${f.oldPath}` : f.path}
       className={cn(
-        'flex h-6 cursor-default items-center gap-1.5 rounded-badge pr-1.5 text-ui select-none hover:bg-card-hover',
+        'group/row flex h-6 cursor-default items-center gap-1.5 rounded-badge pr-1 text-ui select-none hover:bg-card-hover',
         selected && 'bg-accent-muted',
         live && 'animate-[oxy-row-pulse_1.5s_ease-out_1]',
       )}
@@ -290,11 +480,12 @@ function RowView({
       )}
       <span className="flex-1" />
       {live && <span data-testid="changes-live" className="oxy-dot size-1.5 flex-none rounded-full bg-accent" />}
+      <span className="hidden flex-none items-center group-hover/row:flex">{actions}</span>
       {f.binary ? (
-        <span className="flex-none font-mono text-small text-fg-muted">bin</span>
+        <span className="flex-none font-mono text-small text-fg-muted group-hover/row:hidden">bin</span>
       ) : (
         (f.additions !== undefined || f.deletions !== undefined) && (
-          <span className="flex-none font-mono text-small">
+          <span className="flex-none font-mono text-small group-hover/row:hidden">
             {!!f.additions && <span className="text-git-added">+{f.additions}</span>}
             {!!f.deletions && <span className="ml-1 text-git-deleted">−{f.deletions}</span>}
           </span>
@@ -306,6 +497,9 @@ function RowView({
         className={cn('w-3 flex-none text-center font-mono text-small font-semibold', STATUS_TEXT_CLASS[f.status])}
       >
         {STATUS_LETTERS[f.status]}
+      </span>
+      <span className="flex w-3.5 flex-none justify-center">
+        <StageBox state={stage} onToggle={onToggleStage} label={`Stage ${node.name}`} />
       </span>
     </div>
   );
@@ -471,6 +665,9 @@ function ChangesTree({ project, status }: { project: Project; status: RepoStatus
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
             {virtualizer.getVirtualItems().map((item) => {
               const row = rows[item.index]!;
+              const rowFiles = row.node.kind === 'dir' ? filesUnder(status.files, row.node.path) : [row.node.file];
+              const deleted = row.node.kind === 'file' && row.node.file.status === 'deleted';
+              const path = row.node.path;
               const view = (
                 <RowView
                   row={row}
@@ -479,6 +676,26 @@ function ChangesTree({ project, status }: { project: Project; status: RepoStatus
                   expanded={row.node.kind === 'dir' && isExpanded(row.node.path)}
                   now={now}
                   liveTouches={liveTouches}
+                  stage={stageState(rowFiles)}
+                  onToggleStage={() => void toggleStaged(projectId, rowFiles)}
+                  actions={
+                    <>
+                      {row.node.kind === 'file' && !deleted && (
+                        <RowAction
+                          testId="changes-open-file"
+                          label="Open file"
+                          icon={<FileCode2 size={12} />}
+                          onClick={() => openFile(projectId, path, { pinned: true })}
+                        />
+                      )}
+                      <RowAction
+                        testId="changes-discard"
+                        label={row.node.kind === 'dir' ? 'Discard folder changes' : 'Discard changes'}
+                        icon={<Undo2 size={12} />}
+                        onClick={() => void discardFiles(projectId, rowFiles)}
+                      />
+                    </>
+                  }
                   onClick={() => {
                     setUi(projectId, { selected: row.node.path });
                     if (row.node.kind === 'dir') setExpanded(row.node.path, !isExpanded(row.node.path));
@@ -499,7 +716,9 @@ function ChangesTree({ project, status }: { project: Project; status: RepoStatus
                       {view}
                     </FileContextMenu>
                   ) : (
-                    view
+                    <DirContextMenu project={project} files={rowFiles}>
+                      {view}
+                    </DirContextMenu>
                   )}
                 </div>
               );
@@ -546,7 +765,8 @@ export function ChangesSection() {
   else {
     body = (
       <>
-        <BranchSummary status={status} />
+        <BranchBar projectId={project.id} status={status} />
+        <CommitBox projectId={project.id} status={status} />
         {!status.hasHead && status.files.length > 0 && (
           <div className="mb-1 text-small text-fg-muted">No commits yet — all files are new</div>
         )}

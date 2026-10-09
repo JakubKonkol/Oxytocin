@@ -88,6 +88,10 @@ export const FileDiffContentSchema = z.object({
   eol: z.enum(['crlf', 'lf', 'mixed']).optional(),
   /** Sizes for binaries / too large files. */
   sizes: z.object({ original: z.number().nullable(), modified: z.number().nullable() }).optional(),
+  /** Modification time of the file on disk (saving an edit checks it did not change meanwhile). */
+  mtimeMs: z.number().optional(),
+  /** The file on disk starts with a UTF-8 byte order mark. */
+  bom: z.boolean().optional(),
 });
 export type FileDiffContent = z.infer<typeof FileDiffContentSchema>;
 
@@ -97,3 +101,51 @@ export const FileDiffRequestSchema = z.object({
   oldPath: z.string().optional(),
 });
 export type FileDiffRequest = z.infer<typeof FileDiffRequestSchema>;
+
+/** Paths of a git action: project-relative, '/' separators. */
+const ActionPathsSchema = z.array(z.string().min(1).max(4096)).min(1).max(5000);
+
+/** Something the user does to the repository from the CHANGES section, a diff or the review. */
+export const GitActionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('stage'), paths: ActionPathsSchema }),
+  z.object({ kind: z.literal('unstage'), paths: ActionPathsSchema }),
+  z.object({ kind: z.literal('stageAll') }),
+  z.object({ kind: z.literal('unstageAll') }),
+  /** Back to HEAD: tracked files are restored, new files deleted. */
+  z.object({ kind: z.literal('discard'), paths: ActionPathsSchema }),
+  z.object({ kind: z.literal('discardAll') }),
+  z.object({
+    kind: z.literal('commit'),
+    message: z.string().max(100_000),
+    amend: z.boolean().optional(),
+    /** Stage every change of the project first (nothing was staged). */
+    stageAll: z.boolean().optional(),
+  }),
+  /** `git reset --soft HEAD~1`: the last commit's changes go back to the staging area. */
+  z.object({ kind: z.literal('undoCommit') }),
+  z.object({ kind: z.literal('push') }),
+  z.object({ kind: z.literal('pull') }),
+  z.object({ kind: z.literal('fetch') }),
+  z.object({ kind: z.literal('stash'), message: z.string().max(500).optional() }),
+  z.object({ kind: z.literal('stashPop') }),
+  z.object({ kind: z.literal('checkout'), branch: z.string().min(1).max(250) }),
+  z.object({ kind: z.literal('createBranch'), name: z.string().min(1).max(250) }),
+]);
+export type GitAction = z.infer<typeof GitActionSchema>;
+export type GitActionKind = GitAction['kind'];
+
+export const GitActionResultSchema = z.object({
+  /** What git printed (trimmed), e.g. the summary of a push. */
+  output: z.string(),
+  /** The new commit of `commit`. */
+  commit: z.string().optional(),
+});
+export type GitActionResult = z.infer<typeof GitActionResultSchema>;
+
+export const BranchListSchema = z.object({
+  current: z.string().nullable(),
+  local: z.array(z.object({ name: z.string(), upstream: z.string().optional(), date: z.number() })),
+  remotes: z.array(z.string()),
+  stashes: z.number(),
+});
+export type BranchList = z.infer<typeof BranchListSchema>;

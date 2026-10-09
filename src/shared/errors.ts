@@ -8,6 +8,8 @@ export const OXY_ERROR_CODES = [
   'TIMEOUT',
   'UNAVAILABLE',
   'CANCELLED',
+  /** The file changed on disk since it was read (a save would overwrite someone else's change). */
+  'CONFLICT',
   'INTERNAL',
 ] as const;
 

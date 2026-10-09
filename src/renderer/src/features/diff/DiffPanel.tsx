@@ -1,8 +1,23 @@
 import type { IDockviewPanelProps } from 'dockview-react';
-import { ArrowDown, ArrowUp, Columns2, ExternalLink, FoldVertical, Rows2, WholeWord } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Columns2,
+  ExternalLink,
+  FileCode2,
+  FoldVertical,
+  ListChecks,
+  Rows2,
+  Save,
+  Sparkles,
+  Undo2,
+  WholeWord,
+} from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FileDiffContent } from '@shared/domain/git';
+import { OxyError } from '@shared/errors';
 import { cn } from '../../lib/cn';
+import { useLatest } from '../../lib/use-latest';
 import { ipc } from '../../lib/ipc-client';
 import { useChangesStore } from '../../stores/changes-store';
 import { useProjectsStore } from '../../stores/projects-store';
@@ -11,8 +26,15 @@ import { EmptyState } from '../../ui/EmptyState';
 import { IconButton } from '../../ui/IconButton';
 import { Button } from '../../ui/Button';
 import { absolutePath, openInEditor } from '../changes/change-actions';
+import { discardFiles, stageState, toggleStaged } from '../changes/git-actions';
 import { STATUS_LABELS, STATUS_LETTERS, STATUS_TEXT_CLASS } from '../changes/tree-model';
-import type { DiffPanelParams } from './diff-actions';
+import { askAgent } from '../ask-agent/ask-agent-store';
+import { openFile } from '../editor/editor-actions';
+import { unsavedRegistry } from '../layout/unsaved-registry';
+import { openReview } from '../review/review-actions';
+import { confirmDialog } from '../../stores/dialog-store';
+import { notify } from '../../ui/Toast';
+import { type DiffPanelParams, pinDiff } from './diff-actions';
 import { diffRegistry } from './diff-registry';
 import type { DiffViewOptions } from './DiffEditorView';
 
@@ -57,7 +79,11 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
   const [content, setContent] = useState<FileDiffContent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [diskChanged, setDiskChanged] = useState(false);
   const loadSeq = useRef(0);
+  const dirtyRef = useLatest(dirty);
+  const contentRef = useLatest(content);
 
   // Fingerprint of the file in the latest status + live touches: a change means the content changed.
   const fingerprint = useChangesStore((s) => {
@@ -73,6 +99,8 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
       try {
         const next = await ipc.invoke('git:getFileDiff', { projectId, path, ...(oldPath ? { oldPath } : {}) });
         if (seq !== loadSeq.current) return;
+        // Unsaved edits stay on screen; the newer version waits for "Reload".
+        if (live && dirtyRef.current && next.modified !== contentRef.current?.modified) setDiskChanged(true);
         setContent(next);
         setError(null);
         if (live) setUpdatedAt(Date.now());
@@ -81,7 +109,7 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
         setError(e instanceof Error ? e.message : String(e));
       }
     },
-    [projectId, path, oldPath],
+    [projectId, path, oldPath, dirtyRef, contentRef],
   );
 
   useEffect(() => {
@@ -106,10 +134,59 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
   }, [updatedAt]);
 
   useEffect(() => {
-    props.api.setTitle(path.split('/').at(-1) ?? path);
-  }, [props.api, path]);
+    props.api.setTitle(`${dirty ? '● ' : ''}${path.split('/').at(-1) ?? path}`);
+  }, [props.api, path, dirty]);
 
   const status = content?.status ?? file?.status;
+  const editable = !!content && content.modified !== null && !content.binary && !content.tooLarge;
+
+  const save = useCallback(
+    (force = false): Promise<boolean> => {
+      const attempt = async (force: boolean): Promise<boolean> => {
+        const text = diffRegistry.get(panelId)?.modifiedValue();
+        const current = contentRef.current;
+        if (text == null || !current) return false;
+        try {
+          await ipc.invoke('files:write', {
+            projectId,
+            path,
+            content: text,
+            ...(current.bom ? { bom: true } : {}),
+            ...(!force && current.mtimeMs !== undefined && !diskChanged ? { expectedMtimeMs: current.mtimeMs } : {}),
+          });
+          diffRegistry.get(panelId)?.markSaved();
+          setDiskChanged(false);
+          return true;
+        } catch (e) {
+          if (e instanceof OxyError && e.code === 'CONFLICT') {
+            const ok = await confirmDialog({
+              title: `${path.split('/').at(-1)} changed on disk`,
+              description:
+                'The file changed after the diff was loaded (an agent may be editing it). Overwrite it with your version?',
+              confirmLabel: 'Overwrite',
+              tone: 'warning',
+            });
+            return ok ? attempt(true) : false;
+          }
+          notify('error', 'Could not save the file', { description: e instanceof Error ? e.message : String(e) });
+          return false;
+        }
+      };
+      return attempt(force);
+    },
+    [panelId, projectId, path, diskChanged, contentRef],
+  );
+
+  useEffect(() => {
+    unsavedRegistry.set(panelId, { name: path.split('/').at(-1) ?? path, isDirty: () => dirtyRef.current, save });
+    return () => {
+      unsavedRegistry.delete(panelId);
+    };
+  }, [panelId, path, save, dirtyRef]);
+
+  useEffect(() => {
+    if (dirty) pinDiff(props.containerApi, panelId);
+  }, [dirty, props.containerApi, panelId]);
   const openEditor = () => {
     if (!project) return;
     const line = diffRegistry.get(panelId)?.currentLine();
@@ -151,7 +228,15 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
   else
     body = (
       <Suspense fallback={<EmptyState title="Loading editor…" />}>
-        <DiffEditorView panelId={panelId} content={content} options={options} />
+        <DiffEditorView
+          panelId={panelId}
+          projectId={projectId}
+          content={content}
+          options={options}
+          editable={editable}
+          onDirtyChange={setDirty}
+          onSave={() => void save()}
+        />
       </Suspense>
     );
 
@@ -201,7 +286,56 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
               : `${Math.round((now - updatedAt) / 1000)}s ago`}
           </span>
         )}
+        {dirty && (
+          <span title="Unsaved edits" data-testid="diff-dirty" className="size-2 flex-none rounded-full bg-accent" />
+        )}
         <span className="flex-1" />
+        {dirty && (
+          <IconButton
+            data-testid="diff-save"
+            label="Save"
+            shortcut="Ctrl+S"
+            icon={<Save size={13} />}
+            onClick={() => void save()}
+          />
+        )}
+        {file && (
+          <label
+            className="flex h-6 flex-none cursor-default items-center gap-1 rounded-control px-1.5 text-fg-secondary hover:bg-card-hover"
+            title="Staged for the next commit"
+          >
+            <input
+              type="checkbox"
+              data-testid="diff-stage"
+              checked={stageState([file]) === 'all'}
+              ref={(el) => {
+                if (el) el.indeterminate = stageState([file]) === 'some';
+              }}
+              onChange={() => void toggleStaged(projectId, [file])}
+              className="accent-(--accent)"
+            />
+            Staged
+          </label>
+        )}
+        <IconButton
+          data-testid="diff-discard"
+          label="Discard changes"
+          icon={<Undo2 size={13} />}
+          disabled={!file}
+          onClick={() => file && void discardFiles(projectId, [file])}
+        />
+        <IconButton
+          data-testid="diff-ask-agent"
+          label="Ask agent about these changes (select code to ask about it: Ctrl+L)"
+          icon={<Sparkles size={13} />}
+          onClick={() => askAgent({ projectId, contexts: [{ kind: 'changes', changes: { path } }] })}
+        />
+        <IconButton
+          label="Review all changes"
+          icon={<ListChecks size={13} />}
+          onClick={() => void openReview(projectId, path)}
+        />
+        <span className="mx-0.5 h-4 w-px bg-line-subtle" />
         <IconButton
           label="Previous change"
           shortcut="Shift+F7"
@@ -233,12 +367,43 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
           onClick={() => toggle('hideUnchanged')}
         />
         <IconButton
-          label="Open in editor"
+          data-testid="diff-open-file"
+          label="Open file"
+          icon={<FileCode2 size={13} />}
+          disabled={status === 'deleted'}
+          onClick={() => {
+            const line = diffRegistry.get(panelId)?.currentLine();
+            openFile(projectId, path, { pinned: true, ...(line ? { line } : {}) });
+          }}
+        />
+        <IconButton
+          label="Open in external editor"
           icon={<ExternalLink size={13} />}
           disabled={status === 'deleted'}
           onClick={openEditor}
         />
       </div>
+      {diskChanged && (
+        <div
+          data-testid="diff-disk-banner"
+          className="flex flex-none items-center gap-2 border-b border-line-subtle bg-warning/10 px-3 py-1.5 text-small text-warning"
+        >
+          <span className="flex-1">The file changed on disk while you were editing it.</span>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              diffRegistry.get(panelId)?.discardEdits();
+              setDiskChanged(false);
+            }}
+          >
+            Reload (discard my edits)
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => void save(true)}>
+            Save mine
+          </Button>
+        </div>
+      )}
       <div className="relative min-h-0 flex-1">{body}</div>
     </div>
   );

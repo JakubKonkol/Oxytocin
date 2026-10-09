@@ -60,6 +60,11 @@ export function registerPaletteCommands(): void {
     run: () => usePaletteStore.getState().open('@'),
   });
   registerCommand({
+    id: 'workbench.goToFile',
+    title: 'Files: Go to File…',
+    run: () => usePaletteStore.getState().open('%'),
+  });
+  registerCommand({
     id: 'workbench.showChangedFiles',
     title: 'Changes: Go to Changed File…',
     run: () => usePaletteStore.getState().open('#'),

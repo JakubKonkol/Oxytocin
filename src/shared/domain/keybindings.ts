@@ -6,6 +6,8 @@ export const KEY_CONTEXTS = [
   'sidebarFocus',
   'changesFocus',
   'diffFocus',
+  /** The built-in code editor. */
+  'editorFocus',
   'pluginViewFocus',
   'inputFocus',
   'global',

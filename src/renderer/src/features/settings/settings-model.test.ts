@@ -36,6 +36,7 @@ describe('settings model', () => {
       'terminal.fontSize',
       'terminal.lineHeight',
       'scratchpad.fontSize',
+      'editor.code.fontSize',
     ]);
     expect(filterDescriptors(all, 'alpha', {}).map((d) => d.key)).toEqual(['alpha.on']);
     const modified = filterDescriptors(all, '@modified', { 'terminal.fontSize': 15, 'git.enabled': true });

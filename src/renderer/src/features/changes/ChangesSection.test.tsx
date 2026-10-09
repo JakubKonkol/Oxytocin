@@ -2,12 +2,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileChange, RepoStatus } from '@shared/domain/git';
 import type { Project } from '@shared/domain/project';
+import { resolveSettings } from '@shared/domain/settings';
 import { DEFAULT_CHANGES_UI, useChangesStore } from '../../stores/changes-store';
+import { useSettingsStore } from '../../stores/settings-store';
 import { useProjectsStore } from '../../stores/projects-store';
 import { TooltipProvider } from '../../ui/Tooltip';
 import { ChangesHeaderActions, ChangesSection } from './ChangesSection';
 
-const invoke = vi.fn((_channel: string, _payload?: unknown): Promise<unknown> => Promise.resolve(null));
+const invoke = vi.fn((channel: string, _payload?: unknown): Promise<unknown> =>
+  Promise.resolve(channel === 'git:action' ? { output: '' } : null),
+);
 
 const project: Project = {
   id: 'p',
@@ -67,8 +71,11 @@ beforeEach(() => {
   invoke.mockClear();
   (window as unknown as { oxy: unknown }).oxy = { invoke, on: () => () => undefined, platform: 'linux', e2e: false };
   useProjectsStore.setState({ projects: [project], activeId: 'p', loaded: true, activity: {} });
-  useChangesStore.setState({ status: {}, touched: {}, ui: {} });
+  useChangesStore.setState({ status: {}, touched: {}, ui: {}, commitMessage: {} });
+  useSettingsStore.setState({ settings: resolveSettings({ 'git.confirmDiscard': false }, 'linux').settings });
 });
+
+const actions = () => invoke.mock.calls.filter(([channel]) => channel === 'git:action').map(([, payload]) => payload);
 
 const renderSection = () =>
   render(
@@ -162,5 +169,81 @@ describe('ChangesSection', () => {
     useChangesStore.setState({ status: { p: status([], extra) }, ui: { p: DEFAULT_CHANGES_UI } });
     renderSection();
     expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it('stages and unstages files and folders with the row checkboxes', () => {
+    useChangesStore.setState({
+      status: {
+        p: status([file('src/a.ts'), file('src/b.ts', 'modified', { staged: true, unstaged: false }), file('z.ts')]),
+      },
+    });
+    renderSection();
+    const box = (path: string) =>
+      screen
+        .getAllByTestId('changes-row')
+        .find((r) => r.getAttribute('data-path') === path)!
+        .querySelector('[data-testid="changes-stage"]')!;
+    expect(box('src')).toHaveAttribute('data-state', 'some');
+    expect(box('src/b.ts')).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(box('z.ts'));
+    fireEvent.click(box('src/b.ts'));
+    fireEvent.click(box('src'));
+    expect(actions()).toEqual([
+      { projectId: 'p', action: { kind: 'stage', paths: ['z.ts'] } },
+      { projectId: 'p', action: { kind: 'unstage', paths: ['src/b.ts'] } },
+      { projectId: 'p', action: { kind: 'stage', paths: ['src/a.ts', 'src/b.ts'] } },
+    ]);
+  });
+
+  it('commits every change when nothing is staged, and only the staged files otherwise', async () => {
+    useChangesStore.setState({ status: { p: status([file('a.ts'), file('b.ts')]) } });
+    const { rerender } = renderSection();
+    expect(screen.getByTestId('commit-button')).toHaveTextContent('Commit all 2');
+    const message = screen.getByTestId('commit-message');
+    fireEvent.change(message, { target: { value: 'feat: first' } });
+    fireEvent.keyDown(message, { key: 'Enter', ctrlKey: true });
+    expect(actions()).toEqual([{ projectId: 'p', action: { kind: 'commit', message: 'feat: first', stageAll: true } }]);
+    // The message is cleared once the commit went through.
+    await vi.waitFor(() => expect(useChangesStore.getState().commitMessage.p).toBe(''));
+
+    invoke.mockClear();
+    useChangesStore.setState({
+      status: { p: status([file('a.ts', 'modified', { staged: true, unstaged: false }), file('b.ts')]) },
+    });
+    rerender(
+      <TooltipProvider>
+        <ChangesHeaderActions />
+        <ChangesSection />
+      </TooltipProvider>,
+    );
+    expect(screen.getByTestId('commit-button')).toHaveTextContent('Commit 1 staged');
+    fireEvent.change(screen.getByTestId('commit-message'), { target: { value: 'fix: second' } });
+    fireEvent.click(screen.getByTestId('commit-button'));
+    expect(actions()).toEqual([{ projectId: 'p', action: { kind: 'commit', message: 'fix: second' } }]);
+  });
+
+  it('discards a file from its hover action', async () => {
+    useChangesStore.setState({ status: { p: status([file('a.ts'), file('new.ts', 'untracked')]) } });
+    renderSection();
+    const row = screen.getAllByTestId('changes-row').find((r) => r.getAttribute('data-path') === 'new.ts')!;
+    fireEvent.click(row.querySelector('[data-testid="changes-discard"]')!);
+    await vi.waitFor(() =>
+      expect(actions()).toEqual([{ projectId: 'p', action: { kind: 'discard', paths: ['new.ts'] } }]),
+    );
+  });
+
+  it('offers pull and push with the ahead/behind counts, or publishing a branch without upstream', () => {
+    useChangesStore.setState({ status: { p: status([file('a.ts')]) } });
+    const { unmount } = renderSection();
+    expect(screen.getByTestId('changes-push')).toHaveTextContent('2');
+    fireEvent.click(screen.getByTestId('changes-push'));
+    expect(actions()).toEqual([{ projectId: 'p', action: { kind: 'push' } }]);
+    unmount();
+    useChangesStore.setState({
+      status: { p: status([file('a.ts')], { branch: { head: 'feat', detached: false, ahead: 0, behind: 0 } }) },
+    });
+    renderSection();
+    expect(screen.queryByTestId('changes-push')).toBeNull();
+    expect(screen.getByTestId('changes-publish')).toBeInTheDocument();
   });
 });

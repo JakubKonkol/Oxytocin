@@ -68,6 +68,7 @@ const WHEN_OPTIONS: { value: string; label: string }[] = [
   { value: '!terminalFocus', label: 'Outside terminals' },
   { value: 'terminalFocus', label: 'In terminals' },
   { value: 'diffFocus', label: 'In diffs' },
+  { value: 'editorFocus', label: 'In the code editor' },
   { value: 'changesFocus', label: 'In the CHANGES list' },
   { value: 'sidebarFocus', label: 'In the sidebar' },
 ];

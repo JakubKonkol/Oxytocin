@@ -3,25 +3,12 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { EnsembleChange, FinishAction } from '@shared/domain/ensemble';
 import { OxyError } from '@shared/errors';
 import { runGit } from './exec';
+import { serialized } from './serialize';
 
 /**
  * Git operations of Ensemble (Plan 03): worktrees, checkpoint commits, the task's changes and finishing a task.
  * Reads use `--no-optional-locks` (runGit); writes take git's locks, so they are serialized per repository.
  */
-
-const queues = new Map<string, Promise<unknown>>();
-
-/** Runs `fn` after the previous write of the same repository finished. */
-function serialized<T>(repo: string, fn: () => Promise<T>): Promise<T> {
-  const key = resolve(repo).toLowerCase();
-  const prev = queues.get(key) ?? Promise.resolve();
-  const next = prev.then(fn, fn);
-  queues.set(
-    key,
-    next.catch(() => undefined),
-  );
-  return next;
-}
 
 async function git(gitPath: string, cwd: string, args: string[], timeoutMs = 60_000) {
   const r = await runGit(gitPath, args, { cwd, timeoutMs });

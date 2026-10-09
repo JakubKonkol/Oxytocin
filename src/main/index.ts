@@ -49,6 +49,7 @@ import type { EnvLayer } from './services/terminals/env-composer';
 import { AgentService } from './services/agents/agent-service';
 import { ActivityService } from './services/activity/activity-service';
 import { GitService } from './services/git/git-service';
+import { FileService } from './services/files/file-service';
 import { PluginService } from './services/plugins/plugin-service';
 import { verifyPluginChecksums } from './services/plugins/checksums';
 import { DevPluginWatcher } from './services/plugins/dev-watcher';
@@ -297,6 +298,12 @@ function bootstrap(): void {
     logger: createLogger('git'),
   });
   void projectsReady.then(() => git.start());
+  const files = new FileService({
+    host: hosts.workspace,
+    project: (id) => projects.get(id),
+    settings: () => settings.get(),
+    trash: (path) => shell.trashItem(path),
+  });
 
   const userPluginsDir = join(app.getPath('userData'), 'plugins');
   const pluginInstaller = new PluginInstaller(userPluginsDir, createLogger('plugins'));
@@ -371,6 +378,9 @@ function bootstrap(): void {
     openPath: (path) => shell.openPath(path),
     openInTerminal: (req) => {
       if (mainWindow && !mainWindow.isDestroyed()) sendEvent(mainWindow.webContents, 'editor:openInTerminal', req);
+    },
+    openBuiltin: (req) => {
+      if (mainWindow && !mainWindow.isDestroyed()) sendEvent(mainWindow.webContents, 'editor:openBuiltin', req);
     },
     platform: process.platform,
     logger: createLogger('editor'),
@@ -928,6 +938,16 @@ function bootstrap(): void {
       'git:getStatus': ({ projectId }) => git.status(projectId),
       'git:refresh': ({ projectId }) => git.refresh(projectId, 'manual'),
       'git:getFileDiff': (req) => git.fileDiff(req),
+      'git:action': ({ projectId, action }) => git.action(projectId, action),
+      'git:branches': ({ projectId }) => git.branches(projectId),
+      'files:list': ({ projectId, path }) => files.list(projectId, path),
+      'files:find': ({ projectId }) => files.find(projectId),
+      'files:stat': ({ projectId, path }) => files.stat(projectId, path),
+      'files:read': ({ projectId, path }) => files.read(projectId, path),
+      'files:write': (req) => files.write(req),
+      'files:create': ({ projectId, path, kind }) => files.create(projectId, path, kind),
+      'files:rename': ({ projectId, from, to }) => files.rename(projectId, from, to),
+      'files:trash': ({ projectId, path }) => files.trash(projectId, path),
       'plugins:list': async () => {
         await pluginsReady;
         return plugins.list();
@@ -1445,6 +1465,34 @@ function bootstrap(): void {
   };
   const withTimeout = <T>(p: Promise<T>, ms: number) =>
     Promise.race([p, new Promise<undefined>((r) => setTimeout(() => r(undefined), ms))]);
+  /** Files edited in the built-in editor but not saved: save them, drop them, or stay. */
+  const unsavedGuard = async (): Promise<boolean> => {
+    if (win.isDestroyed() || e2e) return true;
+    const files = (await withTimeout(
+      win.webContents.executeJavaScript('window.__oxyUnsavedFiles ? window.__oxyUnsavedFiles() : []', true),
+      2000,
+    ).catch(() => undefined)) as unknown;
+    if (!Array.isArray(files) || files.length === 0) return true;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    const answer = await confirms.ask({
+      title: 'Save your changes before quitting?',
+      description: `${files.length === 1 ? 'A file has' : `${files.length} files have`} unsaved edits.`,
+      details: files.slice(0, 20).map(String),
+      confirmLabel: 'Save and quit',
+      secondaryLabel: "Don't save",
+      tone: 'warning',
+    });
+    if (!answer) return true;
+    if (!answer.confirmed) return false;
+    if (answer.secondary) return true;
+    const saved: unknown = await withTimeout(
+      win.webContents.executeJavaScript('window.__oxySaveAll ? window.__oxySaveAll() : true', true) as Promise<unknown>,
+      10_000,
+    ).catch(() => false);
+    return saved === true;
+  };
   win.on('close', (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -1457,7 +1505,7 @@ function bootstrap(): void {
     quitInProgress = true;
     void (async () => {
       try {
-        if (!(await quitGuard())) {
+        if (!(await unsavedGuard()) || !(await quitGuard())) {
           updates?.cancelRestart();
           return;
         }

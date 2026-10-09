@@ -1,4 +1,6 @@
 import { DiffPanelComponent } from '../diff/DiffPanel';
+import { CodeEditorPanel } from '../editor/CodeEditorPanel';
+import { ReviewPanel } from '../review/ReviewPanel';
 import { PluginPanelComponent } from '../plugins/plugin-panels';
 import {
   type DockviewApi,
@@ -61,6 +63,8 @@ const DOCKVIEW_THEMES: Record<EffectiveTheme, DockviewTheme> = {
 const components = {
   terminal: withErrorBoundary(TerminalPanelComponent, 'The terminal panel'),
   diff: withErrorBoundary(DiffPanelComponent, 'The diff panel'),
+  code: withErrorBoundary(CodeEditorPanel, 'The code editor'),
+  review: withErrorBoundary(ReviewPanel, 'The review'),
   plugin: withErrorBoundary(PluginPanelComponent, 'The plugin panel'),
   scratchpad: withErrorBoundary(ScratchpadPanel, 'The scratchpad'),
   ensemble: withErrorBoundary(EnsemblePanel, 'Ensemble'),

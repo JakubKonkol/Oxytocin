@@ -1,4 +1,13 @@
-import type { FileDiffContent, FileDiffRequest, GitInstallation, RepoInfo, RepoStatus } from '@shared/domain/git';
+import type {
+  BranchList,
+  FileDiffContent,
+  FileDiffRequest,
+  GitAction,
+  GitActionResult,
+  GitInstallation,
+  RepoInfo,
+  RepoStatus,
+} from '@shared/domain/git';
 import { OxyError } from '@shared/errors';
 import type { Project } from '@shared/domain/project';
 import type { Settings } from '@shared/domain/settings';
@@ -203,6 +212,18 @@ export class GitService implements Disposable {
     if (!this.watched.has(req.projectId)) throw new OxyError('NOT_FOUND', 'The project is not watched by git');
     const maxBytes = Math.round(this.deps.settings()['git.diff.maxFileSizeMb'] * 1024 * 1024);
     return await this.deps.host.call('git:getFileDiff', { ...req, maxBytes });
+  }
+
+  /** A git action from the UI (stage, commit, push…) in a watched project. */
+  async action(projectId: string, action: GitAction): Promise<GitActionResult> {
+    if (!this.watched.has(projectId)) throw new OxyError('NOT_FOUND', 'The project is not watched by git');
+    this.deps.logger.info(`git ${action.kind} in ${projectId}`);
+    return await this.deps.host.call('git:action', { projectId, action });
+  }
+
+  async branches(projectId: string): Promise<BranchList> {
+    if (!this.watched.has(projectId)) throw new OxyError('NOT_FOUND', 'The project is not watched by git');
+    return await this.deps.host.call('git:branches', { projectId });
   }
 
   refresh(projectId: string, reason: RefreshReason): void {

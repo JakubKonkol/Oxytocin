@@ -21,6 +21,9 @@ import { subscribeUpdates } from './features/updates/update-store';
 import { TooltipProvider } from './ui/Tooltip';
 import { subscribeMcp } from './features/agent-tools/mcp-store';
 import { subscribeEnsemble } from './features/ensemble/ensemble-store';
+import { subscribeFiles } from './features/editor/files-store';
+import { AskAgentHost } from './features/ask-agent/AskAgentDialog';
+import { CommentDialogHost } from './features/review/CommentDialog';
 
 export function App() {
   const [loaded, setLoaded] = useState(false);
@@ -36,6 +39,7 @@ export function App() {
     subscribeUpdates();
     subscribeMcp();
     subscribeEnsemble();
+    subscribeFiles();
     const unsubscribe = subscribeShellEvents();
     let mounted = true;
     Promise.all([
@@ -75,6 +79,8 @@ export function App() {
       <ProfilePicker />
       <CommandPalette />
       <ProjectSettingsDialog />
+      <AskAgentHost />
+      <CommentDialogHost />
     </TooltipProvider>
   );
 }

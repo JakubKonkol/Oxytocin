@@ -1,61 +1,17 @@
-import { Dialog } from 'radix-ui';
-import { CheckCircle2, Pencil, ShieldQuestion, X } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, Pencil, ShieldQuestion } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import type { EnsembleChange, EnsembleRecord, Handoff } from '@shared/domain/ensemble';
 import { OUTPUT_LABELS } from '@shared/domain/ensemble';
 import { nameOf } from '@shared/ensemble/context';
 import { cn } from '../../lib/cn';
 import { ipc } from '../../lib/ipc-client';
 import { Button } from '../../ui/Button';
-import { IconButton } from '../../ui/IconButton';
+import { AppDialog } from '../../ui/Dialog';
 import { ensembleCommand } from './ensemble-store';
 import { Markdown } from './ui';
 
-export function EnsembleDialog({
-  title,
-  icon,
-  children,
-  footer,
-  onClose,
-  testId,
-  wide,
-}: {
-  title: string;
-  icon?: ReactNode;
-  children: ReactNode;
-  footer?: ReactNode;
-  onClose: () => void;
-  testId: string;
-  wide?: boolean;
-}) {
-  return (
-    <Dialog.Root open onOpenChange={(o) => !o && onClose()}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="oxy-dialog-overlay fixed inset-0 z-40 bg-app/70 backdrop-blur-[2px]" />
-        <Dialog.Content
-          data-testid={testId}
-          aria-describedby={undefined}
-          className={cn(
-            'oxy-dialog fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-48px)] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-card border border-line bg-elevated shadow-elevated',
-            wide ? 'w-[860px]' : 'w-[560px]',
-          )}
-        >
-          <div className="flex flex-none items-center gap-2.5 border-b border-line-subtle px-4 py-3">
-            {icon}
-            <Dialog.Title className="min-w-0 flex-1 truncate text-[15px] font-semibold text-fg">{title}</Dialog.Title>
-            <IconButton label="Close" icon={<X size={14} />} onClick={onClose} />
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto px-4 py-3">{children}</div>
-          {footer && (
-            <div className="flex flex-none items-center gap-2 border-t border-line-subtle bg-card px-4 py-3">
-              {footer}
-            </div>
-          )}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
-}
+/** The dialog frame of Ensemble (title, body, footer). */
+export const EnsembleDialog = AppDialog;
 
 function HandoffBlock({ record, handoff, title }: { record: EnsembleRecord; handoff: Handoff; title?: string }) {
   return (

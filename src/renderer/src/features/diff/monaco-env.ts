@@ -4,6 +4,32 @@ import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/basic-languages/monaco.contribution';
 // Icon font (fold arrows, "hidden lines" controls).
 import 'monaco-editor/features/codicon/register';
+// Editing features of the code editor and the editable side of diffs (find/replace, folding, comments, multiple
+// cursors, word completion…). Language services (IntelliSense) are left out: they need their own workers.
+import 'monaco-editor/features/bracketMatching/register';
+import 'monaco-editor/features/caretOperations/register';
+import 'monaco-editor/features/clipboard/register';
+import 'monaco-editor/features/comment/register';
+import 'monaco-editor/features/contextmenu/register';
+import 'monaco-editor/features/cursorUndo/register';
+import 'monaco-editor/features/dnd/register';
+import 'monaco-editor/features/find/register';
+import 'monaco-editor/features/folding/register';
+import 'monaco-editor/features/gotoLine/register';
+import 'monaco-editor/features/hover/register';
+import 'monaco-editor/features/indentation/register';
+import 'monaco-editor/features/insertFinalNewLine/register';
+import 'monaco-editor/features/linesOperations/register';
+import 'monaco-editor/features/links/register';
+import 'monaco-editor/features/multicursor/register';
+import 'monaco-editor/features/readOnlyMessage/register';
+import 'monaco-editor/features/smartSelect/register';
+import 'monaco-editor/features/snippet/register';
+import 'monaco-editor/features/stickyScroll/register';
+import 'monaco-editor/features/suggest/register';
+import 'monaco-editor/features/wordHighlighter/register';
+import 'monaco-editor/features/wordOperations/register';
+import 'monaco-editor/features/wordPartOperations/register';
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker';
 import { currentTheme, type EffectiveTheme, expandHex, onDidChangeTheme } from '../../lib/theme';
 
@@ -62,6 +88,28 @@ export function ensureTheme(): string {
       'diffEditor.diagonalFill': alpha(token('--border-default'), 0.6),
       'diffEditor.unchangedRegionBackground': token('--bg-surface'),
       'diffEditor.unchangedRegionForeground': token('--text-muted'),
+      'editorGlyphMargin.background': token('--bg-card'),
+      'minimap.background': token('--bg-card'),
+      'editorStickyScroll.background': token('--bg-card'),
+      'editorStickyScrollHover.background': token('--bg-card-hover'),
+      'editor.findMatchHighlightBackground': alpha(token('--warning'), 0.25),
+      'editor.findMatchBackground': alpha(token('--warning'), 0.45),
+      'editorBracketMatch.background': alpha(token('--accent'), 0.18),
+      'editorBracketMatch.border': alpha(token('--accent'), 0.5),
+      'editorSuggestWidget.background': token('--bg-elevated'),
+      'editorSuggestWidget.border': token('--border-default'),
+      'editorSuggestWidget.selectedBackground': token('--accent-muted'),
+      'editorHoverWidget.background': token('--bg-elevated'),
+      'editorHoverWidget.border': token('--border-default'),
+      'input.background': token('--bg-input'),
+      'input.border': token('--border-default'),
+      focusBorder: token('--border-focus'),
+      'menu.background': token('--bg-elevated'),
+      'menu.foreground': token('--text-primary'),
+      'menu.selectionBackground': token('--accent-muted'),
+      'menu.selectionForeground': token('--text-primary'),
+      'menu.separatorBackground': token('--border-subtle'),
+      'menu.border': token('--border-default'),
     },
   });
   return name;

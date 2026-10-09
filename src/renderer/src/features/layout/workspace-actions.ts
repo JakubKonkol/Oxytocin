@@ -1,7 +1,8 @@
 import type { AddPanelPositionOptions, DockviewApi } from 'dockview-react';
 import type { CreateTerminalRequest } from '@shared/domain/terminal';
 import { ipc } from '../../lib/ipc-client';
-import { confirmDialog } from '../../stores/dialog-store';
+import { confirmDialog, confirmDialogEx } from '../../stores/dialog-store';
+import { unsavedRegistry } from './unsaved-registry';
 import { getSettings } from '../../stores/settings-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
@@ -85,6 +86,18 @@ export async function requestClosePanel(
     panel.api.close();
     await ipc.invoke('terminals:dispose', { id: terminalId });
     return true;
+  }
+  const unsaved = unsavedRegistry.get(panelId);
+  if (!opts.skipConfirm && unsaved?.isDirty()) {
+    const answer = await confirmDialogEx({
+      title: `Save the changes to ${unsaved.name}?`,
+      description: 'Your edits are lost if you close without saving.',
+      confirmLabel: 'Save',
+      secondaryLabel: "Don't Save",
+      tone: 'warning',
+    });
+    if (!answer.confirmed) return false;
+    if (!answer.secondary && !(await unsaved.save())) return false;
   }
   panel.api.close();
   return true;

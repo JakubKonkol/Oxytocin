@@ -135,7 +135,7 @@ test('"Open in editor" with the terminal preset runs the editor command in a new
     const row = win.locator('[data-testid="changes-row"][data-path="tracked.txt"]');
     await expect(row).toBeVisible();
     await row.click({ button: 'right' });
-    await win.getByRole('menuitem', { name: 'Open in editor' }).click();
+    await win.getByRole('menuitem', { name: 'Open in External Editor' }).click();
     await expect.poll(async () => (await oxyTest(win).workspace())?.panels.length).toBe(2);
     const editorTerminal = (await oxyTest(win).workspace())!.panels.find((p) => p.terminalId)!;
     const ids = (await oxyTest(win).workspace())!.panels.map((p) => p.terminalId).filter(Boolean) as string[];

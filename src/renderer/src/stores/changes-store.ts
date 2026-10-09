@@ -28,17 +28,24 @@ interface ChangesStore {
   /** projectId → path → last touch (from `git:fileTouched`, before the status catches up). */
   touched: Record<string, Record<string, number>>;
   ui: Record<string, ChangesUi>;
+  /** Draft commit messages per project (kept while switching projects). */
+  commitMessage: Record<string, string>;
   load: (projectId: string) => Promise<void>;
   setUi: (projectId: string, patch: Partial<ChangesUi>) => void;
+  setCommitMessage: (projectId: string, message: string) => void;
 }
 
 export const useChangesStore = create<ChangesStore>((set) => ({
   status: {},
   touched: {},
   ui: {},
+  commitMessage: {},
   async load(projectId) {
     const status = await ipc.invoke('git:getStatus', { projectId });
     if (status) set((s) => ({ status: { ...s.status, [projectId]: status } }));
+  },
+  setCommitMessage(projectId, message) {
+    set((s) => ({ commitMessage: { ...s.commitMessage, [projectId]: message } }));
   },
   setUi(projectId, patch) {
     set((s) => ({ ui: { ...s.ui, [projectId]: { ...(s.ui[projectId] ?? DEFAULT_CHANGES_UI), ...patch } } }));

@@ -9,7 +9,22 @@ import {
   StatusBarItemStateSchema,
   ViewEnvelopeSchema,
 } from '../domain/plugin';
-import { FileDiffContentSchema, FileDiffRequestSchema, RepoStatusSchema } from '../domain/git';
+import {
+  BranchListSchema,
+  FileDiffContentSchema,
+  FileDiffRequestSchema,
+  GitActionResultSchema,
+  GitActionSchema,
+  RepoStatusSchema,
+} from '../domain/git';
+import {
+  FileContentSchema,
+  FileEntrySchema,
+  FileListSchema,
+  FileStatSchema,
+  FileWriteRequestSchema,
+  ProjectPathSchema,
+} from '../domain/files';
 import { AppInfoSchema, HostStatusSchema } from '../domain/app-info';
 import { SettingsPatchSchema, SettingsSchema } from '../domain/settings';
 import { UpdateStateSchema } from '../domain/updates';
@@ -147,6 +162,35 @@ export const invokeContract = {
   'git:getStatus': { req: z.object({ projectId: ProjectIdSchema }), res: RepoStatusSchema.nullable() },
   'git:refresh': { req: z.object({ projectId: ProjectIdSchema }), res: z.void() },
   'git:getFileDiff': { req: FileDiffRequestSchema, res: FileDiffContentSchema },
+  /** Stage, unstage, discard, commit, push, pull, stash, switch branch… (git's message on failure). */
+  'git:action': { req: z.object({ projectId: ProjectIdSchema, action: GitActionSchema }), res: GitActionResultSchema },
+  /** Local branches, remotes and stashes (the branch menu of the CHANGES section). */
+  'git:branches': { req: z.object({ projectId: ProjectIdSchema }), res: BranchListSchema },
+  /** A folder of a project (the FILES section); paths are relative to the project folder. */
+  'files:list': {
+    req: z.object({ projectId: ProjectIdSchema, path: ProjectPathSchema }),
+    res: z.array(FileEntrySchema),
+  },
+  /** Every file of a project git does not ignore (Quick Open). */
+  'files:find': { req: z.object({ projectId: ProjectIdSchema }), res: FileListSchema },
+  'files:stat': {
+    req: z.object({ projectId: ProjectIdSchema, path: ProjectPathSchema }),
+    res: FileStatSchema.nullable(),
+  },
+  /** A file's text for the built-in code editor. */
+  'files:read': { req: z.object({ projectId: ProjectIdSchema, path: ProjectPathSchema }), res: FileContentSchema },
+  /** Saves a file (CONFLICT when it changed on disk since `expectedMtimeMs`). */
+  'files:write': { req: FileWriteRequestSchema, res: FileStatSchema },
+  'files:create': {
+    req: z.object({ projectId: ProjectIdSchema, path: ProjectPathSchema, kind: z.enum(['file', 'dir']) }),
+    res: z.void(),
+  },
+  'files:rename': {
+    req: z.object({ projectId: ProjectIdSchema, from: ProjectPathSchema, to: ProjectPathSchema }),
+    res: z.void(),
+  },
+  /** Moves a file or folder of a project to the trash. */
+  'files:trash': { req: z.object({ projectId: ProjectIdSchema, path: ProjectPathSchema }), res: z.void() },
   'plugins:list': { req: z.null().optional(), res: z.array(PluginDescriptorSchema) },
   'plugins:contributions': { req: z.null().optional(), res: ContributionsSchema },
   'plugins:setEnabled': { req: z.object({ id: z.string(), enabled: z.boolean() }), res: z.void() },

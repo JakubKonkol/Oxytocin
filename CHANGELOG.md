@@ -3,6 +3,49 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Git actions in the CHANGES section.** Every file and folder has a checkbox that stages or unstages it (a folder
+  shows when only some of its files are staged); hovering a row offers *Open file* and *Discard changes*. Above the
+  list a commit message box and a **Commit** button commit what is staged — or, with nothing staged, every change —
+  and its menu adds *Commit & Push*, *Amend Last Commit* and *Undo Last Commit* (the commit's changes go back to the
+  staging area). The branch name opens a menu to switch to another branch, create one, stash the changes and pop the
+  stash; next to it **pull** (↓ with the number of new commits), **push** (↑ with the commits to push), **fetch**, or
+  **Publish** for a branch without an upstream. The section's **…** menu stages, unstages or discards everything and
+  syncs; the context menus of files and folders have the same actions. Git's own message explains any failure.
+- **Review.** *Review all changes* (the new button of the CHANGES section, *Review in Context* in a file's menu, or
+  *Git: Review All Changes*) opens every changed file's diff one below the other, with a file list, *Viewed* marks
+  that collapse a file until it changes again, a progress bar, and per file *Staged*, *Discard*, *Open file* and
+  *Ask agent*. Select code in any diff and choose **+ Comment** (Ctrl+Alt+M) to add a review comment; comments are
+  marked in the diffs and listed in the review, and **Send comments** hands all of them to an agent as one prompt with
+  the code they are about. *Ask agent to review* asks an agent to review every change.
+- **Ask agent about code.** Select code in a diff or a file and press **Ctrl+L** (or **✦ Ask agent** next to the
+  selection, or the context menu): a dialog shows the code, offers *Fix*, *Explain*, *Review*, *Refactor*, *Add
+  tests* and *Document* or your own instruction, and sends the prompt with the file, the lines and the code to the
+  running agent you pick — pressed Enter right away, or only pasted (`editor.askAgent.submit`). *Copy* and *Add to
+  scratchpad* keep it for later. Files and changed files have *Ask Agent About…* in their context menus.
+- **Built-in code editor and FILES section.** The new **FILES** section of the left sidebar (collapsed at first)
+  browses the project: folders load as you open them, files git ignores are dimmed, changed files have their git
+  colour and letter, and it follows files created or deleted on disk. Files open in a Monaco editor tab (a preview
+  tab until you edit it or double-click it) with syntax highlighting, find and replace, multiple cursors, folding,
+  sticky scroll and the minimap; save with **Ctrl+S**. A file without edits follows changes on disk (an agent
+  writing it); with edits Oxytocin shows a banner (*Reload* or *Keep mine*) and never overwrites a newer file without
+  asking. Closing a tab or quitting with unsaved edits asks to save them. The FILES menus create files and folders,
+  rename, delete (to the trash), copy paths and open files to the side or in the external editor.
+- **Quick Open finds every file** of the active project (`Ctrl+Shift+O`; `%` lists files only, *Files: Go to File…*).
+- `editor.preset` **`oxytocin`**: *Open in external editor* and terminal file links that go to the editor open files
+  in the built-in editor instead. New settings `editor.code.fontSize`, `editor.code.wordWrap`, `editor.code.minimap` and
+  `editor.code.maxFileSizeMb`.
+
+### Changed
+
+- Diffs can be edited: the right side (the file on disk) is editable, the arrows between the sides revert single
+  changes and **Ctrl+S** saves. The diff toolbar adds *Staged*, *Discard changes*, *Ask agent*, *Review all changes*
+  and *Open file* (the built-in editor at the current change); *Open in external editor* keeps opening your IDE.
+- Diff and code editor tabs carry an icon so the two tabs of one file are told apart.
+
 ## [0.8.2] - 2026-10-07
 
 ### Added

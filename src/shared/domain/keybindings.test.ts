@@ -15,7 +15,7 @@ describe('parseWhen', () => {
       const r = parseWhen(e);
       return 'error' in r ? r.error : null;
     };
-    expect(error('editorFocus')).toContain('Unknown context');
+    expect(error('codeFocus')).toContain('Unknown context');
     expect(error('terminalFocus && diffFocus')).toBeTruthy();
     expect(error('!terminalFocus || diffFocus')).toBeTruthy();
     expect(error('a || b && c')).toBeTruthy();
