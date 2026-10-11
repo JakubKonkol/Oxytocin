@@ -58,6 +58,9 @@ test('Ctrl+Shift+B toggles the sidebar and the state persists', async () => {
   try {
     await expect(second.win.getByTestId('app-ready')).toBeVisible();
     await expect(second.win.getByTestId('sidebar')).toHaveCount(0);
+    // View: Focus Changes works after a start with the sidebar hidden: it opens the sidebar.
+    await second.win.keyboard.press('Control+Shift+KeyG');
+    await expect(second.win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'true');
   } finally {
     await second.app.close();
   }

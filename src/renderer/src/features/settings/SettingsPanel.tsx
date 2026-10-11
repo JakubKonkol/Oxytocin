@@ -372,7 +372,9 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
   let visible = filterDescriptors(descriptors, text, settings);
   if (problemsOnly) visible = visible.filter((d) => problemFor.has(d.key));
   const searching = query.trim() !== '';
-  if (!searching && section) visible = visible.filter((d) => d.section === section);
+  // Settings are shown one section at a time (a search looks through all of them).
+  const current = section && sections.includes(section) ? section : (sections[0] ?? null);
+  if (!searching) visible = visible.filter((d) => d.section === current);
   const groups = sectionsOf(visible).map((s) => ({ section: s, items: visible.filter((d) => d.section === s) }));
 
   return (
@@ -404,27 +406,27 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
       )}
       <div className="flex min-h-0 flex-1">
         <nav className="w-44 flex-none overflow-auto border-r border-line-subtle py-2" aria-label="Settings sections">
-          {[null, ...sections].map((s) => (
+          {sections.map((s) => (
             <button
-              key={s ?? 'all'}
+              key={s}
               type="button"
               data-testid="settings-section"
-              data-section={s ?? 'All'}
+              data-section={s}
               onClick={() => {
                 setSection(s);
                 setQuery('');
               }}
               className={cn(
                 'block w-full truncate px-4 py-1 text-left text-fg-secondary hover:text-fg',
-                !searching && section === s && 'bg-accent-muted text-fg',
+                !searching && current === s && 'bg-accent-muted text-fg',
               )}
             >
-              {s ?? 'All settings'}
+              {s}
             </button>
           ))}
         </nav>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
-          {!searching && section === AGENT_TOOLS_SECTION && <AgentToolsView />}
+          {!searching && current === AGENT_TOOLS_SECTION && <AgentToolsView />}
           {groups.map((g) => (
             <section key={g.section} data-testid="settings-group" data-section={g.section} className="mb-4">
               <h2 className="oxy-label border-b border-line-subtle py-1.5">{g.section}</h2>

@@ -8,6 +8,7 @@ import {
   SIDEBAR_MIN_WIDTH,
   type UiState,
   type UiStatePatch,
+  withSectionHidden,
 } from '@shared/domain/ui-state';
 import { ipc } from '../lib/ipc-client';
 
@@ -18,6 +19,8 @@ interface UiStore {
   setSidebarWidth: (width: number) => void;
   toggleSidebar: () => void;
   setPaneview: (paneview: PaneviewState) => void;
+  /** Closes (`hidden`) or re-opens a section of the left sidebar. */
+  setSectionHidden: (id: string, hidden: boolean) => void;
   setSecondarySidebarWidth: (width: number) => void;
   toggleSecondarySidebar: (open?: boolean) => void;
   setSecondaryPaneview: (paneview: PaneviewState) => void;
@@ -91,6 +94,11 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setPaneview(paneview) {
     set({ state: { ...get().state, paneview } });
     persist({ paneview });
+  },
+  setSectionHidden(id, hidden) {
+    const current = get().state.paneview;
+    if (current.hidden.includes(id) === hidden) return;
+    get().setPaneview(withSectionHidden(current, id, hidden));
   },
   setSecondarySidebarWidth(width) {
     const secondarySidebar = { ...get().state.secondarySidebar, width: clampSidebarWidth(width) };

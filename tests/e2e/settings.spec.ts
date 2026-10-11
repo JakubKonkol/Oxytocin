@@ -53,14 +53,17 @@ test('settings UI: problems, generated controls, plugin settings, reset and exte
     await expect.poll(() => settingsFile(userData)).toContain('"terminal.fontSize": 15');
     expect(await settingsFile(userData)).toContain('// my settings');
     await expect(win.getByTestId('settings-problems')).toHaveCount(0);
+    // Without a search the settings show one section at a time, the first one to begin with.
     await win.getByTestId('settings-search').fill('');
-    await expect(row(win, 'terminal.fontSize')).toHaveAttribute('data-modified', 'true');
-    // Open terminals follow the change.
-    await expect.poll(termOptions).toMatchObject({ fontSize: 15 });
+    await expect(win.locator('[data-testid="settings-group"]')).toHaveCount(1);
+    await expect(win.locator('[data-testid="settings-group"]')).toHaveAttribute('data-section', 'Appearance');
 
     // Sections, a boolean, an enum, and reset.
     await win.locator('[data-testid="settings-section"][data-section="Terminal"]').click();
     await expect(win.locator('[data-testid="settings-group"]')).toHaveCount(1);
+    await expect(row(win, 'terminal.fontSize')).toHaveAttribute('data-modified', 'true');
+    // Open terminals follow the change.
+    await expect.poll(termOptions).toMatchObject({ fontSize: 15 });
     const copy = row(win, 'terminal.copyOnSelect');
     await copy.getByTestId('setting-control').click();
     await expect.poll(() => settingsFile(userData)).toContain('"terminal.copyOnSelect": true');
@@ -131,7 +134,9 @@ test('Settings opens from the app menu and the command palette', async () => {
     await win.getByTestId('app-menu').click();
     await win.getByRole('menuitem', { name: 'Settings' }).click();
     await expect(win.getByTestId('settings-panel')).toBeVisible();
-    await expect(win.locator('[data-testid="settings-section"][data-section="All"]')).toBeVisible();
+    // Only the sections: no "All settings" entry.
+    await expect(win.locator('[data-testid="settings-section"]').first()).toHaveAttribute('data-section', 'Appearance');
+    await expect(win.locator('[data-testid="settings-section"][data-section="All"]')).toHaveCount(0);
     await win.getByTestId('settings-panel').getByTestId('settings-search').fill('');
     // Ctrl+, (outside terminals) focuses the existing panel instead of opening a second one.
     await win.getByTestId('settings-search').press('Control+Comma');

@@ -1,8 +1,9 @@
 import { DropdownMenu } from 'radix-ui';
-import { PanelRight, Settings } from 'lucide-react';
+import { Keyboard, PanelRight, Settings } from 'lucide-react';
 import appIconSmall from '../assets/brand/app-icon-small.svg';
 import { useHelpStore } from '../features/help/HelpDialogs';
 import { openKeybindingsEditor } from '../features/keybindings/KeybindingsPanel';
+import { toggleShortcutsDialog } from '../features/keybindings/ShortcutsDialog';
 import { openSettingsEditor } from '../features/settings/SettingsPanel';
 import { openPluginsManager } from '../features/plugins/plugin-manager';
 import { checkForUpdates } from '../features/updates/update-store';
@@ -44,8 +45,11 @@ function AppMenu() {
           <DropdownMenu.Item className={menuItem} onSelect={() => openSettingsEditor()}>
             Settings
           </DropdownMenu.Item>
-          <DropdownMenu.Item className={menuItem} onSelect={() => openKeybindingsEditor()}>
+          <DropdownMenu.Item className={menuItem} onSelect={() => toggleShortcutsDialog()}>
             Keyboard Shortcuts
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={menuItem} onSelect={() => openKeybindingsEditor()}>
+            Customize Keyboard Shortcuts
           </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
           <DropdownMenu.Item className={menuItem} onSelect={() => show('notices')}>
@@ -63,11 +67,12 @@ function AppMenu() {
   );
 }
 
-/** Right side of the title bar, next to the window controls: right sidebar toggle and settings. */
+/** Right side of the title bar, next to the window controls: right sidebar toggle, keyboard shortcuts, settings. */
 function TitleBarActions() {
   const secondaryOpen = useUiStore((s) => !s.state.secondarySidebar.collapsed);
   const toggleShortcut = shortcutFor('workbench.toggleSecondarySidebar');
   const settingsShortcut = shortcutFor('workbench.openSettings');
+  const shortcutsShortcut = shortcutFor('workbench.showShortcuts');
   return (
     <div className="oxy-no-drag relative ml-auto flex items-center gap-0.5 pr-2">
       <IconButton
@@ -78,6 +83,13 @@ function TitleBarActions() {
         aria-pressed={secondaryOpen}
         icon={<PanelRight size={14} />}
         onClick={() => useUiStore.getState().toggleSecondarySidebar()}
+      />
+      <IconButton
+        data-testid="open-shortcuts"
+        label="Keyboard shortcuts"
+        {...(shortcutsShortcut ? { shortcut: shortcutsShortcut } : {})}
+        icon={<Keyboard size={14} />}
+        onClick={() => toggleShortcutsDialog()}
       />
       <IconButton
         data-testid="open-settings"

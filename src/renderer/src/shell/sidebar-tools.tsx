@@ -10,7 +10,7 @@ import { usePluginsStore } from '../stores/plugins-store';
 import { ScratchpadHeaderActions, ScratchpadSection } from '../features/scratchpad/ScratchpadSection';
 import { PluginFrame } from '../features/plugins/PluginFrame';
 import { viewStates } from '../features/plugins/view-bridge';
-import { SidebarAddToolMenu } from '../features/tools/AddMenus';
+import { LeftSidebarAddMenu, SidebarAddToolMenu } from '../features/tools/AddMenus';
 import {
   closeSidebarTool,
   findSidebarTool,
@@ -95,17 +95,28 @@ export const TOOL_COMPONENTS = {
   'plugin-tool': PluginToolPane,
 };
 
-/** Section header actions of a tool: add below (right sidebar), move to the other sidebar or the workspace, close. */
+/** Section header actions of a tool: add below, move to the other sidebar or the workspace, close. */
 export function ToolActions({ toolId, side }: { toolId: string; side: SidebarSide }) {
   const index = useUiStore((s) => s.state.secondaryTools.findIndex((t) => t.id === toolId));
   const other: SidebarSide = side === 'right' ? 'left' : 'right';
   return (
     <>
       {toolId === 'scratchpad' && <ScratchpadHeaderActions />}
-      {side === 'right' && (
+      {side === 'right' ? (
         <SidebarAddToolMenu
           index={index + 1}
           trigger={<IconButton data-testid={`add-tool-below-${toolId}`} label="Add tool" icon={<Plus size={13} />} />}
+        />
+      ) : (
+        <LeftSidebarAddMenu
+          belowId={toolId}
+          trigger={
+            <IconButton
+              data-testid={`add-tool-below-${toolId}`}
+              label="Add section or tool"
+              icon={<Plus size={13} />}
+            />
+          }
         />
       )}
       <IconButton

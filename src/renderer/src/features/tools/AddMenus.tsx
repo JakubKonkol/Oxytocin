@@ -1,6 +1,6 @@
 import type { DockviewApi, DockviewGroupPanel } from 'dockview-react';
 import { DropdownMenu } from 'radix-ui';
-import { Blocks, Bot, ChevronRight, NotebookPen, Plus, SquareTerminal, Workflow } from 'lucide-react';
+import { Blocks, Bot, ChevronRight, NotebookPen, PanelTop, Plus, SquareTerminal, Workflow } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { ipc } from '../../lib/ipc-client';
@@ -8,7 +8,9 @@ import { shortcutFor } from '../../lib/keyboard';
 import { IconButton } from '../../ui/IconButton';
 import { formatShortcut } from '../../ui/Kbd';
 import { notify } from '../../ui/Toast';
+import { useUiStore } from '../../stores/ui-store';
 import { addTerminalPanel } from '../layout/workspace-actions';
+import { indexBelow, revealSidebarSection, useSidebarSections } from './sidebar-sections';
 import {
   addSidebarTool,
   openToolInWorkspace,
@@ -147,6 +149,50 @@ export function SidebarAddToolMenu({ trigger, index }: { trigger: ReactNode; ind
           <ToolItems
             tools={tools.filter((t) => !t.workspaceOnly)}
             onPick={(t) => addSidebarTool(sidebarToolFor(t), index)}
+          />
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+/**
+ * "+" of the left sidebar: its closed sections (Projects, Changes, Files, plugin views such as Usage) and tools,
+ * added below `belowId` (or at the bottom).
+ */
+export function LeftSidebarAddMenu({ trigger, belowId }: { trigger: ReactNode; belowId?: string }) {
+  const tools = useAvailableTools();
+  const sections = useSidebarSections();
+  const hidden = useUiStore((s) => s.state.paneview.hidden);
+  const closed = sections.filter((s) => hidden.includes(s.id));
+  const at = () => (belowId ? indexBelow(belowId) : undefined);
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={4} className={menuContent} data-testid="left-sidebar-add-menu">
+          <DropdownMenu.Label className={menuLabel}>Sections</DropdownMenu.Label>
+          {closed.map((s) => (
+            <DropdownMenu.Item
+              key={s.id}
+              data-testid={`add-section-${s.id}`}
+              className={menuItem}
+              onSelect={() => revealSidebarSection(s.id, at())}
+            >
+              <PanelTop size={14} className="flex-none text-fg-muted" />
+              <span className="truncate">{s.title}</span>
+            </DropdownMenu.Item>
+          ))}
+          {closed.length === 0 && (
+            <div data-testid="add-section-none" className="px-2 py-1 text-small text-fg-muted">
+              All sections are open
+            </div>
+          )}
+          <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <DropdownMenu.Label className={menuLabel}>Tools</DropdownMenu.Label>
+          <ToolItems
+            tools={tools.filter((t) => !t.workspaceOnly)}
+            onPick={(t) => addSidebarTool(sidebarToolFor(t), at(), 'left')}
           />
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

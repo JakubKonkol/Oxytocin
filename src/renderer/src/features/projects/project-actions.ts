@@ -7,6 +7,7 @@ import { useProjectsStore } from '../../stores/projects-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
 import { markProjectSwitchStart } from '../../lib/perf';
+import { focusWhenReady, revealSidebarSection } from '../tools/sidebar-sections';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -105,12 +106,12 @@ export function registerProjectCommands(): void {
   registerCommand({
     id: 'workbench.focusProjects',
     title: 'View: Focus Projects',
-    run: () =>
-      document
-        .querySelector<HTMLElement>(
-          '[data-testid="projects-list"] [aria-selected="true"], [data-testid="projects-list"] [role="option"]',
-        )
-        ?.focus(),
+    run: () => {
+      revealSidebarSection('projects');
+      focusWhenReady(
+        '[data-testid="projects-list"] [aria-selected="true"], [data-testid="projects-list"] [role="option"]',
+      );
+    },
   });
   registerCommand({
     id: 'projects.newTerminal',

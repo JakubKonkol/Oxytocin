@@ -16,7 +16,9 @@ import { PluginStatusItems } from '../features/plugins/PluginStatusItems';
 import { PluginsStatusButton } from '../features/plugins/plugin-manager';
 import { TitleBar } from './TitleBar';
 import { HelpDialogs } from '../features/help/HelpDialogs';
+import { ShortcutsDialog } from '../features/keybindings/ShortcutsDialog';
 import { focusScratchpad } from '../features/tools/tools';
+import { focusWhenReady, revealSidebarSection } from '../features/tools/sidebar-sections';
 import { EnsembleStatusItem, useEnsembleNeedsCount } from '../features/ensemble/EnsembleStatusItem';
 
 /** "<project> — <active panel> — Oxytocin". */
@@ -55,6 +57,29 @@ export function AppLayout() {
         run: () => useUiStore.getState().toggleSecondarySidebar(),
       }),
       registerCommand({
+        id: 'workbench.focusChanges',
+        title: 'View: Focus Changes',
+        run: () => {
+          revealSidebarSection('changes');
+          focusWhenReady('[data-testid="changes-tree"]');
+        },
+      }),
+      registerCommand({
+        id: 'workbench.focusFiles',
+        title: 'View: Focus Files',
+        run: () => {
+          revealSidebarSection('files');
+          focusWhenReady('[data-testid="files-tree"]');
+        },
+      }),
+      registerCommand({
+        id: 'workbench.reopenSidebarSections',
+        title: 'View: Reopen Closed Sidebar Sections',
+        run: () => {
+          for (const id of useUiStore.getState().state.paneview.hidden) revealSidebarSection(id);
+        },
+      }),
+      registerCommand({
         id: 'workbench.focusScratchpad',
         title: 'View: Focus Scratchpad',
         run: () => focusScratchpad(),
@@ -67,6 +92,7 @@ export function AppLayout() {
     <div className="flex h-full flex-col bg-app">
       <TitleBar title={title} />
       <HelpDialogs />
+      <ShortcutsDialog />
       <div className="flex min-h-0 flex-1 px-2">
         {!sidebar.collapsed && (
           <>

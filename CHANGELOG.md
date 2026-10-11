@@ -3,6 +3,34 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Keyboard shortcuts at a glance.** The new keyboard button of the title bar (next to the settings) — or
+  **Ctrl+Shift+/** (⌘⇧/ on macOS), *Help: Keyboard Shortcuts* and *Keyboard Shortcuts* in the app menu — shows every
+  shortcut grouped by area: views, projects, terminals, agents, the code editor and diffs, dialogs. It follows your own
+  shortcuts, searches titles and keys (`ctrl+shift`), and *Customize…* opens the shortcut editor (also *Customize
+  Keyboard Shortcuts* in the app menu). On macOS it is also in the Help menu.
+- **Sections of the left sidebar can be closed and added again.** Projects, Changes, Files and Usage (and the sidebar
+  views of plugins) have a **×** that closes them and a **+** that adds a closed section — or a tool such as the
+  scratchpad or the Run tool — right below. These sections belong to the left sidebar; tools still go anywhere. With
+  everything closed the sidebar offers *Add section*, and *View: Focus Projects / Changes / Files* (Ctrl+Shift+E,
+  Ctrl+Shift+G) and *Reveal in Files* bring a closed section back. *View: Reopen Closed Sidebar Sections* restores
+  them all. Closed sections stay closed after a restart.
+
+### Changed
+
+- Settings are shown one section at a time: the *All settings* entry is gone and Settings opens on *Appearance*. The
+  search still looks through every section.
+- *Add project* in the PROJECTS header has a folder icon, so it is not mistaken for the section's new **+**.
+- Choosing *Scratchpad* in the other sidebar's **+** menu moves the scratchpad there instead of only revealing it.
+
+### Fixed
+
+- *View: Focus Changes*, *Focus Files* and *Focus Projects* work when the app was started with the left sidebar
+  hidden: they open it and expand the section.
+
 ## [0.9.0] - 2026-10-09
 
 ### Added

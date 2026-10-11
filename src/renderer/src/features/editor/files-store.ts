@@ -1,9 +1,8 @@
 import { create } from 'zustand';
 import type { FileEntry } from '@shared/domain/files';
 import { ipc } from '../../lib/ipc-client';
-import { useUiStore } from '../../stores/ui-store';
 import { activateProject } from '../projects/project-actions';
-import { getSidebarPaneviewApi } from '../tools/tools';
+import { revealSidebarSection } from '../tools/sidebar-sections';
 
 /** A loaded folder: its entries, or why it could not be read. */
 export type DirState = { entries: FileEntry[] } | { error: string };
@@ -107,8 +106,5 @@ export function revealInFiles(projectId: string, path: string): void {
   for (const dir of ancestors(path)) store.setExpanded(projectId, dir, true);
   store.select(projectId, path);
   useFilesStore.setState((s) => ({ revealNonce: s.revealNonce + 1 }));
-  const ui = useUiStore.getState();
-  if (ui.state.sidebar.collapsed) ui.toggleSidebar();
-  const pane = getSidebarPaneviewApi('left')?.getPanel('files');
-  if (pane && !pane.api.isExpanded) pane.api.setExpanded(true);
+  revealSidebarSection('files');
 }

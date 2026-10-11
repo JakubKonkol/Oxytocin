@@ -124,6 +124,11 @@ export function revealSidebarTool(id: string): void {
   const ui = useUiStore.getState();
   if (side === 'right') ui.toggleSecondarySidebar(true);
   else if (ui.state.sidebar.collapsed) ui.toggleSidebar();
+  requestSidebarReveal(id);
+}
+
+/** Expands a sidebar section or tool as soon as its sidebar shows it (it may still be mounting). */
+export function requestSidebarReveal(id: string): void {
   pendingReveal = id;
   requestAnimationFrame(applyPendingReveal);
 }
@@ -145,12 +150,14 @@ export function applyPendingReveal(): void {
 
 /**
  * Adds a tool to a sidebar (right: at `index` of its tools, default the bottom; left: at paneview `index` among its
- * sections, default the bottom). The scratchpad is only open once.
+ * sections, default the bottom). The scratchpad is only open once: added to the other sidebar, it moves there.
  */
 export function addSidebarTool(tool: SidebarTool, index?: number, side: SidebarSide = 'right'): void {
   const existing = tool.kind === 'scratchpad' ? allSidebarTools().find((t) => t.kind === 'scratchpad') : undefined;
   if (existing) {
-    revealSidebarTool(existing.id);
+    // Added to the other sidebar: it moves there.
+    if (findSidebarTool(existing.id)?.side !== side) moveSidebarToolToSide(existing.id, side, index);
+    else revealSidebarTool(existing.id);
     return;
   }
   const tools = toolsOf(side);

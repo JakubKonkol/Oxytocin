@@ -6,20 +6,31 @@ import {
   PaneviewReact,
   type PaneviewReadyEvent,
 } from 'dockview-react';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { PaneviewState } from '@shared/domain/ui-state';
-import { Plus } from 'lucide-react';
+import { FolderPlus, Plus, X } from 'lucide-react';
+import { cn } from '../lib/cn';
 import { SectionHeader } from '../ui/Section';
+import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { ProjectsSection } from '../features/projects/ProjectsSection';
 import { ChangesCount, ChangesHeaderActions, ChangesSection } from '../features/changes/ChangesSection';
 import { FilesHeaderActions, FilesSection } from '../features/editor/FilesSection';
-import { registerCommand } from '../lib/commands';
 import { addProjectViaDialog } from '../features/projects/project-actions';
 import { useProjectsStore } from '../stores/projects-store';
 import { useUiStore } from '../stores/ui-store';
 import { usePluginsStore } from '../stores/plugins-store';
 import { type PluginPaneParams, PluginSidebarView, sidebarViewInstanceId } from '../features/plugins/PluginSidebarView';
+import { LeftSidebarAddMenu } from '../features/tools/AddMenus';
+import {
+  closeSidebarSection,
+  CORE_SECTIONS,
+  defaultSectionIndex,
+  pluginSectionId,
+  sidebarSections,
+  takePendingSectionIndex,
+  useSidebarSections,
+} from '../features/tools/sidebar-sections';
 import { usePluginViewMeta } from '../features/plugins/view-meta-store';
 import { shieldIframesWhileDragging } from '../features/layout/drag-shield';
 import {
@@ -35,30 +46,13 @@ import { addToolPane, TOOL_COMPONENTS, ToolActions, type ToolPaneParams, toolDra
 export const SIDEBAR_HEADER_SIZE = 30;
 const TOOL_DEFAULT_SIZE = 300;
 
-interface SectionDefinition {
-  id: string;
-  title: string;
-  size: number;
-  order: number;
-  /** Starts collapsed until the user expands it. */
-  collapsedByDefault?: boolean;
-}
-
-/** Core sidebar sections; plugin views are inserted by their `order`. */
-const CORE_SECTIONS: SectionDefinition[] = [
-  { id: 'projects', title: 'PROJECTS', size: 200, order: 0 },
-  { id: 'changes', title: 'CHANGES', size: 380, order: 100 },
-  { id: 'files', title: 'FILES', size: 320, order: 150, collapsedByDefault: true },
-];
-
-const pluginPaneId = (pluginId: string, viewId: string) => `plugin:${pluginId}:${viewId}`;
-
 function ProjectsHeaderActions() {
   return (
     <IconButton
+      data-testid="projects-add"
       label="Add project"
       shortcut="Ctrl+Shift+A"
-      icon={<Plus size={14} />}
+      icon={<FolderPlus size={13} />}
       onClick={() => void addProjectViaDialog()}
     />
   );
@@ -75,6 +69,24 @@ function PluginPaneBadge({ instanceId }: { instanceId: string }) {
   return <>{badge.text}</>;
 }
 
+/** "+" (add a closed section or a tool below) and "×" (close) of a section header. */
+function SectionActions({ id }: { id: string }) {
+  return (
+    <>
+      <LeftSidebarAddMenu
+        belowId={id}
+        trigger={<IconButton data-testid={`add-below-${id}`} label="Add section or tool" icon={<Plus size={13} />} />}
+      />
+      <IconButton
+        data-testid={`close-section-${id}`}
+        label="Close section"
+        icon={<X size={13} />}
+        onClick={() => closeSidebarSection(id)}
+      />
+    </>
+  );
+}
+
 function PaneHeader(props: IPaneviewPanelProps) {
   const [expanded, setExpanded] = useState(props.api.isExpanded);
   useEffect(() => {
@@ -82,20 +94,30 @@ function PaneHeader(props: IPaneviewPanelProps) {
     return () => d.dispose();
   }, [props.api]);
   const plugin = props.params as Partial<PluginPaneParams & ToolPaneParams> | undefined;
+  const id = props.api.id;
+  const section = (own?: ReactNode) => (
+    <>
+      {own}
+      <SectionActions id={id} />
+    </>
+  );
   const extras = plugin?.toolId
     ? { actions: <ToolActions toolId={plugin.toolId} side="left" /> }
     : plugin?.pluginId && plugin.viewId
-      ? { count: <PluginPaneBadge instanceId={sidebarViewInstanceId(plugin.pluginId, plugin.viewId)} /> }
-      : props.api.id === 'projects'
-        ? { actions: <ProjectsHeaderActions />, count: <ProjectsCount /> }
-        : props.api.id === 'changes'
-          ? { actions: <ChangesHeaderActions />, count: <ChangesCount /> }
-          : props.api.id === 'files'
-            ? { actions: <FilesHeaderActions /> }
-            : {};
+      ? {
+          actions: section(),
+          count: <PluginPaneBadge instanceId={sidebarViewInstanceId(plugin.pluginId, plugin.viewId)} />,
+        }
+      : id === 'projects'
+        ? { actions: section(<ProjectsHeaderActions />), count: <ProjectsCount /> }
+        : id === 'changes'
+          ? { actions: section(<ChangesHeaderActions />), count: <ChangesCount /> }
+          : id === 'files'
+            ? { actions: section(<FilesHeaderActions />) }
+            : { actions: section() };
   return (
     <SectionHeader
-      testId={`section-header-${props.api.id}`}
+      testId={`section-header-${id}`}
       title={props.title}
       expanded={expanded}
       onToggle={() => props.api.setExpanded(!expanded)}
@@ -114,21 +136,68 @@ const components = {
 
 function readPaneviewState(api: PaneviewApi): PaneviewState {
   const panels = api.panels;
+  const previous = useUiStore.getState().state.paneview;
+  // Closed sections keep their size for when they come back.
+  const closedSizes = previous.hidden.flatMap((id) =>
+    previous.sizes[id] !== undefined ? [[id, previous.sizes[id]] as const] : [],
+  );
   return {
     order: panels.map((p) => p.id),
-    sizes: Object.fromEntries(panels.filter((p) => p.api.isExpanded).map((p) => [p.id, Math.round(p.height)])),
+    sizes: Object.fromEntries([
+      ...closedSizes,
+      ...panels.filter((p) => p.api.isExpanded).map((p) => [p.id, Math.round(p.height)] as const),
+    ]),
     collapsed: panels.filter((p) => !p.api.isExpanded).map((p) => p.id),
-    hidden: [],
+    hidden: previous.hidden,
   };
 }
 
-/** Left column: a Paneview of collapsible, resizable, reorderable section cards. */
+/** Adds the core sections re-opened from a "+" menu and removes the ones closed. */
+function useCoreSections(api: PaneviewApi | null): void {
+  const hidden = useUiStore((s) => s.state.paneview.hidden);
+  useEffect(() => {
+    if (!api) return;
+    const layout = useUiStore.getState().state.paneview;
+    const sections = sidebarSections(usePluginsStore.getState().contributions.views);
+    for (const section of CORE_SECTIONS) {
+      const panel = api.getPanel(section.id);
+      if (hidden.includes(section.id)) {
+        if (panel) api.removePanel(panel);
+        continue;
+      }
+      if (panel) continue;
+      const index =
+        takePendingSectionIndex(section.id) ??
+        defaultSectionIndex(
+          section.id,
+          api.panels.map((p) => p.id),
+          sections,
+        );
+      api.addPanel({
+        id: section.id,
+        component: section.id,
+        headerComponent: 'section',
+        title: section.title.toUpperCase(),
+        isExpanded: true,
+        size: layout.sizes[section.id] ?? section.size,
+        headerSize: SIDEBAR_HEADER_SIZE,
+        minimumBodySize: 80,
+        index: Math.max(0, Math.min(index, api.panels.length)),
+      });
+    }
+    applyPendingReveal();
+  }, [api, hidden]);
+}
+
 /** Adds/removes plugin view panes when contributions change; saved order first, then `order`. */
 function usePluginPanes(api: PaneviewApi | null, saved: PaneviewState): void {
   const views = usePluginsStore((s) => s.contributions.views);
+  const hidden = useUiStore((s) => s.state.paneview.hidden);
   useEffect(() => {
     if (!api) return;
-    const wanted = new Map(views.map((v) => [pluginPaneId(v.pluginId, v.id), v]));
+    const wanted = new Map(
+      views.map((v) => [pluginSectionId(v.pluginId, v.id), v] as const).filter(([id]) => !hidden.includes(id)),
+    );
     for (const panel of [...api.panels]) {
       if (panel.id.startsWith('plugin:') && !wanted.has(panel.id)) api.removePanel(panel);
     }
@@ -138,9 +207,9 @@ function usePluginPanes(api: PaneviewApi | null, saved: PaneviewState): void {
       return CORE_SECTIONS.find((s) => s.id === id)?.order ?? wanted.get(id)?.order ?? 1000;
     };
     for (const [id, view] of wanted) {
-      if (api.getPanel(id) || saved.hidden.includes(id)) continue;
+      if (api.getPanel(id)) continue;
       const rank = orderOf(id);
-      const index = api.panels.filter((p) => orderOf(p.id) <= rank).length;
+      const index = takePendingSectionIndex(id) ?? api.panels.filter((p) => orderOf(p.id) <= rank).length;
       api.addPanel<PluginPaneParams>({
         id,
         component: 'plugin-view',
@@ -151,10 +220,11 @@ function usePluginPanes(api: PaneviewApi | null, saved: PaneviewState): void {
         size: saved.sizes[id] ?? view.initialHeight ?? 180,
         headerSize: SIDEBAR_HEADER_SIZE,
         minimumBodySize: view.minHeight ?? 80,
-        index,
+        index: Math.max(0, Math.min(index, api.panels.length)),
       });
     }
-  }, [api, views, saved]);
+    applyPendingReveal();
+  }, [api, views, saved, hidden]);
 }
 
 /**
@@ -202,6 +272,7 @@ export function Sidebar() {
   const [initialLayout] = useState(saved);
   const containerRef = useRef<HTMLDivElement>(null);
   usePluginPanes(api, initialLayout);
+  useCoreSections(api);
   useEffect(() => {
     setSidebarPaneviewApi(api, 'left');
     return () => setSidebarPaneviewApi(null, 'left');
@@ -230,29 +301,13 @@ export function Sidebar() {
         id,
         component: id,
         headerComponent: 'section',
-        title: section.title,
+        title: section.title.toUpperCase(),
         isExpanded: state.order.includes(id) ? !state.collapsed.includes(id) : !section.collapsedByDefault,
         size: state.sizes[id] ?? section.size,
         headerSize: SIDEBAR_HEADER_SIZE,
         minimumBodySize: 80,
       });
     }
-    registerCommand({
-      id: 'workbench.focusChanges',
-      title: 'View: Focus Changes',
-      run: () => {
-        event.api.getPanel('changes')?.api.setExpanded(true);
-        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="changes-tree"]')?.focus());
-      },
-    });
-    registerCommand({
-      id: 'workbench.focusFiles',
-      title: 'View: Focus Files',
-      run: () => {
-        event.api.getPanel('files')?.api.setExpanded(true);
-        requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="files-tree"]')?.focus());
-      },
-    });
     // Tools dragged from the right sidebar (section headers) or the workspace (tabs) can be dropped here.
     event.api.onUnhandledDragOver((e) => {
       if (draggedWorkspacePanel() || toolDraggedFrom('right', getPaneData()?.paneId)) e.accept();
@@ -278,13 +333,58 @@ export function Sidebar() {
   };
 
   return (
-    <div ref={containerRef} className="h-full" data-sidebar-side="left">
+    <div ref={containerRef} className="relative h-full" data-sidebar-side="left">
       <PaneviewReact
         className="oxy-sidebar dockview-theme-oxytocin h-full"
         components={components}
         headerComponents={{ section: PaneHeader }}
         onReady={onReady}
         onDidDrop={onDidDrop}
+      />
+      <EmptySidebar />
+    </div>
+  );
+}
+
+/** Shown when every section and tool of the left sidebar is closed: add one back, or drop a tool here. */
+function EmptySidebar() {
+  const sections = useSidebarSections();
+  const hidden = useUiStore((s) => s.state.paneview.hidden);
+  const tools = useUiStore((s) => s.state.primaryTools.length);
+  const [over, setOver] = useState(false);
+  if (tools > 0 || sections.some((s) => !hidden.includes(s.id))) return null;
+  const dragged = () => draggedWorkspacePanel() ?? toolDraggedFrom('right', getPaneData()?.paneId);
+  return (
+    <div
+      data-testid="sidebar-empty"
+      className={cn(
+        'absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-card border border-dashed p-4 text-center',
+        over ? 'border-accent bg-accent-muted' : 'border-line-subtle bg-card',
+      )}
+      onDragOver={(e) => {
+        if (!dragged()) return;
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        setOver(false);
+        const fromRight = toolDraggedFrom('right', getPaneData()?.paneId);
+        const panel = draggedWorkspacePanel();
+        if (!fromRight && !panel) return;
+        e.preventDefault();
+        if (fromRight) moveSidebarToolToSide(fromRight, 'left', 0);
+        else if (panel) moveWorkspacePanelToSidebar(panel.api, panel.panel.id, 0, 'left');
+      }}
+    >
+      <div className="text-ui text-fg-secondary">All sections are closed</div>
+      <div className="text-small text-fg-muted">Add Projects, Changes, Files or a tool back, or drag a tool here.</div>
+      <LeftSidebarAddMenu
+        trigger={
+          <Button data-testid="sidebar-add-section" size="sm">
+            <Plus size={12} /> Add section
+          </Button>
+        }
       />
     </div>
   );

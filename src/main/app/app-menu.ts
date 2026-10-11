@@ -17,7 +17,7 @@ export interface AppMenuOptions {
  * the DevTools and Ctrl+W closing (quitting) the window in packaged builds.
  *
  * - macOS: the native menu bar (App, Edit, View, Window, Help). Edit roles are required there for Cmd+C/V/X/A/Z in
- *   text fields. Shortcuts the renderer owns (Cmd+,, Cmd+Shift+P) reach the page first; the menu only acts when the
+ *   text fields. Shortcuts the renderer owns (Cmd+,, Cmd+Shift+P, Cmd+Shift+/) reach the page first; the menu only acts when the
  *   page leaves the key unhandled, or when the item is clicked.
  * - Windows/Linux: the window has its own title bar and no menu bar; Chromium handles the editing keys itself. Only
  *   full screen (F11) stays, plus Reload and DevTools in development builds.
@@ -76,7 +76,11 @@ export function appMenuTemplate(o: AppMenuOptions): MenuItemConstructorOptions[]
     },
     {
       role: 'help',
-      submenu: [{ label: 'Show Logs Folder', click: () => o.openLogsFolder() }],
+      submenu: [
+        { label: 'Keyboard Shortcuts', accelerator: 'Shift+Cmd+/', click: () => o.run('workbench.showShortcuts') },
+        { type: 'separator' },
+        { label: 'Show Logs Folder', click: () => o.openLogsFolder() },
+      ],
     },
   ];
 }

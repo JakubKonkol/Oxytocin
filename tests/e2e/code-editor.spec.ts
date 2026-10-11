@@ -24,7 +24,8 @@ test('browse the project in FILES and edit a file in the built-in editor', async
   try {
     await waitForTerminal(win);
     // FILES starts collapsed below CHANGES.
-    await win.getByTestId('section-header-files').getByRole('button', { expanded: false }).click();
+    await expect(win.getByTestId('section-header-files')).toHaveAttribute('data-expanded', 'false');
+    await win.getByTestId('section-header-files').getByRole('button', { name: 'FILES', exact: true }).click();
     await expect(fileRow(win, 'src')).toBeVisible();
     await expect(fileRow(win, 'tracked.txt')).toBeVisible();
     await fileRow(win, 'src').click();
@@ -119,7 +120,7 @@ test('Ask agent sends the selected code with an instruction to the running agent
     await expect.poll(() => oxyTest(win).text(id)).toContain('fake-claude>');
     await expect(win.getByTestId('terminal-kind-badge')).toHaveText('AI AGENT', { timeout: 10_000 });
 
-    await win.getByTestId('section-header-files').getByRole('button', { expanded: false }).click();
+    await win.getByTestId('section-header-files').getByRole('button', { name: 'FILES', exact: true }).click();
     await fileRow(win, 'app.ts').dblclick();
     const panel = win.locator('[data-testid="code-panel"][data-path="app.ts"]');
     const line = panel.locator('.view-line').filter({ hasText: "return 'three';" });

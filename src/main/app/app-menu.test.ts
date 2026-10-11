@@ -57,12 +57,14 @@ describe('appMenuTemplate', () => {
     click('Settings…');
     click('Check for Updates…');
     click('Command Palette…');
+    click('Keyboard Shortcuts');
     click('Show Logs Folder');
     expect(run.mock.calls).toEqual([
       ['workbench.about'],
       ['workbench.openSettings'],
       ['workbench.checkForUpdates'],
       ['workbench.commandPalette'],
+      ['workbench.showShortcuts'],
     ]);
     expect(openLogsFolder).toHaveBeenCalledTimes(1);
   });

@@ -71,6 +71,7 @@ export const DEFAULT_KEYBINDINGS: Keybinding[] = [
   { key: 'Ctrl+0', mac: 'Cmd+0', command: 'workbench.zoomReset', notWhen: ['terminalFocus'] },
   { key: 'Ctrl+Shift+A', mac: 'Cmd+Shift+A', command: 'projects.add', notWhen: ['terminalFocus'] },
   { key: 'Ctrl+,', mac: 'Cmd+,', command: 'workbench.openSettings' },
+  { key: 'Ctrl+Shift+/', mac: 'Cmd+Shift+/', command: 'workbench.showShortcuts' },
   { key: 'F7', command: 'diff.nextChange', when: ['diffFocus'] },
   { key: 'Shift+F7', command: 'diff.previousChange', when: ['diffFocus'] },
 ];

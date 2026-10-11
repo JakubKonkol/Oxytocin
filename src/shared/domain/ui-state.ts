@@ -101,6 +101,20 @@ export const PaneviewStateSchema = z.object({
 export type PaneviewState = z.infer<typeof PaneviewStateSchema>;
 
 /**
+ * Closes (`hidden`) or re-opens a section of the left sidebar. A closed section is left out of the paneview until
+ * it is added again; its size is kept for then.
+ */
+export function withSectionHidden(p: PaneviewState, id: string, hidden: boolean): PaneviewState {
+  const others = p.hidden.filter((h) => h !== id);
+  return {
+    ...p,
+    order: hidden ? p.order.filter((o) => o !== id) : p.order,
+    collapsed: p.collapsed.filter((c) => c !== id),
+    hidden: hidden ? [...others, id] : others,
+  };
+}
+
+/**
  * A tool in a sidebar: the scratchpad or a plugin panel (`contributes.panels`) moved or added there. The same panels
  * open in the workspace; tools move between the workspace and both sidebars by drag and drop.
  */

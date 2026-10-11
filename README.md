@@ -50,7 +50,8 @@ write the code.
 Everything is a tab: terminals, diffs, files, tools and plugin panels. Split them, stack them, float them — or drag
 any tool into the left or right sidebar to keep it next to you in every project. The **+** of each tab group opens a
 new terminal (with any profile: a shell, Claude Code, Codex, …) or a tool: the scratchpad, the Run tool, the JSON
-Formatter or a panel of your own plugin.
+Formatter or a panel of your own plugin. The left sidebar's sections — Projects, Changes, Files and Usage — close with
+their **×** and come back from any section's **+**.
 
 <p align="center">
   <img alt="Claude Code next to a dev server and a JSON Formatter, with the + menu listing terminals and tools" src="docs/images/modular-workspace.png" width="960" />
@@ -113,8 +114,8 @@ budgets with alerts and the real **5-hour and weekly limits** of a Claude Pro/Ma
 
 ### ⌨️ Keyboard first
 
-A command palette, Quick Open for projects, terminals and files, an editable shortcut map, a settings UI, and dark,
-light and system themes.
+A command palette, Quick Open for projects, terminals and files, an overview of every keyboard shortcut (the keyboard
+button of the title bar, `Ctrl+Shift+/`), an editable shortcut map, a settings UI, and dark, light and system themes.
 
 ## Plugins
 
@@ -206,6 +207,7 @@ Download the latest version from **[Releases](https://github.com/JakubKonkol/Oxy
 | `Ctrl+Shift+G` | Focus the CHANGES list |
 | `Ctrl+L` | Ask an agent about the selected code |
 | `Ctrl+,` | Settings |
+| `Ctrl+Shift+/` | Every keyboard shortcut at a glance |
 
 On macOS most shortcuts use `Cmd`. Every shortcut can be changed in *Keyboard Shortcuts*.
 

@@ -9,6 +9,7 @@ import {
   UiStateSchema,
   withScratchpadShared,
   withScratchpadText,
+  withSectionHidden,
 } from './ui-state';
 
 describe('ui state', () => {
@@ -107,5 +108,15 @@ describe('ui state', () => {
     expect(s).toEqual({ text: 'mine', shared: true, projects: {} });
     expect(otherScratchpadsWithText(s, 'p1')).toEqual([]);
     expect(withScratchpadText(s, 'p1', 'x'.repeat(SCRATCHPAD_MAX_LENGTH + 5)).text).toHaveLength(SCRATCHPAD_MAX_LENGTH);
+  });
+
+  it('closes and re-opens sections of the left sidebar', () => {
+    const start = { order: ['projects', 'changes', 'files'], sizes: { files: 200 }, collapsed: ['files'], hidden: [] };
+    const closed = withSectionHidden(start, 'files', true);
+    expect(closed).toEqual({ order: ['projects', 'changes'], sizes: { files: 200 }, collapsed: [], hidden: ['files'] });
+    expect(withSectionHidden(closed, 'files', true).hidden).toEqual(['files']);
+    const reopened = withSectionHidden(closed, 'files', false);
+    expect(reopened.hidden).toEqual([]);
+    expect(reopened.sizes).toEqual({ files: 200 });
   });
 });

@@ -6,6 +6,7 @@ export const MENU_COMMANDS = [
   'workbench.checkForUpdates',
   'workbench.openSettings',
   'workbench.commandPalette',
+  'workbench.showShortcuts',
 ] as const;
 
 export const MenuCommandSchema = z.enum(MENU_COMMANDS);
