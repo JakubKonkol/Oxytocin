@@ -3,7 +3,7 @@ import { useLatest } from '../../lib/use-latest';
 import { useReviewStore } from '../review/review-store';
 import { attachCodeActions, selectionContext, trackCommentDecorations } from '../diff/code-actions';
 import type { CodeContext } from '../ask-agent/prompt-model';
-import { ensureTheme, monaco } from '../diff/monaco-env';
+import { addEditorShortcut, ensureTheme, monaco } from '../diff/monaco-env';
 
 export interface CodeViewOptions {
   fontSize: number;
@@ -90,7 +90,13 @@ export default function CodeEditorView({
     const contentSub = model.onDidChangeContent(() => {
       if (!applying) setDirty(model.getAlternativeVersionId() !== savedVersion);
     });
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => callbacks.current.onSave());
+    const saveShortcut = addEditorShortcut(
+      editor,
+      'oxy.save',
+      'Save',
+      monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+      () => callbacks.current.onSave(),
+    );
     const actions = attachCodeActions(
       editor,
       () => ({ projectId: source.current.projectId, path: source.current.path, languageId: source.current.languageId }),
@@ -132,6 +138,7 @@ export default function CodeEditorView({
     callbacks.current.onReady?.();
     return () => {
       observer.disconnect();
+      saveShortcut.dispose();
       actions.dispose();
       decorations.dispose();
       contentSub.dispose();

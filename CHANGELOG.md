@@ -28,8 +28,21 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
+- **Ctrl+S saves the file you are editing.** With several files or diffs open, Ctrl+S in one of them could save the
+  one opened last instead (or do nothing after that one was closed).
+- **Memory no longer grows with every opened file and diff.** Each code editor and diff — including every file
+  scrolled through in *Review all changes* — kept its shortcuts and its whole view in memory after it was closed.
 - *View: Focus Changes*, *Focus Files* and *Focus Projects* work when the app was started with the left sidebar
   hidden: they open it and expand the section.
+- Renaming a file in the FILES section to a name that differs only in case no longer overwrites another file of that
+  name on case-sensitive file systems (Linux).
+- A branch name starting with `-` is refused instead of reaching git as an option.
+- No more "Object has been destroyed" error in the log when an update reached the window while the app was quitting.
+
+### Security
+
+- The code editor and diffs use DOMPurify 3.4.16 (two cross-site scripting fixes) instead of the 3.4.15 bundled with
+  Monaco.
 
 ## [0.9.0] - 2026-10-09
 

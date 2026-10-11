@@ -131,6 +131,8 @@ async function discardAll(input: GitActionInput): Promise<void> {
 }
 
 async function checkBranchName(input: GitActionInput, name: string): Promise<void> {
+  // A leading "-" would reach git as an option.
+  if (name.startsWith('-')) throw new OxyError('INVALID', `"${name}" is not a valid branch name.`);
   const r = await git(input, ['check-ref-format', '--branch', name]);
   if (r.code !== 0) throw new OxyError('INVALID', `"${name}" is not a valid branch name.`);
 }

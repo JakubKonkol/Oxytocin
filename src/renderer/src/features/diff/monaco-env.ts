@@ -117,4 +117,19 @@ export function ensureTheme(): string {
 
 onDidChangeTheme(() => monaco.editor.setTheme(ensureTheme()));
 
+/**
+ * A shortcut of one editor. Use this instead of `editor.addCommand`: that registers a command and a keybinding for
+ * every editor (the one created last wins, so Ctrl+S saved another file) and they are never removed, keeping each
+ * disposed editor and its DOM alive. An action is limited to its editor and goes away with the returned disposable.
+ */
+export function addEditorShortcut(
+  editor: monaco.editor.IStandaloneCodeEditor,
+  id: string,
+  label: string,
+  keybinding: number,
+  run: () => void,
+): monaco.IDisposable {
+  return editor.addAction({ id, label, keybindings: [keybinding], run });
+}
+
 export { monaco };

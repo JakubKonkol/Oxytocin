@@ -109,6 +109,7 @@ describe('git actions', () => {
     await act({ kind: 'createBranch', name: 'feature/x' });
     expect(git(dir, 'branch', '--show-current').trim()).toBe('feature/x');
     await expect(act({ kind: 'createBranch', name: 'bad name..' })).rejects.toThrow(/not a valid branch name/);
+    await expect(act({ kind: 'checkout', branch: '--help' })).rejects.toThrow(/not a valid branch name/);
     await act({ kind: 'checkout', branch: 'main' });
     const branches = await listBranches({ gitPath: 'git', toplevel: dir });
     expect(branches.current).toBe('main');

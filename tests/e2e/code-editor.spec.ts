@@ -141,3 +141,56 @@ test('Ask agent sends the selected code with an instruction to the running agent
     await app.close();
   }
 });
+
+test('Ctrl+S saves the file of the focused editor, also after other editors were closed', async () => {
+  const repo = await makeRepo();
+  await writeFile(join(repo, 'a.ts'), 'export const a = 1;\n');
+  await writeFile(join(repo, 'b.ts'), 'export const b = 1;\n');
+  await writeFile(join(repo, 'c.ts'), 'export const c = 1;\n');
+  const { app, win } = await launchApp({ project: repo });
+  const panelOf = (path: string) => win.locator(`[data-testid="code-panel"][data-path="${path}"]`);
+  const edit = async (path: string, text: string) => {
+    await win.getByTestId('tab-title').filter({ hasText: path }).click();
+    await panelOf(path).locator('.view-line').first().click();
+    await win.keyboard.press('End');
+    await win.keyboard.type(text);
+    await expect(panelOf(path)).toHaveAttribute('data-dirty', 'true');
+  };
+  const open = async (path: string) => {
+    await win.keyboard.press('Control+Shift+KeyO');
+    await win.keyboard.type(`%${path}`);
+    await expect(win.getByTestId('command-palette-item').first()).toContainText(path);
+    await win.keyboard.press('Enter');
+    await expect(panelOf(path)).toBeVisible();
+  };
+  try {
+    await waitForTerminal(win);
+    await open('a.ts');
+    await edit('a.ts', ' // A');
+    await open('b.ts');
+    await edit('b.ts', ' // B');
+    await open('c.ts');
+    await edit('c.ts', ' // C');
+
+    // The first editor saves its own file, not the one opened last.
+    await win.getByTestId('tab-title').filter({ hasText: 'a.ts' }).click();
+    await panelOf('a.ts').locator('.view-line').first().click();
+    await win.keyboard.press('Control+s');
+    await expect(panelOf('a.ts')).toHaveAttribute('data-dirty', 'false');
+    expect(await readFile(join(repo, 'a.ts'), 'utf8')).toBe('export const a = 1; // A\n');
+    expect(await readFile(join(repo, 'c.ts'), 'utf8')).toBe('export const c = 1;\n');
+
+    // Closing c.ts (discarding its edit) leaves b.ts saving itself.
+    await win.getByTestId('tab-title').filter({ hasText: 'c.ts' }).click();
+    await win.keyboard.press('Control+Shift+KeyW');
+    await win.getByRole('button', { name: "Don't Save" }).click();
+    await expect(panelOf('c.ts')).toHaveCount(0);
+    await win.getByTestId('tab-title').filter({ hasText: 'b.ts' }).click();
+    await panelOf('b.ts').locator('.view-line').first().click();
+    await win.keyboard.press('Control+s');
+    await expect(panelOf('b.ts')).toHaveAttribute('data-dirty', 'false');
+    expect(await readFile(join(repo, 'b.ts'), 'utf8')).toBe('export const b = 1; // B\n');
+  } finally {
+    await app.close();
+  }
+});

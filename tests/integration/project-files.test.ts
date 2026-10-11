@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -97,6 +97,15 @@ describe('project files', () => {
     expect(await statFile({ root, path: 'docs/c.ts' })).toMatchObject({ isFile: true });
     expect(await statFile({ root, path: 'lib/new/b.ts' })).toBeNull();
     await expect(renameEntry({ root, from: 'docs/c.ts', to: 'README.md' })).rejects.toThrow(/already exists/);
+    // A change of case renames the file itself, on every file system.
+    await renameEntry({ root, from: 'docs/c.ts', to: 'docs/C.ts' });
+    expect((await readdir(join(root, 'docs'))).sort()).toEqual(['C.ts']);
+    // Where `a.ts` and `A.ts` are two files (case-sensitive), the other one is never overwritten.
+    await writeFile(join(root, 'docs', 'c.ts'), 'other\n');
+    if ((await readdir(join(root, 'docs'))).length === 2) {
+      await expect(renameEntry({ root, from: 'docs/c.ts', to: 'docs/C.ts' })).rejects.toThrow(/already exists/);
+      expect(await readFile(join(root, 'docs', 'C.ts'), 'utf8')).toBe('');
+    }
     expect(() => resolveInside(root, '../outside.txt')).toThrow(/outside the project/);
     expect(() => resolveInside(root, '/etc/passwd')).toThrow(/outside the project/);
     expect(resolveInside(root, '')).toBe(root);

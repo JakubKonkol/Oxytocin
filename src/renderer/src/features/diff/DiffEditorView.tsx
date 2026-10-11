@@ -4,7 +4,7 @@ import type { FileDiffContent } from '@shared/domain/git';
 import { useReviewStore } from '../review/review-store';
 import { attachCodeActions, type CodeSource, trackCommentDecorations } from './code-actions';
 import { diffRegistry } from './diff-registry';
-import { ensureTheme, monaco } from './monaco-env';
+import { addEditorShortcut, ensureTheme, monaco } from './monaco-env';
 
 export interface DiffViewOptions {
   sideBySide: boolean;
@@ -76,13 +76,17 @@ export default function DiffEditorView({
     editorRef.current = editor;
     const go = (direction: 'next' | 'previous') => editor.goToDiff(direction);
     const sides = [editor.getOriginalEditor(), editor.getModifiedEditor()] as const;
-    for (const side of sides) {
-      side.addCommand(monaco.KeyCode.F7, () => go('next'));
-      side.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.F7, () => go('previous'));
-    }
-    editor
-      .getModifiedEditor()
-      .addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => callbacks.current.onSave?.());
+    const shortcuts = sides.flatMap((side) => [
+      addEditorShortcut(side, 'oxy.nextChange', 'Next Change', monaco.KeyCode.F7, () => go('next')),
+      addEditorShortcut(side, 'oxy.previousChange', 'Previous Change', monaco.KeyMod.Shift | monaco.KeyCode.F7, () =>
+        go('previous'),
+      ),
+    ]);
+    shortcuts.push(
+      addEditorShortcut(sides[1], 'oxy.save', 'Save', monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () =>
+        callbacks.current.onSave?.(),
+      ),
+    );
     const source = (original: boolean) => (): CodeSource | null => {
       const s = sourceRef.current;
       return s.projectId
@@ -97,6 +101,7 @@ export default function DiffEditorView({
       );
     };
     const disposables = [
+      ...shortcuts,
       attachCodeActions(sides[0], source(true), { comments: true }),
       attachCodeActions(sides[1], source(false), { comments: true }),
       trackCommentDecorations(sides[0], comments(true)),

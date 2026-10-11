@@ -1187,41 +1187,41 @@ function bootstrap(): void {
     maximized: initialUi.window.maximized,
   });
   const win = mainWindow;
+  // Read once: `win.webContents` throws once the window is destroyed (events that arrive while quitting), while
+  // the WebContents object itself still answers `isDestroyed()`.
+  const wc = win.webContents;
   uiState.trackWindow(win, () => screen.getDisplayMatching(win.getBounds()).id);
   win.on('closed', () => (mainWindow = null));
   settings.onDidChange((s) => {
     setLogLevel(s['diagnostics.logLevel']);
-    sendEvent(win.webContents, 'settings:changed', s);
+    sendEvent(wc, 'settings:changed', s);
   });
-  keybindings.onDidChange((state) => sendEvent(win.webContents, 'keybindings:changed', state));
-  hosts.onDidChangeStatus((status) => sendEvent(win.webContents, 'hosts:status', status));
-  terminals.onDidUpdate((info) => sendEvent(win.webContents, 'terminals:updated', info));
-  agents.onDidUpdate((list) => sendEvent(win.webContents, 'agents:updated', list));
-  activity.onDidChange((list) => sendEvent(win.webContents, 'projects:activity', list));
-  git.onDidChangeStatus((status) => sendEvent(win.webContents, 'git:status', status));
-  pluginHost.onDidChangeStatusBar((items) => sendEvent(win.webContents, 'plugins:statusBar', items));
-  mcpHub.onDidChangeState((state) => sendEvent(win.webContents, 'mcp:state', state));
-  resourcesController.onDidChange((projectId) => sendEvent(win.webContents, 'resources:changed', { projectId }));
-  ensemble.onDidChange((record: EnsembleRecord) => sendEvent(win.webContents, 'ensemble:changed', record));
-  ensemble.onDidRemove((e) => sendEvent(win.webContents, 'ensemble:removed', e));
+  keybindings.onDidChange((state) => sendEvent(wc, 'keybindings:changed', state));
+  hosts.onDidChangeStatus((status) => sendEvent(wc, 'hosts:status', status));
+  terminals.onDidUpdate((info) => sendEvent(wc, 'terminals:updated', info));
+  agents.onDidUpdate((list) => sendEvent(wc, 'agents:updated', list));
+  activity.onDidChange((list) => sendEvent(wc, 'projects:activity', list));
+  git.onDidChangeStatus((status) => sendEvent(wc, 'git:status', status));
+  pluginHost.onDidChangeStatusBar((items) => sendEvent(wc, 'plugins:statusBar', items));
+  mcpHub.onDidChangeState((state) => sendEvent(wc, 'mcp:state', state));
+  resourcesController.onDidChange((projectId) => sendEvent(wc, 'resources:changed', { projectId }));
+  ensemble.onDidChange((record: EnsembleRecord) => sendEvent(wc, 'ensemble:changed', record));
+  ensemble.onDidRemove((e) => sendEvent(wc, 'ensemble:removed', e));
   // The first project shown is checked once the window can show the question.
-  win.webContents.once(
-    'did-finish-load',
-    () => void projectsReady.then(() => checkRepository(projects.activeProjectId)),
-  );
+  wc.once('did-finish-load', () => void projectsReady.then(() => checkRepository(projects.activeProjectId)));
   let lastContributions = '';
   plugins.onDidChange((list) => {
-    sendEvent(win.webContents, 'plugins:changed', list);
+    sendEvent(wc, 'plugins:changed', list);
     const contributions = plugins.contributions();
     const key = JSON.stringify(contributions);
     if (key !== lastContributions) {
       lastContributions = key;
-      sendEvent(win.webContents, 'plugins:contributionsChanged', contributions);
+      sendEvent(wc, 'plugins:contributionsChanged', contributions);
     }
   });
-  git.onDidTouchFiles((e) => sendEvent(win.webContents, 'git:fileTouched', e));
+  git.onDidTouchFiles((e) => sendEvent(wc, 'git:fileTouched', e));
   void updatesReady.then((u) => {
-    u.onDidChange((state) => sendEvent(win.webContents, 'updates:state', state));
+    u.onDidChange((state) => sendEvent(wc, 'updates:state', state));
     u.start();
   });
 
@@ -1235,13 +1235,13 @@ function bootstrap(): void {
     void projects
       .setActive(target.projectId)
       .catch(() => undefined)
-      .then(() => sendEvent(win.webContents, 'terminals:reveal', target));
+      .then(() => sendEvent(wc, 'terminals:reveal', target));
   };
   const notifications = new NotificationService({
     terminals,
     settings: () => settings.get(),
     projectName: (id) => projects.get(id)?.name,
-    toast: (payload) => sendEvent(win.webContents, 'notifications:show', payload),
+    toast: (payload) => sendEvent(wc, 'notifications:show', payload),
     window: {
       isFocused: () => {
         const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyWindowFocused'] : undefined;
@@ -1279,9 +1279,9 @@ function bootstrap(): void {
       void projects
         .setActive(projectId)
         .catch(() => undefined)
-        .then(() => sendEvent(win.webContents, 'ensemble:open', { projectId, taskId }));
+        .then(() => sendEvent(wc, 'ensemble:open', { projectId, taskId }));
     };
-    sendEvent(win.webContents, 'ensemble:notify', { title, body, level, projectId, taskId });
+    sendEvent(wc, 'ensemble:notify', { title, body, level, projectId, taskId });
     const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyWindowFocused'] : undefined;
     const focused = typeof scripted === 'boolean' ? scripted : win.isFocused();
     const s = settings.get();
@@ -1304,18 +1304,18 @@ function bootstrap(): void {
     notifications.onWindowFocus();
     git.onWindowFocus();
   });
-  projects.onDidChange((list) => sendEvent(win.webContents, 'projects:changed', list));
-  projects.onDidChangeActive((id) => sendEvent(win.webContents, 'projects:active', { id }));
+  projects.onDidChange((list) => sendEvent(wc, 'projects:changed', list));
+  projects.onDidChangeActive((id) => sendEvent(wc, 'projects:active', { id }));
 
   const addFromArgv = async (argv: readonly string[], cwd: string) => {
     await projectsReady;
     for (const path of projectPathsFromArgv(argv, { isPackaged: app.isPackaged, cwd })) {
       try {
         const result = await projects.add(path);
-        if (result.warning) sendEvent(win.webContents, 'notifications:show', { kind: 'info', message: result.warning });
+        if (result.warning) sendEvent(wc, 'notifications:show', { kind: 'info', message: result.warning });
       } catch (e) {
         log.warn(`Could not add ${path} from the command line`, e);
-        sendEvent(win.webContents, 'notifications:show', {
+        sendEvent(wc, 'notifications:show', {
           kind: 'error',
           message: `Could not add ${path}`,
           description: e instanceof Error ? e.message : String(e),
@@ -1331,7 +1331,7 @@ function bootstrap(): void {
   for (const pending of pendingSecondInstance) handleSecondInstance(pending.argv, pending.cwd);
   pendingSecondInstance = [];
   void addFromArgv(process.argv, process.cwd());
-  terminals.onDidRemove((id) => sendEvent(win.webContents, 'terminals:removed', { id }));
+  terminals.onDidRemove((id) => sendEvent(wc, 'terminals:removed', { id }));
 
   // Terminal I/O flows renderer ⇄ PTY Host over a direct MessagePort; re-created after renderer reloads
   // and PTY Host restarts.
@@ -1341,13 +1341,13 @@ function bootstrap(): void {
       if (win.isDestroyed()) return;
       const { port1, port2 } = new MessageChannelMain();
       hosts.pty.emit('renderer-port', { windowId: win.id }, [port1]);
-      win.webContents.postMessage('pty:port', null, [port2]);
+      wc.postMessage('pty:port', null, [port2]);
     },
   );
   ptyPortLink = link;
-  win.webContents.on('did-finish-load', () => link.shellDidLoad());
+  wc.on('did-finish-load', () => link.shellDidLoad());
   // A reload or crash drops the palette: pending plugin quick picks resolve as dismissed.
-  win.webContents.on('did-start-navigation', (details) => {
+  wc.on('did-start-navigation', (details) => {
     if (!details.isMainFrame || details.isSameDocument) return;
     link.shellDidUnload();
     quickPicks.cancelAll();
@@ -1361,8 +1361,8 @@ function bootstrap(): void {
     return typeof answer === 'string' ? answer : undefined;
   };
   const recovery = new RendererRecovery({
-    isDestroyed: () => win.isDestroyed() || win.webContents.isDestroyed(),
-    reload: () => win.webContents.reload(),
+    isDestroyed: () => win.isDestroyed() || wc.isDestroyed(),
+    reload: () => wc.reload(),
     quit: () => app.quit(),
     askAfterCrashes: async (crashes) => {
       const scripted = scriptedRecovery('__oxyCrashLoopAnswer');
@@ -1393,7 +1393,7 @@ function bootstrap(): void {
     },
     logger: createLogger('window'),
   });
-  win.webContents.on('render-process-gone', (_event, details) => {
+  wc.on('render-process-gone', (_event, details) => {
     link.shellDidUnload();
     quickPicks.cancelAll();
     confirms.cancelAll();
@@ -1469,7 +1469,7 @@ function bootstrap(): void {
   const unsavedGuard = async (): Promise<boolean> => {
     if (win.isDestroyed() || e2e) return true;
     const files = (await withTimeout(
-      win.webContents.executeJavaScript('window.__oxyUnsavedFiles ? window.__oxyUnsavedFiles() : []', true),
+      wc.executeJavaScript('window.__oxyUnsavedFiles ? window.__oxyUnsavedFiles() : []', true),
       2000,
     ).catch(() => undefined)) as unknown;
     if (!Array.isArray(files) || files.length === 0) return true;
@@ -1488,7 +1488,7 @@ function bootstrap(): void {
     if (!answer.confirmed) return false;
     if (answer.secondary) return true;
     const saved: unknown = await withTimeout(
-      win.webContents.executeJavaScript('window.__oxySaveAll ? window.__oxySaveAll() : true', true) as Promise<unknown>,
+      wc.executeJavaScript('window.__oxySaveAll ? window.__oxySaveAll() : true', true) as Promise<unknown>,
       10_000,
     ).catch(() => false);
     return saved === true;
@@ -1512,10 +1512,7 @@ function bootstrap(): void {
         quitting = true;
         if (!win.isDestroyed()) {
           await withTimeout(
-            win.webContents.executeJavaScript(
-              'window.__oxyFlushWorkspaces ? window.__oxyFlushWorkspaces() : null',
-              true,
-            ),
+            wc.executeJavaScript('window.__oxyFlushWorkspaces ? window.__oxyFlushWorkspaces() : null', true),
             2000,
           ).catch(() => undefined);
         }

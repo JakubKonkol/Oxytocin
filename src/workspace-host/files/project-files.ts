@@ -243,8 +243,16 @@ export async function renameEntry(o: { root: string; from: string; to: string })
   if (from === o.root) throw new OxyError('INVALID', 'The project folder cannot be renamed here.');
   await assertWritable(o.root, from, false);
   await assertWritable(o.root, to, false);
-  const sameEntry = from.toLowerCase() === to.toLowerCase() && from !== to;
-  if (!sameEntry && (await stat(to).catch(() => null))) throw new OxyError('INVALID', `${o.to} already exists.`);
+  const existing = await lstat(to).catch(() => null);
+  if (existing) {
+    // Only a change of case on a case-insensitive file system may "replace" itself (the same file); on a
+    // case-sensitive one `Foo` and `foo` are two files and the other one must not be overwritten.
+    // (File systems without inode numbers report 0: the names must differ in case only as well.)
+    const source = await lstat(from).catch(() => null);
+    const sameEntry =
+      from.toLowerCase() === to.toLowerCase() && !!source && source.dev === existing.dev && source.ino === existing.ino;
+    if (!sameEntry) throw new OxyError('INVALID', `${o.to} already exists.`);
+  }
   await mkdir(dirname(to), { recursive: true });
   await rename(from, to);
 }
