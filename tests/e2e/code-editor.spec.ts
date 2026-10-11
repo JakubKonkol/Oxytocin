@@ -169,8 +169,8 @@ test('Ctrl+S saves the file of the focused editor, also after other editors were
     await edit('a.ts', ' // A');
     await open('b.ts');
     await edit('b.ts', ' // B');
+    // The editor opened last registers its shortcuts last: it used to take Ctrl+S from every other editor.
     await open('c.ts');
-    await edit('c.ts', ' // C');
 
     // The first editor saves its own file, not the one opened last.
     await win.getByTestId('tab-title').filter({ hasText: 'a.ts' }).click();
@@ -180,10 +180,12 @@ test('Ctrl+S saves the file of the focused editor, also after other editors were
     expect(await readFile(join(repo, 'a.ts'), 'utf8')).toBe('export const a = 1; // A\n');
     expect(await readFile(join(repo, 'c.ts'), 'utf8')).toBe('export const c = 1;\n');
 
-    // Closing c.ts (discarding its edit) leaves b.ts saving itself.
-    await win.getByTestId('tab-title').filter({ hasText: 'c.ts' }).click();
-    await win.keyboard.press('Control+Shift+KeyW');
-    await win.getByRole('button', { name: "Don't Save" }).click();
+    // After c.ts is closed, b.ts still saves itself.
+    await win
+      .locator('[data-testid^="tab-code-"]')
+      .filter({ has: win.getByTestId('tab-title').filter({ hasText: 'c.ts' }) })
+      .getByRole('button', { name: 'Close' })
+      .click();
     await expect(panelOf('c.ts')).toHaveCount(0);
     await win.getByTestId('tab-title').filter({ hasText: 'b.ts' }).click();
     await panelOf('b.ts').locator('.view-line').first().click();

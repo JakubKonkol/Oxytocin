@@ -3,6 +3,14 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Fixed
+
+- **Linux and macOS packages.** 0.9.1 was published for Windows only: one of its new end-to-end tests failed on the
+  Linux build machine, which held back the Linux and macOS packages. 0.9.2 brings every change of 0.9.1 to Linux and
+  macOS (and their automatic updates); on Windows it is the same app as 0.9.1.
+
 ## [0.9.1] - 2026-10-11
 
 ### Added
