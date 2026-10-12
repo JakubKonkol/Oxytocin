@@ -914,7 +914,7 @@ function PromptPreview({
       <div className="text-small text-fg-muted">
         {CLI_INFO[agent.cli].systemPromptFile
           ? 'System prompt file (once per session):'
-          : 'Served by oxy_ensemble_context (this CLI reads no prompt file):'}
+          : 'Sent with its first assignment (this CLI reads no prompt file):'}
       </div>
       <pre className="max-h-72 overflow-auto rounded-control border border-line-subtle bg-input p-2 font-mono text-[11px] whitespace-pre-wrap text-fg-secondary select-text">
         {system}

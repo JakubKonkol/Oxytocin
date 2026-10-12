@@ -22,9 +22,24 @@ import type { McpToolResult } from '@shared/domain/mcp';
 import type { Settings } from '@shared/domain/settings';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { CLI_INFO } from '@shared/ensemble/clis';
-import { type ConductorEvent, type Effect, initialRun, reduce, validateTask } from '@shared/ensemble/conductor';
+import {
+  type ConductorEvent,
+  type Effect,
+  initialRun,
+  reduce,
+  tickDue,
+  validateTask,
+} from '@shared/ensemble/conductor';
 import { agentContext, runReport } from '@shared/ensemble/context';
-import { quickTask, type QuickTeam, slugId, taskFromTemplate, titleFromPrompt } from '@shared/ensemble/presets';
+import {
+  crewOf,
+  crewTask,
+  quickTask,
+  type QuickTeam,
+  slugId,
+  taskFromTemplate,
+  titleFromPrompt,
+} from '@shared/ensemble/presets';
 import { systemPromptText } from '@shared/ensemble/prompts';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
@@ -284,6 +299,39 @@ export class EnsembleService implements Disposable {
       'task',
     );
     const task = quickTask({ id, projectId: o.projectId, prompt: o.prompt, title, team: o.team, now: this.now() });
+    if (o.currentCheckout) task.workspace = { ...task.workspace, mode: 'current-checkout' };
+    const record: EnsembleRecord = { task, run: initialRun(task) };
+    this.put(record);
+    return this.forRenderer(record);
+  }
+
+  /** "Lead & crew": the lead of the crew (setting `ensemble.crew`) gets the task and hands out the work. */
+  async createCrew(o: {
+    projectId: string;
+    prompt: string;
+    title?: string | undefined;
+    testCommand?: string | undefined;
+    approveResult: boolean;
+    currentCheckout?: boolean | undefined;
+  }): Promise<EnsembleRecord> {
+    await this.ready;
+    if (!this.deps.projects.get(o.projectId)) throw new OxyError('NOT_FOUND', 'Project not found');
+    const title = o.title?.trim() || titleFromPrompt(o.prompt);
+    const id = slugId(
+      `${(title || 'task').slice(0, 16)}-${randomBytes(3).toString('hex')}`,
+      this.records.keys(),
+      'task',
+    );
+    const task = crewTask({
+      id,
+      projectId: o.projectId,
+      prompt: o.prompt,
+      title,
+      crew: crewOf(this.deps.settings()['ensemble.crew']),
+      testCommand: o.testCommand,
+      approveResult: o.approveResult,
+      now: this.now(),
+    });
     if (o.currentCheckout) task.workspace = { ...task.workspace, mode: 'current-checkout' };
     const record: EnsembleRecord = { task, run: initialRun(task) };
     this.put(record);
@@ -855,7 +903,14 @@ export class EnsembleService implements Disposable {
         },
       });
       if (result.ok) this.dispatch(taskId, { type: 'delivered', agentId, deliveryId });
-      else this.dispatch(taskId, { type: 'delivery-failed', agentId, deliveryId, error: result.error });
+      else
+        this.dispatch(taskId, {
+          type: 'delivery-failed',
+          agentId,
+          deliveryId,
+          error: result.error,
+          ...(result.pasted ? { pasted: true } : {}),
+        });
     } finally {
       a.delivering = false;
     }
@@ -873,7 +928,7 @@ export class EnsembleService implements Disposable {
 
   tick(): void {
     this.refreshStates();
-    for (const r of this.records.values()) if (r.run.status === 'running') this.dispatch(r.task.id, { type: 'tick' });
+    for (const r of this.records.values()) if (tickDue(r.task, r.run)) this.dispatch(r.task.id, { type: 'tick' });
     if (this.now() - this.lastUsagePoll >= USAGE_POLL_MS) void this.pollUsage();
   }
 
@@ -936,7 +991,7 @@ export class EnsembleService implements Disposable {
   }
 
   instructions(): string {
-    return 'Oxytocin Ensemble: you are one agent of a team working on a task. Call oxy_ensemble_context for your assignment and oxy_ensemble_submit when you are done.';
+    return 'Oxytocin Ensemble: you are one agent of a team working on a task. Your assignments arrive as messages with everything you need; call oxy_ensemble_submit when you are done. oxy_ensemble_context repeats the whole task context: call it only when you lost track.';
   }
 
   async callTool(

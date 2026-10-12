@@ -20,9 +20,10 @@ import type {
 } from '../domain/ensemble';
 import { OUTPUT_LABELS } from '../domain/ensemble';
 import { CLI_INFO } from './clis';
-import { agentContext } from './context';
+import { assignmentDigest } from './context';
 import {
   assignmentMessage,
+  clip,
   defaultInstruction,
   DEFAULT_CHECKER_INSTRUCTION,
   formatFindings,
@@ -45,6 +46,8 @@ export const REMINDER_AFTER_MS = 20_000;
 /** An agent that is not ready (idle) this long after its start needs the user (a trust or login prompt). */
 /** Context typed into an agent with an assignment (the rest via oxy_ensemble_context). */
 const MAX_DELIVERED_CONTEXT = 24_000;
+/** Results and notes remembered as seen per agent session. */
+const MAX_SEEN = 400;
 /** A delegated report typed into the asking agent (the rest via oxy_ensemble_context). */
 const MAX_REPORT = 12_000;
 export const READY_TIMEOUT_MS = 90_000;
@@ -61,7 +64,7 @@ export type ConductorEvent =
   | { type: 'agent-start-failed'; agentId: string; error: string }
   | { type: 'agent-state'; agentId: string; state: AgentLive }
   | { type: 'delivered'; agentId: string; deliveryId: string }
-  | { type: 'delivery-failed'; agentId: string; deliveryId: string; error: string }
+  | { type: 'delivery-failed'; agentId: string; deliveryId: string; error: string; pasted?: boolean | undefined }
   | { type: 'submit'; agentId: string; submission: Submission }
   | { type: 'mark-done'; agentId: string; summary: string }
   | { type: 'progress'; agentId: string; message: string; percent?: number | undefined }
@@ -165,6 +168,21 @@ const stageAgents = (stage: Stage): string[] => {
 
 /** Agents a stage uses (for the flow view). */
 export { stageAgents };
+
+/** The kind of result delegated work asks for, from the role of the agent who does it. */
+export function delegatedOutput(agent: EnsembleAgent): OutputKind {
+  switch (agent.role.preset) {
+    case 'implementer':
+    case 'docs':
+      return agent.readOnly ? 'research' : 'implementation';
+    case 'tester':
+      return 'test-report';
+    case 'reviewer':
+      return 'review';
+    default:
+      return 'research';
+  }
+}
 
 class Tx {
   readonly effects: Effect[] = [];
@@ -308,6 +326,37 @@ class Tx {
       }
   }
 
+  delivered(agentId: string, deliveryId: string): void {
+    const s = this.run.agents[agentId];
+    if (!s) return;
+    if (s.unconfirmed === deliveryId) delete s.unconfirmed;
+    if (s.assignment?.id === deliveryId) {
+      s.assignment.deliveredAt = this.now;
+      delete s.assignment.delivering;
+      delete s.assignment.idleSince;
+      this.log({
+        type: 'delivered',
+        text: `Delivered to ${this.agentName(agentId)}`,
+        agentId,
+        stageId: s.assignment.stageId,
+      });
+      return;
+    }
+    const index = s.outbox.findIndex((o) => o.id === deliveryId);
+    if (index >= 0) {
+      const [item] = s.outbox.splice(index, 1);
+      if (item?.handoffId) this.markSeen(agentId, item.handoffId);
+      if (item && item.kind !== 'notice')
+        this.log({
+          type: 'message',
+          text: `→ ${this.agentName(agentId)}: ${item.text.slice(0, 200)}`,
+          agentId,
+        });
+      // A reminder starts a new wait for the submit.
+      if (item?.kind === 'notice' && s.assignment) delete s.assignment.idleSince;
+    }
+  }
+
   resetDelivery(s: AgentRunState): void {
     if (s.assignment) delete s.assignment.delivering;
     for (const o of s.outbox) delete o.delivering;
@@ -443,6 +492,8 @@ class Tx {
       extra?: string;
       /** Delegated work: its own message and instruction. */
       delegated?: { by: string; message: string; instruction: string };
+      /** Results the instruction contains (not repeated in the message). */
+      covers?: string[];
     } = {},
   ): string {
     const agent = this.agent(agentId);
@@ -470,8 +521,12 @@ class Tx {
       ...(o.delegated ? { delegatedBy: o.delegated.by } : {}),
       reminders: 0,
       ...(o.round ? { round: o.round } : {}),
+      ...(o.covers?.length ? { covers: o.covers } : {}),
     };
-    if (stage.kind === 'parallel' && this.activeAssignments() >= this.task.limits.maxConcurrentAgents)
+    if (
+      (stage.kind === 'parallel' || kind === 'delegated') &&
+      this.activeAssignments() >= this.task.limits.maxConcurrentAgents
+    )
       assignment.queued = true;
     s.assignment = assignment;
     this.clearNeeds((n) => n.agentId === agentId && (n.kind === 'stuck' || n.kind === 'delivery-failed'));
@@ -519,15 +574,23 @@ class Tx {
       return;
     }
     const text = work.trim().slice(0, 8000);
-    this.assign(to.id, stage, 'research', 'delegated', {
+    const output = delegatedOutput(to);
+    const review =
+      output === 'review'
+        ? ' with `verdict` ("approve" or "changes") and, for changes, `findings` (file, line, severity, message)'
+        : '';
+    const id = this.assign(to.id, stage, output, 'delegated', {
       delegated: {
         by: fromId,
-        message: `${MESSAGE_PREFIX} ${from.name} (${from.role.label}) delegated work to you, ${to.name} (${to.role.label}) — stage "${stage.title}". Everything you need follows. Do it, then call oxy_ensemble_submit with kind "research".`,
-        instruction: `${from.name} (${from.role.label}) asks you to do this and report back:\n\n${text}\n\nSubmit your report with kind "research": a short summary and the full findings in \`body\` (Markdown). ${from.name} gets it as soon as you submit.`,
+        message: `${MESSAGE_PREFIX} ${from.name} (${from.role.label}) delegated work to you, ${to.name} (${to.role.label}) — stage "${stage.title}". Everything you need follows. Do it, then call oxy_ensemble_submit with kind "${output}".`,
+        instruction: `${from.name} (${from.role.label}) asks you to do this and report back:\n\n${text}\n\nSubmit your report with kind "${output}"${review}: a short summary and the full result in \`body\` (Markdown)${output === 'implementation' ? ' and the files you changed in `files`' : ''}. ${from.name} gets it as soon as you submit.`,
       },
     });
-    this.decide('delegation', `${from.name} asked for help`, `→ ${to.name}`, { agentId: to.id });
-    this.reply = `Delegated to ${to.name}. The report arrives as a message ("${MESSAGE_PREFIX} Report from ${to.name}…") when ${to.name} submits; it is also under "Results so far" in oxy_ensemble_context. Meanwhile continue with what does not depend on it, and submit your own result only once you have the reports you need.`;
+    const queued = this.run.agents[to.id]?.assignment?.id === id && this.run.agents[to.id]?.assignment?.queued;
+    this.decide('delegation', `${from.name} asked for help`, `→ ${to.name}${queued ? ' (queued)' : ''}`, {
+      agentId: to.id,
+    });
+    this.reply = `${queued ? `Queued for ${to.name}: ${this.task.limits.maxConcurrentAgents} agents already work, it starts when one of them finishes.` : `Delegated to ${to.name}.`} The report arrives as a message ("${MESSAGE_PREFIX} Report from ${to.name}…") when ${to.name} submits. Meanwhile continue with what does not depend on it, and submit your own result only once you have the reports you need.`;
   }
 
   /** A delegated report goes back to the agent that asked for it. */
@@ -544,7 +607,7 @@ class Tx {
         report.length > MAX_REPORT
           ? `${report.slice(0, MAX_REPORT)}\n\n[… cut here: the full report is in oxy_ensemble_context]`
           : report,
-        { keepLines: true },
+        { keepLines: true, reportFor: assignment.stageId, handoffId: h.id },
       );
       this.reply = `Thanks — your report goes to ${asker.name}.`;
     } else this.reply = 'Thanks — your report was kept for the team.';
@@ -590,11 +653,19 @@ class Tx {
             `${MESSAGE_PREFIX} The stage "${stage.title}" is complete without your result: stop working on it and wait for a new assignment.`,
           );
       }
+    // Reports for this stage not typed yet would only restart an agent that is done with it.
+    for (const s of Object.values(this.run.agents))
+      s.outbox = s.outbox.filter((o) => o.reportFor !== stage.id || o.delivering);
     this.clearNeeds((n) => n.stageId === stage.id && n.kind !== 'finish');
+    // Teammates who got delegated work during the stage may have written, too (a lead's crew).
+    const writer = (id: string) => {
+      const agent = this.agent(id);
+      return !!agent && !agent.readOnly;
+    };
     const writes =
       this.run.worktree?.mode === 'worktree' &&
       stage.kind !== 'gate' &&
-      stageAgents(stage).some((id) => !this.agent(id)?.readOnly);
+      (stageAgents(stage).some(writer) || this.run.handoffs.some((h) => h.stageId === stage.id && writer(h.agentId)));
     if (writes) {
       this.run.pendingCheckpoint = stage.id;
       const who = stageAgents(stage)
@@ -640,7 +711,9 @@ class Tx {
         'You have no open assignment right now. Oxytocin will send you a message when there is work for you; until then wait.';
       return;
     }
-    if (sub.kind !== assignment.output) {
+    // Delegated work may come back as any kind of result (a researcher asked to check a fix may report a review).
+    const anyKind = assignment.kind === 'delegated' && sub.kind !== 'advice';
+    if (sub.kind !== assignment.output && !anyKind) {
       this.error = `This assignment expects kind "${assignment.output}" (${OUTPUT_LABELS[assignment.output]}), not "${sub.kind}". Submit again with kind "${assignment.output}".`;
       return;
     }
@@ -750,7 +823,8 @@ class Tx {
             this.assign(stage.workerId, stage, 'implementation', 'fix', {
               round: round + 1,
               maxRounds: stage.maxRounds,
-              extra: `${this.agentName(agentId)} reviewed your work (round ${round}) and asks for changes:\n\n${formatFindings(h.findings)}\n\n${h.body?.trim() ? `${h.body.trim()}\n\n` : ''}Fix them in your session, then submit with kind "implementation" again.`,
+              covers: [h.id],
+              extra: `${this.agentName(agentId)} reviewed your work (round ${round}) and asks for changes:\n\n${clip(formatFindings(h.findings), 12_000)}\n\n${h.body?.trim() ? `${clip(h.body.trim(), 8_000)}\n\n` : ''}Fix them in your session, then submit with kind "implementation" again.`,
             });
             return `Thanks. ${this.agentName(stage.workerId)} gets your ${findings} finding${findings === 1 ? '' : 's'} and will fix them; you will review again.`;
           }
@@ -808,8 +882,9 @@ class Tx {
     st.exitCode = exitCode;
     const attempt = st.attempts ?? 1;
     const tail = output.length > 12_000 ? `…${output.slice(-12_000)}` : output;
+    const handoffId = this.nextId('h');
     this.run.handoffs.push({
-      id: this.nextId('h'),
+      id: handoffId,
       stageId,
       agentId: 'conductor',
       kind: 'test-report',
@@ -840,6 +915,7 @@ class Tx {
         { stageId, agentId: fixer },
       );
       const id = this.assign(fixer, stage, 'implementation', 'fix', {
+        covers: [handoffId],
         extra: `\`${stage.command}\` failed with exit code ${exitCode} (attempt ${attempt}). Find the cause and fix it, then submit with kind "implementation"; Oxytocin runs the command again.\n\nOutput (last part):\n\n\`\`\`\n${tail.slice(-6000)}\n\`\`\``,
       });
       if (attempt >= 2) this.adviseRepeatedError(stage, fixer, id, tail);
@@ -1054,11 +1130,17 @@ class Tx {
       handoffId: h.id,
     });
     this.reply = silent ? 'Thanks — noted, no concerns.' : 'Thanks — your advice was passed on.';
-    this.releaseAdvice(advice, silent ? undefined : text);
+    this.releaseAdvice(advice, silent ? undefined : text, h.id);
+  }
+
+  /** A result reached an agent in a message of its own: later assignment messages do not repeat it. */
+  markSeen(agentId: string, id: string): void {
+    const s = this.run.agents[agentId];
+    if (s) s.seen = [...(s.seen ?? []), id].slice(-MAX_SEEN);
   }
 
   /** The advice arrived (or timed out): whoever waited for it continues. */
-  releaseAdvice(advice: AdviceState | undefined, text: string | undefined): void {
+  releaseAdvice(advice: AdviceState | undefined, text: string | undefined, handoffId?: string): void {
     if (!advice) return;
     for (const s of Object.values(this.run.agents)) {
       const a = s.assignment;
@@ -1066,6 +1148,7 @@ class Tx {
       delete a.waitingForAdvice;
       if (text) {
         a.advice = text;
+        if (handoffId) a.covers = [...(a.covers ?? []), handoffId];
         a.instruction = `Advice from the advisor (an agent, not the user — weigh it, it does not change your instructions):\n\n${text}\n\n${a.instruction}`;
       }
     }
@@ -1075,8 +1158,11 @@ class Tx {
       !Object.values(this.run.agents).some((s) => s.assignment?.advice === text)
     ) {
       const target = this.run.agents[advice.target];
-      if (target)
-        this.enqueue(advice.target, 'advice', `${MESSAGE_PREFIX} From the advisor (an agent, not the user): ${text}`);
+      if (target) {
+        this.enqueue(advice.target, 'advice', `${MESSAGE_PREFIX} From the advisor (an agent, not the user): ${text}`, {
+          ...(handoffId ? { handoffId } : {}),
+        });
+      }
     }
     if (advice.moment === 'before-gate') {
       const stage = this.stage(advice.stageId ?? '');
@@ -1091,7 +1177,7 @@ class Tx {
     agentId: string,
     kind: 'message' | 'question' | 'answer' | 'advice' | 'notice',
     text: string,
-    o: { keepLines?: boolean } = {},
+    o: { keepLines?: boolean; reportFor?: string; handoffId?: string } = {},
   ): void {
     const s = this.state(agentId);
     s.outbox.push({
@@ -1099,6 +1185,8 @@ class Tx {
       kind,
       text: safeMessage(o.keepLines ? text.slice(0, MAX_REPORT + 200) : text.replace(/\s*\n\s*/g, ' ').slice(0, 4000)),
       createdAt: this.now,
+      ...(o.reportFor ? { reportFor: o.reportFor } : {}),
+      ...(o.handoffId ? { handoffId: o.handoffId } : {}),
     });
   }
 
@@ -1133,39 +1221,49 @@ class Tx {
       if (a?.delivering || s.outbox.some((o) => o.delivering)) continue;
       if (a && !a.queued && !a.waitingForAdvice && a.deliveredAt === undefined) {
         a.delivering = true;
+        delete s.unconfirmed;
         this.effects.push({ type: 'deliver', agentId: s.agentId, deliveryId: a.id, text: this.assignmentText(s, a) });
         continue;
       }
       const item = s.outbox[0];
       if (item) {
         item.delivering = true;
+        delete s.unconfirmed;
         this.effects.push({ type: 'deliver', agentId: s.agentId, deliveryId: item.id, text: item.text });
       }
     }
   }
 
   /**
-   * The text typed into an agent for an assignment: the short line plus its whole context (brief, instruction,
-   * results so far), so the agent never depends on a tool call to learn what to do — its MCP tools may still be
-   * connecting when the first message arrives. CLIs without a system prompt file also get the protocol, once per
-   * session.
+   * The text typed into an agent for an assignment: the short line, the instruction and what is new to the agent's
+   * session (results and notes it has not got yet), so the agent never depends on a tool call to learn what to do —
+   * its MCP tools may still be connecting when the first message arrives. The brief is in its system prompt; CLIs
+   * without a system prompt file get the protocol and the brief with the first assignment of a session. Nothing the
+   * session already got is typed again: repeating the brief, the plan and every result with each review round filled
+   * the implementer's context window until its CLI compacted it.
    */
   assignmentText(s: AgentRunState, a: Assignment): string {
     const agent = this.agent(s.agentId);
     if (!agent) return a.message;
-    const includeRole = !CLI_INFO[agent.cli].systemPromptFile && !s.introduced;
-    const ctx = agentContext(this.task, this.run, s.agentId, { includeRole });
+    const fresh = !s.introduced;
+    const seen = new Set(fresh ? [] : (s.seen ?? []));
+    const digest = assignmentDigest(this.task, this.run, s.agentId, {
+      includeRole: fresh && !CLI_INFO[agent.cli].systemPromptFile,
+      seen,
+      covered: new Set(a.covers ?? []),
+    });
     s.introduced = true;
+    s.seen = [...seen, ...digest.shown].slice(-MAX_SEEN);
     this.log({
       type: 'context',
       text: `${agent.name} got its context with the assignment`,
       agentId: s.agentId,
-      items: ctx.items,
+      items: digest.items,
     });
     const body =
-      ctx.text.length > MAX_DELIVERED_CONTEXT
-        ? `${ctx.text.slice(0, MAX_DELIVERED_CONTEXT)}\n\n[… cut here: call oxy_ensemble_context for the rest]`
-        : ctx.text;
+      digest.text.length > MAX_DELIVERED_CONTEXT
+        ? `${digest.text.slice(0, MAX_DELIVERED_CONTEXT)}\n\n[… cut here: call oxy_ensemble_context for the rest]`
+        : digest.text;
     return `${a.message}\n\n${body}`;
   }
 
@@ -1269,6 +1367,15 @@ class Tx {
         if (a?.deliveredAt !== undefined && !a.delivering) a.idleSince = this.now;
         break;
       case 'working':
+        // A message that seemed lost was taken after all (a slow start): it counts as delivered.
+        if (s.unconfirmed) {
+          const id = s.unconfirmed;
+          this.clearNeeds((n) => n.agentId === agentId && n.kind === 'delivery-failed');
+          this.decide('late start', `${this.agentName(agentId)} started after the message`, '→ delivered', {
+            agentId,
+          });
+          this.delivered(agentId, id);
+        }
         if (a) delete a.idleSince;
         this.clearNeeds((n) => n.agentId === agentId && n.kind === 'stuck');
         if (s.readyAt === undefined) {
@@ -1306,6 +1413,23 @@ export const MOMENT_LABELS: Record<AdvisorMoment, string> = {
   'before-gate': 'Before a gate',
   'before-done': 'Before finishing',
 };
+
+/**
+ * Whether a tick can change anything: a limit to check, an agent that is not ready yet or idle after a delivery,
+ * advice that may time out. The service skips the tick otherwise (`reduce` clones the whole run).
+ */
+export function tickDue(task: EnsembleTask, run: EnsembleRun): boolean {
+  if (run.status !== 'running') return false;
+  if (task.limits.maxDurationMin || task.limits.maxCostUsd) return true;
+  if (run.advice.some((a) => a.status === 'asked')) return true;
+  return Object.values(run.agents).some(
+    (s) =>
+      ((s.lifecycle === 'starting' || s.lifecycle === 'running') &&
+        s.readyAt === undefined &&
+        s.startedAt !== undefined) ||
+      s.assignment?.idleSince !== undefined,
+  );
+}
 
 /** Runs one event through the conductor. The input run is not modified. */
 export function reduce(task: EnsembleTask, run: EnsembleRun, event: ConductorEvent, now: number): ReduceResult {
@@ -1353,8 +1477,13 @@ function handle(tx: Tx, e: ConductorEvent): void {
       const s = run.agents[e.agentId];
       if (!s) return;
       s.lifecycle = 'running';
-      // A new session has not seen the protocol yet (a resumed one keeps what it was told).
-      if (!e.cliSessionId || e.cliSessionId !== s.cliSessionId) delete s.introduced;
+      // A message typed into the previous process can no longer be confirmed.
+      delete s.unconfirmed;
+      // A new session has not seen the protocol nor any result yet (a resumed one keeps what it was told).
+      if (!e.cliSessionId || e.cliSessionId !== s.cliSessionId) {
+        delete s.introduced;
+        delete s.seen;
+      }
       s.terminalId = e.terminalId;
       if (e.cliSessionId) s.cliSessionId = e.cliSessionId;
       // Every terminal and session the agent used, for its cost (Usage Monitor) across restarts.
@@ -1378,39 +1507,15 @@ function handle(tx: Tx, e: ConductorEvent): void {
     case 'agent-state':
       tx.agentState(e.agentId, e.state);
       return;
-    case 'delivered': {
-      const s = run.agents[e.agentId];
-      if (!s) return;
-      if (s.assignment?.id === e.deliveryId) {
-        s.assignment.deliveredAt = tx.now;
-        delete s.assignment.delivering;
-        delete s.assignment.idleSince;
-        tx.log({
-          type: 'delivered',
-          text: `Delivered to ${tx.agentName(e.agentId)}`,
-          agentId: e.agentId,
-          stageId: s.assignment.stageId,
-        });
-        return;
-      }
-      const index = s.outbox.findIndex((o) => o.id === e.deliveryId);
-      if (index >= 0) {
-        const [item] = s.outbox.splice(index, 1);
-        if (item && item.kind !== 'notice')
-          tx.log({
-            type: 'message',
-            text: `→ ${tx.agentName(e.agentId)}: ${item.text.slice(0, 200)}`,
-            agentId: e.agentId,
-          });
-        // A reminder starts a new wait for the submit.
-        if (item?.kind === 'notice' && s.assignment) delete s.assignment.idleSince;
-      }
+    case 'delivered':
+      tx.delivered(e.agentId, e.deliveryId);
       return;
-    }
     case 'delivery-failed': {
       const s = run.agents[e.agentId];
       if (!s) return;
       tx.resetDelivery(s);
+      // The text reached the terminal: if the agent starts after all, it is not typed a second time.
+      if (e.pasted) s.unconfirmed = e.deliveryId;
       tx.log({
         type: 'error',
         text: `Could not deliver to ${tx.agentName(e.agentId)}: ${e.error}`,
@@ -1576,7 +1681,7 @@ function handle(tx: Tx, e: ConductorEvent): void {
         text: `${tx.agentName(e.by)}: ${text.slice(0, 200)}`,
         ...(e.by !== 'user' ? { agentId: e.by } : { by: 'you' as const }),
       });
-      tx.reply = 'Noted on the board; every agent sees it in oxy_ensemble_context.';
+      tx.reply = 'Noted on the board; your teammates get it with their next assignment.';
       return;
     }
     case 'message': {
@@ -1772,7 +1877,8 @@ function resolveNeed(tx: Tx, needId: string, action: string): void {
         tx.assign(stage.workerId, stage, 'implementation', 'fix', {
           round,
           maxRounds: stage.maxRounds + tx.extraRounds(st),
-          extra: `The review asks for changes:\n\n${formatFindings(review?.findings)}\n\nFix them, then submit with kind "implementation" again.`,
+          ...(review ? { covers: [review.id] } : {}),
+          extra: `The review asks for changes:\n\n${clip(formatFindings(review?.findings), 12_000)}\n\nFix them, then submit with kind "implementation" again.`,
         });
       } else tx.stopRun(`after the round limit of "${stage.title}"`);
       return;

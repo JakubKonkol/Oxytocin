@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -218,6 +218,7 @@ test('Ensemble quick start: one prompt and a team; the planner delegates to the 
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
+    await panel.getByTestId('ensemble-new-mode').locator('[data-value="quick"]').click();
     await expect(panel.getByTestId('ensemble-quick-start')).toBeVisible();
     await panel
       .getByTestId('ensemble-quick-prompt')
@@ -247,11 +248,13 @@ test('Ensemble quick start: one prompt and a team; the planner delegates to the 
       ['linus', 'implementation'],
     ]);
     const entries = await readLog(log);
-    // Tim got the delegated work with the brief; Linus got the plan and Tim's report.
+    // Tim got the delegated work (the brief is in its system prompt); Linus got the plan and Tim's report.
     const timMessage = entries.find((e) => e.agent === 'Tim' && e.event === 'message')!.text!;
     expect(timMessage).toMatch(/^\[Ensemble\] Ada \(Planner\) delegated work to you/);
     expect(timMessage).toContain('Map GET /weather and its response shape.');
-    expect(timMessage).toContain('https://api.example.com/docs');
+    const timArgs = entries.find((e) => e.agent === 'Tim' && e.event === 'start')!.args!;
+    const promptFile = timArgs[timArgs.indexOf('--append-system-prompt-file') + 1]!;
+    expect(await readFile(promptFile, 'utf8')).toContain('https://api.example.com/docs');
     const linusMessage = entries.find((e) => e.agent === 'Linus' && e.event === 'message')!.text!;
     expect(linusMessage).toContain('Tim — Research');
     const starts = entries.filter((e) => e.event === 'start' && e.args?.includes('--mcp-config'));
@@ -272,6 +275,7 @@ test('Ensemble: "Customize first" opens the builder; every model of the CLI can 
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
+    await panel.getByTestId('ensemble-new-mode').locator('[data-value="quick"]').click();
     await panel.getByTestId('ensemble-quick-prompt').fill('Refactor the exporter');
     await panel.getByTestId('ensemble-quick-customize').click();
     await expect(panel.getByTestId('ensemble-builder')).toBeVisible();
@@ -290,6 +294,101 @@ test('Ensemble: "Customize first" opens the builder; every model of the CLI can 
     const record = (await ensembleRecords(win))[0]!;
     expect(record.task.agents.find((a) => a.id === 'ada')!.model).toBe('claude-opus-5');
     expect(record.run.status).toBe('draft');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Ensemble lead & crew: the crew is set up once; the lead hands code and research to the crew in parallel', async () => {
+  test.setTimeout(120_000);
+  const repo = await gitRepo();
+  const claude = await claudeConfigDir();
+  const dir = await mkdtemp(join(tmpdir(), 'oxy-e2e-ens-'));
+  const log = join(dir, 'agents.jsonl');
+  const script = join(dir, 'script.json');
+  await writeFile(
+    script,
+    JSON.stringify({
+      Barbara: [
+        {
+          delegate: [
+            { to: 'Linus', work: 'Write the CSV exporter in export.txt.' },
+            { to: 'Rosalind', work: 'Find how the reports page renders its toolbar.' },
+          ],
+        },
+      ],
+      Linus: [{ writeFile: 'export.txt', waitMs: 1500 }],
+      Rosalind: [{ waitMs: 1500 }],
+    }),
+  );
+  const { app, win } = await launchApp({
+    project: repo,
+    env: { CLAUDE_CONFIG_DIR: claude.dir, FAKE_ENSEMBLE_LOG: log, FAKE_ENSEMBLE_SCRIPT: script },
+  });
+  try {
+    await useFakeClaude(win);
+    await win.getByTestId('group-add').first().click();
+    await expect(win.getByTestId('add-tool-ensemble')).toContainText('Beta');
+    await win.getByTestId('add-tool-ensemble').click();
+    const panel = win.getByTestId('ensemble-panel');
+    // Ensemble is in beta: a notice on top, a badge next to its name.
+    await expect(panel.getByTestId('ensemble-beta-notice')).toContainText('Ensemble is in beta');
+    await expect(panel.getByTestId('ensemble-beta-badge').first()).toBeVisible();
+    await expect(panel.getByTestId('ensemble-crew-start')).toBeVisible();
+    await expect(panel.getByTestId('ensemble-crew-summary-lead')).toContainText('Barbara');
+
+    // Set up the crew: Linus runs on Sonnet with high effort, the tester leaves the crew.
+    await panel.getByTestId('ensemble-crew-setup').click();
+    const editor = panel.getByTestId('ensemble-crew-editor');
+    const linus = editor.locator('[data-testid="ensemble-crew-member"][data-member-id="linus"]');
+    await linus.getByTestId('ensemble-crew-model').selectOption('claude-sonnet-5-5');
+    await linus.getByTestId('ensemble-crew-effort').selectOption('high');
+    await editor
+      .locator('[data-testid="ensemble-crew-member"][data-member-id="margaret"]')
+      .getByTestId('ensemble-crew-remove')
+      .click();
+    await editor.getByTestId('ensemble-crew-save').click();
+    await expect(editor).toBeHidden();
+    await expect(panel.getByTestId('ensemble-crew-summary-member')).toHaveCount(4);
+    await expect(panel.getByTestId('ensemble-crew-summary')).toContainText('claude-sonnet-5-5 · high');
+
+    await panel.getByTestId('ensemble-crew-prompt').fill('Add CSV export to the reports page.');
+    await panel.getByTestId('ensemble-crew-approve').uncheck();
+    await panel.getByTestId('ensemble-crew-go').click();
+    await expect(panel.getByTestId('ensemble-flow')).toBeVisible();
+    const id = (await ensembleRecords(win))[0]!.task.id;
+    const done = await waitForStatus(win, id, 'done', 90_000);
+    expect(done.task.agents.map((a) => a.name)).toEqual(['Barbara', 'Linus', 'Grace', 'Rosalind', 'Tim']);
+    expect(done.task.pipeline.map((s) => s.title)).toEqual(['Lead the crew']);
+    expect(done.run.handoffs.map((h) => [h.agentId, h.kind])).toEqual(
+      expect.arrayContaining([
+        ['linus', 'implementation'],
+        ['rosalind', 'research'],
+        ['barbara', 'implementation'],
+      ]),
+    );
+    // What the crew wrote is committed on the task's branch.
+    expect(done.run.checkpoints).toHaveLength(1);
+    expect(gitIn(done.run.worktree!.path, 'show', '--stat', 'HEAD')).toContain('export.txt');
+
+    const entries = await readLog(log);
+    const starts = entries.filter((e) => e.event === 'start' && e.args?.includes('--mcp-config'));
+    // Only the crew members that got work were started; models and efforts come from the crew.
+    expect(starts.map((s) => s.agent).sort()).toEqual(['Barbara', 'Linus', 'Rosalind']);
+    expect(starts.find((s) => s.agent === 'Linus')!.args).toEqual(
+      expect.arrayContaining(['--model', 'claude-sonnet-5-5', '--effort', 'high']),
+    );
+    const lead = entries.find((e) => e.agent === 'Barbara' && e.event === 'message')!.text!;
+    expect(lead).toContain('Your crew:');
+    expect(lead).toContain('- Linus (Implementer) — claude-sonnet-5-5, effort high · edits files');
+    expect(lead).not.toContain('Margaret');
+    // Both reports reached the lead as messages.
+    const reports = entries.filter(
+      (e) => e.agent === 'Barbara' && e.event === 'message' && /Report from/.test(e.text!),
+    );
+    expect(reports).toHaveLength(2);
+    await panel.getByTestId('ensemble-beta-notice-close').click();
+    await expect(panel.getByTestId('ensemble-beta-notice')).toBeHidden();
   } finally {
     await app.close();
   }

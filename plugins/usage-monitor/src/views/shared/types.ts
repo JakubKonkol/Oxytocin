@@ -1,3 +1,5 @@
+import type { SidebarDisplay } from '../../shared/sidebar-display';
+
 /** View-side copies of the backend models (views cannot import backend code). */
 export interface TokenTotals {
   input: number;
@@ -43,6 +45,8 @@ export interface LimitBar {
 }
 
 export interface SidebarModel {
+  /** Added by the backend from the settings (absent: everything is shown). */
+  display?: SidebarDisplay;
   now: number;
   hasData: boolean;
   today: { costUsd: number; tokens: number; unknownCost: boolean; approximate: boolean };

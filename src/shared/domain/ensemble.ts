@@ -15,6 +15,7 @@ export const EnsembleCliSchema = z.enum(['claude-code', 'codex', 'gemini-cli', '
 export type EnsembleCli = z.infer<typeof EnsembleCliSchema>;
 
 export const RolePresetSchema = z.enum([
+  'lead',
   'planner',
   'implementer',
   'reviewer',
@@ -63,6 +64,18 @@ export const EnsembleAgentSchema = z.looseObject({
 });
 export type EnsembleAgent = z.output<typeof EnsembleAgentSchema>;
 export type EnsembleAgentInput = z.input<typeof EnsembleAgentSchema>;
+
+/**
+ * The crew of "Lead & crew" tasks (setting `ensemble.crew`): every member with its CLI, model and effort, set up
+ * once. The lead gets the task and hands work to the others as it sees fit; members start only when they get work.
+ */
+export const EnsembleCrewSchema = z.looseObject({
+  leadId: IdSchema,
+  members: z.array(EnsembleAgentSchema).min(1).max(12),
+  /** Agents working at the same time (the lead included); more delegated work waits in a queue. */
+  maxConcurrentAgents: z.number().int().min(1).max(8).default(4),
+});
+export type EnsembleCrew = z.output<typeof EnsembleCrewSchema>;
 
 export const OutputKindSchema = z.enum([
   'plan',
@@ -268,6 +281,8 @@ export const AssignmentSchema = z.looseObject({
   advice: z.string().optional(),
   /** Advisor assignments: the consultation they answer. */
   adviceId: z.string().optional(),
+  /** Results the instruction already contains (not repeated in the message). */
+  covers: z.array(z.string()).optional(),
 });
 export type Assignment = z.infer<typeof AssignmentSchema>;
 
@@ -276,6 +291,10 @@ export const OutboxItemSchema = z.looseObject({
   kind: z.enum(['message', 'question', 'answer', 'advice', 'notice']),
   text: z.string(),
   createdAt: z.number(),
+  /** A delegated report: only useful while the asking agent still works on this stage. */
+  reportFor: z.string().optional(),
+  /** The result this message hands over (it counts as seen once the message is typed). */
+  handoffId: z.string().optional(),
   delivering: z.boolean().optional(),
 });
 export type OutboxItem = z.infer<typeof OutboxItemSchema>;
@@ -300,8 +319,12 @@ export const AgentRunStateSchema = z.looseObject({
   workedMs: z.number().default(0),
   tokens: z.number().optional(),
   costUsd: z.number().optional(),
-  /** This session already got the Ensemble protocol with an assignment (CLIs without a system prompt file). */
+  /** This session already got an assignment (and, CLIs without a system prompt file, the Ensemble protocol). */
   introduced: z.boolean().optional(),
+  /** Results and notes this session already got in a message (later messages only carry what is new). */
+  seen: z.array(z.string()).optional(),
+  /** A message was typed but the agent did not start in time: it counts as delivered if the agent starts now. */
+  unconfirmed: z.string().optional(),
   /** Terminals and CLI sessions the agent ran in (its cost is summed over them). */
   usedTerminals: z.array(z.string()).optional(),
   usedSessions: z.array(z.string()).optional(),

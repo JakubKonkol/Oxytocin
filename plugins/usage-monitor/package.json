@@ -173,6 +173,38 @@
             "default": 400,
             "minimum": 1
           },
+          "usage.sidebar.showToday": {
+            "type": "boolean",
+            "default": true,
+            "description": "Sidebar card: today's cost and tokens"
+          },
+          "usage.sidebar.showBurnRate": {
+            "type": "boolean",
+            "default": true,
+            "description": "Sidebar card: the cost of the last 60 minutes"
+          },
+          "usage.sidebar.showLimits": {
+            "type": "boolean",
+            "default": true,
+            "description": "Sidebar card: limit bars (Claude plan limits, budgets, the 5-hour block)"
+          },
+          "usage.sidebar.showSessions": {
+            "type": "boolean",
+            "default": true,
+            "description": "Sidebar card: the active agent sessions"
+          },
+          "usage.sidebar.maxSessions": {
+            "type": "integer",
+            "default": 4,
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Sidebar card: how many active sessions are listed"
+          },
+          "usage.sidebar.showProject": {
+            "type": "boolean",
+            "default": true,
+            "description": "Sidebar card: the cost of the active project"
+          },
           "usage.statusBar": {
             "type": "string",
             "enum": [

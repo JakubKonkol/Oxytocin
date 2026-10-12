@@ -1,5 +1,36 @@
 import type { PluginContext, PluginView } from '@oxytocin/plugin-api';
+import { DEFAULT_SIDEBAR_DISPLAY, type SidebarDisplay } from '../shared/sidebar-display';
 import type { WorkerClient } from './worker-rpc';
+
+/** `usage.sidebar.*`: what the sidebar card shows (its ⋯ menu and the dashboard's Settings tab change them). */
+export const SIDEBAR_SETTINGS: Record<keyof SidebarDisplay, string> = {
+  showToday: 'usage.sidebar.showToday',
+  showBurnRate: 'usage.sidebar.showBurnRate',
+  showLimits: 'usage.sidebar.showLimits',
+  showSessions: 'usage.sidebar.showSessions',
+  maxSessions: 'usage.sidebar.maxSessions',
+  showProject: 'usage.sidebar.showProject',
+};
+
+/** The sidebar card's display options from the settings (invalid values fall back to the defaults). */
+export function sidebarDisplay(get: (key: string) => unknown): SidebarDisplay {
+  const flag = (k: keyof SidebarDisplay) => {
+    const v = get(SIDEBAR_SETTINGS[k]);
+    return typeof v === 'boolean' ? v : (DEFAULT_SIDEBAR_DISPLAY[k] as boolean);
+  };
+  const max = get(SIDEBAR_SETTINGS.maxSessions);
+  return {
+    showToday: flag('showToday'),
+    showBurnRate: flag('showBurnRate'),
+    showLimits: flag('showLimits'),
+    showSessions: flag('showSessions'),
+    maxSessions:
+      typeof max === 'number' && Number.isFinite(max)
+        ? Math.max(1, Math.min(20, Math.round(max)))
+        : DEFAULT_SIDEBAR_DISPLAY.maxSessions,
+    showProject: flag('showProject'),
+  };
+}
 
 /** `usage.*` settings the dashboard can edit (Sources / Pricing / Budgets tabs). */
 export const EDITABLE_SETTINGS = [
@@ -21,6 +52,7 @@ export const EDITABLE_SETTINGS = [
   'usage.retentionDays',
   'usage.statusBar',
   'usage.weekStartsOn',
+  ...Object.values(SIDEBAR_SETTINGS),
 ] as const;
 
 export interface DashboardTarget {
@@ -97,10 +129,15 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
   const sidebars = new Set<PluginView>();
   const dashboards = new Set<PluginView>();
 
+  /** The worker's sidebar model plus the card's display options. */
+  const sidebarModel = async () => ({
+    ...(await client.request<Record<string, unknown>>('view.sidebar')),
+    display: sidebarDisplay((k) => oxy.settings.get(k)),
+  });
   const pushSidebars = async () => {
     const visible = [...sidebars].filter((v) => v.visible);
     if (visible.length === 0) return;
-    const model = await client.request('view.sidebar');
+    const model = await sidebarModel();
     for (const v of visible) void v.postMessage({ type: 'model', model });
   };
 
@@ -180,7 +217,12 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
         view.onDidChangeVisibility((visible) => {
           if (visible) void pushSidebars();
         });
-        view.onRequest('model', () => client.request('view.sidebar'));
+        view.onRequest('model', sidebarModel);
+        view.onRequest<{ key: keyof SidebarDisplay; value: unknown }, void>('display.set', async ({ key, value }) => {
+          const setting = Object.hasOwn(SIDEBAR_SETTINGS, key) ? SIDEBAR_SETTINGS[key] : undefined;
+          if (!setting) throw new Error(`${String(key)} cannot be changed here`);
+          await oxy.settings.update(setting, value);
+        });
         view.onRequest('sources', () => client.request('dash.sources'));
         view.onRequest<DashboardTarget, void>('openDashboard', (target) => openDashboard(target ?? {}));
         view.onRequest('focusTerminal', focusTerminal);

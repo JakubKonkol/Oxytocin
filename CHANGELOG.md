@@ -3,6 +3,47 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Ensemble: Lead & crew.** Set up your crew once — who is on it, which AI (Claude Code, Codex, Gemini CLI,
+  OpenCode), model and effort each member runs on, whether it edits files, and who leads — and start a task with one
+  prompt. The lead gets the task, works out what it needs and hands pieces to the crew as it sees fit: one teammate
+  researches an API while another maps the code, the implementer writes the code, the reviewer and the tester check
+  it, in parallel where the work allows. Members start only when they get work; at most *Agents at the same time*
+  (4 by default) work at once and further work waits in a queue. Optionally a test command runs at the end (failures
+  go back to the lead) and you approve the result. *Lead & crew* is the new default of *New Ensemble task*; the quick
+  start and the templates with their fixed pipelines stay. The crew is stored in the `ensemble.crew` setting.
+- **Usage Monitor: choose what the sidebar card shows.** Today's cost, the cost per hour, limits, active sessions
+  (and how many) and the project line can each be hidden — from the card's **⋯** menu or the new *Sidebar card*
+  section of the dashboard's Settings tab — e.g. to see only the usage without the active sessions.
+
+### Changed
+
+- **Ensemble is marked as beta**: a *Beta* badge next to its name (the **+** menu, the task list, *New Ensemble
+  task*) and a notice at the top of the panel: it is not fully tested yet, so keep an eye on running tasks and review
+  their changes before you merge them.
+- Agents a lead (or planner) delegates to are asked for the result that fits their role: code from an implementer,
+  a review with a verdict from a reviewer, a test report from a tester. What they write is committed with the stage's
+  checkpoint even when the delegating agent is read-only.
+
+### Fixed
+
+- **Ensemble agents no longer fill their context window.** Every assignment typed the brief, the plan and every
+  earlier result into the agent again, and the tool description told agents to call `oxy_ensemble_context` (the same
+  again) after every message — in a loop of review rounds the implementer's CLI compacted its context again and
+  again. An agent now gets each result once: later messages carry only the instruction and what is new to its session
+  (the brief is in its system prompt; findings sent back are not repeated as results), and `oxy_ensemble_context`
+  is only for an agent that lost track. In a typical plan → three review rounds → test fix run the implementer gets
+  about a sixth of the text it got before. Results, review bodies and template variables inserted into messages are
+  shortened, and `oxy_ensemble_context` has a size limit.
+- A message that seemed not to reach an agent (it started working only after the 10-second check) is no longer typed
+  a second time: the agent starting counts as the delivery and the inbox entry goes away.
+- A delegated report that was not typed yet when the agent who asked for it finished its stage is dropped instead of
+  restarting that agent.
+- Running Ensemble tasks no longer copy their whole state every second when nothing time-based is pending.
+
 ## [0.9.2] - 2026-10-11
 
 ### Fixed

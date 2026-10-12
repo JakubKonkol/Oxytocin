@@ -25,7 +25,8 @@ export interface DeliveryDeps {
   pollMs?: number;
 }
 
-export type DeliveryResult = { ok: true } | { ok: false; error: string };
+/** `pasted`: the text reached the terminal (the agent may still start late). */
+export type DeliveryResult = { ok: true } | { ok: false; error: string; pasted?: boolean };
 
 const sleepFor = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -59,11 +60,15 @@ export async function deliver(text: string, deps: DeliveryDeps, signal?: AbortSi
   await deps.paste(text);
   if (await waitStarted(pastedAt))
     return deps.state() === 'exited' ? { ok: false, error: 'The agent exited.' } : { ok: true };
-  if (signal?.aborted) return { ok: false, error: 'Cancelled.' };
+  if (signal?.aborted) return { ok: false, error: 'Cancelled.', pasted: true };
   // The Enter may have been taken as part of the paste: one more.
   const retryAt = now();
   await deps.enter();
   if (await waitStarted(retryAt))
     return deps.state() === 'exited' ? { ok: false, error: 'The agent exited.' } : { ok: true };
-  return { ok: false, error: 'The agent did not start working after the message. Open its terminal.' };
+  return {
+    ok: false,
+    error: 'The agent did not start working after the message. Open its terminal.',
+    pasted: true,
+  };
 }

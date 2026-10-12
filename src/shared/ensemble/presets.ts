@@ -1,4 +1,14 @@
-import type { EnsembleAgent, EnsembleCli, EnsembleTask, RoleColor, RolePreset, Stage } from '../domain/ensemble';
+import {
+  type EnsembleAgent,
+  type EnsembleCli,
+  type EnsembleCrew,
+  EnsembleCrewSchema,
+  type EnsembleTask,
+  type RoleColor,
+  type RolePreset,
+  type Stage,
+} from '../domain/ensemble';
+import { CLI_INFO } from './clis';
 
 /** Reusable agent definitions offered by "Add agent" and used by the templates. */
 export interface RolePresetDefinition {
@@ -18,6 +28,20 @@ export interface RolePresetDefinition {
 }
 
 export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
+  {
+    preset: 'lead',
+    label: 'Lead',
+    color: 'violet',
+    name: 'Barbara',
+    cli: 'claude-code',
+    model: 'claude-opus-5-5',
+    effort: 'xhigh',
+    readOnly: false,
+    permissionMode: 'acceptEdits',
+    hint: 'Gets the task, hands work to the crew, checks the results',
+    rolePrompt:
+      'You lead a crew of AI agents. Get the task done well and fast by using the crew: break the work down, hand each piece to the teammate who fits it best (in parallel when pieces are independent), keep track of what is in flight, check what comes back and decide what happens next. Keep your own context for decisions: let teammates read large files, logs and documentation and report the essentials. Do small things yourself when explaining them would take longer.',
+  },
   {
     preset: 'planner',
     label: 'Planner',
@@ -304,7 +328,7 @@ export const TASK_TEMPLATES: readonly TaskTemplate[] = [
             maxRounds: 3,
             checkerInstruction: '',
             instruction:
-              'Fix the bug. The failing test from the reproduce stage is in oxy_ensemble_context; make it pass without weakening it, and run the related tests. Submit with kind "implementation".',
+              'Fix the bug. Make the failing test from the reproduce stage (its report is in the results) pass without weakening it, and run the related tests. Submit with kind "implementation".',
           }),
           stage({
             id: 'approve',
@@ -374,7 +398,7 @@ export const TASK_TEMPLATES: readonly TaskTemplate[] = [
             output: 'plan',
             freshSession: false,
             instruction:
-              'Turn the research (in oxy_ensemble_context) into a recommendation and a plan: the option you recommend and why, what to build, the steps, risks and open questions. Submit with kind "plan".',
+              'Turn the research (in the results) into a recommendation and a plan: the option you recommend and why, what to build, the steps, risks and open questions. Submit with kind "plan".',
           }),
           stage({ id: 'approve', kind: 'gate', title: 'Read the plan', show: ['plan'], onReject: 'back-to-previous' }),
         ],
@@ -732,5 +756,124 @@ export function quickTask(o: {
     createdAt: o.now,
     updatedAt: o.now,
     templateId: 'quick',
+  };
+}
+
+// ── lead & crew ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The crew offered until the user sets up their own: a lead and five teammates. */
+export function defaultCrew(): EnsembleCrew {
+  const members = team('lead', 'implementer', 'reviewer', 'researcher', 'api-researcher', 'tester');
+  return { leadId: members[0]!.id, members, maxConcurrentAgents: 4 };
+}
+
+/** The crew of the `ensemble.crew` setting (the default crew when it is empty or invalid); the lead always exists. */
+export function crewOf(value: unknown): EnsembleCrew {
+  const parsed = value == null ? null : EnsembleCrewSchema.safeParse(value);
+  const crew = parsed?.success ? parsed.data : defaultCrew();
+  return crew.members.some((m) => m.id === crew.leadId) ? crew : { ...crew, leadId: crew.members[0]!.id };
+}
+
+const memberLine = (a: EnsembleAgent): string => {
+  const model = a.model || `${CLI_INFO[a.cli].displayName} default model`;
+  const cli = a.cli === 'claude-code' ? '' : `${CLI_INFO[a.cli].displayName}, `;
+  const hint = a.role.preset === 'custom' ? '' : ` · ${rolePreset(a.role.preset).hint.toLowerCase()}`;
+  return `- ${a.name} (${a.role.label}) — ${cli}${model}${a.effort ? `, effort ${a.effort}` : ''} · ${a.readOnly ? 'read-only' : 'edits files'}${hint}`;
+};
+
+/** The lead's instruction: the crew with its models, and how to hand out work. */
+export function crewLeadInstruction(
+  lead: EnsembleAgent,
+  crew: readonly EnsembleAgent[],
+  maxConcurrent: number,
+): string {
+  const others = crew.filter((a) => a.id !== lead.id);
+  const lines = [
+    'You lead this task with a crew of AI agents. Each teammate runs in its own terminal and starts when you hand it work.',
+    '',
+  ];
+  if (others.length) lines.push('Your crew:', ...others.map(memberLine), '');
+  else lines.push('Your crew is empty: do the work yourself.', '');
+  lines.push(
+    'How to lead:',
+    '1. Read the brief and just enough of the code to break the task down: what must be found out, what must be built, what must be checked.',
+    "2. Hand out work with oxy_ensemble_delegate (`to`: the teammate's name). Delegate independent pieces at the same time — one teammate researches an API while another maps the code — and say exactly what you need back. Reports arrive as messages; meanwhile work on what does not depend on them.",
+    `3. At most ${maxConcurrent} agents work at the same time (you included); further delegated work waits in a queue.`,
+    '4. Teammates who edit files share one working folder: never give two of them overlapping files at the same time.',
+    '5. Keep your context for decisions: let teammates read large files, logs and documentation and report the essentials. Do small things yourself when explaining them would take longer.',
+    '6. Check the work before you finish: have it reviewed and tested when the crew has someone for it, and send findings back to whoever wrote the code.',
+    '7. When everything is done and checked, submit with kind "implementation": what was done and by whom, the files changed, and what the user should know.',
+  );
+  return lines.join('\n');
+}
+
+/**
+ * "Lead & crew": one prompt; the lead of the user's crew gets the task and decides who does what (delegating to the
+ * crew), optionally followed by a test command (failures go back to the lead) and the user's approval.
+ */
+export function crewTask(o: {
+  id: string;
+  projectId: string;
+  prompt: string;
+  title?: string | undefined;
+  crew: EnsembleCrew;
+  testCommand?: string | undefined;
+  approveResult: boolean;
+  now: number;
+}): EnsembleTask {
+  const crew = crewOf(o.crew);
+  const agents = structuredClone(crew.members);
+  const lead = agents.find((a) => a.id === crew.leadId)!;
+  const pipeline: Stage[] = [
+    stage({
+      id: 'lead',
+      kind: 'agent',
+      title: 'Lead the crew',
+      instruction: crewLeadInstruction(lead, agents, crew.maxConcurrentAgents),
+      agentId: lead.id,
+      output: 'implementation',
+      freshSession: false,
+    }),
+  ];
+  const command = o.testCommand?.trim();
+  if (command)
+    pipeline.push(
+      stage({
+        id: 'run-tests',
+        kind: 'command',
+        title: 'Run the tests',
+        command,
+        onFail: { agentId: lead.id, maxAttempts: 2 },
+      }),
+    );
+  if (o.approveResult)
+    pipeline.push(
+      stage({
+        id: 'approve',
+        kind: 'gate',
+        title: 'Approve the result',
+        show: ['diff', 'summary'],
+        onReject: 'back-to-previous',
+      }),
+    );
+  return {
+    v: 1,
+    id: o.id,
+    projectId: o.projectId,
+    title: o.title?.trim() || titleFromPrompt(o.prompt) || 'New task',
+    description: o.prompt.trim(),
+    generalPrompt: '',
+    attachments: [],
+    workspace: {
+      mode: agents.some((a) => !a.readOnly) ? 'worktree' : 'current-checkout',
+      setupCommands: [],
+      copyFiles: [],
+    },
+    agents,
+    pipeline,
+    limits: { maxConcurrentAgents: crew.maxConcurrentAgents },
+    createdAt: o.now,
+    updatedAt: o.now,
+    templateId: 'crew',
   };
 }

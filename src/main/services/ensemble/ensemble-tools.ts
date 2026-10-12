@@ -31,7 +31,7 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
     name: 'oxy_ensemble_context',
     title: 'Ensemble: my assignment',
     description:
-      "Your current Ensemble assignment: who you are in the team, the brief, your instruction (with the stage, round and the kind to submit), the results of earlier stages (the plan, review findings, test output, other agents' handoffs), the team, the notes board and questions addressed to you. Call it whenever you get a new assignment or message from Ensemble.",
+      "Everything about your Ensemble task at once: who you are in the team, the brief, your current instruction (stage, round, the kind to submit), the latest results of every agent (the plan, review findings, test output, reports), the team, the notes board and questions addressed to you. Ensemble's messages already carry your instruction and everything new, so do not call it after a message: only when a message was cut or you lost track (e.g. after your context was compacted).",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },

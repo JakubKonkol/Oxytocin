@@ -54,14 +54,17 @@ describe('deliver', () => {
 
   it('fails after the retry', async () => {
     const f = fake({ precise: true });
-    expect(await deliver('[Ensemble] go', f.deps)).toMatchObject({ ok: false });
+    // The text reached the terminal: a late start still counts (the conductor does not type it again).
+    expect(await deliver('[Ensemble] go', f.deps)).toMatchObject({ ok: false, pasted: true });
     expect(f.calls).toEqual(['paste:[Ensemble] go', 'enter']);
   });
 
   it('never types while the agent is working or waiting, and never a slash command', async () => {
     for (const initial of ['working', 'waiting', 'starting'] as const) {
       const f = fake({ precise: true, initial });
-      expect(await deliver('[Ensemble] go', f.deps)).toMatchObject({ ok: false });
+      const r = await deliver('[Ensemble] go', f.deps);
+      expect(r).toMatchObject({ ok: false });
+      expect(r).not.toHaveProperty('pasted');
       expect(f.calls).toEqual([]);
     }
     const f = fake({ precise: true });

@@ -8,9 +8,11 @@ import { cn } from '../../lib/cn';
 import { Button } from '../../ui/Button';
 import { IconButton } from '../../ui/IconButton';
 import { Segmented } from '../projects/settings/controls';
+import { CrewStart } from './CrewStart';
 import { createTask, projectRecords, useEnsembleStore } from './ensemble-store';
 import { QuickStart } from './QuickStart';
 import { TaskView } from './TaskView';
+import { BetaBadge, BetaNotice } from './ui';
 
 export interface EnsemblePanelParams {
   projectId: string;
@@ -124,7 +126,9 @@ function TaskList({
   return (
     <aside className="flex w-56 flex-none flex-col border-r border-line-subtle" data-testid="ensemble-task-list">
       <div className="flex h-9 flex-none items-center gap-1 px-2">
-        <span className="oxy-label flex-1">Tasks</span>
+        <span className="oxy-label flex flex-1 items-center gap-1.5">
+          Tasks <BetaBadge />
+        </span>
         <IconButton label="New task" data-testid="ensemble-new-task" icon={<Plus size={14} />} onClick={onNew} />
         <IconButton label="Hide tasks" icon={<ChevronLeft size={14} />} onClick={onToggle} />
       </div>
@@ -178,7 +182,7 @@ export function NewTask({
   onCreated: () => void;
   onCancel?: () => void;
 }) {
-  const [mode, setMode] = useState<'quick' | 'template'>('quick');
+  const [mode, setMode] = useState<'crew' | 'quick' | 'template'>('crew');
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-6" data-testid="ensemble-new-task-view">
       <div className="flex items-start gap-3">
@@ -186,11 +190,13 @@ export function NewTask({
           <Workflow size={22} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-[17px] font-semibold text-fg">New Ensemble task</h2>
+          <h2 className="flex items-center gap-2 text-[17px] font-semibold text-fg">
+            New Ensemble task <BetaBadge />
+          </h2>
           <p className="max-w-2xl text-fg-secondary">
-            A team of AI agents works on one task in its own git worktree. The planner breaks it down, delegates
-            research to helpers and writes the plan; after your approval the others build it. You can watch or take over
-            any agent at any time.
+            A team of AI agents works on one task in its own git worktree. With <em>Lead &amp; crew</em> the lead of
+            your crew decides who researches, codes, reviews and tests, in parallel where it can; the quick start and
+            the templates follow a fixed pipeline. You can watch or take over any agent at any time.
           </p>
         </div>
         {onCancel && (
@@ -204,12 +210,15 @@ export function NewTask({
         testId="ensemble-new-mode"
         value={mode}
         options={[
+          { value: 'crew', label: 'Lead & crew' },
           { value: 'quick', label: 'Quick start' },
           { value: 'template', label: 'From a template' },
         ]}
         onChange={setMode}
       />
-      {mode === 'quick' ? (
+      {mode === 'crew' ? (
+        <CrewStart projectId={projectId} onCreated={onCreated} />
+      ) : mode === 'quick' ? (
         <QuickStart projectId={projectId} onCreated={onCreated} />
       ) : (
         <TemplateStart projectId={projectId} onCreated={onCreated} />
@@ -333,6 +342,7 @@ export function EnsemblePanel({ params }: IDockviewPanelProps<EnsemblePanelParam
         onToggle={() => setCollapsed((c) => !c)}
       />
       <main className="relative flex min-w-0 flex-1 flex-col">
+        <BetaNotice />
         {!loaded ? (
           <div className="flex flex-1 items-center justify-center text-fg-muted">
             <CircleDashed size={16} className="animate-spin" />

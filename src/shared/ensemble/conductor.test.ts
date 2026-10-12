@@ -8,9 +8,10 @@ import {
   READY_TIMEOUT_MS,
   reduce,
   REMINDER_AFTER_MS,
+  tickDue,
   validateTask,
 } from './conductor';
-import { agentFromPreset, taskFromTemplate } from './presets';
+import { agentFromPreset, crewTask, defaultCrew, taskFromTemplate } from './presets';
 import { isSafeToType } from './prompts';
 
 function makeTask(pipeline: Stage[], extra: Partial<EnsembleTask> = {}): EnsembleTask {
@@ -159,15 +160,16 @@ describe('conductor: sequential agent stages', () => {
     expect(h.run.stages.map((s) => s.status)).toEqual(['done', 'done']);
   });
 
-  it('types the whole context with an assignment: instruction, brief and earlier results, no tool call needed', () => {
+  it('types the instruction and the results so far with an assignment, no tool call needed', () => {
     const h = new Harness(makeTask([planStage, implStage]));
     h.start();
     h.boot();
     const [plan] = h.deliverAll();
     expect(plan!.text).toContain('## Your assignment — stage "Plan"');
-    expect(plan!.text).toContain('## The brief\n\nAdd CSV export to the reports page.');
-    expect(plan!.text).toContain('Use TypeScript.');
     expect(plan!.text).toContain('call oxy_ensemble_submit with kind "plan"');
+    // Claude Code has the brief and the team instructions in its system prompt file: not typed again.
+    expect(plan!.text).not.toContain('## The brief');
+    expect(plan!.text).not.toContain('Use TypeScript.');
     expect(h.run.events.some((e) => e.type === 'context' && e.agentId === 'ada')).toBe(true);
     h.submit('ada', { kind: 'plan', summary: 'Plan ready', body: '1. Add exporter' });
     h.boot();
@@ -183,6 +185,8 @@ describe('conductor: sequential agent stages', () => {
     h.boot();
     const [first] = h.deliverAll();
     expect(first!.text).toContain('# Ensemble — you are Ada');
+    // The brief once (in the role text), not twice.
+    expect(first!.text.split('Add CSV export to the reports page.')).toHaveLength(2);
     expect(h.run.agents['ada']!.introduced).toBe(true);
     // A new session (restart) is introduced again.
     h.send({ type: 'agent-started', agentId: 'ada', terminalId: 't7', cliSessionId: 'other' });
@@ -200,6 +204,32 @@ describe('conductor: sequential agent stages', () => {
     expect(h.send({ type: 'submit', agentId: 'linus', submission: { kind: 'plan', summary: 'x' } }).error).toMatch(
       /no open assignment/,
     );
+  });
+
+  it('a message that seemed lost is not typed again when the agent starts late', () => {
+    const h = new Harness(makeTask([planStage]));
+    h.start();
+    h.boot();
+    const [d] = h.take('deliver') as Extract<Effect, { type: 'deliver' }>[];
+    h.send({ type: 'delivery-failed', agentId: 'ada', deliveryId: d!.deliveryId, error: 'no start', pasted: true });
+    expect(h.run.needs.map((n) => n.kind)).toEqual(['delivery-failed']);
+    h.send({ type: 'agent-state', agentId: 'ada', state: 'working' });
+    expect(h.run.needs).toEqual([]);
+    expect(h.run.agents['ada']!.assignment!.deliveredAt).toBe(h.now);
+    expect(h.run.agents['ada']!.unconfirmed).toBeUndefined();
+    h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
+    expect(h.take('deliver')).toEqual([]);
+  });
+
+  it('a failure before the paste is not confirmed by a later start', () => {
+    const h = new Harness(makeTask([planStage]));
+    h.start();
+    h.boot();
+    const [d] = h.take('deliver') as Extract<Effect, { type: 'deliver' }>[];
+    h.send({ type: 'delivery-failed', agentId: 'ada', deliveryId: d!.deliveryId, error: 'trust prompt' });
+    h.send({ type: 'agent-state', agentId: 'ada', state: 'working' });
+    expect(h.run.needs.map((n) => n.kind)).toEqual(['delivery-failed']);
+    expect(h.run.agents['ada']!.assignment!.deliveredAt).toBeUndefined();
   });
 
   it('never delivers while the agent is working or waiting, and never while taken over', () => {
@@ -240,6 +270,26 @@ describe('conductor: sequential agent stages', () => {
     expect(h.run.needs).toEqual([]);
     expect(h.run.handoffs.at(-1)).toMatchObject({ by: 'user', kind: 'plan', summary: 'The plan is in PLAN.md' });
     expect(h.run.stageIndex).toBe(1);
+  });
+
+  it('ticks only while something time-based is pending', () => {
+    const h = new Harness(makeTask([planStage]));
+    expect(tickDue(h.task, h.run)).toBe(false);
+    h.start();
+    h.take('start-agent');
+    h.send({ type: 'agent-started', agentId: 'ada', terminalId: 't1' });
+    // Starting: the ready timeout is watched.
+    expect(tickDue(h.task, h.run)).toBe(true);
+    h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
+    h.deliverAll();
+    // Working on its assignment: nothing to watch.
+    expect(tickDue(h.task, h.run)).toBe(false);
+    h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
+    // Idle without a submit: the reminder is due later.
+    expect(tickDue(h.task, h.run)).toBe(true);
+    const limited = new Harness(makeTask([planStage], { limits: { maxConcurrentAgents: 3, maxDurationMin: 5 } }));
+    limited.start();
+    expect(tickDue(limited.task, limited.run)).toBe(true);
   });
 
   it('pause holds deliveries, resume releases them; stop kills every agent', () => {
@@ -311,7 +361,6 @@ describe('conductor: delegation', () => {
     const [work] = h.deliverAll();
     expect(work!.text).toMatch(/^\[Ensemble\] Ada \(Planner\) delegated work to you, Tim \(API researcher\)/);
     expect(work!.text).toContain('Map GET /users and its shape.');
-    expect(work!.text).toContain('## The brief');
     // Ada is idle and waits: no reminder.
     h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
     h.now += REMINDER_AFTER_MS + 1000;
@@ -357,6 +406,86 @@ describe('conductor: delegation', () => {
     h.send({ type: 'delegate', from: 'ada', to: 'tim', work: 'x' });
     h.submit('ada', { kind: 'plan', summary: 'Plan without waiting' });
     expect(h.run.agents['tim']!.assignment).toBeUndefined();
+  });
+
+  it('lead & crew: the lead hands out code, review and research in parallel, up to the limit; the crew writes', () => {
+    const crew = { ...defaultCrew(), maxConcurrentAgents: 3 };
+    const h = new Harness(
+      crewTask({ id: 'task-1', projectId: 'p1', prompt: 'Add CSV export', crew, approveResult: false, now: 0 }),
+    );
+    h.start();
+    expect(h.take('start-agent')).toEqual([{ type: 'start-agent', agentId: 'barbara', resume: false }]);
+    h.send({ type: 'agent-started', agentId: 'barbara', terminalId: 't1', cliSessionId: 's1' });
+    h.send({ type: 'agent-state', agentId: 'barbara', state: 'idle' });
+    const [lead] = h.deliverAll();
+    expect(lead!.text).toContain('Your crew:');
+    // Code to the implementer, research to the researcher; the third piece waits for the limit (3 with the lead).
+    expect(h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Write the exporter' }).reply).toMatch(
+      /^Delegated to Linus/,
+    );
+    h.send({ type: 'delegate', from: 'barbara', to: 'Researcher', work: 'How are reports built?' });
+    const queued = h.send({ type: 'delegate', from: 'barbara', to: 'Margaret', work: 'Write the tests' });
+    expect(queued.reply).toMatch(/^Queued for Margaret/);
+    expect(h.run.agents['linus']!.assignment).toMatchObject({ output: 'implementation', delegatedBy: 'barbara' });
+    expect(h.run.agents['margaret']!.assignment).toMatchObject({ output: 'test-report', queued: true });
+    expect(h.take('start-agent').map((e) => (e as { agentId: string }).agentId)).toEqual(['linus', 'rosalind']);
+    h.boot();
+    h.deliverAll();
+    h.submit('linus', { kind: 'implementation', summary: 'Exporter written', files: ['src/csv.ts'] });
+    // A slot is free: the queued work starts.
+    expect(h.run.agents['margaret']!.assignment!.queued).toBeUndefined();
+    expect(h.take('start-agent').map((e) => (e as { agentId: string }).agentId)).toEqual(['margaret']);
+    // Delegated work may come back as another kind of result.
+    expect(h.submit('rosalind', { kind: 'review', summary: 'Looks fine', verdict: 'approve' }).error).toBeUndefined();
+    h.send({ type: 'delegate', from: 'barbara', to: 'Grace', work: 'Review the exporter' });
+    expect(h.run.agents['grace']!.assignment).toMatchObject({ output: 'review' });
+    h.submit('grace', { kind: 'review', summary: 'Approve', verdict: 'approve', findings: [] });
+    h.submit('margaret', { kind: 'test-report', summary: 'Tests pass' });
+    // The reports reach the lead as messages, one at a time while it is idle; later messages do not repeat them.
+    h.send({ type: 'agent-state', agentId: 'barbara', state: 'idle' });
+    let reports = 0;
+    for (let d = h.deliverAll(); d.length; d = h.deliverAll()) {
+      reports += d.filter((x) => x.agentId === 'barbara').length;
+      h.send({ type: 'agent-state', agentId: 'barbara', state: 'idle' });
+    }
+    expect(reports).toBe(4);
+    expect(h.run.agents['barbara']!.seen).toHaveLength(4);
+    h.submit('barbara', { kind: 'implementation', summary: 'CSV export done by Linus, reviewed by Grace' });
+    // What the crew wrote is committed as the stage's checkpoint.
+    expect(h.run.pendingCheckpoint).toBe('lead');
+  });
+
+  it('a report not typed yet is dropped when the asking agent finished its stage', () => {
+    const h = new Harness(
+      crewTask({ id: 'task-1', projectId: 'p1', prompt: 'x', crew: defaultCrew(), approveResult: true, now: 0 }),
+    );
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Write it' });
+    h.boot();
+    h.deliverAll();
+    h.submit('linus', { kind: 'implementation', summary: 'Written' });
+    expect(h.run.agents['barbara']!.outbox).toHaveLength(1);
+    // The lead (still working) submits before the report was typed.
+    h.send({ type: 'submit', agentId: 'barbara', submission: { kind: 'implementation', summary: 'Done' } });
+    expect(h.run.agents['barbara']!.outbox).toEqual([]);
+    expect(h.run.agents['barbara']!.seen ?? []).toEqual([]);
+  });
+
+  it('a read-only lead still checkpoints what its crew wrote', () => {
+    const crew = defaultCrew();
+    crew.members[0] = { ...crew.members[0]!, readOnly: true };
+    const h = new Harness(crewTask({ id: 'task-1', projectId: 'p1', prompt: 'x', crew, approveResult: false, now: 0 }));
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Write it' });
+    h.boot();
+    h.deliverAll();
+    h.submit('linus', { kind: 'implementation', summary: 'Written' });
+    h.submit('barbara', { kind: 'implementation', summary: 'Done' });
+    expect(h.take('checkpoint')).toHaveLength(1);
   });
 });
 
@@ -425,6 +554,61 @@ describe('conductor: loops, gates and commands', () => {
     expect(h.run.stages[0]).toMatchObject({ status: 'done', outcome: 'approved in round 2', round: 2 });
     h.checkpoints();
     expect(h.run.status).toBe('done');
+  });
+
+  it('later rounds type only what is new to the session: no brief, plan or earlier result again', () => {
+    const plan: Stage = { ...planStage };
+    const h = new Harness(makeTask([plan, loop]));
+    h.start();
+    h.boot();
+    h.deliverAll();
+    const longPlan = `1. Add the exporter\n${'detail '.repeat(800)}`;
+    h.submit('ada', { kind: 'plan', summary: 'Plan', body: longPlan });
+    h.boot();
+    const [first] = h.deliverAll();
+    expect(first!.text).toContain('### The plan (by Ada)');
+    h.submit('linus', { kind: 'implementation', summary: 'v1' });
+    h.boot();
+    const [review1] = h.deliverAll();
+    // Grace's first message: the plan and Linus's implementation.
+    expect(review1!.text).toContain('### The plan (by Ada)');
+    expect(review1!.text).toContain('Linus — Implementation');
+    h.submit('grace', {
+      kind: 'review',
+      summary: 'One problem',
+      body: 'The quoting is wrong.',
+      verdict: 'changes',
+      findings: [{ file: 'src/csv.ts', line: 3, severity: 'major', message: 'Quote commas' }],
+    });
+    const [fix] = h.deliverAll();
+    // The fix carries the findings once (in the instruction), not the plan again nor the review as a result.
+    expect(fix!.text).not.toContain('### The plan');
+    expect(fix!.text).not.toContain('Grace — Review');
+    expect(fix!.text.split('Quote commas')).toHaveLength(2);
+    expect(fix!.text.length).toBeLessThan(first!.text.length);
+    h.submit('linus', { kind: 'implementation', summary: 'v2' });
+    const [review2] = h.deliverAll();
+    // Grace only gets Linus's new result.
+    expect(review2!.text).not.toContain('### The plan');
+    expect(review2!.text).toContain('## New results since your last message');
+    expect(review2!.text).toContain('v2');
+    expect(review2!.text).not.toContain('v1');
+    // A new session (a restart without resuming) gets everything again.
+    h.send({ type: 'agent-started', agentId: 'grace', terminalId: 't9', cliSessionId: 'fresh' });
+    expect(h.run.agents['grace']!.seen).toBeUndefined();
+  });
+
+  it('notes reach every agent once, with its next assignment', () => {
+    const h = new Harness(makeTask([planStage, implStage]));
+    h.start();
+    h.boot();
+    h.deliverAll();
+    expect(h.send({ type: 'note', by: 'ada', text: 'Use semicolons' }).reply).toMatch(/next assignment/);
+    h.submit('ada', { kind: 'plan', summary: 'Plan', body: '1. Do it' });
+    h.boot();
+    const [impl] = h.deliverAll();
+    expect(impl!.text).toContain('## New notes\n\n- Ada: Use semicolons');
+    expect(h.run.agents['linus']!.seen).toEqual(expect.arrayContaining([h.run.notes[0]!.id]));
   });
 
   it('the round limit needs the user: one more round or accept', () => {
@@ -507,6 +691,8 @@ describe('conductor: loops, gates and commands', () => {
     const [fix] = h.deliverAll();
     expect(fix).toMatchObject({ agentId: 'linus' });
     expect(h.run.agents['linus']!.assignment!.instruction).toContain('FAIL csv.test.ts');
+    // The output is in the instruction: not repeated as a result.
+    expect(fix!.text.split('FAIL csv.test.ts')).toHaveLength(2);
     const r = h.submit('linus', { kind: 'implementation', summary: 'Fixed the quoting' });
     expect(r.reply).toMatch(/runs `npm test` again/);
     expect(h.take('run-command')).toEqual([{ type: 'run-command', stageId: 'tests', command: 'npm test', attempt: 2 }]);

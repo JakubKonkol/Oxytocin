@@ -59,7 +59,7 @@ const PLATFORM_KEYS: Partial<Record<CoreSettingKey, Platform>> = {
   'terminal.macOptionIsMeta': 'darwin',
 };
 
-const READ_ONLY_KEYS = new Set<string>(['plugins.enabled', 'mcp.tools.disabled', 'mcp.tools.policy']);
+const READ_ONLY_KEYS = new Set<string>(['plugins.enabled', 'mcp.tools.disabled', 'mcp.tools.policy', 'ensemble.crew']);
 
 const words = (segment: string) =>
   segment

@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -103,11 +103,15 @@ test("a two-agent Ensemble task runs in a worktree: the second agent gets the fi
     // The implementer's context contained the planner's result.
     const submit = entries.find((e) => e.agent === 'Linus' && e.tool === 'oxy_ensemble_submit');
     expect(submit?.text).toMatch(/Thanks/);
-    // Every assignment message carries the brief and the results so far: no agent needed oxy_ensemble_context.
+    // Every assignment message carries the instruction and the results so far (the brief is in the system prompt
+    // file, not typed again): no agent needed oxy_ensemble_context.
     const linusMessage = entries.find((e) => e.agent === 'Linus' && e.event === 'message')!;
     expect(linusMessage.text).toMatch(/### The plan \(by Ada\)\s+Ada saw:/);
     const adaMessage = entries.find((e) => e.agent === 'Ada' && e.event === 'message')!;
-    expect(adaMessage.text).toContain('## The brief\n\nAdd CSV export to the reports page.');
+    expect(adaMessage.text).toContain('## Your assignment — stage "Plan"');
+    expect(adaMessage.text).not.toContain('## The brief');
+    const promptFile = argsOf('Ada')[argsOf('Ada').indexOf('--append-system-prompt-file') + 1]!;
+    expect(await readFile(promptFile, 'utf8')).toContain('Add CSV export to the reports page.');
     expect(entries.some((e) => e.tool === 'oxy_ensemble_context')).toBe(false);
     // The first message waited for the agent's MCP connection.
     const connected = entries.findIndex((e) => e.agent === 'Ada' && e.event === 'mcp-connected');

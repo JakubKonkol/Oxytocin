@@ -91,11 +91,14 @@ terminals' output, ask you questions, run your apps and query the project's **da
 SQL Server, MySQL, MongoDB, SQLite, Redis, HTTP APIs, …) — read-only by default, with credentials kept in your OS
 keychain and never shown to the agent.
 
-### 🎼 Ensemble: a team of agents on one task
+### 🎼 Ensemble: a team of agents on one task (beta)
 
-Describe a task, pick a team — planner, implementer, reviewer, tester, researchers — and press *Start*. Agents
-delegate to each other, you approve the plan at a gate, and the work happens in its own git worktree that you merge,
-squash or discard at the end. A flow view shows who does what, and you can take over any agent's terminal.
+Set up your crew once — which AI, model and effort each member runs on, and who leads — then describe a task and
+press *Start*: the lead works out what the task needs and hands research, code, review and tests to the crew, in
+parallel where it can. Or pick a fixed pipeline (plan → your approval → implement ⇄ review → tests) from the quick
+start or a template. The work happens in its own git worktree that you merge, squash or discard at the end. A flow
+view shows who does what, and you can take over any agent's terminal. Ensemble is in beta: keep an eye on running
+tasks.
 
 ### ▶️ Run your apps
 
@@ -106,7 +109,8 @@ too.
 ### 📊 Usage Monitor
 
 Tokens and costs per session, project and model, read from your agents' **local logs**: daily charts, burn rate,
-budgets with alerts and the real **5-hour and weekly limits** of a Claude Pro/Max plan. Nothing leaves your machine.
+budgets with alerts and the real **5-hour and weekly limits** of a Claude Pro/Max plan. The sidebar card shows what you
+choose (today's cost, limits, active sessions…). Nothing leaves your machine.
 
 <p align="center">
   <img alt="Usage dashboard: daily cost over the last 30 days, tokens, projects and models" src="docs/images/usage-dashboard.png" width="960" />

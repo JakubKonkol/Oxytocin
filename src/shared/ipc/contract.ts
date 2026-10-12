@@ -345,6 +345,18 @@ export const invokeContract = {
     }),
     res: EnsembleRecordSchema,
   },
+  /** "Lead & crew": one prompt; the lead of the crew set up in `ensemble.crew` hands out the work (`crewTask`). */
+  'ensemble:createCrew': {
+    req: z.object({
+      projectId: ProjectIdSchema,
+      prompt: z.string().trim().min(1).max(50_000),
+      title: z.string().max(120).optional(),
+      testCommand: z.string().max(500).optional(),
+      approveResult: z.boolean(),
+      currentCheckout: z.boolean().optional(),
+    }),
+    res: EnsembleRecordSchema,
+  },
   /** Saves the builder's task (validated in main; a running task only takes a new title). */
   'ensemble:save': { req: z.object({ task: z.unknown() }), res: EnsembleRecordSchema },
   'ensemble:delete': { req: z.object({ taskId: z.string().max(64) }), res: z.void() },

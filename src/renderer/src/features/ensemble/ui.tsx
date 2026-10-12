@@ -1,5 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
+import { FlaskConical, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   type AgentLive,
@@ -15,6 +16,56 @@ import { CLI_INFO, type ModelOption } from '@shared/ensemble/clis';
 import { formatDuration } from '@shared/ensemble/flow';
 import { cn } from '../../lib/cn';
 import { confirmDialogEx } from '../../stores/dialog-store';
+import { Badge } from '../../ui/Badge';
+
+/** Ensemble is in beta: the badge next to its name. */
+export function BetaBadge({ className }: { className?: string }) {
+  return (
+    <Badge
+      variant="warning"
+      testId="ensemble-beta-badge"
+      title="Ensemble is in beta: not fully tested yet"
+      {...(className ? { className } : {})}
+    >
+      Beta
+    </Badge>
+  );
+}
+
+/** Hidden for the rest of the session once closed (it is shown again after a restart). */
+let betaNoticeClosed = false;
+
+/** The notice at the top of the Ensemble panel. */
+export function BetaNotice() {
+  const [closed, setClosed] = useState(betaNoticeClosed);
+  if (closed) return null;
+  return (
+    <div
+      role="note"
+      data-testid="ensemble-beta-notice"
+      className="flex flex-none items-start gap-2 border-b border-warning/40 bg-warning/10 px-4 py-2 text-small text-fg-secondary"
+    >
+      <FlaskConical size={14} className="mt-0.5 flex-none text-warning" />
+      <span className="min-w-0 flex-1">
+        <strong className="font-semibold text-fg">Ensemble is in beta.</strong> It is not fully tested yet, so expect
+        rough edges: agents may stall, need a nudge in their terminal or cost more than planned. Keep an eye on running
+        tasks and review the changes before you merge them.
+      </span>
+      <button
+        type="button"
+        aria-label="Close the beta notice"
+        data-testid="ensemble-beta-notice-close"
+        onClick={() => {
+          betaNoticeClosed = true;
+          setClosed(true);
+        }}
+        className="flex-none rounded-badge p-0.5 text-fg-muted hover:bg-card-hover hover:text-fg"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
 
 /** A role color as a CSS variable of the project palette (tokens.css). */
 export const roleColor = (color: RoleColor): string => `var(--project-${ROLE_COLORS.indexOf(color)})`;

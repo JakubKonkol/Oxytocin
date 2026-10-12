@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PluginContext, PluginView, ViewProvider } from '@oxytocin/plugin-api';
-import { registerUi } from './ui';
+import { registerUi, sidebarDisplay } from './ui';
 import type { WorkerClient } from './worker-rpc';
 
 function setup(status: Record<string, unknown>, settings: Record<string, unknown> = {}) {
@@ -114,5 +114,40 @@ describe('Usage Monitor UI glue', () => {
       Promise.resolve(handlers.get('settings.set')!({ key: 'terminal.fontSize', value: 1 })),
     ).rejects.toThrow(/cannot be changed/);
     for (const d of s.ctx.subscriptions) d.dispose();
+  });
+
+  it('adds the display options to the sidebar model; the card can only change its own options', async () => {
+    const s = setup({ todayUsd: 1 }, { 'usage.sidebar.showSessions': false, 'usage.sidebar.maxSessions': 99 });
+    const handlers = new Map<string, (p: unknown) => unknown>();
+    const view = {
+      onDidDispose: vi.fn(),
+      onDidChangeVisibility: vi.fn(),
+      onRequest: (m: string, h: (p: unknown) => unknown) => handlers.set(m, h),
+    } as unknown as PluginView;
+    await s.providers.get('usage.sidebar')!.resolve(view);
+    const model = (await handlers.get('model')!(undefined)) as { display: Record<string, unknown> };
+    expect(model.display).toMatchObject({ showSessions: false, showToday: true, maxSessions: 20 });
+    await handlers.get('display.set')!({ key: 'showSessions', value: true });
+    expect(s.update).toHaveBeenCalledWith('usage.sidebar.showSessions', true);
+    await expect(Promise.resolve(handlers.get('display.set')!({ key: 'constructor', value: 1 }))).rejects.toThrow(
+      /cannot be changed/,
+    );
+    for (const d of s.ctx.subscriptions) d.dispose();
+  });
+
+  it('reads the display options with defaults for missing or invalid values', () => {
+    expect(sidebarDisplay(() => undefined)).toEqual({
+      showToday: true,
+      showBurnRate: true,
+      showLimits: true,
+      showSessions: true,
+      maxSessions: 4,
+      showProject: true,
+    });
+    expect(
+      sidebarDisplay((k) =>
+        k === 'usage.sidebar.showLimits' ? 'no' : k === 'usage.sidebar.maxSessions' ? 0 : undefined,
+      ),
+    ).toMatchObject({ showLimits: true, maxSessions: 1 });
   });
 });

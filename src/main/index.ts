@@ -1103,6 +1103,7 @@ function bootstrap(): void {
       },
       'ensemble:create': (req) => ensemble.create(req),
       'ensemble:createQuick': (req) => ensemble.createQuick(req),
+      'ensemble:createCrew': (req) => ensemble.createCrew(req),
       'ensemble:save': async ({ task }) => {
         await ensemble.ready;
         return ensemble.save(task);

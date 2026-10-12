@@ -5,6 +5,7 @@ import { type ReactNode, useState } from 'react';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { ipc } from '../../lib/ipc-client';
 import { shortcutFor } from '../../lib/keyboard';
+import { Badge } from '../../ui/Badge';
 import { IconButton } from '../../ui/IconButton';
 import { formatShortcut } from '../../ui/Kbd';
 import { notify } from '../../ui/Toast';
@@ -41,6 +42,11 @@ function ToolItems({ tools, onPick }: { tools: ToolDefinition[]; onPick: (tool: 
         <DropdownMenu.Item key={t.id} data-testid={`add-tool-${t.id}`} className={menuItem} onSelect={() => onPick(t)}>
           <ToolIcon tool={t} />
           <span className="truncate">{t.title}</span>
+          {t.id === 'ensemble' && (
+            <Badge variant="warning" className="ml-auto">
+              Beta
+            </Badge>
+          )}
         </DropdownMenu.Item>
       ))}
     </>

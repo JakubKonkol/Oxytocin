@@ -101,6 +101,7 @@ export const INVOKE_CHANNELS = [
   'ensemble:list',
   'ensemble:create',
   'ensemble:createQuick',
+  'ensemble:createCrew',
   'ensemble:save',
   'ensemble:delete',
   'ensemble:duplicate',

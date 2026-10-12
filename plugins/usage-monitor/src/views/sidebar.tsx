@@ -15,6 +15,7 @@ import {
   tokens,
   usd,
 } from './shared/format';
+import { DEFAULT_SIDEBAR_DISPLAY, type SidebarDisplay } from '../shared/sidebar-display';
 import type { LimitBar, LiveSession, Progress, SidebarModel, SourceStatus } from './shared/types';
 
 const COMPACT_HEIGHT = 120;
@@ -166,14 +167,27 @@ function App() {
     [view],
   );
 
+  const display = model?.display ?? DEFAULT_SIDEBAR_DISPLAY;
   const menu = async (e: React.MouseEvent) => {
     if (!view) return;
+    const toggles: [keyof SidebarDisplay, string][] = [
+      ['showToday', "today's cost"],
+      ['showBurnRate', 'the cost per hour'],
+      ['showLimits', 'limits'],
+      ['showSessions', 'active sessions'],
+      ['showProject', 'the project line'],
+    ];
     const choice = await view.showContextMenu(
       [
         { id: 'dashboard', label: 'Open dashboard' },
         { id: 'pricing', label: 'Refresh pricing' },
         { id: 'settings', label: 'Settings' },
         { id: 'sources', label: 'Data sources' },
+        { id: 'sep', label: '', separator: true },
+        ...toggles.map(([key, label]) => ({
+          id: `toggle:${key}`,
+          label: `${display[key] ? 'Hide' : 'Show'} ${label}`,
+        })),
       ],
       { x: e.clientX, y: e.clientY },
     );
@@ -181,6 +195,10 @@ function App() {
     if (choice === 'pricing') void view.request('refreshPricing');
     if (choice === 'settings') void view.request('openDashboard', { tab: 'pricing' });
     if (choice === 'sources') void view.request('openDashboard', { tab: 'sources' });
+    if (choice?.startsWith('toggle:')) {
+      const key = choice.slice('toggle:'.length) as keyof SidebarDisplay;
+      void view.request('display.set', { key, value: !display[key] });
+    }
   };
 
   if (!model) return <div className="card muted">Loading…</div>;
@@ -201,7 +219,7 @@ function App() {
   ));
   return (
     <div className={`card${compact ? ' compact' : ''}`} data-testid="usage-card">
-      {!model.hasData || !showCost ? (
+      {!model.hasData || !showCost || !display.showToday ? (
         <div className="row head">
           {!showCost && (
             <span className="heading" data-testid="usage-plan-heading">
@@ -236,14 +254,16 @@ function App() {
             )}
             <span className="muted">· {tokens(model.today.tokens)} tokens</span>
             <span className="spacer" />
-            <span
-              className="mono secondary hide-compact"
-              data-testid="usage-burn-rate"
-              title="Cost of the last 60 minutes"
-            >
-              {usd(model.burnRate.usdPerHour)}/h{' '}
-              <span className={model.burnRate.trend === 'up' ? 'trend-up' : 'trend-down'}>{trend}</span>
-            </span>
+            {display.showBurnRate && (
+              <span
+                className="mono secondary hide-compact"
+                data-testid="usage-burn-rate"
+                title="Cost of the last 60 minutes"
+              >
+                {usd(model.burnRate.usdPerHour)}/h{' '}
+                <span className={model.burnRate.trend === 'up' ? 'trend-up' : 'trend-down'}>{trend}</span>
+              </span>
+            )}
           </div>
           <div className="head-actions">{actions}</div>
         </div>
@@ -253,8 +273,8 @@ function App() {
           Indexing history… {Math.round((progress.done / Math.max(1, progress.total)) * 100)}%
         </div>
       )}
-      {subscriptionLimits}
-      {!showCost && model.subscriptionLimits.length === 0 && (
+      {display.showLimits && subscriptionLimits}
+      {display.showLimits && !showCost && model.subscriptionLimits.length === 0 && (
         <div className="muted" data-testid="usage-subscription-hint">
           Subscription billing: costs are hidden.{' '}
           <button type="button" className="link" onClick={openSettings}>
@@ -266,7 +286,7 @@ function App() {
         <Empty sources={sources} />
       ) : (
         <>
-          {limit && (
+          {display.showLimits && limit && (
             <Limit
               bar={limit}
               now={model.now}
@@ -274,15 +294,15 @@ function App() {
               title={model.limits.map((l) => l.label).join('\n')}
             />
           )}
-          {model.sessions.length > 0 && (
-            <div className="hide-compact">
+          {display.showSessions && model.sessions.length > 0 && (
+            <div className="hide-compact" data-testid="usage-sessions">
               <div className="heading">ACTIVE SESSIONS</div>
-              {model.sessions.slice(0, 4).map((s) => (
+              {model.sessions.slice(0, display.maxSessions).map((s) => (
                 <Session key={s.sessionId} s={s} now={model.now} onOpen={openSession} showCost={showCost} />
               ))}
             </div>
           )}
-          {showCost && model.project && (
+          {display.showProject && showCost && model.project && (
             <div className="muted hide-compact" data-testid="usage-project">
               {model.project.name ?? 'This project'}: today {usd(model.project.todayUsd)} · last 7 days{' '}
               {usd(model.project.last7DaysUsd)}

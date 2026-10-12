@@ -48,6 +48,59 @@ function Select({ settingKey, options, label }: { settingKey: string; options: [
   );
 }
 
+const SIDEBAR_TOGGLES: [string, string][] = [
+  ['usage.sidebar.showToday', "Today's cost and tokens"],
+  ['usage.sidebar.showBurnRate', 'Cost per hour (last 60 minutes)'],
+  ['usage.sidebar.showLimits', 'Limits (plan limits, budgets, 5-hour block)'],
+  ['usage.sidebar.showSessions', 'Active sessions'],
+  ['usage.sidebar.showProject', "The active project's cost"],
+];
+
+/** What the sidebar card shows (`usage.sidebar.*`). */
+function SidebarCard() {
+  const view = useView();
+  const { data, reload } = useRequest<Record<string, unknown>>('settings');
+  // The choice shows right away; the saved settings follow.
+  const [local, setLocal] = useState<Record<string, unknown>>({});
+  const value = (key: string) => (key in local ? local[key] : data?.[key]);
+  const set = (key: string, v: unknown) => {
+    setLocal((l) => ({ ...l, [key]: v }));
+    void view.request('settings.set', { key, value: v }).then(reload);
+  };
+  const stored = value('usage.sidebar.maxSessions');
+  const max = typeof stored === 'number' ? stored : 4;
+  return (
+    <section data-testid="usage-sidebar-settings">
+      <h3>SIDEBAR CARD</h3>
+      {SIDEBAR_TOGGLES.map(([key, label]) => (
+        <label key={key} className="setting">
+          <span>{label}</span>
+          <input
+            type="checkbox"
+            data-testid={`usage-sidebar-${key.split('.').pop()}`}
+            checked={value(key) !== false}
+            onChange={(e) => set(key, e.target.checked)}
+          />
+        </label>
+      ))}
+      <label className="setting">
+        <span>Sessions listed</span>
+        <input
+          type="number"
+          min={1}
+          max={20}
+          value={max}
+          aria-label="Sessions listed"
+          onChange={(e) => {
+            const n = Math.round(Number(e.target.value));
+            if (n >= 1 && n <= 20) set('usage.sidebar.maxSessions', n);
+          }}
+        />
+      </label>
+    </section>
+  );
+}
+
 /** Claude subscription limits through Claude Code's status line (opt-in, it changes Claude Code's settings). */
 function ClaudeLimits() {
   const view = useView();
@@ -165,6 +218,7 @@ export function PricingTab() {
         </label>
       </section>
       <ClaudeLimits />
+      <SidebarCard />
       {unknown.length > 0 && (
         <div className="banner" data-testid="usage-unknown-models">
           {unknown.map((u) => (

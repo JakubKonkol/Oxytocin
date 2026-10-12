@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EnsembleCrewSchema } from './ensemble';
 import { type Platform, TerminalProfileSchema } from './terminal-profile';
 import { UpdateChannelSchema } from './updates';
 
@@ -318,6 +319,11 @@ export const CORE_SETTINGS = {
     z.partialRecord(z.enum(['claude-code', 'codex', 'gemini-cli', 'opencode']), z.string().max(2000)),
     {},
     'The command Ensemble starts per CLI when it is not the default ("claude", "codex", "gemini", "opencode"), e.g. a full path.',
+  ),
+  'ensemble.crew': def(
+    EnsembleCrewSchema.nullable(),
+    null,
+    'The crew of "Lead & crew" tasks: the lead and its teammates with their CLIs, models and efforts (set up in the Ensemble panel). Empty = the default crew.',
   ),
   'updates.checkAutomatically': def(
     z.boolean(),

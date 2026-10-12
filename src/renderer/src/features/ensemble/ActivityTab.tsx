@@ -84,7 +84,7 @@ export function ActivityTab({ record }: { record: EnsembleRecord }) {
           onClick={() =>
             void askText({
               title: 'Note for the team',
-              description: 'Every agent sees the notes board in oxy_ensemble_context.',
+              description: 'Every agent gets the note with its next assignment.',
               placeholder: 'A decision, a gotcha…',
               confirmLabel: 'Post',
             }).then((text) => !!text && ensembleCommand(task.id, { type: 'note', by: 'user', text }))
