@@ -110,6 +110,24 @@ test('Usage Monitor: today from fixtures, live update, dashboard and budget noti
     await expect(dashboard.getByTestId('usage-kpi-today')).toContainText(`$${next.toFixed(2)}`);
     await expect(dashboard.getByTestId('usage-chart')).toBeVisible();
 
+    // The sidebar card can show only the usage: hide its active sessions, then bring them back (before the budget
+    // below raises a toast over the window).
+    await dashboard.getByRole('tab', { name: 'Settings' }).click();
+    const toggle = async (id: string, on: boolean) => {
+      const box = dashboard.getByTestId(id);
+      await expect(box).toBeChecked({ checked: !on });
+      await box.click();
+      await expect(box).toBeChecked({ checked: on });
+    };
+    await toggle('usage-sidebar-showSessions', false);
+    await expect(sidebar.getByTestId('usage-sessions')).toHaveCount(0);
+    await expect(sidebar.getByTestId('usage-today')).toBeVisible();
+    await toggle('usage-sidebar-showToday', false);
+    await expect(sidebar.getByTestId('usage-today')).toHaveCount(0);
+    await toggle('usage-sidebar-showToday', true);
+    await toggle('usage-sidebar-showSessions', true);
+    await expect(sidebar.getByTestId('usage-session').first()).toBeVisible();
+
     // A daily budget already 85 % used → the 80 % notification.
     await dashboard.getByRole('tab', { name: 'Budgets' }).click();
     const form = dashboard.getByTestId('usage-budgets');
@@ -128,17 +146,6 @@ test('Usage Monitor: today from fixtures, live update, dashboard and budget noti
     await expect(dashboard.getByTestId('usage-session-row').first()).toBeVisible();
     await dashboard.getByRole('tab', { name: 'Settings' }).click();
     await expect(dashboard.getByTestId('usage-unknown-models')).toContainText('claude-mystery-9');
-    // The sidebar card can show only the usage: hide its active sessions, then bring them back.
-    const sessions = dashboard.getByTestId('usage-sidebar-showSessions');
-    await expect(sessions).toBeChecked();
-    await sessions.uncheck();
-    await expect(sidebar.getByTestId('usage-sessions')).toHaveCount(0);
-    await expect(sidebar.getByTestId('usage-today')).toBeVisible();
-    await dashboard.getByTestId('usage-sidebar-showToday').uncheck();
-    await expect(sidebar.getByTestId('usage-today')).toHaveCount(0);
-    await dashboard.getByTestId('usage-sidebar-showToday').check();
-    await sessions.check();
-    await expect(sidebar.getByTestId('usage-session').first()).toBeVisible();
     await dashboard.getByRole('tab', { name: 'Sources' }).click();
     await expect(dashboard.getByTestId('usage-sources')).toContainText('Claude Code logs');
   } finally {
