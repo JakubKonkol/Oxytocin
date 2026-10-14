@@ -54,6 +54,8 @@ export interface MongoDriver {
     o: { maxRows: number; timeoutMs: number },
   ): Promise<{ documents?: unknown[]; value?: unknown; more?: boolean; total?: number | null }>;
   schema(r: { collection?: string; timeoutMs: number; masking: readonly string[] }): Promise<string>;
+  /** The databases the user may see (discovery of a database server). */
+  listDatabases(timeoutMs: number): Promise<string[]>;
   close(): Promise<void>;
 }
 

@@ -53,6 +53,8 @@ import {
   EnsembleRecordSchema,
   FinishActionSchema,
 } from '../domain/ensemble';
+import { DatabaseServerSchema, DiscoveryResultSchema } from '../domain/database-servers';
+import { AiAgentsStateSchema } from '../domain/ai-agents';
 import { QUICK_ROLES } from '../ensemble/presets';
 import type { InvokeChannel } from './channels';
 
@@ -300,6 +302,38 @@ export const invokeContract = {
   'resources:pickFile': {
     req: z.object({ projectId: ProjectIdSchema, purpose: z.enum(['sqlite', 'env', 'log', 'openapi', 'certificate']) }),
     res: z.string().nullable(),
+  },
+  /** Settings → Database Servers: the servers, which passwords are set, which projects link each server. */
+  'dbServers:get': {
+    req: z.null().optional(),
+    res: z.object({
+      servers: z.array(DatabaseServerSchema),
+      secrets: SecretsStatusSchema,
+      usage: z.record(z.string(), z.array(z.string())),
+    }),
+  },
+  /** Saves the servers; passwords are write-only (`resourceId` is the server id, `key` is `password`). */
+  'dbServers:save': {
+    req: z.object({ servers: z.unknown(), secrets: z.array(SecretChangeSchema).max(400).default([]) }),
+    res: z.array(DatabaseServerSchema),
+  },
+  /** Connects to a server as edited (a typed, unsaved password; null: removed) and lists its databases. */
+  'dbServers:discover': {
+    req: z.object({ server: z.unknown(), password: z.string().max(20_000).nullable().optional() }),
+    res: DiscoveryResultSchema,
+  },
+  /** Settings → AI Agents: detected agents with their accounts, profiles, which are hidden from the "+" menu. */
+  'aiAgents:get': { req: z.null().optional(), res: AiAgentsStateSchema },
+  /** Looks for installed agents and their accounts again. */
+  'aiAgents:detect': { req: z.null().optional(), res: AiAgentsStateSchema },
+  /** Saves the profiles and the "+" menu choices; API keys are write-only (`key` is `apiKey`). */
+  'aiAgents:save': {
+    req: z.object({
+      profiles: z.unknown(),
+      hidden: z.array(z.string().max(200)).max(300),
+      secrets: z.array(SecretChangeSchema).max(200).default([]),
+    }),
+    res: AiAgentsStateSchema,
   },
   /** Which secrets of a project are set (`<resourceId>/<key>`), and whether they are encrypted. */
   'secrets:status': { req: z.object({ projectId: ProjectIdSchema }), res: SecretsStatusSchema },

@@ -44,11 +44,15 @@ const SECTION_NAMES: Record<string, string> = {
   notifications: 'Notifications',
   plugins: 'Plugins',
   mcp: 'Agent Tools',
+  aiAgents: 'AI Agents',
+  databaseServers: 'Database Servers',
   ensemble: 'Ensemble',
   updates: 'Updates',
   diagnostics: 'Diagnostics',
 };
 export const CORE_SECTIONS = Object.values(SECTION_NAMES);
+/** Sections that are a view of their own (not settings.json keys): always listed. */
+export const VIEW_SECTIONS: readonly string[] = ['Agent Tools', 'AI Agents', 'Database Servers'];
 
 /** Keys that only apply on one platform. */
 const PLATFORM_KEYS: Partial<Record<CoreSettingKey, Platform>> = {

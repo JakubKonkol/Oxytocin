@@ -19,6 +19,7 @@ type Impl<M> = {
 
 const impl: Impl<Omit<ConnectionsHostMethods, 'ping' | 'shutdown'>> = {
   'db:test': (o) => db.test(o),
+  'db:discover': (o) => db.discover(o),
   'db:schema': async (o) => ({ text: await db.schema(o) }),
   'db:query': (o) => db.query(o),
   'db:mongo': (o) => db.mongo(o),

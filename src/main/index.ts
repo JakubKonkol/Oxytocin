@@ -82,6 +82,9 @@ import type { McpToolResult } from '@shared/domain/mcp';
 import { SecretStore } from './services/secrets/secret-store';
 import { ResourceService } from './services/resources/resource-service';
 import { ResourcesController } from './services/resources/resources-controller';
+import { DatabaseServerService } from './services/resources/database-servers';
+import { AiAgentsService } from './services/ai-agents/ai-agents-service';
+import { nodeAiDetectDeps } from './services/ai-agents/detect-node';
 import { EnsembleService } from './services/ensemble/ensemble-service';
 import { detectCommand } from './services/ensemble/cli-detect';
 import type { EnsembleRecord } from '@shared/domain/ensemble';
@@ -157,6 +160,8 @@ function bootstrap(): void {
     Date.now,
     // Plugins are discovered later in bootstrap; profiles are only listed afterwards.
     () => pluginTerminalProfiles(plugins.contributions()),
+    // Settings → AI Agents: the "+" menu starts detected agents and profiles by `ai:` ids.
+    (id) => aiAgents.launchProfile(id),
   );
   // Shell/agent detection (PATH lookups, `reg`, `wsl -l`) runs while the window loads, not when the first
   // terminal is requested.
@@ -187,15 +192,38 @@ function bootstrap(): void {
     createLogger('secrets'),
   );
   const resourceProjects = () => projects.list().map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath }));
+  // Settings → Database Servers: servers configured once whose databases projects link.
+  const dbServers = new DatabaseServerService({
+    file: join(app.getPath('userData'), 'database-servers.json'),
+    secrets: secretStore,
+    logger: createLogger('resources'),
+  });
   const resources = new ResourceService({
     file: join(app.getPath('userData'), 'project-resources.json'),
     secrets: secretStore,
     projects: resourceProjects,
     logger: createLogger('resources'),
+    servers: () => dbServers.list(),
+    serverSecrets: (id) => dbServers.secrets(id),
   });
-  const resourcesReady = Promise.all([secretStore.load(), resources.load()]).catch((e: unknown) =>
+  const resourcesReady = Promise.all([secretStore.load(), resources.load(), dbServers.load()]).catch((e: unknown) =>
     log.error('Project resources could not be loaded', e),
   );
+  // Settings → AI Agents: installed agent CLIs and their accounts, profiles for other Anthropic-compatible APIs.
+  const aiAgents = new AiAgentsService({
+    file: join(app.getPath('userData'), 'ai-agents.json'),
+    secrets: secretStore,
+    detectDeps: () => nodeAiDetectDeps(() => shellEnv),
+    logger: createLogger('ai-agents'),
+  });
+  const aiAgentsReady = Promise.all([resourcesReady, aiAgents.load()]).catch((e: unknown) =>
+    log.error('AI agents could not be loaded', e),
+  );
+  // The first start looks for the installed agents once, in the background (Settings → AI Agents detects again).
+  void Promise.all([aiAgentsReady, shellEnvReady]).then(() => {
+    if (aiAgents.state().detectedAt === null)
+      aiAgents.detect().catch((e: unknown) => log.warn('AI agent detection failed', e));
+  });
 
   const workspaceState = new WorkspaceStateService(
     join(app.getPath('userData'), 'workspaces'),
@@ -660,6 +688,8 @@ function bootstrap(): void {
   const resourcesController: ResourcesController = new ResourcesController({
     resources,
     secrets: secretStore,
+    servers: dbServers,
+    homeDir: homedir(),
     host: {
       call: (method, params, opts) => hosts.connections.call(method, params as never, opts) as never,
       running: () => hosts.connections.state === 'running' || hosts.connections.state === 'starting',
@@ -1054,6 +1084,30 @@ function bootstrap(): void {
         return resourcesController.test(req);
       },
       'resources:import': ({ projectId }) => resourcesController.importCandidates(projectId),
+      'dbServers:get': async () => {
+        await resourcesReady;
+        return resourcesController.servers();
+      },
+      'dbServers:save': async ({ servers, secrets }) => {
+        await resourcesReady;
+        return resourcesController.saveServers(servers, secrets);
+      },
+      'dbServers:discover': async (req) => {
+        await resourcesReady;
+        return resourcesController.discover(req);
+      },
+      'aiAgents:get': async () => {
+        await aiAgentsReady;
+        return aiAgents.state();
+      },
+      'aiAgents:detect': async () => {
+        await Promise.all([aiAgentsReady, shellEnvReady]);
+        return aiAgents.detect();
+      },
+      'aiAgents:save': async (req) => {
+        await aiAgentsReady;
+        return aiAgents.save(req);
+      },
       'resources:brief': async ({ projectId }) => {
         await resourcesReady;
         return { text: resourcesController.brief(projectId) };
@@ -1206,6 +1260,8 @@ function bootstrap(): void {
   pluginHost.onDidChangeStatusBar((items) => sendEvent(wc, 'plugins:statusBar', items));
   mcpHub.onDidChangeState((state) => sendEvent(wc, 'mcp:state', state));
   resourcesController.onDidChange((projectId) => sendEvent(wc, 'resources:changed', { projectId }));
+  dbServers.onDidChange(() => sendEvent(wc, 'dbServers:changed', {}));
+  aiAgents.onDidChange((state) => sendEvent(wc, 'aiAgents:changed', state));
   ensemble.onDidChange((record: EnsembleRecord) => sendEvent(wc, 'ensemble:changed', record));
   ensemble.onDidRemove((e) => sendEvent(wc, 'ensemble:removed', e));
   // The first project shown is checked once the window can show the question.
@@ -1538,7 +1594,15 @@ function bootstrap(): void {
         await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
         resourcesController.dispose();
         await withTimeout(ensemble.flush(), 3000).catch(() => undefined);
-        await Promise.all([uiState.flush(), projects.flush(), resources.flush(), secretStore.flush(), hosts.stopAll()]);
+        await Promise.all([
+          uiState.flush(),
+          projects.flush(),
+          resources.flush(),
+          dbServers.flush(),
+          aiAgents.flush(),
+          secretStore.flush(),
+          hosts.stopAll(),
+        ]);
       } catch (e) {
         log.error('Error during quit', e);
       } finally {

@@ -8,6 +8,7 @@ import {
   type SettingDescriptor,
   validateConfigValue,
   validateCoreValue,
+  VIEW_SECTIONS,
 } from '@shared/domain/settings-ui';
 import type { Platform } from '@shared/domain/terminal-profile';
 
@@ -31,7 +32,7 @@ export function sectionsOf(descriptors: readonly SettingDescriptor[]): string[] 
   const plugins = [...new Set(descriptors.filter((d) => d.pluginId).map((d) => d.section))].sort((a, b) =>
     a.localeCompare(b),
   );
-  return [...CORE_SECTIONS.filter((s) => present.has(s)), ...plugins];
+  return [...CORE_SECTIONS.filter((s) => present.has(s) || VIEW_SECTIONS.includes(s)), ...plugins];
 }
 
 /** The effective value: settings.json, else the default. */

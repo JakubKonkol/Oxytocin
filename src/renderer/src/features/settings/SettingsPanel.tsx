@@ -2,7 +2,13 @@ import type { IDockviewPanelProps } from 'dockview-react';
 import { AlertTriangle, FileJson, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { SettingsProblem } from '@shared/domain/settings';
-import { formatSettingInput, isModified, parseSettingInput, type SettingDescriptor } from '@shared/domain/settings-ui';
+import {
+  formatSettingInput,
+  isModified,
+  parseSettingInput,
+  type SettingDescriptor,
+  VIEW_SECTIONS,
+} from '@shared/domain/settings-ui';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { cn } from '../../lib/cn';
 import { registerCommand } from '../../lib/commands';
@@ -15,6 +21,8 @@ import { IconButton } from '../../ui/IconButton';
 import { notify } from '../../ui/Toast';
 import { getActiveWorkspace } from '../layout/workspace-registry';
 import { AgentToolsView } from '../agent-tools/AgentToolsView';
+import { AiAgentsView } from '../ai-agents/AiAgentsView';
+import { DatabaseServersView } from '../database-servers/DatabaseServersView';
 import {
   allDescriptors,
   filterDescriptors,
@@ -28,6 +36,10 @@ import {
 export const SETTINGS_PANEL_ID = 'settings-editor';
 /** The settings section with Oxytocin's MCP server and the tools agents can use. */
 export const AGENT_TOOLS_SECTION = 'Agent Tools';
+/** Installed coding agents, their accounts and API profiles. */
+export const AI_AGENTS_SECTION = 'AI Agents';
+/** Database servers whose databases projects link. */
+export const DATABASE_SERVERS_SECTION = 'Database Servers';
 
 /**
  * Opens (or focuses) the Settings editor; `query` pre-fills the search (e.g. a problem's key), `section` shows one
@@ -375,7 +387,9 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
   // Settings are shown one section at a time (a search looks through all of them).
   const current = section && sections.includes(section) ? section : (sections[0] ?? null);
   if (!searching) visible = visible.filter((d) => d.section === current);
-  const groups = sectionsOf(visible).map((s) => ({ section: s, items: visible.filter((d) => d.section === s) }));
+  const groups = sectionsOf(visible)
+    .map((s) => ({ section: s, items: visible.filter((d) => d.section === s) }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div data-testid="settings-panel" className="flex h-full min-h-0 flex-col bg-card text-ui">
@@ -427,6 +441,8 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
         </nav>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
           {!searching && current === AGENT_TOOLS_SECTION && <AgentToolsView />}
+          {!searching && current === AI_AGENTS_SECTION && <AiAgentsView />}
+          {!searching && current === DATABASE_SERVERS_SECTION && <DatabaseServersView />}
           {groups.map((g) => (
             <section key={g.section} data-testid="settings-group" data-section={g.section} className="mb-4">
               <h2 className="oxy-label border-b border-line-subtle py-1.5">{g.section}</h2>
@@ -441,7 +457,9 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
               ))}
             </section>
           ))}
-          {groups.length === 0 && <div className="py-3 text-fg-muted">No matching settings.</div>}
+          {groups.length === 0 && (searching || !VIEW_SECTIONS.includes(current ?? '')) && (
+            <div className="py-3 text-fg-muted">No matching settings.</div>
+          )}
         </div>
       </div>
     </div>

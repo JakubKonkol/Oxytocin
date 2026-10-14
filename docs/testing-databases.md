@@ -32,3 +32,7 @@ export OXY_TEST_CLICKHOUSE_URL='clickhouse://default:Secret_pw1@127.0.0.1:58123/
 export OXY_TEST_ORACLE_URL='oracle://bank:Secret_pw1@127.0.0.1:51521/FREEPDB1'
 npx vitest run --project integration tests/integration/databases.test.ts
 ```
+
+The same tests cover **discovery** of *Settings → Database Servers* (`db:discover`: the databases a login can use,
+system databases flagged). With `OXY_TEST_PG_URL` set, `tests/e2e/database-servers.spec.ts` also discovers the
+PostgreSQL server through the built app, links its `bank` database to a project and queries it as an agent.

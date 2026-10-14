@@ -15,6 +15,7 @@ import { ProjectIdSchema, TerminalIdSchema, TerminalInfoSchema } from '../domain
 import { ProjectSchema } from '../domain/project';
 import { ConfirmRequestSchema } from '../domain/confirm';
 import { McpStateSchema } from '../domain/mcp';
+import { AiAgentsStateSchema } from '../domain/ai-agents';
 import { QuickPickRequestSchema } from '../domain/quick-pick';
 import { KeybindingsStateSchema } from '../domain/keybindings';
 import { UpdateStateSchema } from '../domain/updates';
@@ -114,6 +115,10 @@ export const eventContract = {
   }),
   /** A project's resources changed (context menu links, the Project settings dialog). */
   'resources:changed': z.object({ projectId: ProjectIdSchema }),
+  /** Settings → Database Servers changed. */
+  'dbServers:changed': z.object({}),
+  /** Settings → AI Agents changed (a detection finished, profiles were saved). */
+  'aiAgents:changed': AiAgentsStateSchema,
   /** An item of the native application menu (macOS) was chosen. */
   'app:menuCommand': z.object({ command: MenuCommandSchema }),
   /** A toast with buttons was withdrawn (answered elsewhere, no longer relevant, or timed out): close it. */

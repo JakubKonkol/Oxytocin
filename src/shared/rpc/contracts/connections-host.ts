@@ -5,6 +5,7 @@ import type {
   LogResource,
   ResourceTestResult,
 } from '../../domain/project-resources';
+import type { DiscoveryResult } from '../../domain/database-servers';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
 
 /** A database resource as main hands it to the Connections Host: with its secrets and project root. */
@@ -80,6 +81,8 @@ export interface ApiRequest extends ResolvedApi {
 
 export type ConnectionsHostMethods = HostBaseMethods & {
   'db:test': (o: ResolvedDatabase) => ResourceTestResult;
+  /** Connects to a database server and lists its databases (Settings → Database Servers). */
+  'db:discover': (o: ResolvedDatabase) => DiscoveryResult;
   'db:schema': (o: ResolvedDatabase & { schema?: string; table?: string }) => { text: string };
   'db:query': (o: DbQueryRequest) => GuardOutcome;
   'db:mongo': (o: MongoRequest) => GuardOutcome;

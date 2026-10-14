@@ -3,6 +3,39 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Database servers, configured once.** The new *Settings → Database Servers* holds the servers you work with:
+  give each a name (e.g. `FIRMA_1`), an engine (SQL Server, PostgreSQL, MySQL/MariaDB, MongoDB, Oracle, ClickHouse,
+  CockroachDB, Redis), its address, login and password (encrypted with the OS keychain) and TLS options.
+  **Discover databases** connects with that login and lists the databases it can use (system databases hidden unless
+  asked for): add the ones you want — or all of them — or add a database by name; each can carry notes for agents.
+- **Link server databases to projects.** *Project settings → Databases → Add from servers…* lists the databases of
+  your servers; pick the ones a project needs. A linked database is named `server/database` (`FIRMA_1/WMS_DB`,
+  `FIRMA_2/WMS_DB`), is read-only by default and keeps its own access rules, limits and masking per project, while the
+  host, login, password and TLS come from the server: change the server once and every project follows. Agents see
+  the databases grouped by server — in the brief (`database server "FIRMA_1"` with its databases) and in
+  `oxy_project_resources` (`server`, `databaseOnServer` and a `databaseServers` overview). Linked databases are never
+  written to `.oxytocin/project.json`, and a removed server's databases are no longer offered to agents.
+- **AI agents and their accounts.** The new *Settings → AI Agents* detects the coding agents installed on this
+  computer — Claude Code, Codex CLI, Gemini CLI, GitHub Copilot CLI (and the older `gh copilot` extension), Grok CLI,
+  Kiro CLI, Kimi CLI, Qwen Code, OpenCode, Cursor CLI, Amp, Factory Droid, Aider, Goose and Crush — with their version
+  and the account each one is signed in with: the e-mail address and plan of Claude Code and Codex, the Google account
+  of Gemini CLI, the GitHub login of Copilot, the providers of OpenCode, or the API key variable in use. Only names,
+  e-mail addresses and plans are read; tokens never leave the CLIs' files. Detection runs once on the first start and
+  again with **Detect AI agents**. Local model servers (Ollama, llama.cpp) are found too, with their models.
+- **AI agents in the + menu.** The **+** of a workspace has an *AI agents* section that starts a detected agent by
+  name, e.g. *Claude Code (naszekonto@mail.to)* or *Codex CLI (you@example.com)*. They run exactly as when you type
+  their command in a terminal — same login, settings and sessions; typing `claude` still works. Each agent can be left
+  out of the menu (*In + menu*), and *Manage AI agents…* opens the settings.
+- **API and local model profiles.** A profile runs Claude Code against another Anthropic-compatible API: GLM (Z.ai),
+  Kimi (Moonshot AI), OpenRouter, OrcaRouter, DeepSeek, MiniMax, a local Ollama or llama.cpp server, or any other
+  URL — with a model, an optional fast model and an API key stored encrypted. Starting it sets `ANTHROPIC_BASE_URL`,
+  the key and the models for that terminal only; your Claude Code login and settings stay as they are. *Claude Code
+  profile* next to a running Ollama or llama.cpp server creates one with its first model.
+
 ## [0.9.3] - 2026-10-12
 
 ### Added

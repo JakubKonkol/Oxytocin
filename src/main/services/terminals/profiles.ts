@@ -62,6 +62,8 @@ export class ProfileService {
     private readonly now: () => number = Date.now,
     /** Profiles contributed by plugins (`contributes.terminalProfiles`). */
     private readonly pluginProfiles: () => TerminalProfile[] = () => [],
+    /** AI agents and profiles of Settings → AI Agents (`ai:…` ids); not listed with the terminal profiles. */
+    private readonly aiProfile: (id: string) => TerminalProfile | undefined = () => undefined,
   ) {}
 
   private async detect(): Promise<TerminalProfile[]> {
@@ -120,7 +122,10 @@ export class ProfileService {
   /** Resolves what to spawn. Agent profiles run in a shell with the agent command typed after start. */
   async resolveLaunch(profileId: string | undefined, cwd: string): Promise<ResolvedLaunch> {
     const profiles = await this.list();
-    const requested = profileId ? profiles.find((p) => p.id === profileId) : undefined;
+    const requested = profileId
+      ? (profiles.find((p) => p.id === profileId) ??
+        (profileId.startsWith('ai:') ? this.aiProfile(profileId) : undefined))
+      : undefined;
     if (profileId && !requested) throw new OxyError('NOT_FOUND', `Terminal profile "${profileId}" not found`);
     const profile = requested ?? (await this.defaultShellProfile());
     if (profile.kind === 'agent') {

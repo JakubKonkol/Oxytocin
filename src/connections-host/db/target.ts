@@ -84,6 +84,9 @@ export async function resolveTarget(db: ResolvedDatabase): Promise<Target> {
     }
     case 'file':
       return { engine, host: '', path: projectPath(projectRoot, c.path), options: {}, tls, secrets: [] };
+    case 'server':
+      // Main resolves a linked database to its server's connection before it gets here.
+      throw new ConfigError('The database server of this database is not available.');
     case 'url':
     case 'env-ref': {
       const raw = c.kind === 'url' ? secrets['url'] : await readEnvVariable(projectRoot, c.file, c.variable);

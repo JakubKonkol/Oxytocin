@@ -109,9 +109,11 @@ function describeAccessible(a: Accessible, url: string | undefined) {
         : info.family === 'redis'
           ? 'oxy_db_schema, oxy_redis'
           : 'oxy_db_schema, oxy_db_query';
+    const linked = a.server && a.resource.connection.kind === 'server' ? a.resource.connection : undefined;
     return {
       name: a.own ? a.resource.name : `${a.project.name}/${a.resource.name}`,
       engine: info.label,
+      ...(a.server && linked ? { server: a.server.name, databaseOnServer: linked.database } : {}),
       environment: a.resource.environment,
       access:
         a.resource.access.mode === 'read-only'
@@ -182,9 +184,22 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
           .relatedProjectIds.map((id) => deps.projects().find((p) => p.id === id))
           .filter((p): p is ResourceProject => !!p)
           .map((p) => ({ name: p.name, root: p.rootPath }));
+        // Databases of the user's database servers, grouped by server (e.g. the same database on two servers).
+        const servers = new Map<string, { server: string; engine: string; databases: string[] }>();
+        for (const a of accessible)
+          if (a.kind === 'database' && a.server) {
+            const entry = servers.get(a.server.id) ?? {
+              server: a.server.name,
+              engine: ENGINE_INFO[a.server.engine].label,
+              databases: [],
+            };
+            entry.databases.push(a.own ? a.resource.name : `${a.project.name}/${a.resource.name}`);
+            servers.set(a.server.id, entry);
+          }
         const body = {
           project: project.name,
           databases: items.filter((i) => i.kind === 'database').map(({ kind: _k, ...rest }) => rest),
+          ...(servers.size ? { databaseServers: [...servers.values()] } : {}),
           apis: items.filter((i) => i.kind === 'api').map(({ kind: _k, ...rest }) => rest),
           logs: items.filter((i) => i.kind === 'log').map(({ kind: _k, ...rest }) => rest),
           ...(links.length ? { links: links.map((l) => ({ title: l.title, url: l.url })) } : {}),

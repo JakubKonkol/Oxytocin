@@ -1,4 +1,5 @@
-import { ENGINE_INFO, type ResourceTestResult } from '@shared/domain/project-resources';
+import { type DiscoveryResult, isSystemDatabase } from '@shared/domain/database-servers';
+import { type DatabaseEngine, ENGINE_INFO, type ResourceTestResult } from '@shared/domain/project-resources';
 import type {
   Classification,
   DbQueryRequest,
@@ -9,6 +10,7 @@ import type {
 } from '@shared/rpc/contracts/connections-host';
 import { OxyError } from '@shared/errors';
 import { matchesAny } from '@shared/utils/glob';
+import { scalarText } from '@shared/utils/text';
 import { formatCell, formatResult, MASK, maskRows, maskValue, safeJson } from '../format';
 import { classifyMongo, classifyRedis, decideNoSql } from '../guard/nosql-guard';
 import { loadSqlParsers } from '../guard/parsers';
@@ -49,6 +51,18 @@ function bindable(params: unknown[] | undefined): unknown[] {
   return params.map((p) => (p !== null && typeof p === 'object' ? JSON.stringify(p) : p));
 }
 
+/** The query listing the databases a login can use, per SQL engine. */
+const LIST_DATABASES: Partial<Record<DatabaseEngine, string>> = {
+  postgresql:
+    "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate AND has_database_privilege(datname, 'CONNECT') ORDER BY 1",
+  cockroachdb: 'SELECT database_name FROM [SHOW DATABASES] ORDER BY 1',
+  sqlserver: 'SELECT name FROM sys.databases WHERE state = 0 AND HAS_DBACCESS(name) = 1 ORDER BY name',
+  mysql: 'SHOW DATABASES',
+  mariadb: 'SHOW DATABASES',
+  clickhouse: 'SELECT name FROM system.databases ORDER BY name',
+  oracle: "SELECT name FROM v$pdbs WHERE open_mode LIKE 'READ%' ORDER BY name",
+};
+
 const summary = (c: Classification) => `${c.statement}${c.tables.length ? ` on ${c.tables.join(', ')}` : ''}`;
 
 /** The database side of the bridge: tests, schemas and guarded queries. */
@@ -86,6 +100,65 @@ export class DbService {
       return {
         ok: false,
         latencyMs: Date.now() - started,
+        error: { kind: d.kind, message: d.hint ? `${d.message}\n${d.hint}` : d.message },
+      };
+    } finally {
+      void driver?.close().catch(() => undefined);
+    }
+  }
+
+  /** Connects to a server (its discovery database) and lists the databases the login can use. */
+  async discover(db: ResolvedDatabase): Promise<DiscoveryResult> {
+    const started = Date.now();
+    const engine = db.resource.engine;
+    let driver: Driver | undefined;
+    const secrets = [...Object.values(db.secrets)];
+    try {
+      const target = await resolveTarget(db);
+      secrets.push(...target.secrets);
+      driver = await createDriver(db, target);
+      const timeout = Math.min(db.resource.access.timeoutMs, 20_000);
+      const version = await withDeadline(driver.version(timeout), timeout + 5000, 'connecting');
+      let names: string[];
+      let note: string | undefined;
+      if (driver.family === 'mongodb')
+        names = await withDeadline(driver.listDatabases(timeout), timeout + 5000, 'listing');
+      else if (driver.family === 'redis') {
+        const info = await withDeadline(driver.call('INFO', ['keyspace'], timeout), timeout + 5000, 'listing');
+        const used = [...String(info).matchAll(/^db(\d+):/gm)].map((m) => m[1]!);
+        names = [...new Set(['0', ...used])].sort((a, b) => Number(a) - Number(b));
+      } else {
+        const sql = LIST_DATABASES[engine];
+        if (!sql) throw new OxyError('INVALID', `${ENGINE_INFO[engine].label} has no databases to discover.`);
+        const sqlDriver = driver;
+        const list = (text: string) =>
+          withDeadline(
+            sqlDriver.query(text, [], { maxRows: 5000, timeoutMs: timeout, write: false }),
+            timeout + 5000,
+            'listing the databases',
+          ).then((r) => r.rows.map((row) => scalarText(row[0])).filter(Boolean));
+        try {
+          names = await list(sql);
+        } catch (e) {
+          // Oracle: v$pdbs needs a privilege most logins lack; the service connected to is still a database.
+          if (engine !== 'oracle') throw e;
+          names = await list("SELECT sys_context('USERENV', 'SERVICE_NAME') FROM dual");
+          note = 'Only the service Oxytocin connected to is listed: this login cannot read v$pdbs.';
+        }
+      }
+      return {
+        ok: true,
+        serverVersion: version,
+        latencyMs: Date.now() - started,
+        databases: names.map((name) => ({ name, system: isSystemDatabase(engine, name) })),
+        ...(note ? { note } : {}),
+      };
+    } catch (e) {
+      const d = describeError(e, engine, secrets);
+      return {
+        ok: false,
+        latencyMs: Date.now() - started,
+        databases: [],
         error: { kind: d.kind, message: d.hint ? `${d.message}\n${d.hint}` : d.message },
       };
     } finally {

@@ -9,6 +9,13 @@ import {
   type SecretChange,
   SHARED_CONFIG_PATH,
 } from '@shared/domain/project-resources';
+import {
+  type DatabaseServer,
+  DatabaseServerSchema,
+  type DiscoveryResult,
+  SERVER_SECRET_SCOPE,
+  serverAsResource,
+} from '@shared/domain/database-servers';
 import type { ConnectionsHostMethods } from '@shared/rpc/contracts/connections-host';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
@@ -17,6 +24,7 @@ import { Emitter } from '@shared/utils/emitter';
 import { buildResourceTools, type ResourceTool } from '../mcp/resource-tools';
 import type { SecretStore } from '../secrets/secret-store';
 import { mergeSharedConfig, readSharedConfig, writeInstructionsBlock, writeSharedConfig } from './repository-files';
+import type { DatabaseServerService } from './database-servers';
 import type { ResourceProject, ResourceService } from './resource-service';
 
 /** The Connections Host as the controller uses it (started on demand, stopped when idle). */
@@ -34,6 +42,10 @@ export interface ConnectionsHostPort {
 export interface ResourcesControllerDeps {
   resources: ResourceService;
   secrets: SecretStore;
+  /** Settings → Database Servers. */
+  servers?: DatabaseServerService;
+  /** Relative TLS certificate paths of a server are resolved against this folder. */
+  homeDir?: string;
   host: ConnectionsHostPort;
   projects(): ResourceProject[];
   /** Terminal → its project (for the Claude Code session brief). */
@@ -103,6 +115,22 @@ export class ResourcesController implements Disposable {
         void this.refreshInstructions(projectId);
       }),
     );
+    if (deps.servers)
+      this.store.add(
+        deps.servers.onDidChange(({ changedIds }) => {
+          // Linked databases of a changed server connect differently now: their pools close.
+          if (changedIds.length && deps.host.running()) void deps.host.call('db:close', {}).catch(() => undefined);
+          for (const p of deps.projects()) {
+            const links = deps.resources
+              .get(p.id)
+              .databases.some((d) => d.connection.kind === 'server' && changedIds.includes(d.connection.serverId));
+            if (links) {
+              this.changedEmitter.fire(p.id);
+              void this.refreshInstructions(p.id);
+            }
+          }
+        }),
+      );
     this.idleTimer = setInterval(() => {
       if (deps.host.running() && this.now() - this.lastUse > (deps.idleStopMs ?? IDLE_STOP_MS)) {
         deps.logger.info('Stopping the idle Connections Host');
@@ -195,7 +223,12 @@ export class ResourcesController implements Disposable {
       if (!parsed.success)
         return { ok: false, error: { kind: 'config', message: parsed.error.issues[0]?.message ?? 'Invalid settings' } };
       const secrets = this.deps.resources.draftSecrets(o.projectId, parsed.data.id, typed);
-      const db = this.deps.resources.resolveDatabase(project, parsed.data, secrets);
+      let db;
+      try {
+        db = this.deps.resources.resolveDatabase(project, parsed.data, secrets);
+      } catch (e) {
+        return { ok: false, error: { kind: 'config', message: e instanceof Error ? e.message : String(e) } };
+      }
       return this.call('db:test', { ...db, key: `${db.key}#test` }, { timeoutMs: 60_000 });
     }
     const parsed = ApiResourceSchema.safeParse(o.resource);
@@ -210,6 +243,58 @@ export class ResourcesController implements Disposable {
     const secrets = this.deps.resources.draftSecrets(o.projectId, parsed.data.id, typed);
     const api = this.deps.resources.resolveApi(project, parsed.data, baseUrl, secrets);
     return this.call('api:test', { ...api, key: `${api.key}#test` }, { timeoutMs: 60_000 });
+  }
+
+  // ── Settings → Database Servers ──
+
+  private requireServers(): DatabaseServerService {
+    if (!this.deps.servers) throw new OxyError('UNAVAILABLE', 'Database servers are not available.');
+    return this.deps.servers;
+  }
+
+  /** The servers, which passwords are set and which projects link each server's databases. */
+  servers() {
+    const servers = this.requireServers();
+    const usage: Record<string, string[]> = {};
+    for (const p of this.deps.projects())
+      for (const d of this.deps.resources.get(p.id).databases)
+        if (d.connection.kind === 'server') {
+          const list = (usage[d.connection.serverId] ??= []);
+          if (!list.includes(p.name)) list.push(p.name);
+        }
+    return { servers: servers.list(), secrets: servers.secretsStatus(), usage };
+  }
+
+  saveServers(input: unknown, changes: SecretChange[]): Promise<DatabaseServer[]> {
+    return this.requireServers().save(input, changes);
+  }
+
+  /** Connects to a server as edited (with a typed but unsaved password) and lists its databases. */
+  async discover(o: { server: unknown; password?: string | null }): Promise<DiscoveryResult> {
+    const servers = this.requireServers();
+    const parsed = DatabaseServerSchema.safeParse(o.server);
+    if (!parsed.success)
+      return {
+        ok: false,
+        databases: [],
+        error: { kind: 'config', message: parsed.error.issues[0]?.message ?? 'Invalid settings' },
+      };
+    const server = parsed.data;
+    if (!server.host.trim())
+      return { ok: false, databases: [], error: { kind: 'config', message: 'Enter the host first.' } };
+    const secrets = servers.draftSecrets(server.id, o.password === undefined ? {} : { password: o.password });
+    const resource = serverAsResource(server);
+    return this.call(
+      'db:discover',
+      {
+        key: `${SERVER_SECRET_SCOPE}/${server.id}#discover`,
+        resource,
+        projectRoot: this.deps.homeDir ?? '.',
+        secrets: secrets['password'] !== undefined ? { password: secrets['password'] } : {},
+        fingerprint: `discover-${Date.now()}`,
+      },
+      { timeoutMs: 60_000 },
+    );
   }
 
   importCandidates(projectId: string): Promise<ImportCandidate[]> {

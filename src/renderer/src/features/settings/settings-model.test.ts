@@ -29,6 +29,10 @@ describe('settings model', () => {
     const sections = sectionsOf(all);
     expect(sections.slice(0, 2)).toEqual(['Appearance', 'Terminal']);
     expect(sections.slice(-2)).toEqual(['Alpha', 'Zeta']);
+    // Sections that are views of their own are listed even without settings.json keys.
+    expect(sections).toEqual(expect.arrayContaining(['Agent Tools', 'AI Agents', 'Database Servers']));
+    expect(sections.indexOf('AI Agents')).toBe(sections.indexOf('Agent Tools') + 1);
+    expect(sectionsOf([])).toEqual(['Agent Tools', 'AI Agents', 'Database Servers']);
   });
 
   it('filters by words, and @modified keeps changed settings only', () => {

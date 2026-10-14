@@ -1,6 +1,17 @@
 import type { DockviewApi, DockviewGroupPanel } from 'dockview-react';
 import { DropdownMenu } from 'radix-ui';
-import { Blocks, Bot, ChevronRight, NotebookPen, PanelTop, Plus, SquareTerminal, Workflow } from 'lucide-react';
+import {
+  Blocks,
+  Bot,
+  ChevronRight,
+  NotebookPen,
+  PanelTop,
+  Plus,
+  Radar,
+  Settings2,
+  SquareTerminal,
+  Workflow,
+} from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { ipc } from '../../lib/ipc-client';
@@ -11,6 +22,9 @@ import { formatShortcut } from '../../ui/Kbd';
 import { notify } from '../../ui/Toast';
 import { useUiStore } from '../../stores/ui-store';
 import { addTerminalPanel } from '../layout/workspace-actions';
+import { menuEntries } from '../ai-agents/ai-agents-model';
+import { useAiAgentsStore } from '../ai-agents/ai-agents-store';
+import { AI_AGENTS_SECTION, openSettingsEditor } from '../settings/SettingsPanel';
 import { indexBelow, revealSidebarSection, useSidebarSections } from './sidebar-sections';
 import {
   addSidebarTool,
@@ -73,6 +87,9 @@ export function WorkspaceAddMenu({
 }) {
   const tools = useAvailableTools();
   const [profiles, setProfiles] = useState<TerminalProfile[] | null>(null);
+  const aiState = useAiAgentsStore((s) => s.state);
+  const detecting = useAiAgentsStore((s) => s.detecting);
+  const aiEntries = menuEntries(aiState);
   const newTerminal = shortcutFor('terminal.new');
   const withProfile = shortcutFor('terminal.newWithProfile');
 
@@ -87,6 +104,7 @@ export function WorkspaceAddMenu({
         if (!open) return;
         onOpen?.();
         void ipc.invoke('terminals:profiles').then(setProfiles, () => setProfiles([]));
+        void useAiAgentsStore.getState().ensure();
       }}
     >
       <DropdownMenu.Trigger asChild>
@@ -128,6 +146,45 @@ export function WorkspaceAddMenu({
               </DropdownMenu.SubContent>
             </DropdownMenu.Portal>
           </DropdownMenu.Sub>
+          <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <DropdownMenu.Label className={menuLabel}>AI agents</DropdownMenu.Label>
+          {aiEntries.map((e) => (
+            <DropdownMenu.Item
+              key={e.launchId}
+              data-testid={`add-ai-${e.launchId}`}
+              className={menuItem}
+              onSelect={() => terminal(e.launchId)}
+            >
+              <Bot size={14} className="flex-none text-agent" />
+              <span className="min-w-0 truncate">{e.name}</span>
+              {e.detail && <span className="min-w-0 flex-1 truncate text-small text-fg-muted">({e.detail})</span>}
+            </DropdownMenu.Item>
+          ))}
+          {aiState && aiState.detectedAt === null && aiEntries.length === 0 && (
+            <DropdownMenu.Item
+              data-testid="add-ai-detect"
+              className={menuItem}
+              disabled={detecting}
+              onSelect={(ev) => {
+                ev.preventDefault();
+                void useAiAgentsStore.getState().detect().catch(report('AI agent detection'));
+              }}
+            >
+              <Radar size={14} className="flex-none text-fg-muted" />
+              <span className="truncate">{detecting ? 'Detecting AI agents…' : 'Detect AI agents'}</span>
+            </DropdownMenu.Item>
+          )}
+          {aiState && aiState.detectedAt !== null && aiEntries.length === 0 && (
+            <div className="px-2 py-1 text-small text-fg-muted">No AI agents found</div>
+          )}
+          <DropdownMenu.Item
+            data-testid="add-ai-manage"
+            className={menuItem}
+            onSelect={() => openSettingsEditor(undefined, AI_AGENTS_SECTION)}
+          >
+            <Settings2 size={14} className="flex-none text-fg-muted" />
+            <span className="truncate">Manage AI agents…</span>
+          </DropdownMenu.Item>
           <DropdownMenu.Separator className="my-1 h-px bg-line-subtle" />
           <DropdownMenu.Label className={menuLabel}>Tools</DropdownMenu.Label>
           <ToolItems

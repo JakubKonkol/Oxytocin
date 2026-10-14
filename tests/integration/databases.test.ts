@@ -64,6 +64,16 @@ describe.each(SERVERS)('$engine', ({ engine, env, table, column }) => {
     expect(r.serverVersion).toMatch(/\d/);
   });
 
+  run('discovers the databases of the server (Settings → Database Servers)', async () => {
+    const r = await service.discover(resolved(engine, { url: url! }));
+    expect(r.error?.message).toBeUndefined();
+    expect(r.ok).toBe(true);
+    expect(r.serverVersion).toMatch(/\d/);
+    // The test database is among them (Oracle: the service connected to, or every open PDB).
+    expect(r.databases.map((d) => d.name.toLowerCase())).toContain(engine === 'oracle' ? 'freepdb1' : 'bank');
+    expect(r.databases.every((d) => typeof d.system === 'boolean')).toBe(true);
+  });
+
   run('reports a wrong password without leaking it', async () => {
     const wrong = url!.replace(/:\/\/([^:]+):([^@]*)@/, '://$1:Wrong_Secret_42@');
     const r = await service.test(resolved(engine, { url: wrong }));
@@ -242,6 +252,13 @@ describe('mongodb', () => {
     });
     expect(text(upd)).toContain('matchedCount');
   });
+
+  run('discovers the databases of the server', async () => {
+    const r = await service.discover(resolved('mongodb', { url: url! }));
+    expect(r.ok).toBe(true);
+    expect(r.databases).toContainEqual({ name: 'bank', system: false });
+    expect(r.databases).toContainEqual({ name: 'admin', system: true });
+  });
 });
 
 describe('redis', () => {
@@ -259,5 +276,11 @@ describe('redis', () => {
     expect((await service.redis({ ...db, command: 'SET', args: ['x', '1'] })).status).toBe('rejected');
     expect((await service.redis({ ...db, command: 'FLUSHALL', args: [] })).status).toBe('rejected');
     expect((await service.redis({ ...db, command: 'KEYS', args: ['*'] })).status).toBe('rejected');
+  });
+
+  run('discovers the numbered databases in use', async () => {
+    const r = await service.discover(resolved('redis', { url: url! }));
+    expect(r.ok).toBe(true);
+    expect(r.databases[0]).toEqual({ name: '0', system: false });
   });
 });

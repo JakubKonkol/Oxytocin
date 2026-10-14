@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Logger } from '@shared/logging/logger';
 import { SecretStore, type SafeStorageLike } from '../secrets/secret-store';
+import { DatabaseServerService } from './database-servers';
 import { ResourceService } from './resource-service';
 
 const logger: Logger = { error: () => undefined, warn: () => undefined, info: () => undefined, debug: () => undefined };
@@ -142,5 +143,52 @@ describe('ResourceService', () => {
     await service.removeProject('api');
     expect(service.get('api').databases).toEqual([]);
     expect(secrets.status('api').stored).toEqual([]);
+  });
+
+  it('linked databases connect through their database server with its password', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oxy-res-'));
+    const secrets = new SecretStore(join(dir, 'secrets.json'), safe, logger);
+    const servers = new DatabaseServerService({ file: join(dir, 'servers.json'), secrets, logger });
+    await servers.load();
+    const service = new ResourceService({
+      file: join(dir, 'res.json'),
+      secrets,
+      projects: () => PROJECTS,
+      logger,
+      servers: () => servers.list(),
+      serverSecrets: (id) => servers.secrets(id),
+    });
+    await service.load();
+    await servers.save(
+      [
+        { id: 's1', name: 'FIRMA_1', engine: 'sqlserver', host: '10.10.10.15', user: 'reader', databases: [] },
+        { id: 's2', name: 'FIRMA_02', engine: 'sqlserver', host: '10.10.10.20', user: 'reader', databases: [] },
+      ],
+      [{ resourceId: 's1', key: 'password', value: 'pw1' }],
+    );
+    const linked = (id: string, serverId: string, name: string) =>
+      db(id, name, { engine: 'sqlserver', connection: { kind: 'server', serverId, database: 'WMS_DB' } });
+    await service.save('api', {
+      databases: [linked('d1', 's1', 'FIRMA_1/WMS_DB'), linked('d2', 's2', 'FIRMA_02/WMS_DB')],
+    });
+    const accessible = service.accessible('api');
+    expect(accessible.map((a) => (a.kind === 'database' ? a.server?.name : null))).toEqual(['FIRMA_1', 'FIRMA_02']);
+    const resolved = service.resolveDatabase(PROJECTS[0]!, service.get('api').databases[0]!);
+    expect(resolved).toMatchObject({
+      key: 'api/d1',
+      secrets: { password: 'pw1' },
+      resource: { connection: { kind: 'fields', host: '10.10.10.15', user: 'reader', database: 'WMS_DB' } },
+    });
+    const brief = service.brief('api', () => undefined);
+    expect(brief).toContain('database server "FIRMA_1" (SQL Server):');
+    expect(brief).toContain('database server "FIRMA_02" (SQL Server):');
+    // A removed server: its databases are no longer offered and cannot connect.
+    const changed: string[][] = [];
+    servers.onDidChange((c) => changed.push(c.changedIds));
+    await servers.save([{ id: 's2', name: 'FIRMA_02', engine: 'sqlserver', host: '10.10.10.20', databases: [] }]);
+    expect(changed.at(-1)?.sort()).toEqual(['s1', 's2']);
+    expect(secrets.status('database-servers').stored).toEqual([]);
+    expect(service.accessible('api').map((a) => a.resource.name)).toEqual(['FIRMA_02/WMS_DB']);
+    expect(() => service.resolveDatabase(PROJECTS[0]!, service.get('api').databases[0]!)).toThrow(/removed/);
   });
 });

@@ -67,6 +67,12 @@ scrollback come back after a restart.
 - Fast terminals (node-pty + xterm.js, WebGL) with splits, search and shell integration — plus `Shift+Enter` for a
   newline in Claude Code, image pastes and clickable file paths.
 - Offers to **resume agent sessions** after a restart.
+- **Your AI agents and accounts at a glance** (*Settings → AI Agents*): one click detects the coding agents installed
+  on this computer — Claude Code, Codex, Gemini CLI, GitHub Copilot, Grok, Kiro, Kimi, Qwen Code, OpenCode, Cursor,
+  Amp, Droid, Aider, Goose, Crush — and the account each one is signed in with. The **+** menu starts them by name,
+  e.g. *Claude Code (you@example.com)*. **Profiles** run Claude Code against another Anthropic-compatible API (GLM,
+  Kimi, OpenRouter, OrcaRouter, DeepSeek, MiniMax) or a local model in Ollama or llama.cpp, with the key kept in your
+  OS keychain.
 
 ### 🔍 Changes, review and git
 
@@ -89,7 +95,9 @@ your IDE? *Open in external editor* knows VS Code, Cursor, Windsurf, Zed, JetBra
 Oxytocin is a local **MCP server** your agents connect to once (*Settings → Agent Tools*). Through it they read other
 terminals' output, ask you questions, run your apps and query the project's **databases and APIs** (PostgreSQL,
 SQL Server, MySQL, MongoDB, SQLite, Redis, HTTP APIs, …) — read-only by default, with credentials kept in your OS
-keychain and never shown to the agent.
+keychain and never shown to the agent. Configure your **database servers** once (*Settings → Database Servers*:
+address, login, discovered databases) and link the databases each project needs — agents see them grouped by server,
+e.g. `FIRMA_1/WMS_DB` and `FIRMA_2/WMS_DB`.
 
 ### 🎼 Ensemble: a team of agents on one task (beta)
 
@@ -197,8 +205,8 @@ Download the latest version from **[Releases](https://github.com/JakubKonkol/Oxy
 ## Getting started
 
 1. **Add a project:** *Add project* (`Ctrl+Shift+A`) or drop a folder on the PROJECTS list. A terminal opens in it.
-2. **Start an agent:** **+** → *Terminal profile* → Claude Code (or Codex, Gemini, …), or type `claude` in the
-   terminal.
+2. **Start an agent:** **+** → *AI agents* → Claude Code (or Codex, Gemini, … — detected with the accounts they use),
+   or type `claude` in the terminal.
 3. **Connect the agent tools** once: *Settings → Agent Tools → Connect Claude Code*.
 4. **Follow the changes:** the CHANGES section fills while the agent works. Click a file for its diff, *Review all
    changes* when it is done, then commit.

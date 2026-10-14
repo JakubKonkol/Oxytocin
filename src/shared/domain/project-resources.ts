@@ -189,6 +189,15 @@ export const DatabaseConnectionSchema = z.discriminatedUnion('kind', [
   }),
   /** SQLite: a database file, relative to the project root or absolute. */
   z.looseObject({ kind: z.literal('file'), path: z.string().min(1).max(1000) }),
+  /**
+   * A database of a server from Settings → Database Servers: host, user, password and TLS come from the server
+   * (resolved at connect time), so one server serves every project that links its databases.
+   */
+  z.looseObject({
+    kind: z.literal('server'),
+    serverId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+    database: z.string().trim().min(1).max(500),
+  }),
 ]);
 export type DatabaseConnection = z.infer<typeof DatabaseConnectionSchema>;
 
@@ -474,6 +483,8 @@ export function validateResources(r: ProjectResources): string[] {
     if (db.connection.kind === 'file' && !info.file) problems.push(`${db.name}: only SQLite uses a database file.`);
     if (info.file && db.connection.kind !== 'file' && db.connection.kind !== 'env-ref')
       problems.push(`${db.name}: choose the SQLite database file.`);
+    if (db.connection.kind === 'server' && info.file)
+      problems.push(`${db.name}: a SQLite file cannot come from a database server.`);
     if (db.connection.kind === 'fields' && !db.connection.host.trim())
       problems.push(`${db.name}: the host is missing.`);
   }
@@ -565,6 +576,8 @@ export interface BriefResource {
   name: string;
   /** From a related project. */
   project?: string;
+  /** A database of a server from Settings → Database Servers (its name). */
+  server?: string;
   engine?: DatabaseEngine;
   environment?: ResourceEnvironment;
   mode?: AccessMode;
@@ -599,9 +612,20 @@ function briefLine(r: BriefResource): string {
 /** The text agents get about a project's resources (MCP instructions, the session brief, AGENTS.md). */
 export function buildAgentBrief(projectName: string, resources: BriefResource[]): string {
   if (resources.length === 0) return '';
+  // Databases of the user's database servers are listed under their server.
+  const own = resources.filter((r) => !(r.kind === 'database' && r.server));
+  const servers = new Map<string, BriefResource[]>();
+  for (const r of resources)
+    if (r.kind === 'database' && r.server) servers.set(r.server, [...(servers.get(r.server) ?? []), r]);
+  const serverLines = [...servers].flatMap(([server, dbs]) => {
+    const first = dbs[0]!;
+    const engine = first.engine ? ENGINE_INFO[first.engine].label : 'database';
+    return [`- database server "${server}" (${engine}):`, ...dbs.map(({ server: _s, ...r }) => `  ${briefLine(r)}`)];
+  });
   return [
     `Project "${projectName}" has resources available through Oxytocin's MCP server (\`oxytocin\`):`,
-    ...resources.map(briefLine),
+    ...own.map(briefLine),
+    ...serverLines,
     'Use these tools instead of looking for credentials or connecting yourself: Oxytocin adds the credentials and enforces what the user allowed (read-only, asking before writes). Call oxy_project_resources for details and oxy_db_schema before writing queries.',
   ].join('\n');
 }
@@ -652,10 +676,13 @@ export type SharedProjectConfig = z.infer<typeof SharedProjectConfigSchema>;
 
 export const SHARED_CONFIG_PATH = '.oxytocin/project.json';
 
-/** The shareable part of the resources: no production hosts or URLs (they stay local). */
+/**
+ * The shareable part of the resources: no production hosts or URLs (they stay local), and no databases of the
+ * user's own database servers (other machines do not have them).
+ */
 export function sharedConfigOf(r: ProjectResources): SharedProjectConfig {
   const databases = r.databases
-    .filter((d) => d.environment !== 'production')
+    .filter((d) => d.environment !== 'production' && d.connection.kind !== 'server')
     .map((d) => ({ ...d, agents: { ...d.agents, shareWithRelated: false } }));
   const apis = r.apis.filter((a) => a.environment !== 'production');
   return { version: 1, resources: { databases, apis, links: r.links, logs: r.logs } };

@@ -15,6 +15,7 @@ import {
   type SecretChange,
   validateResources,
 } from '@shared/domain/project-resources';
+import { type DatabaseServer, materializeLinked } from '@shared/domain/database-servers';
 import type { ResolvedApi, ResolvedDatabase } from '@shared/rpc/contracts/connections-host';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
@@ -39,7 +40,14 @@ export interface ResourceProject {
 }
 
 export type Accessible =
-  | { kind: 'database'; project: ResourceProject; own: boolean; resource: DatabaseResource }
+  | {
+      kind: 'database';
+      project: ResourceProject;
+      own: boolean;
+      resource: DatabaseResource;
+      /** The database server of a linked database (Settings → Database Servers). */
+      server?: DatabaseServer;
+    }
   | { kind: 'api'; project: ResourceProject; own: boolean; resource: ApiResource }
   | { kind: 'log'; project: ResourceProject; own: boolean; resource: LogResource };
 
@@ -48,6 +56,10 @@ export interface ResourceServiceDeps {
   secrets: SecretStore;
   projects(): ResourceProject[];
   logger: Logger;
+  /** Settings → Database Servers (linked databases connect through them). */
+  servers?: () => DatabaseServer[];
+  /** The decrypted secrets of a database server. */
+  serverSecrets?: (serverId: string) => Record<string, string>;
 }
 
 /** What changed after a save: resources whose pools and caches must be dropped. */
@@ -211,8 +223,15 @@ export class ResourceService implements Disposable {
     const add = (project: ResourceProject, r: ProjectResources, isOwn: boolean) => {
       const visible = (a: { exposed: boolean; shareWithRelated: boolean }) =>
         a.exposed && (isOwn || a.shareWithRelated);
-      for (const d of r.databases)
-        if (visible(d.agents)) out.push({ kind: 'database', project, own: isOwn, resource: d });
+      for (const d of r.databases) {
+        if (!visible(d.agents)) continue;
+        if (d.connection.kind === 'server') {
+          // A database of a removed server is not offered.
+          const server = this.server(d.connection.serverId);
+          if (server)
+            out.push({ kind: 'database', project, own: isOwn, resource: { ...d, engine: server.engine }, server });
+        } else out.push({ kind: 'database', project, own: isOwn, resource: d });
+      }
       for (const a of r.apis) if (visible(a.agents)) out.push({ kind: 'api', project, own: isOwn, resource: a });
       for (const l of r.logs) if (visible(l.agents)) out.push({ kind: 'log', project, own: isOwn, resource: l });
     };
@@ -223,6 +242,10 @@ export class ResourceService implements Disposable {
       if (other) add(other, this.get(id), false);
     }
     return out;
+  }
+
+  private server(id: string): DatabaseServer | undefined {
+    return this.deps.servers?.().find((s) => s.id === id);
   }
 
   links(projectId: string): LinkResource[] {
@@ -286,6 +309,7 @@ export class ResourceService implements Disposable {
           engine: a.resource.engine,
           environment: a.resource.environment,
           mode: a.resource.access.mode,
+          ...(a.server ? { server: a.server.name } : {}),
           ...from,
           ...description,
         };
@@ -313,12 +337,27 @@ export class ResourceService implements Disposable {
 
   // ── resolving for the Connections Host ──
 
+  /**
+   * A database with its secrets for the Connections Host. A linked database connects through its server: the
+   * server's host, user, TLS and password with the linked database.
+   */
   resolveDatabase(
     project: ResourceProject,
-    resource: DatabaseResource,
+    stored: DatabaseResource,
     secrets?: Record<string, string>,
   ): ResolvedDatabase {
-    const values = secrets ?? this.deps.secrets.getAll(project.id, resource.id);
+    let resource = stored;
+    let values: Record<string, string>;
+    if (stored.connection.kind === 'server') {
+      const server = this.server(stored.connection.serverId);
+      if (!server)
+        throw new OxyError(
+          'NOT_FOUND',
+          `${stored.name}: its database server was removed from Settings → Database Servers.`,
+        );
+      resource = materializeLinked(stored, server);
+      values = this.deps.serverSecrets?.(server.id) ?? {};
+    } else values = secrets ?? this.deps.secrets.getAll(project.id, stored.id);
     const used = Object.fromEntries(
       databaseSecretKeys(resource)
         .filter((k) => values[k] !== undefined)

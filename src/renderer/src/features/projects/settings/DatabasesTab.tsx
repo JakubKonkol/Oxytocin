@@ -1,6 +1,7 @@
-import { Database, FileSearch, Plus, Trash2 } from 'lucide-react';
+import { Database, FileSearch, Plus, Server, Trash2 } from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { useEffect, useState } from 'react';
+import { type DatabaseServer, linkedDatabase } from '@shared/domain/database-servers';
 import {
   ACCESS_MODES,
   type AccessMode,
@@ -176,6 +177,7 @@ function ConnectionFields({
     url: 'Connection URL',
     'env-ref': 'From an env file',
     file: 'Database file',
+    server: 'From a database server',
   };
   const option = (key: string) => (c.kind === 'fields' ? (c.options[key] ?? '') : '');
   const setOption = (key: string, value: string) => {
@@ -206,7 +208,7 @@ function ConnectionFields({
             });
           else if (kind === 'url') setConnection({ kind });
           else if (kind === 'file') setConnection({ kind, path: 'app.db' });
-          else setConnection({ kind, file: '.env', variable: 'DATABASE_URL' });
+          else if (kind === 'env-ref') setConnection({ kind, file: '.env', variable: 'DATABASE_URL' });
         }}
       />
       {c.kind === 'fields' && (
@@ -425,7 +427,178 @@ function ConnectionFields({
   );
 }
 
-function DatabaseForm({ db, props }: { db: DatabaseResource; props: ResourceTabProps }) {
+/** The connection of a database linked from Settings → Database Servers. */
+function LinkedConnection({
+  db,
+  set,
+  servers,
+}: {
+  db: DatabaseResource;
+  set: (patch: Partial<DatabaseResource>) => void;
+  servers: DatabaseServer[] | null;
+}) {
+  if (db.connection.kind !== 'server') return null;
+  const c = db.connection;
+  const server = servers?.find((s) => s.id === c.serverId);
+  const listId = `server-dbs-${db.id}`;
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Server">
+          <select
+            data-testid="db-server"
+            value={c.serverId}
+            onChange={(e) => {
+              const next = servers?.find((s) => s.id === e.target.value);
+              if (next) set({ connection: { ...c, serverId: next.id }, engine: next.engine });
+            }}
+            className={input}
+          >
+            {!server && <option value={c.serverId}>(removed server)</option>}
+            {(servers ?? []).map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({ENGINE_INFO[s.engine].label})
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Database on the server">
+          <input
+            data-testid="db-server-database"
+            list={listId}
+            value={c.database}
+            onChange={(e) => set({ connection: { ...c, database: e.target.value } })}
+            className={cn(input, 'font-mono')}
+          />
+          <datalist id={listId}>
+            {server?.databases.map((d) => (
+              <option key={d.name} value={d.name} />
+            ))}
+          </datalist>
+        </Field>
+      </div>
+      {servers && !server ? (
+        <p
+          className="rounded-control border border-danger px-2 py-1 text-small text-fg"
+          data-testid="db-server-missing"
+        >
+          This server was removed from Settings → Database Servers: choose another one, or remove the database.
+        </p>
+      ) : (
+        <p className="text-small text-fg-muted" data-testid="db-server-note">
+          {server
+            ? `${server.host}${server.port ? `:${server.port}` : ''}${server.user ? ` as ${server.user}` : ''} — `
+            : ''}
+          the host, login, password and TLS come from Settings → Database Servers; what agents may do is set here, per
+          project.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Picks databases of Settings → Database Servers to link into this project. */
+function LinkFromServers({
+  resources,
+  servers,
+  onAdd,
+  onClose,
+}: {
+  resources: ProjectResources;
+  servers: DatabaseServer[] | null;
+  onAdd: (picked: { server: DatabaseServer; database: string }[]) => void;
+  onClose: () => void;
+}) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const key = (serverId: string, name: string) => `${serverId}/${name.toLowerCase()}`;
+  const linked = new Set(
+    resources.databases.flatMap((d) =>
+      d.connection.kind === 'server' ? [key(d.connection.serverId, d.connection.database)] : [],
+    ),
+  );
+  const choices = (servers ?? []).flatMap((s) => s.databases.map((d) => ({ server: s, database: d.name })));
+  return (
+    <div
+      data-testid="db-link"
+      className="flex max-h-72 flex-col gap-2 overflow-auto rounded-card border border-line bg-card p-3"
+    >
+      <div className="flex items-center gap-2">
+        <h3 className="oxy-label flex-1">Databases of your servers</h3>
+        <Button
+          size="sm"
+          variant="primary"
+          data-testid="db-link-add"
+          disabled={picked.size === 0}
+          onClick={() => onAdd(choices.filter((c) => picked.has(key(c.server.id, c.database))))}
+        >
+          Add {picked.size || ''} selected
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+      {servers === null && <div className="text-small text-fg-muted">Loading…</div>}
+      {servers?.length === 0 && (
+        <div className="text-small text-fg-muted" data-testid="db-link-empty">
+          No database servers yet. Add them once in Settings → Database Servers (for example 10.10.10.15, SQL Server,
+          named FIRMA_1), then link their databases here.
+        </div>
+      )}
+      {servers?.map((s) => (
+        <div key={s.id} data-testid="db-link-server" data-name={s.name} className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1.5 text-ui font-medium text-fg">
+            <Server size={12} className="text-fg-muted" /> {s.name}
+            <span className="text-small font-normal text-fg-muted">
+              {ENGINE_INFO[s.engine].label} · {s.host} · {s.environment}
+            </span>
+          </div>
+          {s.databases.length === 0 && (
+            <div className="pl-5 text-small text-fg-muted">No databases on its list: discover them in Settings.</div>
+          )}
+          {s.databases.map((d) => {
+            const k = key(s.id, d.name);
+            const already = linked.has(k);
+            return (
+              <label
+                key={d.name}
+                data-testid="db-link-item"
+                data-name={`${s.name}/${d.name}`}
+                className={cn('flex items-center gap-2 pl-5 text-fg-secondary', already && 'opacity-60')}
+              >
+                <input
+                  type="checkbox"
+                  disabled={already}
+                  checked={already || picked.has(k)}
+                  onChange={(e) =>
+                    setPicked((p) => {
+                      const next = new Set(p);
+                      if (e.target.checked) next.add(k);
+                      else next.delete(k);
+                      return next;
+                    })
+                  }
+                />
+                <span className="font-mono">{d.name}</span>
+                {already && <span className="text-small text-fg-muted">linked</span>}
+              </label>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DatabaseForm({
+  db,
+  props,
+  servers,
+}: {
+  db: DatabaseResource;
+  props: ResourceTabProps;
+  servers: DatabaseServer[] | null;
+}) {
+  const linked = db.connection.kind === 'server';
   const set = (patch: Partial<DatabaseResource>) =>
     props.update((r) => ({ ...r, databases: r.databases.map((d) => (d.id === db.id ? { ...d, ...patch } : d)) }));
   const setAccess = (patch: Partial<DatabaseResource['access']>) => set({ access: { ...db.access, ...patch } });
@@ -460,6 +633,8 @@ function DatabaseForm({ db, props }: { db: DatabaseResource; props: ResourceTabP
             <select
               data-testid="db-engine"
               value={db.engine}
+              disabled={linked}
+              title={linked ? 'The engine of the database server' : undefined}
               onChange={(e) => {
                 const engine = e.target.value as DatabaseEngine;
                 const fresh = newDatabase({ ...props.resources, databases: [] }, engine);
@@ -497,8 +672,14 @@ function DatabaseForm({ db, props }: { db: DatabaseResource; props: ResourceTabP
             </select>
           </Field>
         </div>
-        <div className="text-small text-fg-muted">Works with {ENGINE_INFO[db.engine].compatible}.</div>
-        <ConnectionFields db={db} set={set} props={props} />
+        {linked ? (
+          <LinkedConnection db={db} set={set} servers={servers} />
+        ) : (
+          <>
+            <div className="text-small text-fg-muted">Works with {ENGINE_INFO[db.engine].compatible}.</div>
+            <ConnectionFields db={db} set={set} props={props} />
+          </>
+        )}
         <TestConnection
           testId="db-test"
           run={() =>
@@ -648,6 +829,22 @@ export function DatabasesTab(props: ResourceTabProps) {
   const { resources, update } = props;
   const [selected, setSelected] = useState<string | null>(resources.databases[0]?.id ?? null);
   const [importing, setImporting] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [servers, setServers] = useState<DatabaseServer[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      ipc.invoke('dbServers:get').then(
+        (r) => !cancelled && setServers(r.servers),
+        () => !cancelled && setServers([]),
+      );
+    void load();
+    const off = ipc.on('dbServers:changed', () => void load());
+    return () => {
+      cancelled = true;
+      off();
+    };
+  }, []);
   const current = resources.databases.find((d) => d.id === selected) ?? resources.databases[0];
   const add = (engine: DatabaseEngine) => {
     const db = newDatabase(resources, engine);
@@ -685,10 +882,35 @@ export function DatabasesTab(props: ResourceTabProps) {
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
+        <Button size="sm" variant="ghost" data-testid="db-link-open" onClick={() => setLinking(true)}>
+          <Server size={12} /> Add from servers…
+        </Button>
         <Button size="sm" variant="ghost" data-testid="db-import-open" onClick={() => setImporting(true)}>
           <FileSearch size={12} /> Import from project…
         </Button>
       </div>
+      {linking && (
+        <LinkFromServers
+          resources={resources}
+          servers={servers}
+          onClose={() => setLinking(false)}
+          onAdd={(picked) => {
+            let next = resources;
+            const added: DatabaseResource[] = [];
+            for (const { server, database } of picked) {
+              const db = linkedDatabase(next, server, database);
+              added.push(db);
+              next = { ...next, databases: [...next.databases, db] };
+            }
+            update((r) => ({ ...r, databases: [...r.databases, ...added] }));
+            if (added[0]) setSelected(added[0].id);
+            setLinking(false);
+            notify('success', `Linked ${added.length} database${added.length === 1 ? '' : 's'}`, {
+              description: 'Read-only by default: choose what agents may do, then save.',
+            });
+          }}
+        />
+      )}
       {importing && (
         <ImportPanel
           projectId={props.projectId}
@@ -714,7 +936,7 @@ export function DatabasesTab(props: ResourceTabProps) {
           empty="No databases yet."
         />
         {current ? (
-          <DatabaseForm key={current.id} db={current} props={props} />
+          <DatabaseForm key={current.id} db={current} props={props} servers={servers} />
         ) : (
           <div className="flex flex-1 flex-col gap-2 text-small text-fg-muted">
             <p>

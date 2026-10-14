@@ -185,6 +185,17 @@ export async function createMongo(t: Target, o: { root: string }): Promise<Mongo
       }
     },
 
+    async listDatabases(timeoutMs) {
+      const r = await (
+        await getClient()
+      )
+        .db('admin')
+        .admin()
+        .command({ listDatabases: 1, nameOnly: true, authorizedDatabases: true }, { timeoutMS: timeoutMs });
+      const list = (r['databases'] ?? []) as { name?: unknown }[];
+      return list.map((d) => scalarText(d.name)).filter(Boolean);
+    },
+
     async schema(r) {
       const database = await db();
       if (!r.collection) {
