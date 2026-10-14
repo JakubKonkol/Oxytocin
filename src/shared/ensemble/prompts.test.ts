@@ -13,6 +13,6 @@ describe('system prompt', () => {
     });
     const text = systemPromptText(task, task.agents[0] ?? agentFromPreset('planner', []), { path: '/wt' });
     expect(text).toContain('## The task: CSV export\n\nExport the reports as CSV.');
-    expect(text).toContain('Each assignment arrives as a message');
+    expect(text).toContain('Work arrives as messages');
   });
 });

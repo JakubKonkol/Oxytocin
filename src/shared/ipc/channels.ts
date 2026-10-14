@@ -106,7 +106,6 @@ export const INVOKE_CHANNELS = [
   'secrets:delete',
   'ensemble:list',
   'ensemble:create',
-  'ensemble:createQuick',
   'ensemble:createCrew',
   'ensemble:save',
   'ensemble:delete',

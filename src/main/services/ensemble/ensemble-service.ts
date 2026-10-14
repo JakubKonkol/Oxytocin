@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { AgentInfoWithTerminal } from '@shared/domain/agent';
 import {
@@ -31,15 +32,7 @@ import {
   validateTask,
 } from '@shared/ensemble/conductor';
 import { agentContext, runReport } from '@shared/ensemble/context';
-import {
-  crewOf,
-  crewTask,
-  quickTask,
-  type QuickTeam,
-  slugId,
-  taskFromTemplate,
-  titleFromPrompt,
-} from '@shared/ensemble/presets';
+import { crewOf, crewTask, slugId, taskFromTemplate, titleFromPrompt } from '@shared/ensemble/presets';
 import { systemPromptText } from '@shared/ensemble/prompts';
 import { OxyError } from '@shared/errors';
 import type { Logger } from '@shared/logging/logger';
@@ -282,34 +275,13 @@ export class EnsembleService implements Disposable {
     return this.forRenderer(record);
   }
 
-  /** The quick start: one prompt and a team (the pipeline follows from the team). */
-  async createQuick(o: {
-    projectId: string;
-    prompt: string;
-    title?: string | undefined;
-    team: QuickTeam;
-    currentCheckout?: boolean | undefined;
-  }): Promise<EnsembleRecord> {
-    await this.ready;
-    if (!this.deps.projects.get(o.projectId)) throw new OxyError('NOT_FOUND', 'Project not found');
-    const title = o.title?.trim() || titleFromPrompt(o.prompt);
-    const id = slugId(
-      `${(title || 'task').slice(0, 16)}-${randomBytes(3).toString('hex')}`,
-      this.records.keys(),
-      'task',
-    );
-    const task = quickTask({ id, projectId: o.projectId, prompt: o.prompt, title, team: o.team, now: this.now() });
-    if (o.currentCheckout) task.workspace = { ...task.workspace, mode: 'current-checkout' };
-    const record: EnsembleRecord = { task, run: initialRun(task) };
-    this.put(record);
-    return this.forRenderer(record);
-  }
-
   /** "Lead & crew": the lead of the crew (setting `ensemble.crew`) gets the task and hands out the work. */
   async createCrew(o: {
     projectId: string;
     prompt: string;
     title?: string | undefined;
+    /** The crew members this task may use (default: all; the lead always). */
+    memberIds?: string[] | undefined;
     testCommand?: string | undefined;
     approveResult: boolean;
     currentCheckout?: boolean | undefined;
@@ -328,6 +300,7 @@ export class EnsembleService implements Disposable {
       prompt: o.prompt,
       title,
       crew: crewOf(this.deps.settings()['ensemble.crew']),
+      memberIds: o.memberIds,
       testCommand: o.testCommand,
       approveResult: o.approveResult,
       now: this.now(),
@@ -715,6 +688,7 @@ export class EnsembleService implements Disposable {
         sessionId: randomUUID(),
         ...(resume && state.cliSessionId && CLI_INFO[agent.cli].resume ? { resumeSessionId: state.cliSessionId } : {}),
         sessionName: sessionName(r.task.title, agent.name),
+        ...(agent.cli === 'claude-code' ? { cliPermissionMode: await this.claudePermissionMode() } : {}),
       };
       const spec = buildLaunch(agent, ctx);
       if (!spec.command) throw new Error(`No command for ${CLI_INFO[agent.cli].displayName}.`);
@@ -767,6 +741,25 @@ export class EnsembleService implements Disposable {
       });
     } catch (e) {
       this.dispatch(taskId, { type: 'agent-start-failed', agentId, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  /**
+   * The permission mode Claude Code starts in by default (its user settings): an agent that edits files never runs
+   * with fewer permissions than the user's own sessions (a user on "bypass permissions" would otherwise answer a
+   * prompt for every command the implementer runs).
+   */
+  private async claudePermissionMode(): Promise<string | undefined> {
+    const dir = process.env['CLAUDE_CONFIG_DIR'] || join(homedir(), '.claude');
+    try {
+      const json = JSON.parse(await readFile(join(dir, 'settings.json'), 'utf8')) as {
+        permissions?: { defaultMode?: unknown };
+        defaultMode?: unknown;
+      };
+      const mode = json.permissions?.defaultMode ?? json.defaultMode;
+      return typeof mode === 'string' ? mode : undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -991,7 +984,7 @@ export class EnsembleService implements Disposable {
   }
 
   instructions(): string {
-    return 'Oxytocin Ensemble: you are one agent of a team working on a task. Your assignments arrive as messages with everything you need; call oxy_ensemble_submit when you are done. oxy_ensemble_context repeats the whole task context: call it only when you lost track.';
+    return 'Oxytocin Ensemble: you are one agent of a team working on a task. Your assignments arrive as messages with everything you need; do what the assignment asks and call oxy_ensemble_submit with a short result when you are done. oxy_ensemble_context repeats your assignment: call it only when you lost track.';
   }
 
   async callTool(
@@ -1063,8 +1056,8 @@ export class EnsembleService implements Disposable {
           const result = this.dispatch(taskId, { type: 'note', by: agentId, text });
           return { ...(result.reply ? { reply: result.reply } : {}), ...(result.error ? { error: result.error } : {}) };
         },
-        delegate: (taskId, agentId, to, work) => {
-          const result = this.dispatch(taskId, { type: 'delegate', from: agentId, to, work });
+        delegate: (taskId, agentId, to, work, sameSession) => {
+          const result = this.dispatch(taskId, { type: 'delegate', from: agentId, to, work, sameSession });
           return { ...(result.reply ? { reply: result.reply } : {}), ...(result.error ? { error: result.error } : {}) };
         },
       },

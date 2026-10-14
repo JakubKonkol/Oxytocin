@@ -24,7 +24,12 @@ export interface LaunchContext {
   resumeSessionId?: string | undefined;
   /** Display name of the session ("ens:<task>/<agent>"). */
   sessionName: string;
+  /** The permission mode the CLI starts in by default (Claude Code: `permissions.defaultMode` of its settings). */
+  cliPermissionMode?: string | undefined;
 }
+
+/** Default modes that already allow everything "accept edits" allows (and more). */
+const BEYOND_ACCEPT_EDITS = new Set(['bypassPermissions', 'auto']);
 
 export interface LaunchFile {
   path: string;
@@ -65,7 +70,9 @@ function claude(agent: EnsembleAgent, ctx: LaunchContext): LaunchSpec {
     ...(agent.role.preset === 'api-researcher' ? ['WebFetch'] : []),
   );
   if (agent.readOnly) args.push('--disallowedTools', 'Edit,Write,NotebookEdit');
-  if (agent.permissionMode !== 'default') args.push('--permission-mode', agent.permissionMode);
+  // "Accept edits" is a floor: a user whose sessions bypass permissions keeps that (no prompt for every command).
+  const keepUserMode = agent.permissionMode === 'acceptEdits' && BEYOND_ACCEPT_EDITS.has(ctx.cliPermissionMode ?? '');
+  if (agent.permissionMode !== 'default' && !keepUserMode) args.push('--permission-mode', agent.permissionMode);
   args.push(...agent.extraArgs);
   return {
     command: ctx.command,

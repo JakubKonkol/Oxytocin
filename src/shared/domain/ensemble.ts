@@ -202,6 +202,11 @@ export const EnsembleTaskSchema = z.looseObject({
   createdAt: z.number(),
   updatedAt: z.number(),
   templateId: z.string().max(100).optional(),
+  /**
+   * "Lead & crew": the agent that leads. The others are its crew: they get only what it delegates (each piece in a
+   * fresh session unless the lead continues one), and only the lead delegates.
+   */
+  leadId: IdSchema.optional(),
 });
 export type EnsembleTask = z.output<typeof EnsembleTaskSchema>;
 export type EnsembleTaskInput = z.input<typeof EnsembleTaskSchema>;

@@ -16,7 +16,13 @@ export interface EnsembleToolHost {
   ): Promise<{ error?: string; answer?: string; questionId?: string }>;
   answer(taskId: string, agentId: string, questionId: string, answer: string): { reply?: string; error?: string };
   note(taskId: string, agentId: string, text: string): { reply?: string; error?: string };
-  delegate(taskId: string, agentId: string, to: string, work: string): { reply?: string; error?: string };
+  delegate(
+    taskId: string,
+    agentId: string,
+    to: string,
+    work: string,
+    sameSession: boolean,
+  ): { reply?: string; error?: string };
 }
 
 const ok = (text: string, structured?: Record<string, unknown>): McpToolResult => ({
@@ -31,7 +37,7 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
     name: 'oxy_ensemble_context',
     title: 'Ensemble: my assignment',
     description:
-      "Everything about your Ensemble task at once: who you are in the team, the brief, your current instruction (stage, round, the kind to submit), the latest results of every agent (the plan, review findings, test output, reports), the team, the notes board and questions addressed to you. Ensemble's messages already carry your instruction and everything new, so do not call it after a message: only when a message was cut or you lost track (e.g. after your context was compacted).",
+      "Repeats your Ensemble assignment in full: who you are in the team, the task, your current instruction (stage, round, the kind to submit), the results you work from and questions addressed to you. Ensemble's messages already carry all of this, so call it only when a message was cut or you lost track (e.g. after your context was compacted), never after every message.",
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
@@ -39,7 +45,7 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
     name: 'oxy_ensemble_submit',
     title: 'Ensemble: submit my result',
     description:
-      'Finishes your part of the current stage and hands the result on. `kind` must be the kind your assignment names. A review needs `verdict` ("approve" or "changes") and, for "changes", `findings`. Advice (advisor only) needs `target`. Returns what happens next.',
+      'Finishes your part and hands the result on: another agent reads it into its own context, so keep it short. `kind` must be the kind your assignment names. A review needs `verdict` ("approve" or "changes") and, for "changes", `findings`. Advice (advisor only) needs `target`. Returns what happens next.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -48,8 +54,12 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
           enum: ['plan', 'implementation', 'review', 'test-report', 'research', 'advice', 'free'],
           description: 'The kind your assignment asks for.',
         },
-        summary: { type: 'string', description: 'One to three sentences: what you did or found.' },
-        body: { type: 'string', description: 'The full result in Markdown (the plan, the review, the report…).' },
+        summary: { type: 'string', description: 'The outcome in one to three sentences.' },
+        body: {
+          type: 'string',
+          description:
+            'The details the reader needs to continue, as concise Markdown (a plan in full). Cite file:line instead of pasting code, diffs or logs.',
+        },
         verdict: { type: 'string', enum: ['approve', 'changes'], description: 'Reviews only.' },
         findings: {
           type: 'array',
@@ -105,12 +115,17 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
     name: 'oxy_ensemble_delegate',
     title: 'Ensemble: delegate work to a teammate',
     description:
-      "Hands a piece of your current work to another agent of the team (by name or role), e.g. the planner asks the API researcher to map the endpoints the task needs, or a researcher to find how something works in the code. Describe exactly what you need back. Returns at once; the teammate's report is delivered to you as a message when it submits (and appears in oxy_ensemble_context). Delegate to several teammates in parallel, then wait for their reports before you submit your own result.",
+      'Hands a piece of your current work to a teammate (by name or role). The teammate sees only your `work` text (and the task as background), so make it a self-contained brief: the goal, the context it needs (files, decisions, what you already know), the scope (files it may change), how to check it is done, and what to report back. It starts a fresh session unless `same_session` is true. Returns at once; the report is delivered to you as a message when the teammate submits. Delegate independent pieces to several teammates at the same time, and wait for the reports you need before you submit your own result.',
     inputSchema: {
       type: 'object',
       properties: {
         to: { type: 'string', description: 'A teammate: its name or role ("API researcher").' },
-        work: { type: 'string', description: 'What to do and what to report back (Markdown).' },
+        work: { type: 'string', description: 'The self-contained brief (Markdown).' },
+        same_session: {
+          type: 'boolean',
+          description:
+            "Continue the teammate's current session instead of a fresh one — only to follow up on work it just did (fixing review findings in its own change). Default false.",
+        },
       },
       required: ['to', 'work'],
     },
@@ -131,7 +146,7 @@ export const ENSEMBLE_TOOLS: McpToolDefinition[] = [
     name: 'oxy_ensemble_note',
     title: 'Ensemble: post a note',
     description:
-      "Posts a note on the task's board (a decision, a gotcha) that every agent sees in oxy_ensemble_context and the user sees in the Activity view.",
+      "Posts a note on the task's board (a decision, a gotcha) that the other agents get with their next stage and the user sees in the Activity view.",
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
@@ -196,7 +211,7 @@ export async function runEnsembleTool(
       const to = str(args['to']).trim();
       const work = str(args['work']).trim();
       if (!to || !work) return fail('Pass `to` and `work`.');
-      const r = host.delegate(taskId, agentId, to, work);
+      const r = host.delegate(taskId, agentId, to, work, args['same_session'] === true);
       return r.error ? fail(r.error) : ok(r.reply ?? 'Delegated.');
     }
     case 'oxy_ensemble_note': {

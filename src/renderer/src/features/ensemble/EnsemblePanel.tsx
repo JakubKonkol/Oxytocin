@@ -10,7 +10,6 @@ import { IconButton } from '../../ui/IconButton';
 import { Segmented } from '../projects/settings/controls';
 import { CrewStart } from './CrewStart';
 import { createTask, projectRecords, useEnsembleStore } from './ensemble-store';
-import { QuickStart } from './QuickStart';
 import { TaskView } from './TaskView';
 import { BetaBadge, BetaNotice } from './ui';
 
@@ -172,7 +171,7 @@ function Shape({ steps }: { steps: string[] }) {
   );
 }
 
-/** "Create a task": the quick start (one prompt, a team) or a template in the builder. */
+/** "Create a task": lead & crew (one prompt, the lead hands out the work) or a custom pipeline from a template. */
 export function NewTask({
   projectId,
   onCreated,
@@ -182,7 +181,7 @@ export function NewTask({
   onCreated: () => void;
   onCancel?: () => void;
 }) {
-  const [mode, setMode] = useState<'crew' | 'quick' | 'template'>('crew');
+  const [mode, setMode] = useState<'crew' | 'pipeline'>('crew');
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-6" data-testid="ensemble-new-task-view">
       <div className="flex items-start gap-3">
@@ -195,8 +194,9 @@ export function NewTask({
           </h2>
           <p className="max-w-2xl text-fg-secondary">
             A team of AI agents works on one task in its own git worktree. With <em>Lead &amp; crew</em> the lead of
-            your crew decides who researches, codes, reviews and tests, in parallel where it can; the quick start and
-            the templates follow a fixed pipeline. You can watch or take over any agent at any time.
+            your crew does the core of the work and hands well-defined pieces — research, code, review, tests — to
+            cheaper teammates, in parallel where it can. A <em>custom pipeline</em> runs fixed stages from a template.
+            You can watch or take over any agent at any time.
           </p>
         </div>
         {onCancel && (
@@ -211,15 +211,12 @@ export function NewTask({
         value={mode}
         options={[
           { value: 'crew', label: 'Lead & crew' },
-          { value: 'quick', label: 'Quick start' },
-          { value: 'template', label: 'From a template' },
+          { value: 'pipeline', label: 'Custom pipeline' },
         ]}
         onChange={setMode}
       />
       {mode === 'crew' ? (
         <CrewStart projectId={projectId} onCreated={onCreated} />
-      ) : mode === 'quick' ? (
-        <QuickStart projectId={projectId} onCreated={onCreated} />
       ) : (
         <TemplateStart projectId={projectId} onCreated={onCreated} />
       )}

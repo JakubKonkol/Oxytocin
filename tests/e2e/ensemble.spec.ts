@@ -44,7 +44,7 @@ test('Ensemble: a feature task runs plan → gate → implement ⇄ review → t
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
     await expect(panel.getByTestId('ensemble-new-task-view')).toBeVisible();
-    await panel.getByTestId('ensemble-new-mode').locator('[data-value="template"]').click();
+    await panel.getByTestId('ensemble-new-mode').locator('[data-value="pipeline"]').click();
     await panel.getByTestId('ensemble-template-feature').click();
     await panel.getByTestId('ensemble-new-title').fill('CSV export');
     await panel.getByTestId('ensemble-new-description').fill('Add CSV export to the reports page.');
@@ -80,7 +80,7 @@ test('Ensemble: a feature task runs plan → gate → implement ⇄ review → t
     // The planner and the reviewer never got a slash command; models and efforts are per agent.
     const starts = (await readLog(log)).filter((e) => e.event === 'start');
     const args = (agent: string) => starts.find((s) => s.agent === agent)!.args!;
-    expect(args('Ada')).toEqual(expect.arrayContaining(['--model', 'claude-opus-5-5', '--effort', 'xhigh']));
+    expect(args('Ada')).toEqual(expect.arrayContaining(['--model', 'claude-opus-5-5', '--effort', 'high']));
     expect(args('Grace')).toEqual(expect.arrayContaining(['--model', 'claude-sonnet-5-5', '--effort', 'high']));
     expect(await claude.hash()).toBe(before);
     expect(existsSync(join(repo, 'fixed.txt'))).toBe(false);
@@ -116,7 +116,7 @@ test('Ensemble: a peeked agent can be taken over and handed back; a read-only te
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
-    await panel.getByTestId('ensemble-new-mode').locator('[data-value="template"]').click();
+    await panel.getByTestId('ensemble-new-mode').locator('[data-value="pipeline"]').click();
     await panel.getByTestId('ensemble-template-research').click();
     await panel.getByTestId('ensemble-new-title').fill('Spike');
     await panel.getByTestId('ensemble-create').click();
@@ -173,7 +173,7 @@ test('Ensemble: agent costs come from the Usage Monitor and the budget pauses th
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
-    await panel.getByTestId('ensemble-new-mode').locator('[data-value="template"]').click();
+    await panel.getByTestId('ensemble-new-mode').locator('[data-value="pipeline"]').click();
     await panel.getByTestId('ensemble-template-research').click();
     await panel.getByTestId('ensemble-new-title').fill('Costly spike');
     await panel.getByTestId('ensemble-create').click();
@@ -195,8 +195,8 @@ test('Ensemble: agent costs come from the Usage Monitor and the budget pauses th
   }
 });
 
-test('Ensemble quick start: one prompt and a team; the planner delegates to the API researcher, you approve, the implementer builds', async () => {
-  test.setTimeout(120_000);
+test('Ensemble lead & crew: members can be left out; each delegation is a fresh session with only the lead brief', async () => {
+  test.setTimeout(150_000);
   const repo = await gitRepo();
   const claude = await claudeConfigDir();
   const dir = await mkdtemp(join(tmpdir(), 'oxy-e2e-ens-'));
@@ -205,8 +205,20 @@ test('Ensemble quick start: one prompt and a team; the planner delegates to the 
   await writeFile(
     script,
     JSON.stringify({
-      Ada: [{ delegate: [{ to: 'API researcher', work: 'Map GET /weather and its response shape.' }] }],
-      Tim: [{ waitMs: 3000 }],
+      // Research and code in parallel; then new work for Linus (a fresh session); then a fix in the same session.
+      Barbara: [
+        {
+          delegate: [
+            { to: 'Rosalind', work: 'Find where the reports toolbar is rendered.' },
+            { to: 'Linus', work: 'Write the CSV exporter in export.txt.' },
+          ],
+          then: [
+            [{ to: 'Linus', work: 'Write the importer in import.txt.' }],
+            [{ to: 'Linus', work: 'Fix the quoting in import.txt.', same_session: true }],
+          ],
+        },
+      ],
+      Linus: [{ writeFile: 'export.txt' }, { writeFile: 'import.txt' }, {}],
     }),
   );
   const { app, win } = await launchApp({
@@ -218,50 +230,60 @@ test('Ensemble quick start: one prompt and a team; the planner delegates to the 
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
-    await panel.getByTestId('ensemble-new-mode').locator('[data-value="quick"]').click();
-    await expect(panel.getByTestId('ensemble-quick-start')).toBeVisible();
-    await panel
-      .getByTestId('ensemble-quick-prompt')
-      .fill('Show the current weather on the dashboard.\nUse the Weather API at https://api.example.com/docs.');
-    // Default team: implementer and reviewer; this task wants the API researcher instead of the reviewer.
-    await expect(panel.getByTestId('ensemble-quick-role-implementer')).toHaveAttribute('aria-pressed', 'true');
-    await panel.getByTestId('ensemble-quick-role-reviewer').click();
-    await panel.getByTestId('ensemble-quick-role-api-researcher').click();
-    await expect(panel.getByTestId('ensemble-quick-apis')).toContainText('Name the API');
-    await panel.getByTestId('ensemble-quick-go').click();
+    // Two ways to start: lead & crew (the default) or a custom pipeline; the quick start is gone.
+    await expect(panel.getByTestId('ensemble-new-mode').locator('[data-value]')).toHaveCount(2);
+    await expect(panel.getByTestId('ensemble-new-mode')).toContainText('Custom pipeline');
+    await expect(panel.getByTestId('ensemble-crew-start')).toBeVisible();
+    // Leave the tester and the API researcher out of this task (remembered for the next one).
+    const member = (id: string) =>
+      panel.locator(`[data-testid="ensemble-crew-summary-member"][data-member-id="${id}"]`);
+    await expect(member('margaret')).toHaveAttribute('aria-pressed', 'true');
+    await member('margaret').click();
+    await member('tim').click();
+    await expect(member('margaret')).toHaveAttribute('aria-pressed', 'false');
 
-    // The planner delegated: the researcher shows up under the plan stage.
+    await panel.getByTestId('ensemble-crew-prompt').fill('Add CSV export and import to the reports page.');
+    await panel.getByTestId('ensemble-crew-approve').uncheck();
+    await panel.getByTestId('ensemble-crew-go').click();
     await expect(panel.getByTestId('ensemble-flow')).toBeVisible();
-    await expect(panel.getByTestId('ensemble-stage-helpers')).toContainText('Tim', { timeout: 30_000 });
-    await expect(panel.getByTestId('ensemble-agent-waiting-for')).toHaveText('· waiting for Tim');
-    await panel.getByTestId('ensemble-open-gate').click();
-    const gate = win.getByTestId('ensemble-gate-dialog');
-    await expect(gate).toContainText('Report from Tim');
-    await gate.getByTestId('ensemble-gate-approve').click();
     const id = (await ensembleRecords(win))[0]!.task.id;
-    const done = await waitForStatus(win, id, 'done', 60_000);
-    expect(done.task.title).toBe('Show the current weather on the dashboard');
-    expect(done.task.agents.map((a) => a.name)).toEqual(['Ada', 'Linus', 'Tim']);
-    expect(done.run.handoffs.map((h) => [h.agentId, h.kind])).toEqual([
-      ['tim', 'research'],
-      ['ada', 'plan'],
-      ['linus', 'implementation'],
-    ]);
+    const done = await waitForStatus(win, id, 'done', 120_000);
+    expect(done.task.agents.map((a) => a.name)).toEqual(['Barbara', 'Linus', 'Grace', 'Rosalind']);
+    expect(done.task.leadId).toBe('barbara');
+
     const entries = await readLog(log);
-    // Tim got the delegated work (the brief is in its system prompt); Linus got the plan and Tim's report.
-    const timMessage = entries.find((e) => e.agent === 'Tim' && e.event === 'message')!.text!;
-    expect(timMessage).toMatch(/^\[Ensemble\] Ada \(Planner\) delegated work to you/);
-    expect(timMessage).toContain('Map GET /weather and its response shape.');
-    const timArgs = entries.find((e) => e.agent === 'Tim' && e.event === 'start')!.args!;
-    const promptFile = timArgs[timArgs.indexOf('--append-system-prompt-file') + 1]!;
-    expect(await readFile(promptFile, 'utf8')).toContain('https://api.example.com/docs');
-    const linusMessage = entries.find((e) => e.agent === 'Linus' && e.event === 'message')!.text!;
-    expect(linusMessage).toContain('Tim — Research');
-    const starts = entries.filter((e) => e.event === 'start' && e.args?.includes('--mcp-config'));
-    expect(starts.find((s) => s.agent === 'Ada')!.args).toEqual(expect.arrayContaining(['--model', 'claude-opus-5-5']));
-    expect(starts.find((s) => s.agent === 'Tim')!.args).toEqual(
-      expect.arrayContaining(['--allowedTools', 'mcp__oxytocin-ensemble', 'WebFetch']),
+    const lead = entries.find((e) => e.agent === 'Barbara' && e.event === 'message')!.text!;
+    expect(lead).toContain('Your crew:');
+    expect(lead).not.toContain('Margaret');
+    expect(lead).not.toContain('- Tim (API researcher)');
+    // Linus ran in two sessions: the importer started fresh, the fix continued that session.
+    const linusStarts = entries.filter((e) => e.agent === 'Linus' && e.event === 'start');
+    expect(linusStarts).toHaveLength(2);
+    const sessionOf = (args: string[]) => args[args.indexOf('--session-id') + 1];
+    expect(sessionOf(linusStarts[0]!.args!)).not.toBe(sessionOf(linusStarts[1]!.args!));
+    const linusMessages = entries.filter((e) => e.agent === 'Linus' && e.event === 'message').map((e) => e.text!);
+    expect(linusMessages).toHaveLength(3);
+    // Each piece carries the lead's brief only: no research report or earlier result typed along.
+    expect(linusMessages[1]).toContain('Write the importer in import.txt.');
+    expect(linusMessages[1]).not.toContain('Results so far');
+    expect(linusMessages[1]).not.toContain('Rosalind');
+    expect(linusMessages[2]).toContain('Fix the quoting in import.txt.');
+    // The crew member gets the task as background in its system prompt and is not offered delegation.
+    const promptFile = linusStarts[1]!.args![linusStarts[1]!.args!.indexOf('--append-system-prompt-file') + 1]!;
+    const system = await readFile(promptFile, 'utf8');
+    expect(system).toContain('## Background: the whole task (Barbara handles it');
+    expect(system).not.toContain('oxy_ensemble_delegate');
+    // The reports tell the lead who still works for it and how long the task has run.
+    const reports = entries.filter(
+      (e) => e.agent === 'Barbara' && e.event === 'message' && /Report from/.test(e.text!),
     );
+    expect(reports).toHaveLength(4);
+    expect(reports.at(-1)!.text).toMatch(/Nothing else you delegated is open\. \(elapsed \d+s\)$/);
+    expect(gitIn(done.run.worktree!.path, 'show', '--stat', 'HEAD')).toContain('import.txt');
+
+    // The choice of members is remembered for the next task.
+    await panel.getByTestId('ensemble-new-task').click();
+    await expect(member('margaret')).toHaveAttribute('aria-pressed', 'false');
   } finally {
     await app.close();
   }
@@ -275,24 +297,23 @@ test('Ensemble: "Customize first" opens the builder; every model of the CLI can 
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
-    await panel.getByTestId('ensemble-new-mode').locator('[data-value="quick"]').click();
-    await panel.getByTestId('ensemble-quick-prompt').fill('Refactor the exporter');
-    await panel.getByTestId('ensemble-quick-customize').click();
+    await panel.getByTestId('ensemble-crew-prompt').fill('Refactor the exporter');
+    await panel.getByTestId('ensemble-crew-customize').click();
     await expect(panel.getByTestId('ensemble-builder')).toBeVisible();
-    const ada = panel.locator('[data-testid="ensemble-agent-card"][data-agent-id="ada"]');
-    const model = ada.getByTestId('ensemble-agent-model');
+    const barbara = panel.locator('[data-testid="ensemble-agent-card"][data-agent-id="barbara"]');
+    const model = barbara.getByTestId('ensemble-agent-model');
     await expect(model).toHaveValue('claude-opus-5-5');
     // Every model is offered, whatever is selected (a datalist used to filter them by the current value).
     const options = await model.locator('option').allTextContents();
     expect(options.length).toBeGreaterThanOrEqual(10);
-    for (const id of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-4-5', 'opus'])
+    for (const id of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-haiku-5-5', 'opus'])
       expect(options.some((o) => o.startsWith(id))).toBe(true);
     await model.selectOption('claude-sonnet-5-5');
     await model.selectOption('__custom__');
-    await ada.getByTestId('ensemble-agent-model-custom').fill('claude-opus-5');
+    await barbara.getByTestId('ensemble-agent-model-custom').fill('claude-opus-5');
     await expect(panel.getByTestId('ensemble-save-state')).toHaveText('Saved');
     const record = (await ensembleRecords(win))[0]!;
-    expect(record.task.agents.find((a) => a.id === 'ada')!.model).toBe('claude-opus-5');
+    expect(record.task.agents.find((a) => a.id === 'barbara')!.model).toBe('claude-opus-5');
     expect(record.run.status).toBe('draft');
   } finally {
     await app.close();

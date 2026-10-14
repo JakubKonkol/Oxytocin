@@ -35,6 +35,45 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   URL — with a model, an optional fast model and an API key stored encrypted. Starting it sets `ANTHROPIC_BASE_URL`,
   the key and the models for that terminal only; your Claude Code login and settings stay as they are. *Claude Code
   profile* next to a running Ollama or llama.cpp server creates one with its first model.
+- **Ensemble: pick the crew members a task may use.** *Lead & crew* (still the default) shows your crew as switches:
+  leave out, say, the tester and the lead is told only about the others. Nobody starts before the lead hands them work,
+  and the choice is remembered for the next task.
+
+### Changed
+
+- **Ensemble's lead & crew, rebuilt to save time and tokens.** On a real task the crew took about three times as long
+  and used about four times the usage limit of a single Claude Code session, and the implementer's context was
+  compacted again and again. Following Anthropic's guidance on multi-agent work and on prompting the 5.5 models:
+  - Every piece of delegated work starts the teammate in a **fresh session** with only the lead's brief — no more
+    research reports, reviews and test output of the others typed along, and no session collecting piece after piece
+    until its CLI compacts it. The lead continues a session (`same_session`) only to follow up on work the teammate
+    just did, such as fixing review findings in its own change.
+  - The lead is told **when delegating pays off and when it does not**: hand out self-contained work it can describe
+    precisely, context-heavy side work (exploring code, reading API docs, running a slow test suite) and one review
+    with fresh eyes; do steps that depend on what it just learned, small fixes and anything quick itself. Delegations
+    follow a brief format — goal, context (what the lead already knows), scope (files), done-when check, what to
+    report — so a teammate does not explore the code again.
+  - Reports are short by design (outcome, files, how it was checked; file:line instead of pasted code or logs) and
+    tell the lead who still works for it, with the elapsed time of the task, which Opus 5.5 uses to pace the work.
+  - Crew members get the task as background only, do just their part and cannot delegate further.
+  - **New base prompts for every role**: scope kept to what was asked, economical reading (search first, read the
+    relevant parts, filter command output), a real check of every code change, every real problem in a review, the
+    answer first in research.
+  - **Models and effort as the docs recommend**: the lead and planner on Opus 5.5 at *high* (was *xhigh*), the
+    implementer on Sonnet 5.5 at *medium* (was Opus), researchers at *medium*, the docs writer on Haiku 5.5. Claude
+    Haiku 5.5 is in the model list.
+  - An agent that ends its turn without submitting (newer models end turns with a progress report) is nudged twice to
+    carry on before you are asked.
+- Agents that edit files no longer run with fewer permissions than your own Claude Code sessions: with *bypass
+  permissions* (or *auto*) as your default, an *Accept edits* agent keeps it instead of stopping at every command for a
+  prompt. The permission option *Ask (default)* is now called *Your CLI setting*, which is what it always meant.
+- *New Ensemble task* offers two ways to start: **Lead & crew** and **Custom pipeline** (the templates, renamed from
+  *From a template*); *Customize first* stays.
+
+### Removed
+
+- The Ensemble **quick start**: *Lead & crew* covers it — the lead decides who researches, codes, reviews and tests —
+  and fixed pipelines are built from a template.
 
 ## [0.9.3] - 2026-10-12
 

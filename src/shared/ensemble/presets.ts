@@ -35,12 +35,12 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     name: 'Barbara',
     cli: 'claude-code',
     model: 'claude-opus-5-5',
-    effort: 'xhigh',
+    effort: 'high',
     readOnly: false,
     permissionMode: 'acceptEdits',
     hint: 'Gets the task, hands work to the crew, checks the results',
     rolePrompt:
-      'You lead a crew of AI agents. Get the task done well and fast by using the crew: break the work down, hand each piece to the teammate who fits it best (in parallel when pieces are independent), keep track of what is in flight, check what comes back and decide what happens next. Keep your own context for decisions: let teammates read large files, logs and documentation and report the essentials. Do small things yourself when explaining them would take longer.',
+      'You own the outcome of the task. Understand it, decide the approach, hand well-defined pieces to the teammates who fit them, check what comes back and finish. Spend your effort on understanding, decisions and checking, and keep your context for that.',
   },
   {
     preset: 'planner',
@@ -49,12 +49,12 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     name: 'Ada',
     cli: 'claude-code',
     model: 'claude-opus-5-5',
-    effort: 'xhigh',
+    effort: 'high',
     readOnly: true,
     permissionMode: 'default',
     hint: 'Reads the code and writes the plan',
     rolePrompt:
-      'You plan before anyone codes. Read the relevant code first, then write a concrete plan: the approach and why, the files to change, the steps in order, edge cases, risks and how to test it. Prefer the simplest design that fits the existing code. You do not edit files.',
+      'You plan before anyone codes. Read the code the task touches (search first, then the relevant parts), then write a concrete plan: the approach and why, the files to change, the steps in order, edge cases, risks and how to test it. Prefer the simplest design that fits the existing code. Make the plan specific enough that the implementer does not have to explore again, and no longer than that. You do not edit files.',
   },
   {
     preset: 'implementer',
@@ -62,13 +62,18 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'blue',
     name: 'Linus',
     cli: 'claude-code',
-    model: 'claude-opus-5-5',
+    model: 'claude-sonnet-5-5',
     effort: 'medium',
     readOnly: false,
     permissionMode: 'acceptEdits',
-    hint: 'Writes the code and the tests',
-    rolePrompt:
-      'You implement. Follow the approved plan and the conventions of the code base, keep the change focused, add or update tests, and run them before you submit. When a reviewer sends findings, fix every one of them or explain why not.',
+    hint: 'Writes code and tests from a precise brief',
+    rolePrompt: [
+      'You implement code changes from a brief or a plan.',
+      '- Read what the change needs: search first, then the relevant parts of files; do not re-read what you already have.',
+      '- Follow the conventions of the surrounding code and keep the change to what was asked. Do not add features, refactors, files or documentation that were not asked for; if you think one would help, mention it in your report instead.',
+      '- When you change code that can be run, built or type-checked, run a real check that exercises the change before you report it done: the relevant tests, the type-checker or the build. Run the tests that cover the change rather than the whole suite, unless asked, and keep their output short (only the failures). If no real check can run, say which one you did not run and why.',
+      '- When review findings or test failures come back, fix each one, or say briefly why not.',
+    ].join('\n'),
   },
   {
     preset: 'reviewer',
@@ -82,7 +87,7 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     permissionMode: 'default',
     hint: 'Reviews the diff, finds bugs',
     rolePrompt:
-      'You review code changes like a careful senior engineer: correctness first, then missing tests, security, error handling and maintainability. Report concrete findings with file and line; do not nitpick style the linter handles. Approve when the change is correct and complete. You do not edit files.',
+      'You review code changes like a careful senior engineer. Read the diff you are pointed to and only as much surrounding code as you need to judge it. Report every real problem you find — correctness first, then missing or wrong tests, security, error handling, and mismatches with the brief or plan — each with file, line, severity and one or two sentences on what is wrong and how to fix it. Skip style a linter or formatter handles. Approve when the change is correct and complete. You do not edit files.',
   },
   {
     preset: 'tester',
@@ -94,9 +99,9 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     effort: 'medium',
     readOnly: false,
     permissionMode: 'acceptEdits',
-    hint: 'Writes and runs tests',
+    hint: 'Writes and runs tests, reports failures',
     rolePrompt:
-      'You make sure the change is tested: write the missing tests (unit first, then integration), run them, and report precisely what passes and fails. Do not change production code unless a test reveals a real bug — then say so.',
+      'You make sure a change is tested. Find the tests that cover it, add the missing cases in the style of the project (unit first, then integration), and run them — targeted runs first, the wider suite only when asked. Report precisely what you ran, what passed and what failed (the key error lines, not whole logs), and the test files you added or changed. Do not change production code: when a test reveals a bug, report it with the evidence.',
   },
   {
     preset: 'researcher',
@@ -105,12 +110,12 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     name: 'Rosalind',
     cli: 'claude-code',
     model: 'claude-sonnet-5-5',
-    effort: 'high',
+    effort: 'medium',
     readOnly: true,
     permissionMode: 'default',
-    hint: 'Investigates options, reads docs',
+    hint: 'Finds out how things work: code, docs, options',
     rolePrompt:
-      'You investigate: read the code, the docs and the history, compare options and report findings with evidence (files, lines, links). Separate facts from guesses. You do not edit files.',
+      'You find things out so others do not have to: how something works in this code base, where it lives, which option fits. Search first, then read the relevant parts; use documentation or the web when the question is about a library or an API. Answer the question you were asked: the answer first, then the evidence (files with lines, links), with what you verified kept apart from what you infer. The reader needs the conclusion and where to look, not a tour. You do not edit files.',
   },
   {
     preset: 'api-researcher',
@@ -124,11 +129,11 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     permissionMode: 'default',
     hint: 'Maps the endpoints and their shapes',
     rolePrompt: [
-      'You research HTTP APIs the task depends on and report what the team needs to use them correctly.',
+      'You research the HTTP APIs the task depends on and report what the team needs to use them correctly.',
       "- Find the API: the project's APIs (oxy_project_resources lists them; call them with oxy_api_describe and oxy_api_request, which add the credentials) or a URL or document named in the brief or by the teammate who asked.",
       '- Read the OpenAPI/Swagger document when there is one, then confirm the real behaviour with safe requests (GET, HEAD). Never call endpoints that create, change or delete data unless the brief explicitly allows it.',
-      '- Report per endpoint: method and path, purpose, parameters (path, query, headers), authentication, request body and response shapes (as TypeScript types plus a trimmed JSON example), status codes and errors, pagination, rate limits and anything surprising.',
-      '- Separate what you verified with a request from what only the documentation says. You do not edit files.',
+      '- Report only the endpoints the task needs: method and path, purpose, parameters, authentication, request and response shapes (as TypeScript types plus a trimmed JSON example), status codes and errors, pagination and limits, and anything surprising.',
+      '- Keep what you verified with a request apart from what only the documentation says. You do not edit files.',
     ].join('\n'),
   },
   {
@@ -137,13 +142,13 @@ export const ROLE_PRESETS: readonly RolePresetDefinition[] = [
     color: 'pink',
     name: 'Ken',
     cli: 'claude-code',
-    model: 'claude-sonnet-5-5',
-    effort: 'low',
+    model: 'claude-haiku-5-5',
+    effort: 'medium',
     readOnly: false,
     permissionMode: 'acceptEdits',
     hint: 'Updates README, docs and changelog',
     rolePrompt:
-      'You write documentation: update the README, docs and changelog for the change, in the style the project already uses. Be brief and concrete; document what users and developers need to know.',
+      'You write documentation for a change: the README, docs and changelog, in the style and language the project already uses. Change only what the change makes outdated and what users and developers need to know. Be brief and concrete.',
   },
   {
     preset: 'advisor',
@@ -592,21 +597,7 @@ export function newStage(kind: Stage['kind'], task: Pick<EnsembleTask, 'agents' 
   }
 }
 
-// ── quick start ────────────────────────────────────────────────────────────────────────────────────────────────────
-
-/** Roles the quick start offers next to the planner, who always leads. */
-export const QUICK_ROLES = ['implementer', 'reviewer', 'api-researcher', 'researcher', 'tester'] as const;
-export type QuickRole = (typeof QUICK_ROLES)[number];
-
-export interface QuickTeam {
-  roles: readonly QuickRole[];
-  /** A gate after the plan (the default): you read and approve the plan before anyone codes. */
-  approvePlan: boolean;
-  /** Runs after the implementation; failures go back to the implementer. */
-  testCommand?: string | undefined;
-}
-
-export const DEFAULT_QUICK_TEAM: QuickTeam = { roles: ['implementer', 'reviewer'], approvePlan: true };
+// ── lead & crew ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A title from the first line of a prompt ("Add CSV export to the reports page"). */
 export function titleFromPrompt(prompt: string): string {
@@ -618,148 +609,6 @@ export function titleFromPrompt(prompt: string): string {
   const sentence = line.split(/(?<=[.!?])\s/)[0] ?? line;
   return sentence.length > 60 ? `${sentence.slice(0, 57).trimEnd()}…` : sentence.replace(/[.!?]$/, '');
 }
-
-/** The planner's instruction when it leads helpers: break the task down, delegate the research, then plan. */
-export function leadInstruction(helpers: readonly EnsembleAgent[], builders: readonly EnsembleAgent[]): string {
-  const lines = [
-    'You lead this task. Read the brief and the relevant code, then break the task down: what must be found out first, and what must be built.',
-  ];
-  if (helpers.length)
-    lines.push(
-      '',
-      'Delegate what must be found out to your helpers with oxy_ensemble_delegate — in parallel when the questions are independent — and say exactly what you need back:',
-      ...helpers.map((h) => `- ${h.name} (${h.role.label}): ${rolePreset(h.role.preset).hint.toLowerCase()}`),
-      'Wait for their reports (they arrive as messages), then write the plan on top of them.',
-    );
-  lines.push(
-    '',
-    'The plan: the approach and why, the steps in order with the files to change, what each step needs from the research (endpoints, shapes, constraints), edge cases, risks and how to test it.',
-  );
-  if (builders.length)
-    lines.push(
-      `Write it for ${builders.map((b) => `${b.name} (${b.role.label})`).join(' and ')}, who carry it out after your plan is approved.`,
-    );
-  lines.push('Do not change code. Submit the plan with kind "plan" (the full plan in `body`).');
-  return lines.join('\n');
-}
-
-/**
- * The quick start: one prompt and a team; the pipeline follows from the team. The planner leads (delegating to the
- * researchers), you approve the plan, the implementer builds it (in a loop with the reviewer), the tester and the
- * test command check it.
- */
-export function quickTask(o: {
-  id: string;
-  projectId: string;
-  prompt: string;
-  title?: string | undefined;
-  team: QuickTeam;
-  now: number;
-}): EnsembleTask {
-  const roles = QUICK_ROLES.filter((r) => o.team.roles.includes(r));
-  const agents = team('planner', ...roles);
-  const [planner] = agents;
-  const byRole = (r: QuickRole) => agents.find((a) => a.role.preset === r);
-  const implementer = byRole('implementer');
-  const reviewer = byRole('reviewer');
-  const tester = byRole('tester');
-  const helpers = agents.filter((a) => a.role.preset === 'api-researcher' || a.role.preset === 'researcher');
-  const builders = [implementer, tester].filter((a): a is EnsembleAgent => !!a);
-  const pipeline: Stage[] = [
-    stage({
-      id: 'plan',
-      kind: 'agent',
-      title: helpers.length ? 'Plan (with research)' : 'Plan',
-      instruction: leadInstruction(helpers, builders),
-      agentId: planner!.id,
-      output: 'plan',
-      freshSession: false,
-    }),
-  ];
-  if (o.team.approvePlan)
-    pipeline.push(
-      stage({
-        id: 'approve-plan',
-        kind: 'gate',
-        title: 'Approve the plan',
-        show: ['plan'],
-        onReject: 'back-to-previous',
-      }),
-    );
-  if (implementer)
-    pipeline.push(
-      reviewer
-        ? stage({
-            id: 'implement',
-            kind: 'loop',
-            title: 'Implement ⇄ Review',
-            workerId: implementer.id,
-            checkerId: reviewer.id,
-            maxRounds: 3,
-            checkerInstruction: '',
-          })
-        : stage({
-            id: 'implement',
-            kind: 'agent',
-            title: 'Implement',
-            agentId: implementer.id,
-            output: 'implementation',
-            freshSession: false,
-          }),
-    );
-  else if (reviewer)
-    pipeline.push(
-      stage({
-        id: 'review',
-        kind: 'agent',
-        title: 'Review',
-        agentId: reviewer.id,
-        output: 'review',
-        freshSession: false,
-      }),
-    );
-  if (tester)
-    pipeline.push(
-      stage({
-        id: 'tests',
-        kind: 'agent',
-        title: 'Tests',
-        agentId: tester.id,
-        output: 'test-report',
-        freshSession: false,
-      }),
-    );
-  const command = o.team.testCommand?.trim();
-  if (command && (implementer ?? tester))
-    pipeline.push(
-      stage({
-        id: 'run-tests',
-        kind: 'command',
-        title: 'Run the tests',
-        command,
-        onFail: { agentId: (implementer ?? tester)!.id, maxAttempts: 2 },
-      }),
-    );
-  const writes = agents.some((a) => !a.readOnly);
-  return {
-    v: 1,
-    id: o.id,
-    projectId: o.projectId,
-    title: o.title?.trim() || titleFromPrompt(o.prompt) || 'New task',
-    description: o.prompt.trim(),
-    generalPrompt: '',
-    attachments: [],
-    workspace: { mode: writes ? 'worktree' : 'current-checkout', setupCommands: [], copyFiles: [] },
-    agents,
-    pipeline,
-    limits: { maxConcurrentAgents: 3 },
-    createdAt: o.now,
-    updatedAt: o.now,
-    templateId: 'quick',
-  };
-}
-
-// ── lead & crew ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** The crew offered until the user sets up their own: a lead and five teammates. */
 export function defaultCrew(): EnsembleCrew {
@@ -781,35 +630,59 @@ const memberLine = (a: EnsembleAgent): string => {
   return `- ${a.name} (${a.role.label}) — ${cli}${model}${a.effort ? `, effort ${a.effort}` : ''} · ${a.readOnly ? 'read-only' : 'edits files'}${hint}`;
 };
 
-/** The lead's instruction: the crew with its models, and how to hand out work. */
+/**
+ * The lead's instruction: the crew with its models, when delegating pays off and how to write a delegation. Multi-agent
+ * work costs several times the tokens of one session and every teammate starts with an empty context, so the lead
+ * keeps the work that needs what it already knows and hands out only well-defined, self-contained pieces.
+ */
 export function crewLeadInstruction(
   lead: EnsembleAgent,
   crew: readonly EnsembleAgent[],
   maxConcurrent: number,
 ): string {
   const others = crew.filter((a) => a.id !== lead.id);
-  const lines = [
-    'You lead this task with a crew of AI agents. Each teammate runs in its own terminal and starts when you hand it work.',
+  if (!others.length)
+    return [
+      'You have no crew for this task: do the work yourself.',
+      'When the work is done and checked, submit with kind "implementation": what was done, the files changed, how you checked it, and anything the user must know or decide.',
+    ].join('\n');
+  return [
+    'You lead this task. You can do any of the work yourself, and you have a crew of AI agents, each in its own terminal; a teammate starts only when you hand it work.',
     '',
-  ];
-  if (others.length) lines.push('Your crew:', ...others.map(memberLine), '');
-  else lines.push('Your crew is empty: do the work yourself.', '');
-  lines.push(
-    'How to lead:',
-    '1. Read the brief and just enough of the code to break the task down: what must be found out, what must be built, what must be checked.',
-    "2. Hand out work with oxy_ensemble_delegate (`to`: the teammate's name). Delegate independent pieces at the same time — one teammate researches an API while another maps the code — and say exactly what you need back. Reports arrive as messages; meanwhile work on what does not depend on them.",
-    `3. At most ${maxConcurrent} agents work at the same time (you included); further delegated work waits in a queue.`,
-    '4. Teammates who edit files share one working folder: never give two of them overlapping files at the same time.',
-    '5. Keep your context for decisions: let teammates read large files, logs and documentation and report the essentials. Do small things yourself when explaining them would take longer.',
-    '6. Check the work before you finish: have it reviewed and tested when the crew has someone for it, and send findings back to whoever wrote the code.',
-    '7. When everything is done and checked, submit with kind "implementation": what was done and by whom, the files changed, and what the user should know.',
-  );
-  return lines.join('\n');
+    'Your crew:',
+    ...others.map(memberLine),
+    '',
+    'The crew is there to finish the task sooner and cheaper than you would alone. You are the most capable model here, so spend your effort on understanding the task, deciding and checking, and hand well-defined work to the teammates. Delegation has a cost too: a teammate starts with an empty context and has to rebuild whatever you know but did not write down.',
+    '',
+    'Delegate:',
+    '- self-contained work you can describe precisely: a module or a set of files whose design you settled, tests for a known behaviour, a documentation update;',
+    '- work that would fill your context with material you will not need again: exploring an unfamiliar part of the code, reading API documentation, running a slow test suite and reporting the failures;',
+    '- one review of the finished change with fresh eyes, before you finish (not after every small fix);',
+    '- independent pieces at the same time: they run in parallel.',
+    '',
+    'Do it yourself:',
+    '- anything you can finish in a handful of tool calls, or that would take longer to explain than to do;',
+    '- steps that depend on what you just learned, and small fixes after a review or a failing check;',
+    "- never delegate the same thing twice and never redo a teammate's work: check its result instead.",
+    '',
+    'How to delegate (oxy_ensemble_delegate, `to`: the name): the teammate sees only your text, with the task as background, so write a self-contained brief:',
+    '1. Goal: what to achieve and why.',
+    '2. Context: the files, functions and decisions it needs — what you already found out, so it does not explore again.',
+    '3. Scope: the files it may change and what to leave alone. Teammates who edit files share one folder: never give two of them overlapping files at the same time.',
+    '4. Done when: the check that proves it (the test or command to run).',
+    '5. Report: what you need back.',
+    'Each delegation starts the teammate in a fresh session. Pass `same_session: true` only to continue work it just did (e.g. fixing review findings in its own change), when what it learned helps.',
+    '',
+    `At most ${maxConcurrent} agents work at the same time (you included); further work waits in a queue. Reports arrive as messages: meanwhile work on what does not depend on them, or end your turn and wait — they wake you.`,
+    '',
+    'Finish: when the work is done and checked (the checks you can run pass), submit with kind "implementation": what was done and by whom, the files changed, how it was checked, and anything the user must know or decide. Keep it short.',
+  ].join('\n');
 }
 
 /**
- * "Lead & crew": one prompt; the lead of the user's crew gets the task and decides who does what (delegating to the
- * crew), optionally followed by a test command (failures go back to the lead) and the user's approval.
+ * "Lead & crew": one prompt; the lead gets the task and decides who does what among the members picked for it
+ * (`memberIds`, default: the whole crew), optionally followed by a test command (failures go back to the lead) and
+ * the user's approval.
  */
 export function crewTask(o: {
   id: string;
@@ -817,12 +690,15 @@ export function crewTask(o: {
   prompt: string;
   title?: string | undefined;
   crew: EnsembleCrew;
+  /** Members this task may use (the lead always). */
+  memberIds?: readonly string[] | undefined;
   testCommand?: string | undefined;
   approveResult: boolean;
   now: number;
 }): EnsembleTask {
   const crew = crewOf(o.crew);
-  const agents = structuredClone(crew.members);
+  const picked = o.memberIds ? new Set(o.memberIds) : undefined;
+  const agents = structuredClone(crew.members).filter((a) => !picked || picked.has(a.id) || a.id === crew.leadId);
   const lead = agents.find((a) => a.id === crew.leadId)!;
   const pipeline: Stage[] = [
     stage({
@@ -875,5 +751,6 @@ export function crewTask(o: {
     createdAt: o.now,
     updatedAt: o.now,
     templateId: 'crew',
+    leadId: lead.id,
   };
 }

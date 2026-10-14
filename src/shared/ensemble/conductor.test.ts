@@ -5,6 +5,7 @@ import {
   type ConductorEvent,
   type Effect,
   initialRun,
+  MAX_REMINDERS,
   READY_TIMEOUT_MS,
   reduce,
   REMINDER_AFTER_MS,
@@ -254,14 +255,17 @@ describe('conductor: sequential agent stages', () => {
     h.boot();
     h.deliverAll();
     h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
-    h.now += REMINDER_AFTER_MS + 1;
-    h.send({ type: 'tick' });
-    const [reminder] = h.take('deliver');
-    expect(reminder).toMatchObject({ agentId: 'ada' });
-    expect((reminder as { text: string }).text).toMatch(/stopped without calling oxy_ensemble_submit/);
-    h.send({ type: 'agent-state', agentId: 'ada', state: 'working' });
-    h.send({ type: 'delivered', agentId: 'ada', deliveryId: (reminder as { deliveryId: string }).deliveryId });
-    h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
+    // A turn that ends with a progress report gets nudged on (twice), then the user is asked.
+    for (let i = 0; i < MAX_REMINDERS; i++) {
+      h.now += REMINDER_AFTER_MS + 1;
+      h.send({ type: 'tick' });
+      const [reminder] = h.take('deliver');
+      expect(reminder).toMatchObject({ agentId: 'ada' });
+      expect((reminder as { text: string }).text).toMatch(/your assignment is still open .* If work remains, continue/);
+      h.send({ type: 'agent-state', agentId: 'ada', state: 'working' });
+      h.send({ type: 'delivered', agentId: 'ada', deliveryId: (reminder as { deliveryId: string }).deliveryId });
+      h.send({ type: 'agent-state', agentId: 'ada', state: 'idle' });
+    }
     h.now += REMINDER_AFTER_MS + 1;
     h.send({ type: 'tick' });
     expect(h.take('deliver')).toEqual([]);
@@ -428,9 +432,13 @@ describe('conductor: delegation', () => {
     expect(queued.reply).toMatch(/^Queued for Margaret/);
     expect(h.run.agents['linus']!.assignment).toMatchObject({ output: 'implementation', delegatedBy: 'barbara' });
     expect(h.run.agents['margaret']!.assignment).toMatchObject({ output: 'test-report', queued: true });
-    expect(h.take('start-agent').map((e) => (e as { agentId: string }).agentId)).toEqual(['linus', 'rosalind']);
+    expect(h.effects.filter((e) => e.type === 'start-agent').map((e) => (e as { agentId: string }).agentId)).toEqual([
+      'linus',
+      'rosalind',
+    ]);
     h.boot();
-    h.deliverAll();
+    const work = h.deliverAll();
+    expect(work.find((d) => d.agentId === 'linus')!.text).toContain('Write the exporter');
     h.submit('linus', { kind: 'implementation', summary: 'Exporter written', files: ['src/csv.ts'] });
     // A slot is free: the queued work starts.
     expect(h.run.agents['margaret']!.assignment!.queued).toBeUndefined();
@@ -439,6 +447,12 @@ describe('conductor: delegation', () => {
     expect(h.submit('rosalind', { kind: 'review', summary: 'Looks fine', verdict: 'approve' }).error).toBeUndefined();
     h.send({ type: 'delegate', from: 'barbara', to: 'Grace', work: 'Review the exporter' });
     expect(h.run.agents['grace']!.assignment).toMatchObject({ output: 'review' });
+    // Grace gets the lead's brief only: no research report or implementation typed along.
+    h.boot();
+    const [review] = h.deliverAll().filter((d) => d.agentId === 'grace');
+    expect(review!.text).toContain('Review the exporter');
+    expect(review!.text).not.toContain('Results so far');
+    expect(review!.text).not.toContain('Exporter written');
     h.submit('grace', { kind: 'review', summary: 'Approve', verdict: 'approve', findings: [] });
     h.submit('margaret', { kind: 'test-report', summary: 'Tests pass' });
     // The reports reach the lead as messages, one at a time while it is idle; later messages do not repeat them.
@@ -471,6 +485,80 @@ describe('conductor: delegation', () => {
     h.send({ type: 'submit', agentId: 'barbara', submission: { kind: 'implementation', summary: 'Done' } });
     expect(h.run.agents['barbara']!.outbox).toEqual([]);
     expect(h.run.agents['barbara']!.seen ?? []).toEqual([]);
+  });
+
+  it('every delegation starts the teammate fresh unless the lead continues its session', () => {
+    const h = new Harness(
+      crewTask({ id: 'task-1', projectId: 'p1', prompt: 'x', crew: defaultCrew(), approveResult: false, now: 0 }),
+    );
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Write the exporter' });
+    h.boot();
+    h.deliverAll();
+    h.submit('linus', { kind: 'implementation', summary: 'Written', files: ['src/csv.ts'] });
+    // New work: the old session stops and a new one starts (no resume of the old session).
+    const r = h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Now the importer' });
+    expect(r.reply).toMatch(/fresh session/);
+    expect(h.take('stop-agent')).toEqual([{ type: 'stop-agent', agentId: 'linus' }]);
+    expect(h.effects.filter((e) => e.type === 'start-agent')).toEqual([
+      { type: 'start-agent', agentId: 'linus', resume: false },
+    ]);
+    expect(h.run.events.some((e) => e.type === 'decision' && e.text === 'fresh session')).toBe(true);
+    h.boot();
+    h.deliverAll();
+    h.submit('linus', { kind: 'implementation', summary: 'Importer written' });
+    // A follow-up on its own change: the same session continues.
+    const same = h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Fix the quoting', sameSession: true });
+    expect(same.reply).toMatch(/continues its session/);
+    expect(h.take('stop-agent')).toEqual([]);
+    expect(h.take('start-agent')).toEqual([]);
+    expect(h.run.agents['linus']!.lifecycle).toBe('running');
+  });
+
+  it('the report to the lead says who still works for it and how long the task has run', () => {
+    const h = new Harness(
+      crewTask({ id: 'task-1', projectId: 'p1', prompt: 'x', crew: defaultCrew(), approveResult: false, now: 0 }),
+    );
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Write it' });
+    h.send({ type: 'delegate', from: 'barbara', to: 'Grace', work: 'Review the old exporter' });
+    h.boot();
+    h.deliverAll();
+    h.now += 90_000;
+    h.submit('linus', { kind: 'implementation', summary: 'Written', body: 'Added src/csv.ts', files: ['src/csv.ts'] });
+    h.send({ type: 'agent-state', agentId: 'barbara', state: 'idle' });
+    const [report] = h.deliverAll().filter((d) => d.agentId === 'barbara');
+    expect(report!.text).toMatch(/^\[Ensemble\] Report from Linus/);
+    expect(report!.text).toContain('Files: src/csv.ts');
+    expect(report!.text).toMatch(/Still working for you: Grace\. \(elapsed \d+s\)$/);
+    h.submit('grace', {
+      kind: 'review',
+      summary: 'One bug',
+      verdict: 'changes',
+      findings: [{ file: 'src/old.ts', line: 3, severity: 'major', message: 'Off by one' }],
+    });
+    h.send({ type: 'agent-state', agentId: 'barbara', state: 'idle' });
+    const [second] = h.deliverAll().filter((d) => d.agentId === 'barbara');
+    expect(second!.text).toContain('Verdict: changes');
+    expect(second!.text).toContain('src/old.ts:3 — Off by one');
+    expect(second!.text).toContain('Nothing else you delegated is open.');
+  });
+
+  it('a crew member cannot delegate further', () => {
+    const h = new Harness(
+      crewTask({ id: 'task-1', projectId: 'p1', prompt: 'x', crew: defaultCrew(), approveResult: false, now: 0 }),
+    );
+    h.start();
+    h.boot();
+    h.deliverAll();
+    h.send({ type: 'delegate', from: 'barbara', to: 'Linus', work: 'Write it' });
+    h.boot();
+    h.deliverAll();
+    expect(h.send({ type: 'delegate', from: 'linus', to: 'Tim', work: 'x' }).error).toMatch(/Only an agent working/);
   });
 
   it('a read-only lead still checkpoints what its crew wrote', () => {

@@ -29,7 +29,7 @@ describe('agent adapters', () => {
       '--model',
       'claude-opus-5-5',
       '--effort',
-      'xhigh',
+      'high',
       '--append-system-prompt-file',
       '/data/ada.prompt.md',
       '--mcp-config',
@@ -60,6 +60,19 @@ describe('agent adapters', () => {
     expect(resumed.args.slice(0, 2)).toEqual(['--resume', 'old']);
     expect(resumed.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits']));
     expect(resumed.cliSessionId).toBe('old');
+    // "Accept edits" never lowers what the user's own sessions allow.
+    const bypass = buildLaunch(agent({ permissionMode: 'acceptEdits', readOnly: false }), {
+      ...ctx,
+      cliPermissionMode: 'bypassPermissions',
+    });
+    expect(bypass.args).not.toContain('--permission-mode');
+    const asks = buildLaunch(agent({ permissionMode: 'acceptEdits', readOnly: false }), {
+      ...ctx,
+      cliPermissionMode: 'default',
+    });
+    expect(asks.args).toEqual(expect.arrayContaining(['--permission-mode', 'acceptEdits']));
+    const plan = buildLaunch(agent({ permissionMode: 'plan' }), { ...ctx, cliPermissionMode: 'bypassPermissions' });
+    expect(plan.args).toEqual(expect.arrayContaining(['--permission-mode', 'plan']));
     const api = buildLaunch(agentFromPreset('api-researcher', []), ctx);
     const i = api.args.indexOf('--allowedTools');
     expect(api.args.slice(i, i + 3)).toEqual(['--allowedTools', 'mcp__oxytocin-ensemble', 'WebFetch']);

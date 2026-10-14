@@ -55,7 +55,6 @@ import {
 } from '../domain/ensemble';
 import { DatabaseServerSchema, DiscoveryResultSchema } from '../domain/database-servers';
 import { AiAgentsStateSchema } from '../domain/ai-agents';
-import { QUICK_ROLES } from '../ensemble/presets';
 import type { InvokeChannel } from './channels';
 
 /** What the Ensemble panel may ask the conductor to do (the rest comes from agents or effects). */
@@ -363,30 +362,17 @@ export const invokeContract = {
     }),
     res: EnsembleRecordSchema,
   },
-  /** The quick start: one prompt and a team; the pipeline follows from the team (`quickTask`). */
-  'ensemble:createQuick': {
-    req: z.object({
-      projectId: ProjectIdSchema,
-      prompt: z.string().trim().min(1).max(50_000),
-      title: z.string().max(120).optional(),
-      team: z.object({
-        roles: z.array(z.enum(QUICK_ROLES)).max(QUICK_ROLES.length),
-        approvePlan: z.boolean(),
-        testCommand: z.string().max(500).optional(),
-      }),
-      /** Work in the project folder instead of a worktree (a folder that is not a git repository). */
-      currentCheckout: z.boolean().optional(),
-    }),
-    res: EnsembleRecordSchema,
-  },
   /** "Lead & crew": one prompt; the lead of the crew set up in `ensemble.crew` hands out the work (`crewTask`). */
   'ensemble:createCrew': {
     req: z.object({
       projectId: ProjectIdSchema,
       prompt: z.string().trim().min(1).max(50_000),
       title: z.string().max(120).optional(),
+      /** The crew members this task may use (default: the whole crew; the lead always takes part). */
+      memberIds: z.array(z.string().max(64)).max(12).optional(),
       testCommand: z.string().max(500).optional(),
       approveResult: z.boolean(),
+      /** Work in the project folder instead of a worktree (a folder that is not a git repository). */
       currentCheckout: z.boolean().optional(),
     }),
     res: EnsembleRecordSchema,

@@ -1,6 +1,6 @@
 import type { EnsembleRun, EnsembleTask, Handoff } from '../domain/ensemble';
 import { OUTPUT_LABELS } from '../domain/ensemble';
-import { formatFindings, handoffText, systemPromptText, teamList } from './prompts';
+import { formatFindings, handoffText, isCrewWorker, systemPromptText, teamList } from './prompts';
 
 export interface AgentContext {
   /** Markdown for the agent. */
@@ -96,16 +96,18 @@ export function agentContext(
     items.push('attachments');
   }
 
+  // A crew member works on what the lead delegated: the lead's text is its input, not the other agents' results.
+  const curated = assignment?.kind === 'delegated' || isCrewWorker(task, agent);
   // Inputs: the latest result of every agent and the conductor's command output, the plan in full.
   const latest = new Map<string, Handoff>();
   for (const h of run.handoffs) if (h.agentId !== agentId || h.kind === 'plan') latest.set(`${h.agentId}:${h.kind}`, h);
-  const plan = [...run.handoffs].reverse().find((h) => h.kind === 'plan');
+  const plan = curated ? undefined : [...run.handoffs].reverse().find((h) => h.kind === 'plan');
   const inputs: string[] = [];
   if (plan) {
     inputs.push(resultText(task, plan));
     items.push('plan');
   }
-  for (const h of latest.values()) {
+  for (const h of curated ? [] : latest.values()) {
     if (h.kind === 'plan') continue;
     inputs.push(resultText(task, h));
     items.push(resultItem(task, h));
@@ -119,7 +121,7 @@ export function agentContext(
 
   sections.push(`## The team\n\n${teamList(task)}`);
 
-  if (run.notes.length) {
+  if (run.notes.length && !curated) {
     sections.push(
       `## Notes board\n\n${run.notes
         .slice(-30)
@@ -213,6 +215,20 @@ export function assignmentDigest(task: EnsembleTask, run: EnsembleRun, agentId: 
       `## Your assignment${stage ? ` — stage "${stage.title}"` : ''}${round}\n\nSubmit with oxy_ensemble_submit, kind **"${assignment.output}"** (${OUTPUT_LABELS[assignment.output]}).\n\n${assignment.instruction}`,
     );
     items.push(`assignment: ${stage?.title ?? assignment.output}`);
+  }
+
+  // Delegated work carries only what the delegating agent wrote: it chose what the teammate needs, and every other
+  // result typed along (research reports, reviews, test output…) only filled the teammate's context.
+  if (assignment?.kind === 'delegated') {
+    const open = run.questions.filter((q) => q.to === agentId && q.answer === undefined);
+    if (open.length) {
+      sections.push(
+        `## Questions for you\n\n${open.map((q) => `- ${q.id} from ${nameOf(task, q.from)}: ${q.question}`).join('\n')}\n\nAnswer with oxy_ensemble_answer.`,
+      );
+      items.push('questions');
+    }
+    sections.push('This message has everything you need; do not call oxy_ensemble_context for it.');
+    return { text: sections.join('\n\n'), items, shown };
   }
 
   // New results: the latest of each agent and kind (older unseen ones are superseded), the plan first.

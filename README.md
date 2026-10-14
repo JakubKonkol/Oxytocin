@@ -101,12 +101,13 @@ e.g. `FIRMA_1/WMS_DB` and `FIRMA_2/WMS_DB`.
 
 ### 🎼 Ensemble: a team of agents on one task (beta)
 
-Set up your crew once — which AI, model and effort each member runs on, and who leads — then describe a task and
-press *Start*: the lead works out what the task needs and hands research, code, review and tests to the crew, in
-parallel where it can. Or pick a fixed pipeline (plan → your approval → implement ⇄ review → tests) from the quick
-start or a template. The work happens in its own git worktree that you merge, squash or discard at the end. A flow
-view shows who does what, and you can take over any agent's terminal. Ensemble is in beta: keep an eye on running
-tasks.
+Set up your crew once — which AI, model and effort each member runs on, and who leads — then describe a task, pick
+the members it may use and press *Start*: the lead (Opus by default) does the core of the work and hands
+well-defined pieces — research, code, review, tests — to cheaper teammates, each in a fresh session with a
+self-contained brief, in parallel where it can. Or build a *custom pipeline* (plan → your approval → implement ⇄
+review → tests) from a template. The work happens in its own git worktree that you merge, squash or discard at the
+end. A flow view shows who does what, and you can take over any agent's terminal. Ensemble is in beta: keep an eye on
+running tasks.
 
 ### ▶️ Run your apps
 

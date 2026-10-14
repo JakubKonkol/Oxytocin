@@ -41,7 +41,7 @@ export const CLI_INFO: Record<EnsembleCli, CliInfo> = {
         hint: 'the most capable, the most expensive',
         group: 'current',
       },
-      { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', hint: 'fast and cheap', group: 'current' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', hint: 'fast and cheap', group: 'current' },
       { id: 'opus', label: 'opus', hint: 'the latest Opus', group: 'alias' },
       { id: 'sonnet', label: 'sonnet', hint: 'the latest Sonnet', group: 'alias' },
       { id: 'fable', label: 'fable', hint: 'the latest Fable', group: 'alias' },
@@ -51,6 +51,7 @@ export const CLI_INFO: Record<EnsembleCli, CliInfo> = {
       { id: 'claude-fable-5', label: 'Claude Fable 5', group: 'older' },
       { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', group: 'older' },
       { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', group: 'older' },
+      { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', group: 'older' },
     ],
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     permissionModes: ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'],
@@ -121,7 +122,7 @@ export const CLI_INFO: Record<EnsembleCli, CliInfo> = {
 };
 
 export const PERMISSION_LABELS: Record<PermissionMode, string> = {
-  default: 'Ask (default)',
+  default: 'Your CLI setting',
   acceptEdits: 'Accept edits',
   plan: 'Plan mode',
   auto: 'Auto',

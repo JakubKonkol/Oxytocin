@@ -1,4 +1,4 @@
-import { Crown, Loader2, Play, RotateCcw, Settings2, Trash2, Users } from 'lucide-react';
+import { Check, Crown, Loader2, Play, RotateCcw, Settings2, Trash2, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { EnsembleAgent, EnsembleChecks, EnsembleCli, EnsembleCrew, RolePreset } from '@shared/domain/ensemble';
 import { CLI_INFO } from '@shared/ensemble/clis';
@@ -291,20 +291,44 @@ export function CrewEditor({ crew, onDone }: { crew: EnsembleCrew; onDone: () =>
   );
 }
 
-/** The crew at a glance: the lead first. */
-function CrewSummary({ crew }: { crew: EnsembleCrew }) {
+/** Crew members left out of new tasks (remembered between tasks, per computer). */
+const OFF_KEY = 'oxytocin.ensemble.crewOff';
+
+function loadOff(): string[] {
+  try {
+    const raw = localStorage.getItem(OFF_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOff(off: string[]): void {
+  try {
+    localStorage.setItem(OFF_KEY, JSON.stringify(off));
+  } catch {
+    // Unavailable storage: the choice holds for this window only.
+  }
+}
+
+/**
+ * The crew at a glance, the lead first. Members can be left out of this task: the lead is told only about the
+ * members that are on (none of them starts before the lead hands it work).
+ */
+function CrewSummary({
+  crew,
+  off,
+  onToggle,
+}: {
+  crew: EnsembleCrew;
+  off: ReadonlySet<string>;
+  onToggle: (id: string) => void;
+}) {
   const lead = crew.members.find((m) => m.id === crew.leadId);
   const others = crew.members.filter((m) => m.id !== crew.leadId);
-  const chip = (m: EnsembleAgent, isLead: boolean) => (
-    <span
-      key={m.id}
-      data-testid={isLead ? 'ensemble-crew-summary-lead' : 'ensemble-crew-summary-member'}
-      className={cn(
-        'flex items-center gap-2 rounded-card border px-2.5 py-1.5',
-        isLead ? 'border-line-focus bg-focus-tint' : 'border-line-subtle bg-card',
-      )}
-      title={`${CLI_INFO[m.cli].displayName} · ${m.readOnly ? 'read-only' : 'edits files'}`}
-    >
+  const body = (m: EnsembleAgent, isLead: boolean) => (
+    <>
       <AgentAvatar agent={m} size={22} />
       <span className="flex flex-col">
         <span className="flex items-center gap-1 font-medium text-fg">
@@ -313,12 +337,40 @@ function CrewSummary({ crew }: { crew: EnsembleCrew }) {
         </span>
         <span className="font-mono text-[11px] text-fg-muted">{modelLabel(m)}</span>
       </span>
-    </span>
+    </>
   );
   return (
-    <div className="flex flex-wrap gap-2" data-testid="ensemble-crew-summary">
-      {lead && chip(lead, true)}
-      {others.map((m) => chip(m, false))}
+    <div className="flex flex-wrap gap-2" data-testid="ensemble-crew-summary" role="group" aria-label="Crew">
+      {lead && (
+        <span
+          data-testid="ensemble-crew-summary-lead"
+          className="flex items-center gap-2 rounded-card border border-line-focus bg-focus-tint px-2.5 py-1.5"
+          title={`Leads the task · ${CLI_INFO[lead.cli].displayName} · ${lead.readOnly ? 'read-only' : 'edits files'}`}
+        >
+          {body(lead, true)}
+        </span>
+      )}
+      {others.map((m) => {
+        const on = !off.has(m.id);
+        return (
+          <button
+            key={m.id}
+            type="button"
+            aria-pressed={on}
+            data-testid="ensemble-crew-summary-member"
+            data-member-id={m.id}
+            onClick={() => onToggle(m.id)}
+            title={`${on ? 'Available to the lead' : 'Left out of this task'} · ${CLI_INFO[m.cli].displayName} · ${m.readOnly ? 'read-only' : 'edits files'} — click to ${on ? 'leave out' : 'include'}`}
+            className={cn(
+              'flex items-center gap-2 rounded-card border px-2.5 py-1.5 text-left transition-colors',
+              on ? 'border-line bg-card' : 'border-line-subtle bg-card opacity-50 hover:opacity-80',
+            )}
+          >
+            {body(m, false)}
+            {on && <Check size={13} className="text-accent" />}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -336,6 +388,14 @@ export function CrewStart({ projectId, onCreated }: { projectId: string; onCreat
   const [testCommand, setTestCommand] = useState('');
   const [approveResult, setApproveResult] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [offList, setOffList] = useState<string[]>(loadOff);
+  const off = new Set(offList);
+  const toggle = (id: string) => {
+    const next = off.has(id) ? offList.filter((x) => x !== id) : [...offList, id];
+    setOffList(next);
+    saveOff(next);
+  };
+  const memberIds = crew.members.filter((m) => m.id === crew.leadId || !off.has(m.id)).map((m) => m.id);
   const [busy, setBusy] = useState<'start' | 'customize' | null>(null);
   const [checks, setChecks] = useState<EnsembleChecks | null>(null);
   const clis = [...new Set(crew.members.map((m) => m.cli))].sort().join(',');
@@ -352,7 +412,7 @@ export function CrewStart({ projectId, onCreated }: { projectId: string; onCreat
   }, [projectId, clis]);
 
   const notRepo = checks !== null && !checks.repo.isRepo;
-  const writes = crew.members.some((m) => !m.readOnly);
+  const writes = crew.members.some((m) => memberIds.includes(m.id) && !m.readOnly);
   const problems = [
     ...(checks?.clis ?? [])
       .filter((c) => !c.installed)
@@ -383,6 +443,7 @@ export function CrewStart({ projectId, onCreated }: { projectId: string; onCreat
         projectId,
         prompt,
         ...(title.trim() ? { title: title.trim() } : {}),
+        memberIds,
         ...(testCommand.trim() ? { testCommand: testCommand.trim() } : {}),
         approveResult,
         ...(notRepo ? { currentCheckout: true } : {}),
@@ -427,7 +488,7 @@ export function CrewStart({ projectId, onCreated }: { projectId: string; onCreat
           <Users size={14} className="text-fg-muted" />
           <span className="text-small font-medium text-fg-secondary">Your crew</span>
           <span className="text-small text-fg-muted">
-            — the lead hands out the work; members start only when they get some
+            — the lead may hand work to the members that are on; each starts only when it gets some
           </span>
           <span className="flex-1" />
           {!editing && (
@@ -436,7 +497,11 @@ export function CrewStart({ projectId, onCreated }: { projectId: string; onCreat
             </Button>
           )}
         </div>
-        {editing ? <CrewEditor crew={crew} onDone={() => setEditing(false)} /> : <CrewSummary crew={crew} />}
+        {editing ? (
+          <CrewEditor crew={crew} onDone={() => setEditing(false)} />
+        ) : (
+          <CrewSummary crew={crew} off={off} onToggle={toggle} />
+        )}
       </section>
 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
