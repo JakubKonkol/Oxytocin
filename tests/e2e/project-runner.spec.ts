@@ -257,12 +257,13 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
     // "Agent Tools" in the Run tool opens the settings, where Claude Code is connected; the old registration goes.
     await frame.getByTestId('runner-agent-tools').click();
     await expect(win.getByTestId('agent-tools')).toBeVisible();
-    await expect(win.getByTestId('mcp-status-detail')).toContainText('not connected to Claude Code');
+    const claudeRow = win.locator('[data-testid="mcp-client"][data-client="claude"]');
+    await expect(claudeRow).toHaveAttribute('data-connected', 'false');
     await win.getByTestId('mcp-connect').click();
     await expect(win.locator('[data-sonner-toast]').filter({ hasText: 'Claude Code is connected' })).toContainText(
       'oxytocin-runner',
     );
-    await expect(win.getByTestId('mcp-status-detail')).toContainText('connected to Claude Code');
+    await expect(claudeRow).toHaveAttribute('data-connected', 'true');
     const calls = (await readFile(claude.log, 'utf8'))
       .trim()
       .split('\n')

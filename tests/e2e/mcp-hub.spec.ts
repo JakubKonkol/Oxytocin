@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +34,10 @@ test('Agent tools: plugin tools reach connected agents live, can be turned off, 
     await win.locator('[data-testid="settings-section"][data-section="Agent Tools"]').click();
     await expect(win.getByTestId('mcp-status-text')).toContainText(`127.0.0.1:${port}/mcp`);
     await expect(win.getByTestId('mcp-status-detail')).toContainText('1 connected client');
+    // The server's settings are in its tab; the tools in a tab of their own.
+    await expect(win.getByTestId('mcp-settings')).toContainText('Port');
+    await expect(toolRow(win, 'oxy_read_terminal_output')).toHaveCount(0);
+    await win.getByTestId('agent-tools-tab-tools').click();
     await expect(toolRow(win, 'oxy_read_terminal_output').getByTestId('mcp-tool-policy')).toHaveValue('ask');
 
     // Enabling the plugin in the plugin manager: the connected agent is told, and sees its tools.
@@ -70,7 +74,8 @@ test('Agent tools: plugin tools reach connected agents live, can be turned off, 
     await win.getByTestId('confirm-dialog-secondary').click();
     expect((await allowed).result?.content?.[0]?.text).toBe('reset done');
     await expect(toolRow(win, 'tests_reset').getByTestId('mcp-tool-policy')).toHaveValue('allow');
-    // The call log lists the calls without their arguments.
+    // The call log (its own tab) lists the calls without their arguments.
+    await win.getByTestId('agent-tools-tab-calls').click();
     await expect(
       win.locator('[data-testid="mcp-log-row"][data-tool="tests_reset"][data-outcome="denied"]'),
     ).toHaveCount(1);
@@ -111,5 +116,52 @@ test('Agent tools: the server follows mcp.enabled and reports a port in use', as
   } finally {
     await app.close();
     blocker.close();
+  }
+});
+
+test("Agent tools: Codex is connected through its config.toml, which keeps the user's settings", async () => {
+  const port = await freePort();
+  const codexHome = await mkdtemp(join(tmpdir(), 'oxy-e2e-codex-'));
+  const config = join(codexHome, 'config.toml');
+  await writeFile(config, '# mine\nmodel = "gpt-5"\n\n[mcp_servers.figma]\nurl = "https://figma.example"\n');
+  const userData = await userDataWithPlugins([], { 'mcp.port': port });
+  const { app, win } = await launchApp({
+    userData,
+    project: await mkdtemp(join(tmpdir(), 'oxy-e2e-project-')),
+    env: { CODEX_HOME: codexHome },
+  });
+  const codex = win.locator('[data-testid="mcp-client"][data-client="codex"]');
+  try {
+    await waitForTerminal(win);
+    await win.getByTestId('app-menu').click();
+    await win.getByRole('menuitem', { name: 'Settings' }).click();
+    await win.locator('[data-testid="settings-section"][data-section="Agent Tools"]').click();
+    await expect(win.getByTestId('mcp-status-text')).toContainText(`127.0.0.1:${port}/mcp`);
+    await expect(codex).toHaveAttribute('data-connected', 'false');
+
+    await win.getByTestId('mcp-connect-codex').click();
+    await expect(win.locator('[data-sonner-toast]').filter({ hasText: 'Codex is connected' })).toBeVisible();
+    await expect(codex).toHaveAttribute('data-connected', 'true');
+    const { token } = JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string };
+    const written = await readFile(config, 'utf8');
+    expect(
+      written.startsWith('# mine\nmodel = "gpt-5"\n\n[mcp_servers.figma]\nurl = "https://figma.example"\n\n'),
+    ).toBe(true);
+    expect(written).toContain('[mcp_servers.oxytocin]\n');
+    expect(written).toContain(`url = "http://127.0.0.1:${port}/mcp"`);
+    expect(written).toContain(`http_headers = { Authorization = "Bearer ${token}" }`);
+    expect(written).toContain('env_http_headers = { X-Oxytocin-Terminal = "OXYTOCIN_TERMINAL_ID" }');
+    // What Codex sends with that entry opens the server.
+    const client = await connect(port, token);
+    expect(await client.tools()).toContain('oxy_list_projects');
+    client.close();
+
+    await win.getByTestId('mcp-disconnect-codex').click();
+    await expect(codex).toHaveAttribute('data-connected', 'false');
+    expect(await readFile(config, 'utf8')).toBe(
+      '# mine\nmodel = "gpt-5"\n\n[mcp_servers.figma]\nurl = "https://figma.example"\n',
+    );
+  } finally {
+    await app.close();
   }
 });

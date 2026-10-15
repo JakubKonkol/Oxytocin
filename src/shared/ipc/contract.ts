@@ -244,9 +244,17 @@ export const invokeContract = {
   'mcp:disconnectClaude': { req: z.null().optional(), res: McpCliResultSchema },
   /** Asks Claude Code whether the server is registered at the current address (null: unknown). */
   'mcp:checkClaude': { req: z.null().optional(), res: z.boolean().nullable() },
-  /** The `claude mcp add` command line and `mcpServers` JSON for other clients (with the token). */
-  'mcp:clientConfig': { req: z.null().optional(), res: z.object({ command: z.string(), json: z.string() }) },
-  /** A new token; Claude Code is connected again when it was connected. */
+  /** Adds the server to Codex's `config.toml` (`$CODEX_HOME`, else `~/.codex`). */
+  'mcp:connectCodex': { req: z.null().optional(), res: McpCliResultSchema },
+  'mcp:disconnectCodex': { req: z.null().optional(), res: McpCliResultSchema },
+  /** Reads Codex's `config.toml`: is the server there at the current address and token (null: unknown)? */
+  'mcp:checkCodex': { req: z.null().optional(), res: z.boolean().nullable() },
+  /** The `claude mcp add` command line, `mcpServers` JSON for other clients and Codex's TOML (with the token). */
+  'mcp:clientConfig': {
+    req: z.null().optional(),
+    res: z.object({ command: z.string(), json: z.string(), codex: z.string(), codexConfigPath: z.string() }),
+  },
+  /** A new token; Claude Code and Codex are connected again when they were connected. */
   'mcp:resetToken': {
     req: z.null().optional(),
     res: McpCliResultSchema.extend({ migrated: z.boolean() }).nullable(),

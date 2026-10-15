@@ -3,6 +3,24 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Codex sees Oxytocin's tools.** *Settings → Agent Tools* connects Codex CLI to Oxytocin's MCP server, as it already
+  did for Claude Code: **Connect** adds an `[mcp_servers.oxytocin]` entry to Codex's `config.toml` (`~/.codex`, or
+  `$CODEX_HOME`) with the server's address, its access token and the terminal header, so every new Codex session can
+  query the project's databases and APIs, read other terminals or ask you — without being told where the server is.
+  Only that entry is written; the rest of the file (other servers, comments) stays as it is, and a file that is not
+  valid TOML is never touched. Resetting the access token updates Codex's entry too, and **Copy config.toml entry**
+  gives the same entry to paste by hand.
+
+### Changed
+
+- **Agent Tools in tabs.** *Settings → Agent Tools* has three tabs: **MCP server** (its status, the agents connected
+  to it — Claude Code, Codex CLI, other MCP clients — and its settings), **Tools** (every tool agents can use, with its
+  switch and policy) and **Recent calls**. The policy menus are wide enough for their labels.
+
 ## [0.9.4] - 2026-10-14
 
 ### Added

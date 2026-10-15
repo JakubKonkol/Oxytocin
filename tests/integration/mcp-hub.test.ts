@@ -114,6 +114,15 @@ async function setup() {
     },
     askPolicy: () => Promise.resolve('once' as const),
     cli: () => Promise.resolve({ ok: false, output: '' }),
+    codex: {
+      home: () => '/nowhere/.codex',
+      platform: 'linux',
+      fs: {
+        readText: () => Promise.resolve(null),
+        writeText: () => Promise.resolve(),
+        exists: () => Promise.resolve(false),
+      },
+    },
     logger: silentLogger,
   });
   await hub.start();

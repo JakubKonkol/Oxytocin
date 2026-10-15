@@ -297,7 +297,7 @@ export const CORE_SETTINGS = {
   'mcp.port': def(
     z.number().int().min(1024).max(65535),
     47287,
-    'Local port of the MCP server. After changing it, connect Claude Code again (Agent tools).',
+    'Local port of the MCP server. After changing it, connect Claude Code and Codex again (Agent Tools).',
   ),
   'mcp.claudeCommand': def(
     z.string().min(1),

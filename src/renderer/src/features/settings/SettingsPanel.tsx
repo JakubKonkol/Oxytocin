@@ -36,6 +36,8 @@ import {
 export const SETTINGS_PANEL_ID = 'settings-editor';
 /** The settings section with Oxytocin's MCP server and the tools agents can use. */
 export const AGENT_TOOLS_SECTION = 'Agent Tools';
+/** Settings the Tools tab of Agent Tools edits (not listed again with the server's settings). */
+const AGENT_TOOLS_MANAGED = new Set(['mcp.tools.disabled', 'mcp.tools.policy']);
 /** Installed coding agents, their accounts and API profiles. */
 export const AI_AGENTS_SECTION = 'AI Agents';
 /** Database servers whose databases projects link. */
@@ -81,7 +83,7 @@ export function registerSettingsCommands(): void {
   });
   registerCommand({
     id: 'oxytocin.mcp.openSettings',
-    title: 'Agent Tools: Open (MCP Server, Connect Claude Code)',
+    title: 'Agent Tools: Open (MCP Server, Connect Claude Code or Codex)',
     run: () => openSettingsEditor('', AGENT_TOOLS_SECTION),
   });
   registerCommand({
@@ -387,6 +389,8 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
   // Settings are shown one section at a time (a search looks through all of them).
   const current = section && sections.includes(section) ? section : (sections[0] ?? null);
   if (!searching) visible = visible.filter((d) => d.section === current);
+  // Agent Tools shows its settings in its "MCP server" tab.
+  const agentTools = !searching && current === AGENT_TOOLS_SECTION;
   const groups = sectionsOf(visible)
     .map((s) => ({ section: s, items: visible.filter((d) => d.section === s) }))
     .filter((g) => g.items.length > 0);
@@ -440,10 +444,24 @@ export function SettingsPanel(_props: IDockviewPanelProps) {
           ))}
         </nav>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
-          {!searching && current === AGENT_TOOLS_SECTION && <AgentToolsView />}
+          {agentTools && (
+            <AgentToolsView
+              settings={visible
+                .filter((d) => !AGENT_TOOLS_MANAGED.has(d.key))
+                .map((d) => (
+                  <SettingRow
+                    key={d.key}
+                    d={d}
+                    value={valueOf(d, settings)}
+                    problem={problemFor.get(d.key)}
+                    configurations={configurations}
+                  />
+                ))}
+            />
+          )}
           {!searching && current === AI_AGENTS_SECTION && <AiAgentsView />}
           {!searching && current === DATABASE_SERVERS_SECTION && <DatabaseServersView />}
-          {groups.map((g) => (
+          {(agentTools ? [] : groups).map((g) => (
             <section key={g.section} data-testid="settings-group" data-section={g.section} className="mb-4">
               <h2 className="oxy-label border-b border-line-subtle py-1.5">{g.section}</h2>
               {g.items.map((d) => (

@@ -28,6 +28,14 @@ import {
   mcpUrl,
   type RunCli,
 } from './client-registration';
+import {
+  type CodexConfigFs,
+  codexConfigPath,
+  codexServerToml,
+  connectCodex,
+  disconnectCodex,
+  isConnectedToCodex,
+} from './codex-registration';
 import { buildCoreTools, type CoreTool, type CoreToolsDeps } from './core-tools';
 import type { ResourceTool, ResourceToolNeed } from './resource-tools';
 import { type ListedTool, McpHttpServer, type ToolCall } from './http-server';
@@ -96,6 +104,8 @@ export interface McpHubDeps {
   };
   askPolicy(request: AskPolicyRequest): Promise<AskPolicyAnswer>;
   cli: RunCli;
+  /** Codex CLI's home folder (`$CODEX_HOME`, else `~/.codex`) and how its `config.toml` is read and written. */
+  codex: { home(): string; platform: NodeJS.Platform; fs: CodexConfigFs };
   logger: Logger;
   /** Project resources: their tools are listed only while a project has such a resource. */
   resources?: {
@@ -134,6 +144,7 @@ export class McpHub implements Disposable {
   private readonly log: McpCallLogEntry[] = [];
   private logId = 0;
   private claudeConnected: boolean | null = null;
+  private codexConnected: boolean | null = null;
   /** The port the running server was started for (the setting; 0 picks a free port in tests). */
   private startedFor: number | null = null;
   private queue: Promise<void> = Promise.resolve();
@@ -245,15 +256,31 @@ export class McpHub implements Disposable {
     return token;
   }
 
-  /** A new token: connected clients must be registered again (done for Claude Code when it was connected). */
+  /**
+   * A new token: connected clients must be registered again (done for Claude Code and Codex when they were
+   * connected). The result tells what failed (null: neither was connected).
+   */
   async resetToken(): Promise<ConnectResult | null> {
+    const codex = this.codexConnected === true;
     await this.deps.tokenStore.set(randomBytes(24).toString('base64url'));
     // Sessions opened with the old token end; their next request fails with 401.
     await this.server.stop();
     await this.apply();
-    const reconnect = this.claudeConnected === true ? await this.connectClaude() : null;
+    const claude = this.claudeConnected === true ? await this.connectClaude() : null;
+    const codexResult = codex ? await this.connectCodex() : null;
     this.scheduleState();
-    return reconnect;
+    if (!claude && !codexResult) return null;
+    const failed = [
+      ...(claude && !claude.ok ? [`Claude Code: ${claude.output}`] : []),
+      ...(codexResult && !codexResult.ok ? [`Codex: ${codexResult.output}`] : []),
+    ];
+    return failed.length
+      ? { ok: false, output: failed.join('\n'), migrated: claude?.migrated ?? false }
+      : {
+          ok: true,
+          output: [claude?.output, codexResult?.output].filter(Boolean).join('\n'),
+          migrated: claude?.migrated ?? false,
+        };
   }
 
   // ── tools ──
@@ -616,6 +643,7 @@ export class McpHub implements Disposable {
         error: this.server.error,
         sessions: this.server.sessionCount,
         claudeConnected: this.claudeConnected,
+        codexConnected: this.codexConnected,
         calls: this.server.calls,
       },
       tools: this.registry.all(),
@@ -667,10 +695,56 @@ export class McpHub implements Disposable {
     return result;
   }
 
-  /** The Claude Code command line and the `mcpServers` JSON for other clients (with the token). */
-  clientConfig(): { command: string; json: string } {
+  private codexConfig(): { home: string; path: string } {
+    const home = this.deps.codex.home();
+    return { home, path: codexConfigPath(home, this.deps.codex.platform) };
+  }
+
+  async checkCodex(): Promise<boolean | null> {
+    const { home, path } = this.codexConfig();
+    this.codexConnected = await isConnectedToCodex(
+      this.deps.codex.fs,
+      home,
+      path,
+      this.server.port ?? this.port(),
+      this.token(),
+    );
+    this.scheduleState();
+    return this.codexConnected;
+  }
+
+  /** Adds (or updates) the `oxytocin` server in Codex's `config.toml`. */
+  async connectCodex(): Promise<McpCliResult> {
+    await this.queue;
+    const port = this.server.port;
+    if (port === null)
+      return { ok: false, output: this.server.error ?? 'The MCP server is turned off ("mcp.enabled" in Settings).' };
+    const result = await connectCodex(this.deps.codex.fs, this.codexConfig().path, port, this.token());
+    if (result.ok) this.codexConnected = true;
+    else this.deps.logger.warn(`Connecting Codex failed: ${result.output}`);
+    this.scheduleState();
+    return result;
+  }
+
+  async disconnectCodex(): Promise<McpCliResult> {
+    const result = await disconnectCodex(this.deps.codex.fs, this.codexConfig().path, this.server.port ?? this.port());
+    if (result.ok) this.codexConnected = false;
+    this.scheduleState();
+    return result;
+  }
+
+  /**
+   * The Claude Code command line, the `mcpServers` JSON for other clients and the table for Codex's `config.toml`
+   * (all with the token).
+   */
+  clientConfig(): { command: string; json: string; codex: string; codexConfigPath: string } {
     const port = this.server.port ?? this.port();
-    return { command: addCommandLine(port, this.token()), json: mcpConfigJson(port, this.token()) };
+    return {
+      command: addCommandLine(port, this.token()),
+      json: mcpConfigJson(port, this.token()),
+      codex: codexServerToml(port, this.token()),
+      codexConfigPath: this.codexConfig().path,
+    };
   }
 
   dispose(): void {

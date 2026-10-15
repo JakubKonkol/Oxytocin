@@ -208,7 +208,7 @@ Download the latest version from **[Releases](https://github.com/JakubKonkol/Oxy
 1. **Add a project:** *Add project* (`Ctrl+Shift+A`) or drop a folder on the PROJECTS list. A terminal opens in it.
 2. **Start an agent:** **+** → *AI agents* → Claude Code (or Codex, Gemini, … — detected with the accounts they use),
    or type `claude` in the terminal.
-3. **Connect the agent tools** once: *Settings → Agent Tools → Connect Claude Code*.
+3. **Connect the agent tools** once: *Settings → Agent Tools → MCP server → Connect* for Claude Code and/or Codex.
 4. **Follow the changes:** the CHANGES section fills while the agent works. Click a file for its diff, *Review all
    changes* when it is done, then commit.
 

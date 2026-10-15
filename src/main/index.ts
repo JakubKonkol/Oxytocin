@@ -76,6 +76,7 @@ import { createElectronUpdaterBackend, updateUnsupportedReason } from './service
 import { createE2eUpdateBackend } from './services/updates/e2e-update-backend';
 import { McpHub } from './services/mcp/mcp-hub';
 import { createCliRunner } from './services/mcp/client-registration';
+import { codexHome, nodeCodexFs } from './services/mcp/codex-registration';
 import type { PluginToolSource } from './services/mcp/tool-registry';
 import { JsonFileStore } from './services/storage/json-file-store';
 import type { McpToolResult } from '@shared/domain/mcp';
@@ -808,6 +809,7 @@ function bootstrap(): void {
       () => settings.get()['mcp.claudeCommand'] || 'claude',
       () => shellEnv,
     ),
+    codex: { home: () => codexHome(shellEnv, process.platform), platform: process.platform, fs: nodeCodexFs },
     logger: createLogger('mcp'),
     resources: {
       tools: resourcesController.tools,
@@ -1068,6 +1070,9 @@ function bootstrap(): void {
       'mcp:connectClaude': () => mcpHub.connectClaude(),
       'mcp:disconnectClaude': () => mcpHub.disconnectClaude(),
       'mcp:checkClaude': () => mcpHub.checkClaude(),
+      'mcp:connectCodex': () => mcpHub.connectCodex(),
+      'mcp:disconnectCodex': () => mcpHub.disconnectCodex(),
+      'mcp:checkCodex': () => mcpHub.checkCodex(),
       'mcp:clientConfig': () => mcpHub.clientConfig(),
       'mcp:resetToken': () => mcpHub.resetToken(),
       'mcp:clearLog': () => mcpHub.clearLog(),

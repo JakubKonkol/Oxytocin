@@ -6,6 +6,7 @@ import { type AskPolicyAnswer, McpHub, type McpHubDeps } from './mcp-hub';
 import { McpHttpServer } from './http-server';
 import type { PluginToolSource } from './tool-registry';
 import type { ResourceTool } from './resource-tools';
+import type { CodexConfigFs } from './codex-registration';
 
 const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 const hubs: McpHub[] = [];
@@ -42,6 +43,13 @@ function setup(
     },
   ];
   let token: string | undefined;
+  const codexFiles = new Map<string, string>();
+  const codexHome = '/home/me/.codex';
+  const codexFs: CodexConfigFs = {
+    readText: (path) => Promise.resolve(codexFiles.get(path) ?? null),
+    writeText: (path, text) => Promise.resolve(void codexFiles.set(path, text)),
+    exists: (path) => Promise.resolve(path === codexHome),
+  };
   const pluginCall = vi.fn(
     o.call ?? (() => Promise.resolve<McpToolResult>({ content: [{ type: 'text', text: 'rows: 3' }] })),
   );
@@ -85,6 +93,7 @@ function setup(
     },
     askPolicy,
     cli: vi.fn(() => Promise.resolve({ ok: true, output: '' })),
+    codex: { home: () => codexHome, platform: 'linux', fs: codexFs },
     logger,
     ...(o.resources ? { resources: o.resources } : {}),
   };
@@ -96,7 +105,17 @@ function setup(
   };
   const call = (name: string, args: Record<string, unknown> = {}, signal = new AbortController().signal) =>
     hub.callTool(name, args, { sessionId: 's', terminalHeader: 't-1', signal });
-  return { hub, deps, pluginCall, askPolicy, setSources, call, token: () => token, settings: () => settings };
+  return {
+    hub,
+    deps,
+    pluginCall,
+    askPolicy,
+    setSources,
+    call,
+    token: () => token,
+    settings: () => settings,
+    codexConfig: () => codexFiles.get(`${codexHome}/config.toml`),
+  };
 }
 
 describe('McpHub', () => {
@@ -202,6 +221,31 @@ describe('McpHub', () => {
     await hub.resetToken();
     expect(token()).not.toBe(before);
     expect(hub.clientConfig().json).toContain(token()!);
+  });
+
+  it('connects Codex through its config.toml and keeps it connected when the token is reset', async () => {
+    const { hub, token, codexConfig } = setup();
+    await hub.start();
+    const port = hub.state().status.port!;
+    expect(await hub.checkCodex()).toBe(false);
+    expect((await hub.connectCodex()).ok).toBe(true);
+    expect(hub.state().status.codexConnected).toBe(true);
+    expect(codexConfig()).toContain(`url = "http://127.0.0.1:${port}/mcp"`);
+    expect(codexConfig()).toContain(`Bearer ${token()!}`);
+    expect(await hub.checkCodex()).toBe(true);
+
+    const r = await hub.resetToken();
+    expect(r?.ok).toBe(true);
+    expect(codexConfig()).toContain(`Bearer ${token()!}`);
+    expect(await hub.checkCodex()).toBe(true);
+    expect(hub.clientConfig()).toMatchObject({
+      codex: expect.stringContaining('[mcp_servers.oxytocin]') as string,
+      codexConfigPath: '/home/me/.codex/config.toml',
+    });
+
+    expect((await hub.disconnectCodex()).ok).toBe(true);
+    expect(codexConfig()).toBe('');
+    expect(hub.state().status.codexConnected).toBe(false);
   });
 });
 

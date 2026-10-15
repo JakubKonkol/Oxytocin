@@ -137,6 +137,8 @@ export const McpHubStatusSchema = z.object({
   sessions: z.number(),
   /** Registered in Claude Code at this address (null: unknown, e.g. Claude Code is not installed). */
   claudeConnected: z.boolean().nullable(),
+  /** Registered in Codex's `config.toml` at this address with this token (null: unknown, e.g. no `~/.codex`). */
+  codexConnected: z.boolean().nullable(),
   calls: z.number(),
 });
 export type McpHubStatus = z.infer<typeof McpHubStatusSchema>;

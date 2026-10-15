@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { McpToolInfo } from '@shared/domain/mcp';
-import { groupTools, toggleTool, withPolicy } from './AgentToolsView';
+import { groupTools, toggleTool, toolCount, withPolicy } from './AgentToolsView';
 
 const tool = (name: string, source: McpToolInfo['source']): McpToolInfo => ({
   name,
@@ -35,5 +35,11 @@ describe('Agent tools settings', () => {
       ['Oxytocin', ['oxy_a', 'oxy_b']],
       ['Project Runner', ['run_start']],
     ]);
+  });
+
+  it('counts the tools agents see in the tab title', () => {
+    const a = tool('oxy_a', { kind: 'core' });
+    expect(toolCount([a, tool('oxy_b', { kind: 'core' })])).toBe('2');
+    expect(toolCount([a, { ...tool('oxy_b', { kind: 'core' }), listed: false }])).toBe('1 of 2');
   });
 });
