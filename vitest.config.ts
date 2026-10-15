@@ -4,6 +4,13 @@ import { defineConfig } from 'vitest/config';
 
 const alias = { '@shared': resolve('src/shared'), '@renderer': resolve('src/renderer/src') };
 
+/**
+ * Integration tests that measure latency (e.g. a file write → git refresh within 300 ms). They run on their own,
+ * after the other integration tests: next to the PTY Host's 20 MB flow-control test or the git lock test, a busy CI
+ * runner (Windows) delays the file watcher by several hundred milliseconds.
+ */
+const LATENCY_TESTS = ['tests/integration/git-watch.test.ts'];
+
 export default defineConfig({
   resolve: { alias },
   test: {
@@ -39,8 +46,20 @@ export default defineConfig({
           name: 'integration',
           environment: 'node',
           include: ['tests/integration/**/*.test.ts'],
+          exclude: LATENCY_TESTS,
           testTimeout: 30_000,
           pool: 'forks',
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          name: 'integration-latency',
+          environment: 'node',
+          include: LATENCY_TESTS,
+          testTimeout: 30_000,
+          pool: 'forks',
+          fileParallelism: false,
         },
       },
     ],

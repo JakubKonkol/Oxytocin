@@ -53,6 +53,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y -q zsh fish
       - run: npx vitest run --project integration
+      # Latency tests (git watcher) alone: under the parallel load of the other integration tests they measure the runner.
+      - run: npx vitest run --project integration-latency
       - name: Install system dependencies for Electron (Linux)
         if: runner.os == 'Linux'
         run: npx playwright install-deps chromium
