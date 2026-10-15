@@ -2,13 +2,22 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { Terminal } from '@xterm/headless';
 import type { ProgressState } from '@shared/domain/terminal';
 import { type Disposable, DisposableStore, toDisposable } from '@shared/utils/disposable';
-import { type Osc633, parseOsc633, parseOsc7, parseOsc777, parseOsc9 } from './osc-parsers';
+import {
+  type Osc633,
+  parseOsc633,
+  parseOsc7,
+  parseOsc7501,
+  parseOsc777,
+  parseOsc9,
+  type ProgramStatus,
+} from './osc-parsers';
 
 export interface MirrorSignals {
   onTitle(title: string): void;
   onBell(): void;
   onProgress(state: ProgressState, value?: number): void;
   onNotification(body: string, title?: string): void;
+  onProgramStatus(status: ProgramStatus): void;
   onCwd(cwd: string): void;
   /** OSC 633 shell integration marks (cwd marks also go to `onCwd`). */
   onShellMark(mark: Exclude<Osc633, { kind: 'cwd' }>): void;
@@ -96,6 +105,13 @@ export class HeadlessMirror implements Disposable {
       parser.registerOscHandler(777, (data) => {
         const r = parseOsc777(data);
         if (r) signals.onNotification(r.body, r.title);
+        return false;
+      }),
+    );
+    this.store.add(
+      parser.registerOscHandler(7501, (data) => {
+        const status = parseOsc7501(data);
+        if (status) signals.onProgramStatus(status);
         return false;
       }),
     );

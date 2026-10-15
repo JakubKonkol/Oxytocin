@@ -19,12 +19,25 @@ import { type ClaudeRegistry, mapRegistryStatus, type RegistryEntry } from './cl
 const PRIORITY: Record<AgentStateSource, number> = {
   hook: 5,
   'claude-registry': 4,
+  'program-status': 4,
   'osc-progress': 3,
+  title: 3,
   bell: 2,
   'output-heuristic': 1,
   none: 0,
 };
 const OVERRIDE_WINDOW_MS = 10_000;
+/**
+ * Sources that report every change (working and idle): once one has spoken, the output heuristic stays off. A bell is
+ * a single event (a finished turn rings as well as a question) and never turns the heuristic off.
+ */
+const CONTINUOUS_SOURCES = new Set<AgentStateSource>([
+  'hook',
+  'claude-registry',
+  'program-status',
+  'osc-progress',
+  'title',
+]);
 const STARTING_MAX_MS = 10_000;
 const OUTPUT_WORKING_MS = 2_000;
 const OUTPUT_IDLE_MS = 8_000;
@@ -44,6 +57,24 @@ const SHELL_NAMES = new Set([
   'powershell.exe',
   'cmd.exe',
 ]);
+
+/** Codex CLI's title spinner frames (the "activity" item of its terminal title, shown by default). */
+const CODEX_TITLE_SPINNER = /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/;
+/** Codex CLI's title while it waits for an approval or an answer (it blinks between `!` and `.`). */
+const CODEX_TITLE_ACTION_REQUIRED = /^\[ [!.] \] Action Required/;
+/** Codex CLI's notifications (OSC 9, `tui.notification_method = "osc9"`) that ask the user something. */
+const CODEX_NOTIFICATION_NEEDS_USER = /^(Approval requested|Codex wants to edit|Plan mode prompt:|Question:)/;
+
+/**
+ * What Codex CLI's terminal title says about its state: `working` (a spinner), `waiting` ("Action Required") or
+ * `null` (no activity shown: idle, or a title without the activity item).
+ */
+export function codexTitleState(title: string): 'working' | 'waiting' | null {
+  const t = title.trimStart();
+  if (CODEX_TITLE_ACTION_REQUIRED.test(t)) return 'waiting';
+  if (CODEX_TITLE_SPINNER.test(t)) return 'working';
+  return null;
+}
 
 /** Built-in agent profiles (`agent:<name>`) → detection rule ids. */
 const PROFILE_RULES: Record<string, string> = {
@@ -85,6 +116,13 @@ interface Tracked {
   sourceAt: Partial<Record<AgentStateSource, number>>;
   /** A source better than the output heuristic has spoken for this agent. */
   hasPreciseSource: boolean;
+  /**
+   * The agent reports its state itself (OSC 7501, or activity in its title): its bells and notifications are only
+   * echoes of that state and are ignored.
+   */
+  reportsState?: boolean;
+  /** Its title showed activity (Codex): a title without it then means idle. */
+  titleActive?: boolean;
   lastOutputAt: number;
   workedAt?: number;
   /** Published kind (`shell` until the first confirmed classification). */
@@ -115,8 +153,10 @@ export class AgentService implements Disposable {
     this.store.add(deps.terminals.onDidRemove((id) => this.forget(id)));
     this.store.add(pty.onEvent('terminal:process', (e) => this.onProcesses(e.id, e.descendants)));
     this.store.add(pty.onEvent('terminal:progress', (e) => this.onProgress(e.id, e.state)));
-    this.store.add(pty.onEvent('terminal:bell', (e) => this.signal(e.id, 'bell', 'waiting')));
-    this.store.add(pty.onEvent('terminal:notification', (e) => this.signal(e.id, 'bell', 'waiting')));
+    this.store.add(pty.onEvent('terminal:bell', (e) => this.onBell(e.id)));
+    this.store.add(pty.onEvent('terminal:notification', (e) => this.onBell(e.id, e.body)));
+    this.store.add(pty.onEvent('terminal:programStatus', (e) => this.onProgramStatus(e.id, e.state, e.kind)));
+    this.store.add(pty.onEvent('terminal:title', (e) => this.onTitle(e.id, e.title)));
     this.store.add(pty.onEvent('terminal:userInput', (e) => this.onUserInput(e.id)));
     this.store.add(pty.onEvent('terminal:command', (e) => this.onCommand(e.id, e.phase)));
     this.store.add(pty.onEvent('terminal:exit', (e) => this.onExit(e.id)));
@@ -231,6 +271,8 @@ export class AgentService implements Disposable {
       if (!same) {
         t.sourceAt = {};
         t.hasPreciseSource = false;
+        t.reportsState = undefined;
+        t.titleActive = undefined;
         t.workedAt = undefined;
         this.deps.logger.info(`Terminal ${t.id}: ${c.rule.displayName} detected (pid ${c.proc.pid})`);
         // Its registry entry may already exist (written at start-up): pick it up now.
@@ -277,7 +319,7 @@ export class AgentService implements Disposable {
       }
     }
     t.sourceAt[source] = now;
-    if (source !== 'output-heuristic' && source !== 'none') t.hasPreciseSource = true;
+    if (CONTINUOUS_SOURCES.has(source)) t.hasPreciseSource = true;
     if (state === 'working') t.workedAt = now;
     if (agent.state === state && agent.stateSource === source && agent.waitingFor === waitingFor) return false;
     const { waitingFor: _w, ...rest } = agent;
@@ -291,9 +333,44 @@ export class AgentService implements Disposable {
     return true;
   }
 
-  private signal(id: string, source: AgentStateSource, state: AgentState): void {
+  private signal(id: string, source: AgentStateSource, state: AgentState, waitingFor?: string): void {
     const t = this.tracked.get(id);
-    if (t && this.propose(t, source, state)) this.publish(t, { agent: t.agent });
+    if (t && this.propose(t, source, state, waitingFor)) this.publish(t, { agent: t.agent });
+  }
+
+  /**
+   * A bell or a desktop notification: the agent wants attention. Codex CLI also rings when a turn is done; its
+   * notification text tells which, and an agent that reports its state itself is not second-guessed.
+   */
+  private onBell(id: string, body?: string): void {
+    const t = this.tracked.get(id);
+    if (!t?.agent || t.reportsState) return;
+    const state: AgentState =
+      t.agent.agentId === 'codex' && body !== undefined && !CODEX_NOTIFICATION_NEEDS_USER.test(body)
+        ? 'idle'
+        : 'waiting';
+    this.signal(id, 'bell', state);
+  }
+
+  /** OSC 7501 (Codex CLI): working, blocked (on a permission, a question, a login), idle, done or failed. */
+  private onProgramStatus(id: string, status: string, kind?: string): void {
+    const t = this.tracked.get(id);
+    if (!t?.agent || status === 'clear') return;
+    t.reportsState = true;
+    const state: AgentState = status === 'working' ? 'working' : status === 'blocked' ? 'waiting' : 'idle';
+    this.signal(id, 'program-status', state, state === 'waiting' ? kind : undefined);
+  }
+
+  /** Codex CLI shows its activity first in the terminal title (a spinner, or "Action Required"). */
+  private onTitle(id: string, title: string): void {
+    const t = this.tracked.get(id);
+    if (t?.agent?.agentId !== 'codex') return;
+    const state = codexTitleState(title);
+    if (state) {
+      t.titleActive = true;
+      t.reportsState = true;
+    } else if (!t.titleActive) return;
+    this.signal(id, 'title', state ?? 'idle');
   }
 
   private onProgress(id: string, progress: number): void {

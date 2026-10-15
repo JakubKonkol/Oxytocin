@@ -35,6 +35,13 @@ export type PtyHostEvents = HostBaseEvents & {
   'terminal:progress': { id: TerminalId; state: ProgressState; value?: number };
   'terminal:notification': { id: TerminalId; title?: string; body: string };
   'terminal:cwd': { id: TerminalId; cwd: string };
+  /** OSC 7501 lifecycle state of the program in the terminal (Codex CLI). */
+  'terminal:programStatus': {
+    id: TerminalId;
+    state: 'idle' | 'working' | 'blocked' | 'done' | 'error' | 'clear';
+    app?: string;
+    kind?: string;
+  };
   /**
    * Shell integration (OSC 633, 04 §11): `prompt` at each prompt, `start` when a command runs, `end` when it
    * finished (exit code when the shell reported one; `interrupted` when Ctrl+C was typed while it ran).

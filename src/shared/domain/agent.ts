@@ -6,7 +6,11 @@ export type AgentState = z.infer<typeof AgentStateSchema>;
 export const AgentStateSourceSchema = z.enum([
   'hook',
   'claude-registry',
+  /** OSC 7501 lifecycle state (recent Codex CLI builds). */
+  'program-status',
   'osc-progress',
+  /** The activity shown in the terminal title (Codex CLI: a spinner while working, "Action Required"). */
+  'title',
   'bell',
   'output-heuristic',
   'none',

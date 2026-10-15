@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOsc633, parseOsc7, parseOsc777, parseOsc9, unescapeOsc633 } from './osc-parsers';
+import { parseOsc633, parseOsc7, parseOsc7501, parseOsc777, parseOsc9, unescapeOsc633 } from './osc-parsers';
 
 describe('parseOsc9', () => {
   it('parses progress sequences', () => {
@@ -22,6 +22,21 @@ describe('parseOsc777', () => {
     expect(parseOsc777('notify;Claude;Needs input; now')).toEqual({ title: 'Claude', body: 'Needs input; now' });
     expect(parseOsc777('notify;;body')).toEqual({ body: 'body' });
     expect(parseOsc777('other;x')).toBeNull();
+  });
+});
+
+describe('parseOsc7501', () => {
+  it('parses program lifecycle states', () => {
+    expect(parseOsc7501('state=working:app=codex')).toEqual({ state: 'working', app: 'codex' });
+    expect(parseOsc7501('state=blocked:app=codex:kind=question')).toEqual({
+      state: 'blocked',
+      app: 'codex',
+      kind: 'question',
+    });
+    expect(parseOsc7501('state=done:app=codex')).toEqual({ state: 'done', app: 'codex' });
+    expect(parseOsc7501('state=clear')).toEqual({ state: 'clear' });
+    expect(parseOsc7501('state=dancing:app=codex')).toBeNull();
+    expect(parseOsc7501('app=codex')).toBeNull();
   });
 });
 

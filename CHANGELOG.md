@@ -21,6 +21,15 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   to it — Claude Code, Codex CLI, other MCP clients — and its settings), **Tools** (every tool agents can use, with its
   switch and policy) and **Recent calls**. The policy menus are wide enough for their labels.
 
+### Fixed
+
+- **Codex CLI's status.** A Codex agent that finished its turn no longer stays *waiting* (or *working* after your
+  next message). Oxytocin now reads what Codex itself reports: its lifecycle state (OSC 7501, recent Codex builds:
+  working, waiting for a permission, a question or a login, done) and otherwise the activity in its terminal title
+  (a spinner while it works, *Action Required* while it waits for you). The bell Codex rings when a turn is complete
+  no longer counts as a question, and a bell never turns off the detection from the terminal's output any more, so
+  an agent that only rings becomes idle again once it is quiet.
+
 ## [0.9.4] - 2026-10-14
 
 ### Added

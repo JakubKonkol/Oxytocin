@@ -6,6 +6,7 @@ import { launchApp, repoRoot } from './helpers/launch';
 import { activeProjectId, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js');
+const fakeCodex = join(repoRoot, 'tests/fixtures/agents/node_modules/@openai/codex/bin/codex.js');
 
 test('a fake Claude Code agent is detected and its registry states drive badge and dots', async () => {
   const claudeDir = await mkdtemp(join(tmpdir(), 'oxy-e2e-claude-'));
@@ -52,6 +53,48 @@ test('a fake Claude Code agent is detected and its registry states drive badge a
     await app.close();
   }
 });
+
+for (const variant of [
+  { name: 'its terminal title and bell', args: '' },
+  { name: 'OSC 7501', args: ' --status' },
+]) {
+  test(`a Codex CLI agent's states follow ${variant.name}; a finished turn is idle, not waiting`, async () => {
+    const { app, win } = await launchApp();
+    try {
+      const id = await waitForTerminal(win);
+      const badge = win.getByTestId('terminal-kind-badge');
+      const projectDot = win.getByTestId(`status-dot-${await activeProjectId(win)}`);
+      await run(win, `node "${fakeCodex}"${variant.args}`);
+      await expect.poll(() => oxyTest(win).text(id)).toContain('fake-codex>');
+      await expect(badge).toHaveText('AI AGENT', { timeout: 10_000 });
+
+      await run(win, 'work');
+      await expect(badge).toHaveAttribute('data-state', 'working', { timeout: 10_000 });
+      await expect(projectDot).toHaveAttribute('data-state', 'agent-working');
+
+      await run(win, 'ask');
+      await expect(badge).toHaveText('WAITING', { timeout: 10_000 });
+      await expect(projectDot).toHaveAttribute('data-state', 'attention');
+
+      // The turn is complete (Codex rings the bell): idle, and it stays idle.
+      await run(win, 'done');
+      await expect(badge).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
+      await expect(projectDot).toHaveAttribute('data-state', 'idle');
+      await win.waitForTimeout(1500);
+      await expect(badge).toHaveAttribute('data-state', 'idle');
+
+      await run(win, 'work');
+      await expect(badge).toHaveAttribute('data-state', 'working', { timeout: 10_000 });
+      await run(win, 'done');
+      await expect(badge).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
+
+      await run(win, 'quit');
+      await expect(badge).toHaveText('SHELL', { timeout: 10_000 });
+    } finally {
+      await app.close();
+    }
+  });
+}
 
 test('a running command marks the terminal as PROCESS', async () => {
   const { app, win } = await launchApp();

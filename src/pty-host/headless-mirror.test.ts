@@ -7,6 +7,7 @@ const signals = () => ({
   onBell: vi.fn(),
   onProgress: vi.fn(),
   onNotification: vi.fn(),
+  onProgramStatus: vi.fn(),
   onCwd: vi.fn(),
   onShellMark: vi.fn(),
 });
@@ -38,6 +39,10 @@ describe('HeadlessMirror', () => {
     expect(s.onNotification).toHaveBeenCalledWith('Done');
     expect(s.onNotification).toHaveBeenCalledWith('Needs input', 'Claude');
     expect(s.onCwd).toHaveBeenCalledWith('/tmp/x');
+    // Codex's lifecycle state (ST-terminated).
+    await written(m, '\x1b]7501;state=blocked:app=codex:kind=permission\x1b\\\x1b]7501;state=clear\x1b\\');
+    expect(s.onProgramStatus).toHaveBeenCalledWith({ state: 'blocked', app: 'codex', kind: 'permission' });
+    expect(s.onProgramStatus).toHaveBeenCalledWith({ state: 'clear' });
     expect(s.onBell).toHaveBeenCalledOnce();
     m.dispose();
   });

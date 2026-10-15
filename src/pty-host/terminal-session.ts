@@ -91,6 +91,7 @@ export class TerminalSession {
           emit('terminal:progress', value === undefined ? { id: this.id, state } : { id: this.id, state, value }),
         onNotification: (body, title) =>
           emit('terminal:notification', title === undefined ? { id: this.id, body } : { id: this.id, title, body }),
+        onProgramStatus: (status) => emit('terminal:programStatus', { id: this.id, ...status }),
         onCwd: (cwd) => emit('terminal:cwd', { id: this.id, cwd }),
         onShellMark: (mark) => this.onShellMark(mark),
       },

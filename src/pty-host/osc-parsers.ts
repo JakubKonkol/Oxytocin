@@ -32,6 +32,33 @@ export function parseOsc777(data: string): { title?: string; body: string } | nu
   return title ? { title, body } : { body };
 }
 
+export const PROGRAM_STATES = ['idle', 'working', 'blocked', 'done', 'error', 'clear'] as const;
+export type ProgramState = (typeof PROGRAM_STATES)[number];
+export interface ProgramStatus {
+  state: ProgramState;
+  /** The program that reports (`app=codex`). */
+  app?: string;
+  /** Why it is blocked (`kind=permission|question|auth`). */
+  kind?: string;
+}
+
+/**
+ * OSC 7501: a program's lifecycle state, `state=<idle|working|blocked|done|error>:app=<name>[:kind=<reason>]` or
+ * `state=clear` (reported by recent Codex CLI builds).
+ */
+export function parseOsc7501(data: string): ProgramStatus | null {
+  const fields = new Map<string, string>();
+  for (const part of data.split(':')) {
+    const eq = part.indexOf('=');
+    if (eq > 0) fields.set(part.slice(0, eq).trim(), part.slice(eq + 1).trim());
+  }
+  const state = fields.get('state') as ProgramState | undefined;
+  if (!state || !PROGRAM_STATES.includes(state)) return null;
+  const app = fields.get('app');
+  const kind = fields.get('kind');
+  return { state, ...(app ? { app: app.slice(0, 64) } : {}), ...(kind ? { kind: kind.slice(0, 64) } : {}) };
+}
+
 /** OSC 7: `file://<host>/<path>` → local path (Windows drive paths lose the leading slash). */
 export function parseOsc7(data: string): string | null {
   if (!data.startsWith('file://')) return null;

@@ -4,7 +4,7 @@ import type { PtyHostEvents } from '@shared/rpc/contracts/pty-host';
 import { toDisposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import type { TerminalRuntimePatch } from '../terminals/terminal-service';
-import { AgentService, type AgentTerminalsPort } from './agent-service';
+import { AgentService, type AgentTerminalsPort, codexTitleState } from './agent-service';
 import type { RegistryEntry } from './claude-registry';
 
 const silentLogger = { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} };
@@ -267,6 +267,75 @@ describe('AgentService', () => {
     expect(s.info().agent?.state).toBe('working');
     s.advance(4_000);
     expect(s.info().agent?.state).toBe('idle');
+  });
+
+  const codex = { pid: 300, ppid: 100, name: 'codex', commandLine: 'codex' };
+
+  it("follows Codex CLI's OSC 7501 lifecycle state and ignores its bells", () => {
+    const s = setup();
+    s.emit('terminal:process', { id: 't1', descendants: [codex] });
+    s.emit('terminal:programStatus', { id: 't1', state: 'idle', app: 'codex' });
+    expect(s.info().agent).toMatchObject({ agentId: 'codex', state: 'idle', stateSource: 'program-status' });
+    s.emit('terminal:programStatus', { id: 't1', state: 'working', app: 'codex' });
+    expect(s.info().agent?.state).toBe('working');
+    s.emit('terminal:programStatus', { id: 't1', state: 'blocked', app: 'codex', kind: 'permission' });
+    expect(s.info().agent).toMatchObject({ state: 'waiting', waitingFor: 'permission' });
+    s.emit('terminal:programStatus', { id: 't1', state: 'done', app: 'codex' });
+    expect(s.info().agent?.state).toBe('idle');
+    expect(s.info().agent?.waitingFor).toBeUndefined();
+    // The "turn complete" bell long after: still idle; output alone does not make it work again.
+    s.advance(30_000);
+    s.emit('terminal:bell', { id: 't1' });
+    s.emit('terminal:activity', { id: 't1', lastOutputAt: 1_030_000 });
+    s.advance(500);
+    expect(s.info().agent).toMatchObject({ state: 'idle', stateSource: 'program-status' });
+  });
+
+  it("reads Codex CLI's activity from its terminal title", () => {
+    expect(codexTitleState('⠹ Fix the build | shop')).toBe('working');
+    expect(codexTitleState('[ ! ] Action Required | shop')).toBe('waiting');
+    expect(codexTitleState('[ . ] Action Required | shop')).toBe('waiting');
+    expect(codexTitleState('Fix the build | shop')).toBeNull();
+
+    const s = setup();
+    s.emit('terminal:process', { id: 't1', descendants: [codex] });
+    // A title without activity before any work says nothing.
+    s.emit('terminal:title', { id: 't1', title: 'shop' });
+    expect(s.info().agent?.state).toBe('unknown');
+    s.emit('terminal:title', { id: 't1', title: '⠋ shop' });
+    expect(s.info().agent).toMatchObject({ state: 'working', stateSource: 'title' });
+    s.emit('terminal:title', { id: 't1', title: '[ ! ] Action Required | shop' });
+    expect(s.info().agent?.state).toBe('waiting');
+    s.emit('terminal:userInput', { id: 't1' });
+    s.emit('terminal:title', { id: 't1', title: '⠙ shop' });
+    expect(s.info().agent?.state).toBe('working');
+    s.emit('terminal:title', { id: 't1', title: 'Fix the build | shop' });
+    expect(s.info().agent?.state).toBe('idle');
+    // Its "turn complete" bell does not turn a finished turn into "waiting".
+    s.advance(20_000);
+    s.emit('terminal:bell', { id: 't1' });
+    expect(s.info().agent?.state).toBe('idle');
+  });
+
+  it('tells Codex CLI\'s "turn complete" notifications from questions', () => {
+    const s = setup();
+    s.emit('terminal:process', { id: 't1', descendants: [codex] });
+    s.emit('terminal:notification', { id: 't1', body: 'Approval requested: npm test' });
+    expect(s.info().agent?.state).toBe('waiting');
+    s.emit('terminal:notification', { id: 't1', body: 'All tests pass now.' });
+    expect(s.info().agent?.state).toBe('idle');
+  });
+
+  it('keeps the output heuristic after a bell, so a finished agent becomes idle again', () => {
+    const s = setup();
+    s.emit('terminal:process', { id: 't1', descendants: [codex] });
+    s.emit('terminal:bell', { id: 't1' });
+    expect(s.info().agent).toMatchObject({ state: 'waiting', stateSource: 'bell' });
+    s.emit('terminal:userInput', { id: 't1' });
+    expect(s.info().agent?.state).toBe('working');
+    s.emit('terminal:activity', { id: 't1', lastOutputAt: 1_000_000 });
+    s.advance(11_000);
+    expect(s.info().agent).toMatchObject({ state: 'idle', stateSource: 'output-heuristic' });
   });
 
   it('drops the agent when the terminal exits', () => {
