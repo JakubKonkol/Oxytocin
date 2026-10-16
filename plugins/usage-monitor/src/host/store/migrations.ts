@@ -97,4 +97,19 @@ ALTER TABLE sessions ADD COLUMN started_at INTEGER;
 CREATE INDEX ix_events_project_hash ON usage_events(project_hash);
 `,
   },
+  {
+    version: 3,
+    name: 'limits-per-account',
+    sql: `
+CREATE TABLE agent_limits_v3 (
+  agent TEXT NOT NULL, account TEXT NOT NULL DEFAULT 'main', window TEXT NOT NULL,
+  used_percent REAL, window_minutes INTEGER, resets_at INTEGER, observed_at INTEGER NOT NULL,
+  PRIMARY KEY (agent, account, window)
+);
+INSERT INTO agent_limits_v3 (agent, account, window, used_percent, window_minutes, resets_at, observed_at)
+  SELECT agent, 'main', window, used_percent, window_minutes, resets_at, observed_at FROM agent_limits;
+DROP TABLE agent_limits;
+ALTER TABLE agent_limits_v3 RENAME TO agent_limits;
+`,
+  },
 ];

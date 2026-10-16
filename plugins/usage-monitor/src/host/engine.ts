@@ -70,6 +70,35 @@ export interface EngineOptions {
   caseInsensitivePaths?: boolean;
 }
 
+/** An agent account (Settings → AI Agents): the main one of each CLI or an added one, with its folder. */
+export interface UsageAccount {
+  /** Usage Monitor agent ids: `claude-code`, `codex`, `gemini-cli`. */
+  agent: string;
+  /** `main` or the added account's id. */
+  id: string;
+  name: string;
+  home: string;
+}
+
+/** An account's limits as Oxytocin takes them (`oxy.agents.reportLimits`). */
+export interface AccountLimitsReport {
+  agent: 'claude' | 'codex' | 'gemini';
+  accountId: string;
+  windows: {
+    window: string;
+    usedPercent: number;
+    windowMinutes: number | null;
+    resetsAt: number | null;
+    observedAt: number;
+  }[];
+}
+
+const API_AGENT: Record<string, AccountLimitsReport['agent']> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  'gemini-cli': 'gemini',
+};
+
 export interface AgentSessionRef {
   sessionId: string;
   terminalId: string;
@@ -159,7 +188,10 @@ export class UsageEngine {
   private readonly primary = new Map<string, string>();
   private readonly pendingOtel = new Map<string, { records: UsageRecord[]; since: number }>();
   private pendingTimer: ReturnType<typeof setTimeout> | undefined;
-  private statusLine: ClaudeStatusLineReader | undefined;
+  private readonly statusLines = new Map<string, ClaudeStatusLineReader>();
+  private accounts: UsageAccount[] = [];
+  private readonly limitListeners = new Set<() => void>();
+  private collectorOptions: Parameters<UsageEngine['startCollectors']>[0] | undefined;
 
   private constructor(private readonly opts: EngineOptions) {
     this.now = opts.now ?? Date.now;
@@ -250,11 +282,12 @@ export class UsageEngine {
   ingest(items: CollectedItem[], cursor?: Parameters<CursorStore['set']>[0]): number {
     const ctx = this.context();
     let changed = 0;
+    let limits = 0;
     let correlate = false;
     transaction(this.db, () => {
       for (const item of items) {
         if (isLimit(item)) {
-          if (this.writeLimit(item)) changed++;
+          if (this.writeLimit(item)) limits++;
           continue;
         }
         if (!this.admitFileRecord(item)) continue;
@@ -266,6 +299,8 @@ export class UsageEngine {
       if (cursor) this.cursors.set(cursor);
     });
     if (correlate) this.correlate();
+    if (limits > 0) for (const l of [...this.limitListeners]) l();
+    changed += limits;
     if (changed > 0) this.emitChanged(changed);
     return changed;
   }
@@ -385,18 +420,103 @@ export class UsageEngine {
     return { port: this.otlp.stats.port!, token };
   }
 
-  /** Reads Claude subscription limits written by the status line script in `dir` (null stops reading). */
-  async configureClaudeStatusLine(dir: string | null): Promise<void> {
-    if (this.statusLine?.dir !== dir) {
-      this.statusLine?.stop();
-      this.statusLine = undefined;
-      if (dir) {
-        this.statusLine = new ClaudeStatusLineReader(dir, (items) => this.ingest(items), this.warn);
-        await this.statusLine.start();
+  /**
+   * Reads Claude subscription limits written by the status line scripts in `dirs` (the main account's folder and
+   * those of accounts with a status line of their own); null or empty stops reading.
+   */
+  async configureClaudeStatusLine(dirs: string[] | null): Promise<void> {
+    const wanted = new Set(dirs ?? []);
+    for (const [dir, reader] of this.statusLines)
+      if (!wanted.has(dir)) {
+        reader.stop();
+        this.statusLines.delete(dir);
       }
+    for (const dir of wanted) {
+      if (this.statusLines.has(dir)) continue;
+      const reader = new ClaudeStatusLineReader(
+        dir,
+        (items) => this.ingest(items),
+        this.warn,
+        (transcript) => (transcript ? this.accountOfPath('claude-code', transcript) : 'main'),
+      );
+      this.statusLines.set(dir, reader);
+      await reader.start();
     }
     // The views show whether the status line is set up.
     this.emitChanged(1);
+  }
+
+  /** The accounts whose folders are read and whose limits are told apart. */
+  setAccounts(accounts: UsageAccount[]): void {
+    const before = JSON.stringify(this.accounts);
+    this.accounts = accounts.map((a) => ({ ...a, home: a.home.replace(/[\\/]+$/, '') }));
+    if (JSON.stringify(this.accounts) === before) return;
+    // New folders to read: the collectors start again (their cursors keep what was read).
+    if (this.collectorOptions && this.collectors.size > 0) {
+      this.stopCollectors();
+      void this.startCollectors(this.collectorOptions);
+    }
+    this.emitChanged(1);
+  }
+
+  /** The added accounts of an agent (not the main ones: their folders are the CLIs' defaults). */
+  private addedAccounts(agent: string): UsageAccount[] {
+    return this.accounts.filter((a) => a.agent === agent && a.id !== 'main');
+  }
+
+  /** The account whose folder holds a file (a transcript, a rollout); `main` for any other place. */
+  accountOfPath(agent: string, path: string): string {
+    const norm = (p: string) => {
+      const v = p.replace(/\\/g, '/');
+      const insensitive =
+        this.opts.caseInsensitivePaths ?? (process.platform === 'win32' || process.platform === 'darwin');
+      return insensitive ? v.toLowerCase() : v;
+    };
+    const file = norm(path);
+    const account = this.addedAccounts(agent).find((a) => file.startsWith(`${norm(a.home)}/`));
+    return account?.id ?? 'main';
+  }
+
+  /** Called when an account's limits changed. */
+  onLimitsChanged(listener: () => void): () => void {
+    this.limitListeners.add(listener);
+    return () => this.limitListeners.delete(listener);
+  }
+
+  /** The latest limits of each known account, for Oxytocin. */
+  accountLimits(): AccountLimitsReport[] {
+    const rows = this.db
+      .prepare(
+        `SELECT agent, account, window, used_percent AS used, window_minutes AS minutes, resets_at AS resetsAt,
+                observed_at AS observedAt FROM agent_limits WHERE used_percent IS NOT NULL ORDER BY agent, account`,
+      )
+      .all() as unknown as {
+      agent: string;
+      account: string;
+      window: string;
+      used: number;
+      minutes: number | null;
+      resetsAt: number | null;
+      observedAt: number;
+    }[];
+    const known = (agent: string, account: string) =>
+      account === 'main' || this.accounts.some((a) => a.agent === agent && a.id === account);
+    const out = new Map<string, AccountLimitsReport>();
+    for (const r of rows) {
+      const agent = API_AGENT[r.agent];
+      if (!agent || !known(r.agent, r.account)) continue;
+      const key = `${agent}/${r.account}`;
+      const entry = out.get(key) ?? { agent, accountId: r.account, windows: [] };
+      entry.windows.push({
+        window: r.window,
+        usedPercent: Math.max(0, r.used),
+        windowMinutes: r.minutes,
+        resetsAt: r.resetsAt,
+        observedAt: r.observedAt,
+      });
+      out.set(key, entry);
+    }
+    return [...out.values()];
   }
 
   /** When the Claude subscription limits were last reported (null: never). */
@@ -413,13 +533,13 @@ export class UsageEngine {
   private writeLimit(l: AgentLimitRecord): boolean {
     const result = this.db
       .prepare(
-        `INSERT INTO agent_limits (agent, window, used_percent, window_minutes, resets_at, observed_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(agent, window) DO UPDATE SET used_percent = excluded.used_percent,
+        `INSERT INTO agent_limits (agent, account, window, used_percent, window_minutes, resets_at, observed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(agent, account, window) DO UPDATE SET used_percent = excluded.used_percent,
            window_minutes = excluded.window_minutes, resets_at = excluded.resets_at, observed_at = excluded.observed_at
          WHERE excluded.observed_at > agent_limits.observed_at`,
       )
-      .run(l.agent, l.window, l.usedPercent, l.windowMinutes, l.resetsAt, l.observedAt);
+      .run(l.agent, l.account ?? 'main', l.window, l.usedPercent, l.windowMinutes, l.resetsAt, l.observedAt);
     return Number(result.changes) > 0;
   }
 
@@ -535,7 +655,9 @@ export class UsageEngine {
     gemini?: boolean;
     backfillDays?: number;
   }): Promise<void> {
+    this.collectorOptions = options;
     const env = this.opts.env ?? process.env;
+    const homes = (agent: string) => this.addedAccounts(agent).map((a) => a.home);
     const deps = {
       getCursor: (path: string) => this.cursors.get(path),
       commit: (items: CollectedItem[], cursor: Parameters<CursorStore['set']>[0]) => {
@@ -554,7 +676,8 @@ export class UsageEngine {
       const collector = new FileCollector(
         {
           source: 'claude-jsonl',
-          roots: () => claudeProjectDirs(env, options.claudeExtraDirs ?? [], this.opts.home),
+          roots: () =>
+            claudeProjectDirs(env, [...(options.claudeExtraDirs ?? []), ...homes('claude-code')], this.opts.home),
           match: (p) => p.endsWith('.jsonl'),
           accept: acceptClaudeLine,
           parse: (line, path) => {
@@ -571,10 +694,17 @@ export class UsageEngine {
       const collector = new FileCollector(
         {
           source: 'codex-rollout',
-          roots: () => codexRoots(env, this.opts.home),
+          roots: () => [
+            ...codexRoots(env, this.opts.home),
+            ...homes('codex').flatMap((h) => [join(h, 'sessions'), join(h, 'archived_sessions')]),
+          ],
           match: isCodexRollout,
           accept: acceptCodexLine,
-          parse: (line, path, state) => parseCodexLine(line, state, path),
+          // Limits belong to the account whose CODEX_HOME holds the rollout.
+          parse: (line, path, state) =>
+            parseCodexLine(line, state, path).map((item) =>
+              isLimit(item) ? { ...item, account: this.accountOfPath('codex', path) } : item,
+            ),
           dedupeKey: codexDedupeKey,
         },
         deps,
@@ -586,7 +716,10 @@ export class UsageEngine {
       const collector = new FileCollector(
         {
           source: 'gemini-chat',
-          roots: () => geminiRoots(env, this.opts.home),
+          roots: () => [
+            ...geminiRoots(env, this.opts.home),
+            ...homes('gemini-cli').map((h) => join(h, '.gemini', 'tmp')),
+          ],
           match: isGeminiChat,
           accept: acceptGeminiLine,
           parse: (line, path, state) => parseGeminiLine(line, state, path),
@@ -611,6 +744,7 @@ export class UsageEngine {
       now: this.now(),
       activeProjectId: this.activeProjectId,
       agents: this.agents,
+      accounts: this.accounts,
       billing: this.settings.billing,
       weekStartsOn: this.settings.weekStartsOn,
       claudeBlockLimit: this.settings.claudeBlockLimit,
@@ -770,7 +904,8 @@ export class UsageEngine {
 
   close(): void {
     this.stopCollectors();
-    this.statusLine?.stop();
+    for (const reader of this.statusLines.values()) reader.stop();
+    this.statusLines.clear();
     clearTimeout(this.pendingTimer);
     void this.otlp?.stop();
     this.db.close();

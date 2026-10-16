@@ -36,6 +36,8 @@ function fakeHost(views: string[] = []) {
     notifyTerminalRemoved: vi.fn(),
     notifyTerminalOutput: vi.fn(),
     notifyAgents: vi.fn(),
+    notifyAccounts: vi.fn(),
+    notifyLimits: vi.fn(),
     notifyGitStatus: vi.fn(),
     notifySettings: vi.fn(),
     statusBarItems: new Map<string, StatusBarItemState>(),

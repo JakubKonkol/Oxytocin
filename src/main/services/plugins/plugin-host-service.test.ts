@@ -87,6 +87,11 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
     unwatchAllOutput: vi.fn(() => Promise.resolve()),
     listeningPorts: vi.fn(() => Promise.resolve([5173])),
   };
+  const agentMocks = {
+    accountOf: vi.fn(() => 'acc_work'),
+    reportLimits: vi.fn(),
+    sendPrompt: vi.fn(() => Promise.resolve({ ok: true })),
+  };
   const core = {
     projects: {
       list: () => [
@@ -97,7 +102,27 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
       findByPath: () => undefined,
     },
     terminals: terms,
-    agents: { list: () => [], reportSession: vi.fn() },
+    agents: {
+      list: () => [
+        {
+          terminalId: 't1',
+          projectId: 'p',
+          agentId: 'codex',
+          displayName: 'Codex CLI',
+          provider: 'openai',
+          pid: 7,
+          state: 'idle',
+          stateSource: 'program-status',
+          since: 1,
+        },
+      ],
+      reportSession: vi.fn(),
+      accounts: () => [{ id: 'main', agent: 'codex', name: 'main', main: true, home: '/h/.codex' }],
+      accountOf: agentMocks.accountOf,
+      limits: () => [],
+      reportLimits: agentMocks.reportLimits,
+      sendPrompt: agentMocks.sendPrompt,
+    },
     git: { status: () => null },
     settings: () => resolveSettings({}, 'linux').settings,
     updateSettings: vi.fn(),
@@ -118,7 +143,20 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
-  return { service, api, calls, events, ready, plugins, core, terms, toRenderer, quickPick, notifyWithActions };
+  return {
+    service,
+    api,
+    calls,
+    events,
+    ready,
+    plugins,
+    core,
+    terms,
+    toRenderer,
+    quickPick,
+    notifyWithActions,
+    agentMocks,
+  };
 }
 
 describe('PluginHostService', () => {
@@ -176,6 +214,33 @@ describe('PluginHostService', () => {
       code: 'PERMISSION',
     });
     await expect(s.api('b.two', 'commands.executeCore', { id: 'rm.rf', args: [] })).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it('lists accounts and limits, takes limit reports and sends prompts with the right permissions', async () => {
+    const s = setup({
+      list: [
+        descriptor('use.age', { permissions: ['agents.read', 'agents.annotate'] }),
+        descriptor('re.lay', { permissions: ['agents.read', 'terminals.write'] }),
+      ],
+    });
+    expect(await s.api('re.lay', 'agents.list')).toMatchObject([{ terminalId: 't1', accountId: 'acc_work' }]);
+    expect(s.agentMocks.accountOf).toHaveBeenCalledWith('bash', 'codex');
+    expect(await s.api('re.lay', 'agents.listAccounts')).toEqual([
+      { id: 'main', agent: 'codex', name: 'main', main: true, home: '/h/.codex' },
+    ]);
+    expect(await s.api('re.lay', 'agents.getLimits')).toEqual([]);
+    const limits = { agent: 'codex', accountId: 'main', windows: [] };
+    await s.api('use.age', 'agents.reportLimits', { limits });
+    expect(s.agentMocks.reportLimits).toHaveBeenCalledWith(limits);
+    await expect(s.api('re.lay', 'agents.reportLimits', { limits })).rejects.toMatchObject({ code: 'PERMISSION' });
+    expect(await s.api('re.lay', 'agents.sendPrompt', { id: 't1', text: 'Continue.' })).toEqual({ ok: true });
+    expect(s.agentMocks.sendPrompt).toHaveBeenCalledWith('t1', 'Continue.');
+    await expect(s.api('use.age', 'agents.sendPrompt', { id: 't1', text: 'x' })).rejects.toMatchObject({
+      code: 'PERMISSION',
+    });
+    await expect(s.api('re.lay', 'agents.sendPrompt', { id: 'gone', text: 'x' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
     });
   });

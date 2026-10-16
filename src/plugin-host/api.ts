@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AgentAccount,
+  AgentLimits,
   AgentSnapshot,
   CommandsApi,
   Disposable,
@@ -30,6 +32,8 @@ export type ApiEventName =
   | 'terminals.close'
   | 'terminals.output'
   | 'agents.changed'
+  | 'agents.accounts'
+  | 'agents.limits'
   | 'git.status'
   | 'settings.changed';
 
@@ -264,6 +268,24 @@ export function createApi(deps: ApiDeps): OxytocinApi {
         void call('agents.reportSession', { terminalId, ...info }).catch((e: unknown) =>
           deps.reportError('reportSession', e),
         );
+      },
+      listAccounts: async () => {
+        require('agents.read');
+        return call<AgentAccount[]>('agents.listAccounts');
+      },
+      onDidChangeAccounts: event<AgentAccount[]>('agents.accounts', 'agents.read'),
+      getLimits: async () => {
+        require('agents.read');
+        return call<AgentLimits[]>('agents.getLimits');
+      },
+      onDidChangeLimits: event<AgentLimits[]>('agents.limits', 'agents.read'),
+      reportLimits: (limits) => {
+        require('agents.annotate');
+        void call('agents.reportLimits', { limits }).catch((e: unknown) => deps.reportError('reportLimits', e));
+      },
+      sendPrompt: async (terminalId, text) => {
+        require('terminals.write');
+        return call<{ ok: true } | { ok: false; error: string }>('agents.sendPrompt', { id: terminalId, text });
       },
     },
     git: {

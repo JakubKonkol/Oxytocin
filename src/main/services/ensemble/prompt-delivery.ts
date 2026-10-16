@@ -28,6 +28,23 @@ export interface DeliveryDeps {
 /** `pasted`: the text reached the terminal (the agent may still start late). */
 export type DeliveryResult = { ok: true } | { ok: false; error: string; pasted?: boolean };
 
+/** Prompts on screen that must never receive a typed message. */
+export const BLOCKING_PROMPT =
+  /(do you trust|trust (this|the) (folder|directory|files|workspace)|press enter to (continue|confirm)|log ?in to|sign in|select (a|an) (login|auth)|\[y\/n\]|\(y\/n\))/i;
+
+/**
+ * A message as one line. On Windows a multi-line message is not typed as is: whether the paste markers survive the
+ * console (ConPTY) up to the CLI is not guaranteed, and without them every line break would be an Enter that sends a
+ * fragment. Line breaks become "↵"; oxy_ensemble_context serves the same text formatted.
+ */
+export const oneLine = (text: string): string =>
+  text
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l, i, all) => l !== '' || (i > 0 && all[i - 1] !== ''))
+    .join(' ↵ ')
+    .replace(/( ↵ ){2,}/g, ' ↵ ↵ ');
+
 const sleepFor = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export async function deliver(text: string, deps: DeliveryDeps, signal?: AbortSignal): Promise<DeliveryResult> {

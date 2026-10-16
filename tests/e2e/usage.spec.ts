@@ -216,12 +216,34 @@ test('Usage Monitor: Claude subscription limits through the Claude Code status l
     );
     const bars = sidebar.getByTestId('usage-subscription-limit');
     await expect(bars).toHaveCount(2, { timeout: 10_000 });
-    await expect(bars.nth(0)).toContainText('Claude: 24% of 5h limit · resets in');
-    await expect(bars.nth(1)).toContainText('Claude: 41% of weekly limit');
+    const mainLimits = sidebar.locator('[data-testid="usage-account-limits"][data-account="main"]');
+    await expect(mainLimits).toContainText('Claude (main)');
+    await expect(bars.nth(0)).toContainText('24% of 5h limit · resets in');
+    await expect(bars.nth(0)).toContainText('· as of');
+    await expect(bars.nth(1)).toContainText('41% of weekly limit');
     await expect(win.getByTestId('status-item-usage.today')).toContainText('5h 24% · week 41%');
     await expect(sidebar.getByTestId('usage-subscription-hint')).toHaveCount(0);
     await expect(sidebar.getByTestId('usage-plan-heading')).toHaveText('PLAN LIMITS');
     await expect(section.getByTestId('usage-claude-limits-state')).toContainText('last reading');
+
+    // An added account (Settings → AI Agents) shares the main settings, so the same script saves its readings in
+    // a file of its own; the transcript tells whose they are.
+    const state = (await win.evaluate(() =>
+      window.oxy.invoke('aiAgents:addAccount', { agent: 'claude', name: 'Work', mode: 'shared' }),
+    )) as { accounts: { id: string; home: string }[] };
+    const work = state.accounts[0]!;
+    await writeFile(
+      join(dir, 'usage-work.json'),
+      JSON.stringify({
+        transcript_path: join(work.home, 'projects', '-p', 'e2e.jsonl'),
+        rate_limits: { five_hour: { used_percentage: 75, resets_at: now + 3600 } },
+      }),
+    );
+    const workLimits = sidebar.locator(`[data-testid="usage-account-limits"][data-account="${work.id}"]`);
+    await expect(workLimits).toContainText('Claude (Work)', { timeout: 10_000 });
+    await expect(workLimits).toContainText('75% of 5h limit');
+    // The main account keeps its own numbers.
+    await expect(mainLimits).toContainText('24% of 5h limit');
 
     // Turning it off restores the previous status line.
     await section.getByLabel('Show Claude subscription limits').uncheck();

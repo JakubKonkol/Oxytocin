@@ -13,5 +13,11 @@ Built-in Oxytocin plugin: token usage and cost of AI coding agents.
   `settings.json` to a script in `<claude config>/oxytocin-statusline/` (`sh`, or PowerShell on Windows without
   Git Bash) that saves input carrying `rate_limits` to `usage.json` there and then runs the previous status line
   command; turning the option off restores the previous `statusLine`. The worker watches `usage.json`
-  (`src/host/collectors/claude-statusline.ts`). With Claude Code billing set to `subscription` the limits get their
-  own bars in the sidebar and replace the cost in the status bar.
+  (`src/host/collectors/claude-statusline.ts`). With Claude Code billing set to `subscription` the main account's
+  limits replace the cost in the status bar.
+- Accounts (Settings → AI Agents, `oxy.agents.listAccounts`): the folders of added accounts are read too. Plan limits
+  are kept per account (`agent_limits.account`) and shown per account in the sidebar ("Claude (main)", "Codex
+  (Work)"). An account with its own `CLAUDE_CONFIG_DIR` writes `usage-<folder as a key>.json` next to `usage.json`
+  (a shared `settings.json` runs the same script); the reading's `transcript_path` tells whose it is. Codex CLI
+  limits belong to the account whose `CODEX_HOME` holds the rollout. The limits are reported to Oxytocin
+  (`oxy.agents.reportLimits`) for other plugins, e.g. Relay.

@@ -37,6 +37,14 @@ export interface LimitBar {
   observedAt?: number;
 }
 
+export interface AccountLimitGroup {
+  agent: string;
+  account: string;
+  /** "Claude (main)", "Codex (Work)". */
+  label: string;
+  bars: LimitBar[];
+}
+
 export interface SidebarModel {
   now: number;
   hasData: boolean;
@@ -44,8 +52,10 @@ export interface SidebarModel {
   burnRate: { usdPerHour: number; trend: 'up' | 'down' | 'flat' };
   limit: LimitBar | null;
   limits: LimitBar[];
-  /** Claude subscription limits (5-hour, weekly) with subscription billing, shown as their own bars. */
+  /** Claude subscription limits (5-hour, weekly) of the main account with subscription billing (status bar). */
   subscriptionLimits: LimitBar[];
+  /** Plan limits per account: "Claude (main)", "Claude (Work)", "Codex (main)"… each with its windows. */
+  accountLimits: AccountLimitGroup[];
   sessions: LiveSession[];
   project: { id: string; name: string | undefined; todayUsd: number; last7DaysUsd: number } | null;
   /**
@@ -76,6 +86,8 @@ export interface ViewContext {
   now: number;
   activeProjectId: string | null;
   agents: AgentRef[];
+  /** Agent accounts (the main ones and those added in Settings → AI Agents) for the labels of their limits. */
+  accounts?: { agent: string; id: string; name: string }[];
   billing: Record<string, Billing>;
   weekStartsOn: WeekStart;
   claudeBlockLimit: { metric: 'tokens' | 'usd'; amount: number } | null;
@@ -192,38 +204,62 @@ function budgetBar(s: BudgetStatus, kind: LimitBar['kind'], projectName: string 
 export function limitBars(
   db: Database,
   ctx: ViewContext,
-  live: LiveSession[],
-): { limit: LimitBar | null; limits: LimitBar[]; subscription: LimitBar[] } {
+  _live: LiveSession[],
+): { limit: LimitBar | null; limits: LimitBar[]; subscription: LimitBar[]; accounts: AccountLimitGroup[] } {
   const subscription: LimitBar[] = [];
   const groups: LimitBar[][] = [[], [], [], [], []];
-  const liveAgents = new Set(live.map((s) => s.agent));
   const limits = db
     .prepare(
-      `SELECT agent, window, used_percent AS used, window_minutes AS minutes, resets_at AS resetsAt,
+      `SELECT agent, account, window, used_percent AS used, window_minutes AS minutes, resets_at AS resetsAt,
               observed_at AS observedAt
-         FROM agent_limits ORDER BY agent, coalesce(window_minutes, 1e9)`,
+         FROM agent_limits ORDER BY agent, account, coalesce(window_minutes, 1e9)`,
     )
     .all() as unknown as {
     agent: string;
+    account: string;
     window: string;
     used: number | null;
     minutes: number | null;
     resetsAt: number | null;
     observedAt: number;
   }[];
+  const byAccount = new Map<string, AccountLimitGroup>();
   for (const l of limits) {
-    if (l.used === null || (l.resetsAt !== null && l.resetsAt < ctx.now)) continue;
+    if (l.used === null) continue;
+    const name =
+      l.account === 'main' ? 'main' : ctx.accounts?.find((a) => a.agent === l.agent && a.id === l.account)?.name;
+    // A removed account.
+    if (name === undefined) continue;
+    // A window that started over since the reading is at 0 until the agent reports it again.
+    const over = l.resetsAt !== null && l.resetsAt < ctx.now;
+    const used = over ? 0 : l.used;
     const bar: LimitBar = {
       kind: 'agent-limit',
-      label: `${AGENT_LABELS[l.agent] ?? l.agent}: ${Math.round(l.used)}% of ${windowLabel(l.minutes, l.window)}limit`,
-      ratio: l.used / 100,
-      resetsAt: l.resetsAt,
+      label: `${Math.round(used)}% of ${windowLabel(l.minutes, l.window)}limit`,
+      ratio: used / 100,
+      resetsAt: over ? null : l.resetsAt,
       window: l.window,
       observedAt: l.observedAt,
     };
-    if (l.agent === 'claude-code' && ctx.billing['claude-code'] === 'subscription') subscription.push(bar);
-    else groups[liveAgents.has(l.agent) ? 0 : 4]!.push(bar);
+    const key = `${l.agent}/${l.account}`;
+    const group = byAccount.get(key) ?? {
+      agent: l.agent,
+      account: l.account,
+      label: `${AGENT_LABELS[l.agent] ?? l.agent} (${name})`,
+      bars: [],
+    };
+    group.bars.push(bar);
+    byAccount.set(key, group);
+    if (!over && l.agent === 'claude-code' && l.account === 'main' && ctx.billing['claude-code'] === 'subscription')
+      subscription.push({ ...bar, label: `Claude: ${bar.label}` });
   }
+  const agentOrder = (agent: string) => (agent === 'claude-code' ? 0 : agent === 'codex' ? 1 : 2);
+  const accounts = [...byAccount.values()].sort(
+    (a, b) =>
+      agentOrder(a.agent) - agentOrder(b.agent) ||
+      Number(b.account === 'main') - Number(a.account === 'main') ||
+      a.label.localeCompare(b.label),
+  );
   for (const b of listBudgets(db).filter((x) => x.enabled)) {
     const status = evaluateBudget(db, b, ctx.now, ctx.weekStartsOn);
     if (b.scope === 'project' && b.scopeRef === ctx.activeProjectId)
@@ -254,7 +290,7 @@ export function limitBars(
   const all = groups.flat();
   const first = groups.find((g) => g.length > 0);
   const limit = first ? first.reduce((a, b) => (b.ratio > a.ratio ? b : a)) : null;
-  return { limit, limits: all, subscription };
+  return { limit, limits: all, subscription, accounts };
 }
 
 export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
@@ -266,7 +302,7 @@ export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
   const rate = burnRate(db, ctx.now);
   const previous = summary(db, { from: ctx.now - 2 * 60 * 60_000, to: ctx.now - 60 * 60_000 }).costUsd;
   const sessions = liveSessions(db, ctx);
-  const { limit, limits, subscription } = limitBars(db, ctx, sessions);
+  const { limit, limits, subscription, accounts } = limitBars(db, ctx, sessions);
   let project: SidebarModel['project'] = null;
   if (ctx.activeProjectId) {
     const filter = { projectId: ctx.activeProjectId };
@@ -295,6 +331,7 @@ export function sidebarModel(db: Database, ctx: ViewContext): SidebarModel {
     limit,
     limits,
     subscriptionLimits: subscription,
+    accountLimits: accounts,
     sessions,
     project,
     subscriptionOnly: isSubscriptionOnly(db, ctx, sessions),

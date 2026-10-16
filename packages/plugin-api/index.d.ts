@@ -189,7 +189,43 @@ export interface AgentSnapshot {
   waitingFor?: string;
   since: number;
   cwd?: string;
+  /**
+   * Claude Code, Codex CLI and Gemini CLI: the account the agent runs on — `main` (the CLI's default folder) or the
+   * id of an account added in Settings → AI Agents (see `listAccounts`). Since API 0.1.7.
+   */
+  accountId?: string;
 }
+
+/** An account of an agent CLI: the main one (the CLI's default folder) or one added in Settings → AI Agents. */
+export interface AgentAccount {
+  /** `main` or the added account's id. Unique together with `agent`. */
+  id: string;
+  agent: 'claude' | 'codex' | 'gemini';
+  /** `main`, or the name the user gave the account ("Work"). */
+  name: string;
+  main: boolean;
+  /** The account's folder: CLAUDE_CONFIG_DIR, CODEX_HOME or GEMINI_CLI_HOME (resolved for the main account too). */
+  home: string;
+}
+
+/** A plan limit window of an account (Claude Code: `five_hour`, `seven_day`; Codex CLI: `primary`, `secondary`). */
+export interface AgentLimitWindow {
+  window: string;
+  /** 0–100 (may exceed 100 when the agent reports so). */
+  usedPercent: number;
+  /** 300: five hours, 10080: a week; null: not time-based. */
+  windowMinutes: number | null;
+  /** When the window starts over (ms since the epoch); null: unknown. A past value means it is at 0 again. */
+  resetsAt: number | null;
+  /** When the agent reported it (ms since the epoch). */
+  observedAt: number;
+}
+export interface AgentLimits {
+  agent: 'claude' | 'codex' | 'gemini';
+  accountId: string;
+  windows: AgentLimitWindow[];
+}
+
 export interface AgentsApi {
   list(): Promise<AgentSnapshot[]>;
   onDidChange: Event<AgentSnapshot[]>;
@@ -204,6 +240,28 @@ export interface AgentsApi {
     terminalId: string,
     report: { state: 'working' | 'idle' | 'waiting'; waitingFor?: string; sessionId?: string },
   ): void;
+  /** The main account of Claude Code, Codex CLI and Gemini CLI and the accounts added next to them. Since API 0.1.7. */
+  listAccounts(): Promise<AgentAccount[]>;
+  /** Since API 0.1.7. */
+  onDidChangeAccounts: Event<AgentAccount[]>;
+  /**
+   * The latest plan limits of each account, as reported by a plugin that reads them (the Usage Monitor). Accounts
+   * without readings are missing. Since API 0.1.7.
+   */
+  getLimits(): Promise<AgentLimits[]>;
+  /** Since API 0.1.7. */
+  onDidChangeLimits: Event<AgentLimits[]>;
+  /**
+   * agents.annotate — reports the plan limits of an account; windows not mentioned keep their last reading, older
+   * readings of a window are ignored. Since API 0.1.7.
+   */
+  reportLimits(limits: AgentLimits): void;
+  /**
+   * terminals.write — types a prompt into the agent of a terminal and submits it, only while the agent waits for
+   * input (idle) and no question (trust, login, yes/no) is on screen; resolves once the agent started working, or with
+   * the reason it was not sent. Slash commands are refused. Since API 0.1.7.
+   */
+  sendPrompt(terminalId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 // ── Git ─────────────────────────────────────────────────── (git.read)

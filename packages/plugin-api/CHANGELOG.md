@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.7
+
+- Agent accounts: `oxy.agents.listAccounts()` and `onDidChangeAccounts` (`agents.read`) — the main account of Claude
+  Code, Codex CLI and Gemini CLI and the accounts added in Settings → AI Agents; `AgentSnapshot.accountId` says which
+  one an agent runs on.
+- Plan limits: `oxy.agents.getLimits()` and `onDidChangeLimits` (`agents.read`), `oxy.agents.reportLimits(limits)`
+  (`agents.annotate`) — e.g. Claude Code's 5-hour and weekly windows per account, as the Usage Monitor reads them.
+- `oxy.agents.sendPrompt(terminalId, text)` (`terminals.write`): types a prompt into an idle agent and submits it,
+  never over a question on screen; resolves once the agent started working, or with the reason it was not sent.
+
 ## 0.1.6
 
 - `oxy.ui.showNotification({ …, signal })`: an `AbortSignal` withdraws a notification with `actions` (the question

@@ -120,8 +120,15 @@ too.
 ### 📊 Usage Monitor
 
 Tokens and costs per session, project and model, read from your agents' **local logs**: daily charts, burn rate,
-budgets with alerts and the real **5-hour and weekly limits** of a Claude Pro/Max plan. The sidebar card shows what you
-choose (today's cost, limits, active sessions…). Nothing leaves your machine.
+budgets with alerts and the real **5-hour and weekly limits** of Claude and Codex plans — per account, e.g. *Claude
+(main)* and *Claude (Work)*. The sidebar card shows what you choose (today's cost, limits, active sessions…). Nothing
+leaves your machine.
+
+### 🔁 Relay
+
+Hands a project's work from one agent to the next: when an agent ends its turn with its 5-hour limit nearly used, the
+next agent (another CLI or another account) continues with your hand-off prompt — or a reviewer agent reviews each
+change. One short prompt per hand-off and nothing else, so the agents' limits go to the work.
 
 <p align="center">
   <img alt="Usage dashboard: daily cost over the last 30 days, tokens, projects and models" src="docs/images/usage-dashboard.png" width="960" />
@@ -181,7 +188,8 @@ plugin from folder…** and share it as a `.zip` that anyone can install. The bu
 
 | Built-in plugin | What it does |
 |---|---|
-| **Usage Monitor** | Token usage, costs, budgets and Claude subscription limits |
+| **Usage Monitor** | Token usage, costs, budgets and plan limits per account |
+| **Relay** | Hands work to the next agent when an account nears its limit, or to a reviewer after each change |
 | **Project Runner** | Detects runnable apps, runs them with status, URLs and logs, and lets agents run them |
 | **File Preview** | Live preview of Markdown (rendered) and code (highlighted) from terminal links |
 | **Claude Code Bridge** | Exact Claude Code states (working, waiting for permission, finished) through hooks |

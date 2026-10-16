@@ -105,14 +105,25 @@ describe('the status line script', async () => {
     await installStatusLine(paths, 'sh');
     const script = join(paths.dir, 'statusline.sh');
     const input = JSON.stringify({ rate_limits: { five_hour: { used_percentage: 7, resets_at: 2e9 } } });
-    const result = spawnSync(shell!, [script], { input, encoding: 'utf8' });
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: '' };
+    const result = spawnSync(shell!, [script], { input, encoding: 'utf8', env });
     expect(result.stdout).toBe(input);
     const saved = await readFile(join(paths.dir, STATUSLINE_DATA_FILE), 'utf8');
     expect(parseStatusLineInput(saved, 1)).toEqual([expect.objectContaining({ usedPercent: 7 })]);
 
     // Input without limits (API billing) is not saved.
     const other = JSON.stringify({ session_id: 'x' });
-    expect(spawnSync(shell!, [script], { input: other, encoding: 'utf8' }).stdout).toBe(other);
+    expect(spawnSync(shell!, [script], { input: other, encoding: 'utf8', env }).stdout).toBe(other);
+    expect(await readFile(join(paths.dir, STATUSLINE_DATA_FILE), 'utf8')).toBe(saved);
+
+    // An added account (its own CLAUDE_CONFIG_DIR) writes its own file.
+    const account = JSON.stringify({ rate_limits: { five_hour: { used_percentage: 61 } } });
+    spawnSync(shell!, [script], {
+      input: account,
+      encoding: 'utf8',
+      env: { ...env, CLAUDE_CONFIG_DIR: '/h/.oxytocin/accounts/claude/work' },
+    });
+    expect(await readFile(join(paths.dir, 'usage-_h__oxytocin_accounts_claude_work.json'), 'utf8')).toBe(account);
     expect(await readFile(join(paths.dir, STATUSLINE_DATA_FILE), 'utf8')).toBe(saved);
   });
 
@@ -124,7 +135,12 @@ describe('the status line script', async () => {
       await installStatusLine(paths, 'powershell');
       const command = ((await read())['statusLine'] as { command: string }).command;
       const input = JSON.stringify({ rate_limits: { seven_day: { used_percentage: 9 } }, cwd: 'C:\\żółw' });
-      const result = spawnSync(command, { input, encoding: 'utf8', shell: 'powershell.exe' });
+      const result = spawnSync(command, {
+        input,
+        encoding: 'utf8',
+        shell: 'powershell.exe',
+        env: { ...process.env, CLAUDE_CONFIG_DIR: '' },
+      });
       expect(result.stdout.trim()).toBe(`mine: ${input.length}`);
       expect(await readFile(join(paths.dir, STATUSLINE_DATA_FILE), 'utf8')).toBe(input);
     },

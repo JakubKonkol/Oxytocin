@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { type AgentInfoWithTerminal, type AgentStateReport, AgentStateReportSchema } from '@shared/domain/agent';
+import type { AgentAccountInfo, AgentLimits } from '@shared/domain/agent-limits';
 import type { RepoStatus } from '@shared/domain/git';
 import { type PluginDescriptor, type PluginPermission } from '@shared/domain/plugin';
 import { type Project, PROJECT_COLOR_VALUES } from '@shared/domain/project';
@@ -83,6 +84,13 @@ export interface PluginCorePort {
     list(): AgentInfoWithTerminal[];
     reportSession(terminalId: string, sessionId: string): void;
     reportState(terminalId: string, report: AgentStateReport): void;
+    /** The main account of each agent CLI and the added ones (Settings → AI Agents). */
+    accounts(): AgentAccountInfo[];
+    /** The account an agent of a terminal runs on (`main` or an added account's id); undefined: no such agent. */
+    accountOf(terminalProfileId: string, agentId: string): string | undefined;
+    limits(): AgentLimits[];
+    reportLimits(limits: unknown): void;
+    sendPrompt(terminalId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
   git: { status(projectId: string): RepoStatus | null };
   settings(): Settings;
@@ -564,6 +572,14 @@ export class PluginHostService implements Disposable {
     }
   }
 
+  notifyAccounts(list: AgentAccountInfo[]): void {
+    this.emitApi('agents.accounts', list);
+  }
+
+  notifyLimits(list: AgentLimits[]): void {
+    this.emitApi('agents.limits', list);
+  }
+
   notifyGitStatus(status: RepoStatus): void {
     this.emitApi('git.status', this.statusLite(status));
   }
@@ -584,6 +600,7 @@ export class PluginHostService implements Disposable {
 
   private agentSnapshot(a: AgentInfoWithTerminal) {
     const t = this.deps.core.terminals.get(a.terminalId);
+    const accountId = this.deps.core.agents.accountOf(t?.profileId ?? '', a.agentId);
     return {
       terminalId: a.terminalId,
       projectId: a.projectId,
@@ -596,6 +613,7 @@ export class PluginHostService implements Disposable {
       ...(a.waitingFor ? { waitingFor: a.waitingFor } : {}),
       since: a.since,
       ...(t ? { cwd: t.cwd } : {}),
+      ...(accountId ? { accountId } : {}),
     };
   }
 
@@ -808,6 +826,21 @@ export class PluginHostService implements Disposable {
         this.permission(plugin, 'agents.annotate');
         core.agents.reportSession(String(p['terminalId']), String(p['sessionId']));
         return undefined;
+      case 'agents.listAccounts':
+        this.permission(plugin, 'agents.read');
+        return core.agents.accounts();
+      case 'agents.getLimits':
+        this.permission(plugin, 'agents.read');
+        return core.agents.limits();
+      case 'agents.reportLimits':
+        this.permission(plugin, 'agents.annotate');
+        core.agents.reportLimits(p['limits']);
+        return undefined;
+      case 'agents.sendPrompt': {
+        this.permission(plugin, 'terminals.write');
+        const id = this.terminal(p).id;
+        return core.agents.sendPrompt(id, typeof p['text'] === 'string' ? p['text'] : '');
+      }
       case 'git.getStatus': {
         this.permission(plugin, 'git.read');
         const status = core.git.status(String(p['projectId']));

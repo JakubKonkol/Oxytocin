@@ -22,6 +22,7 @@ import {
   validateAccountName,
   validateProfiles,
 } from '@shared/domain/ai-agents';
+import { ACCOUNT_AGENT_OF, type AgentAccountInfo, MAIN_ACCOUNT_ID } from '@shared/domain/agent-limits';
 import type { SecretChange } from '@shared/domain/project-resources';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { OxyError } from '@shared/errors';
@@ -215,6 +216,33 @@ export class AiAgentsService implements Disposable {
     await this.store.flush();
     this.deps.logger.info(`Account removed: ${account.agent} ${account.home}`);
     return this.fire();
+  }
+
+  /** Every account as plugins see it: the main account of each agent CLI, then the added ones. */
+  accountInfos(): AgentAccountInfo[] {
+    const ctx = this.context();
+    return [
+      ...AI_ACCOUNT_AGENTS.map((agent) => ({
+        id: MAIN_ACCOUNT_ID,
+        agent,
+        name: MAIN_ACCOUNT_ID,
+        main: true,
+        home: ACCOUNT_ADAPTERS[agent].mainHome(ctx),
+      })),
+      ...this.store.get().accounts.map((a) => ({ id: a.id, agent: a.agent, name: a.name, main: false, home: a.home })),
+    ];
+  }
+
+  /**
+   * The account an agent runs on: an added account when its terminal was started on it (the agent being that
+   * account's CLI), else the main one. Undefined for agents without accounts.
+   */
+  accountOf(terminalProfileId: string, agentId: string): string | undefined {
+    const agent = ACCOUNT_AGENT_OF[agentId];
+    if (!agent) return undefined;
+    if (!terminalProfileId.startsWith(ACCOUNT_LAUNCH_PREFIX)) return MAIN_ACCOUNT_ID;
+    const id = terminalProfileId.slice(ACCOUNT_LAUNCH_PREFIX.length);
+    return this.store.get().accounts.some((a) => a.id === id && a.agent === agent) ? id : MAIN_ACCOUNT_ID;
   }
 
   /** The added accounts' folders of an agent (e.g. for the Claude Code session registry). */

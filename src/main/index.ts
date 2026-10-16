@@ -86,6 +86,8 @@ import { ResourceService } from './services/resources/resource-service';
 import { ResourcesController } from './services/resources/resources-controller';
 import { DatabaseServerService } from './services/resources/database-servers';
 import { AiAgentsService } from './services/ai-agents/ai-agents-service';
+import { AgentLimitsStore } from './services/agents/agent-limits-store';
+import { AgentPromptService } from './services/agents/agent-prompts';
 import { deleteKeychainEntry, nodeProvisionFs } from './services/ai-agents/accounts/node-fs';
 import { nodeAiDetectDeps } from './services/ai-agents/detect-node';
 import { EnsembleService } from './services/ensemble/ensemble-service';
@@ -294,6 +296,19 @@ function bootstrap(): void {
     registry: claudeRegistry,
     logger: createLogger('agents'),
   });
+  // Plan limits of the agent accounts (reported by the Usage Monitor) and prompts typed into agents by plugins.
+  const agentLimits = new AgentLimitsStore();
+  const agentPrompts = new AgentPromptService({
+    agents,
+    pty: {
+      paste: (id, text, submit) => hosts.pty.call('paste', { id, text, submit }),
+      write: (id, data) => hosts.pty.call('write', { id, data }),
+      text: (id) => hosts.pty.call('getText', { id }),
+      onActivity: (listener) => hosts.pty.onEvent('terminal:activity', listener),
+    },
+    platform: process.platform,
+  });
+  terminals.onDidRemove((id) => agentPrompts.forget(id));
   void shellEnvReady.then((env) => {
     const configDir = env['CLAUDE_CONFIG_DIR'];
     if (configDir && configDir !== process.env['CLAUDE_CONFIG_DIR']) claudeRegistry.setDir(join(configDir, 'sessions'));
@@ -553,6 +568,11 @@ function bootstrap(): void {
         list: () => agents.list(),
         reportSession: (id, sessionId) => agents.reportSession(id, sessionId),
         reportState: (id, report) => agents.reportState(id, report),
+        accounts: () => aiAgents.accountInfos(),
+        accountOf: (profileId, agentId) => aiAgents.accountOf(profileId, agentId),
+        limits: () => agentLimits.list(),
+        reportLimits: (limits) => agentLimits.report(limits),
+        sendPrompt: (id, text) => agentPrompts.send(id, text),
       },
       git: { status: (id) => git.status(id) },
       settings: () => settings.get(),
@@ -644,6 +664,16 @@ function bootstrap(): void {
   terminals.onDidRemove((id) => pluginHost.notifyTerminalRemoved(id));
   terminals.onDidOutput(({ id, data }) => pluginHost.notifyTerminalOutput(id, data));
   agents.onDidUpdate((list) => pluginHost.notifyAgents(list));
+  agentLimits.onDidChange((list) => pluginHost.notifyLimits(list));
+  let accountsKey = '';
+  aiAgents.onDidChange(() => {
+    const accounts = aiAgents.accountInfos();
+    const key = JSON.stringify(accounts);
+    if (key === accountsKey) return;
+    accountsKey = key;
+    pluginHost.notifyAccounts(accounts);
+    agentLimits.retain(new Set(accounts.map((a) => `${a.agent}/${a.id}`)));
+  });
   git.onDidChangeStatus((status) => pluginHost.notifyGitStatus(status));
   settings.onDidChange((s) => pluginHost.notifySettings(s));
 

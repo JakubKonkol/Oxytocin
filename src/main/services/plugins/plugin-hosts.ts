@@ -1,4 +1,5 @@
 import type { AgentInfoWithTerminal } from '@shared/domain/agent';
+import type { AgentAccountInfo, AgentLimits } from '@shared/domain/agent-limits';
 import type { RepoStatus } from '@shared/domain/git';
 import type { PluginDescriptor } from '@shared/domain/plugin';
 import type { Project } from '@shared/domain/project';
@@ -49,6 +50,8 @@ type HostService = Pick<
   | 'notifyTerminalRemoved'
   | 'notifyTerminalOutput'
   | 'notifyAgents'
+  | 'notifyAccounts'
+  | 'notifyLimits'
   | 'notifyGitStatus'
   | 'notifySettings'
   | 'statusBarItems'
@@ -170,6 +173,14 @@ export class PluginHosts implements Disposable {
 
   notifyAgents(list: AgentInfoWithTerminal[]): void {
     for (const h of this.all()) h.notifyAgents(list);
+  }
+
+  notifyAccounts(list: AgentAccountInfo[]): void {
+    for (const h of this.all()) h.notifyAccounts(list);
+  }
+
+  notifyLimits(list: AgentLimits[]): void {
+    for (const h of this.all()) h.notifyLimits(list);
   }
 
   notifyGitStatus(status: RepoStatus): void {

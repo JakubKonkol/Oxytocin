@@ -31,7 +31,9 @@ function Limit({ bar, now, testId, title }: { bar: LimitBar; now: number; testId
       <div className="limit-label">
         {bar.label}
         {bar.resetsAt ? ` · resets in ${duration(bar.resetsAt - now)}` : ''}
-        {bar.observedAt && now - bar.observedAt > STALE_MS ? ` · as of ${clock(bar.observedAt)}` : ''}
+        {bar.observedAt && (bar.kind === 'agent-limit' || now - bar.observedAt > STALE_MS)
+          ? ` · as of ${clock(bar.observedAt)}`
+          : ''}
       </div>
     </div>
   );
@@ -214,16 +216,29 @@ function App() {
       <MenuButton onClick={(e) => void menu(e)} />
     </>
   );
-  const subscriptionLimits = model.subscriptionLimits.map((bar) => (
-    <Limit key={bar.window ?? bar.label} bar={bar} now={model.now} testId="usage-subscription-limit" />
+  // Plan limits per account: a heading per account ("Claude (main)"), then its windows.
+  const accountLimits = (model.accountLimits ?? []).map((group) => (
+    <div
+      key={`${group.agent}/${group.account}`}
+      className="account-limits"
+      data-testid="usage-account-limits"
+      data-agent={group.agent}
+      data-account={group.account}
+    >
+      <div className="account-label">{group.label}</div>
+      {group.bars.map((bar) => (
+        <Limit key={bar.window ?? bar.label} bar={bar} now={model.now} testId="usage-subscription-limit" />
+      ))}
+    </div>
   ));
+  const hasPlanLimits = accountLimits.length > 0;
   return (
     <div className={`card${compact ? ' compact' : ''}`} data-testid="usage-card">
       {!model.hasData || !showCost || !display.showToday ? (
         <div className="row head">
           {!showCost && (
             <span className="heading" data-testid="usage-plan-heading">
-              {model.subscriptionLimits.length > 0 ? 'PLAN LIMITS' : 'SUBSCRIPTION'}
+              {hasPlanLimits ? 'PLAN LIMITS' : 'SUBSCRIPTION'}
             </span>
           )}
           <span className="spacer" />
@@ -273,8 +288,8 @@ function App() {
           Indexing history… {Math.round((progress.done / Math.max(1, progress.total)) * 100)}%
         </div>
       )}
-      {display.showLimits && subscriptionLimits}
-      {display.showLimits && !showCost && model.subscriptionLimits.length === 0 && (
+      {display.showLimits && accountLimits}
+      {display.showLimits && !showCost && !hasPlanLimits && (
         <div className="muted" data-testid="usage-subscription-hint">
           Subscription billing: costs are hidden.{' '}
           <button type="button" className="link" onClick={openSettings}>

@@ -69,6 +69,11 @@ export function shScript(dir: string): string {
 # Turn it off in Oxytocin: Usage dashboard > Pricing > Claude subscription limits.
 input=$(cat)
 data=${shQuote(slashes(join(dir, STATUSLINE_DATA_FILE)))}
+# Another account (CLAUDE_CONFIG_DIR) keeps its own file: the accounts' limits must not overwrite each other.
+if [ -n "$CLAUDE_CONFIG_DIR" ]; then
+  key=$(printf '%s' "$CLAUDE_CONFIG_DIR" | tr -c 'A-Za-z0-9' '_' | cut -c1-120)
+  data=${shQuote(slashes(dir))}/usage-$key.json
+fi
 case "$input" in
   *'"rate_limits"'*) printf '%s' "$input" > "$data.$$.tmp" 2>/dev/null && mv -f "$data.$$.tmp" "$data" 2>/dev/null ;;
 esac
@@ -89,6 +94,12 @@ try { [Console]::InputEncoding = $utf8; [Console]::OutputEncoding = $utf8 } catc
 $OutputEncoding = $utf8
 $in = [Console]::In.ReadToEnd()
 $data = ${psQuote(join(dir, STATUSLINE_DATA_FILE))}
+# Another account (CLAUDE_CONFIG_DIR) keeps its own file: the accounts' limits must not overwrite each other.
+if ($env:CLAUDE_CONFIG_DIR) {
+  $key = [Regex]::Replace($env:CLAUDE_CONFIG_DIR, '[^A-Za-z0-9]', '_')
+  if ($key.Length -gt 120) { $key = $key.Substring(0, 120) }
+  $data = Join-Path ${psQuote(dir)} "usage-$key.json"
+}
 if ($in.Contains('"rate_limits"')) {
   try {
     $tmp = "$data.$PID.tmp"
@@ -153,6 +164,15 @@ async function writeAtomic(file: string, text: string): Promise<void> {
 
 const writeSettings = (file: string, settings: Record<string, unknown>) =>
   writeAtomic(file, `${JSON.stringify(settings, null, 2)}\n`);
+
+/** Whether this folder holds our backup, i.e. the status line was set up for this settings file (not inherited). */
+export const hasOwnStatusLine = (paths: StatusLinePaths): Promise<boolean> => exists(join(paths.dir, BACKUP));
+
+/** The status line paths of an added Claude Code account (its folder is its CLAUDE_CONFIG_DIR). */
+export const accountStatusLinePaths = (home: string): StatusLinePaths => ({
+  settingsFile: join(home, 'settings.json'),
+  dir: join(home, STATUSLINE_DIR_NAME),
+});
 
 /** Whether Claude Code's settings currently run our status line script. */
 export async function isStatusLineInstalled(paths: StatusLinePaths): Promise<boolean> {

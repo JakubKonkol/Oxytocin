@@ -1,6 +1,6 @@
 {
   "name": "@oxytocin/usage-monitor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Token usage and cost of AI coding agents (Claude Code, Codex CLI, Gemini CLI)",
   "license": "MIT",
   "private": true,
@@ -10,7 +10,7 @@
     "displayName": "Usage Monitor",
     "description": "Token usage and cost of Claude Code, Codex CLI and Gemini CLI.",
     "publisher": "oxytocin",
-    "engine": "^0.1.0",
+    "engine": "^0.1.7",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup",

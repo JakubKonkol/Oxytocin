@@ -15,7 +15,7 @@ This guide walks you through building a complete plugin, then documents every pa
 - [Debugging](#debugging) · [Packaging and distribution](#packaging-and-distribution) ·
   [Security](#security) · [Best practices](#best-practices)
 
-Plugin API version: **0.1.6** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
+Plugin API version: **0.1.7** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
 contain breaking changes; declare the versions your plugin supports with `engine`.
 
 ## How a plugin works
@@ -115,7 +115,7 @@ Replace the `oxytocin` section of `package.json`:
     "displayName": "TODO Radar",
     "description": "Lists the TODO and FIXME comments of the active project.",
     "publisher": "acme",
-    "engine": "^0.1.6",
+    "engine": "^0.1.7",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup"
@@ -471,7 +471,7 @@ the publisher, the permissions and — because the plugin has a backend — that
     "displayName": "My Plugin",
     "description": "What it does.",
     "publisher": "acme",
-    "engine": "^0.1.6",                  // Oxytocin plugin API versions this plugin supports (semver range)
+    "engine": "^0.1.7",                  // Oxytocin plugin API versions this plugin supports (semver range)
     "main": "dist/host.js",              // backend entry; omit for view-only plugins
     "activationEvents": ["onStartup"],
     "permissions": ["projects.read"],
@@ -521,10 +521,10 @@ use.
 | `projects.read` | `oxy.projects.*` |
 | `terminals.read-metadata` | `oxy.terminals.list`, `onDidOpen/Close/Change`, `show`, `getListeningPorts` |
 | `terminals.create` | `oxy.terminals.create` |
-| `terminals.write` | `oxy.terminals.sendText`, `kill`, `close` |
+| `terminals.write` | `oxy.terminals.sendText`, `kill`, `close`, `oxy.agents.sendPrompt` |
 | `terminals.read-output` | `oxy.terminals.onDidWriteData` — raw terminal output (sensitive) |
 | `terminals.env` | `oxy.terminals.environment` |
-| `agents.read` / `agents.annotate` | `oxy.agents.list/onDidChange` / `reportSession`, `reportState` |
+| `agents.read` / `agents.annotate` | `oxy.agents.list/onDidChange`, `listAccounts`, `getLimits` (and their events) / `reportSession`, `reportState`, `reportLimits` |
 | `git.read` | `oxy.git.*` |
 | `notifications.os` | `showNotification({ os: true })` |
 | `mcp.tools` | `oxy.mcp.registerTool` and `contributes.mcp` — tools AI agents can call (the consent dialog lists them) |
@@ -561,7 +561,7 @@ export function deactivate(): void {}
 |---|---|---|
 | `oxy.projects` | `list`, `getActive`, `findByPath`, `onDidChangeActive`, `onDidChange` | `projects.read` |
 | `oxy.terminals` | List, create, write to, show, kill terminals; their output, ports and environment | `terminals.*` |
-| `oxy.agents` | Detected AI agents and their state; report sessions and states | `agents.read`, `agents.annotate` |
+| `oxy.agents` | Detected AI agents, their state and account; agent accounts and their plan limits; type a prompt into an agent; report sessions, states and limits | `agents.read`, `agents.annotate`, `terminals.write` |
 | `oxy.git` | The status of a project's repository | `git.read` |
 | `oxy.ui` | Panels and views, status bar items, notifications, quick picks, `openInEditor`, `openExternal` | — |
 | `oxy.commands` | Register commands, run core commands and other plugins' commands | — |
@@ -586,6 +586,22 @@ const answer = await oxy.ui.showNotification({
 
 When the question is answered elsewhere (in your view, in the terminal) or no longer applies, call
 `controller.abort()`: the notification closes instead of leaving buttons that no longer do anything.
+
+#### Agents, accounts and limits
+
+```ts
+// Since API 0.1.7. Each agent says which account it runs on: `main` or an account added in Settings → AI Agents.
+const accounts = await oxy.agents.listAccounts(); // [{ id: 'main', agent: 'claude', name: 'main', home, main: true }, …]
+const limits = await oxy.agents.getLimits();      // [{ agent: 'claude', accountId: 'main', windows: [{ window: 'five_hour', usedPercent: 28, … }] }]
+ctx.subscriptions.push(oxy.agents.onDidChangeLimits((list) => update(list)));
+
+// Types a prompt into an agent that waits for input (never over a question on screen); `terminals.write`.
+const result = await oxy.agents.sendPrompt(agent.terminalId, 'Continue with the next step in TODO.md.');
+if (!result.ok) ctx.log.warn(result.error);
+```
+
+The Usage Monitor reports the limits it reads (`oxy.agents.reportLimits`, `agents.annotate`); the built-in Relay
+plugin uses them to hand work to the next agent before an account runs out.
 
 #### Status bar items, commands and settings
 

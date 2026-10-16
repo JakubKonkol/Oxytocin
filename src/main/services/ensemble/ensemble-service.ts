@@ -45,7 +45,7 @@ import type { CreateTerminalRequest } from '@shared/domain/terminal';
 import { buildLaunch, customValues, type LaunchContext, readsPromptFile, sessionName } from './adapters';
 import { ENSEMBLE_TOOLS, runEnsembleTool } from './ensemble-tools';
 import { EnsembleStore } from './ensemble-store';
-import { deliver } from './prompt-delivery';
+import { BLOCKING_PROMPT, deliver, oneLine } from './prompt-delivery';
 
 type WsCall = <M extends Extract<keyof WorkspaceHostMethods, string>>(
   method: M,
@@ -134,23 +134,6 @@ const PROGRESS_INTERVAL_MS = 4000;
 const USAGE_POLL_MS = 15_000;
 const MCP_WAIT_MS = 20_000;
 const USAGE_TAIL_MS = 5 * 60_000;
-/** Prompts on screen that must never receive a typed message. */
-const BLOCKING_PROMPT =
-  /(do you trust|trust (this|the) (folder|directory|files|workspace)|press enter to (continue|confirm)|log ?in to|sign in|select (a|an) (login|auth)|\[y\/n\]|\(y\/n\))/i;
-
-/**
- * A message as one line. On Windows a multi-line message is not typed as is: whether the paste markers survive the
- * console (ConPTY) up to the CLI is not guaranteed, and without them every line break would be an Enter that sends a
- * fragment. Line breaks become "↵"; oxy_ensemble_context serves the same text formatted.
- */
-export const oneLine = (text: string): string =>
-  text
-    .split('\n')
-    .map((l) => l.trimEnd())
-    .filter((l, i, all) => l !== '' || (i > 0 && all[i - 1] !== ''))
-    .join(' ↵ ')
-    .replace(/( ↵ ){2,}/g, ' ↵ ↵ ');
-
 const projectSlug = (name: string) => slugId(name, [], 'project');
 
 /** Ensemble: tasks run by a team of AI agents. One conductor per task; effects run here. */

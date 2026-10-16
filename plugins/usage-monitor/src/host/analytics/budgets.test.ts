@@ -127,7 +127,7 @@ describe('sidebar model', () => {
     engine.saveBudget({ name: 'API', scope: 'project', scopeRef: 'p1', period: 'day', metric: 'usd', amount: 4 });
     expect(engine.sidebar().limit).toMatchObject({ kind: 'project-budget', label: '75% of api daily budget ($4.00)' });
 
-    // A real agent limit of an agent with a live session wins.
+    // Agent plan limits are shown per account, apart from the budgets.
     engine.ingest([
       {
         kind: 'limit',
@@ -139,11 +139,15 @@ describe('sidebar model', () => {
         observedAt: now,
       },
     ]);
-    expect(engine.sidebar().limit).toMatchObject({
-      kind: 'agent-limit',
-      label: 'Claude: 64% of 5h limit',
-      ratio: 0.64,
-    });
+    expect(engine.sidebar().limit).toMatchObject({ kind: 'project-budget' });
+    expect(engine.sidebar().accountLimits).toEqual([
+      {
+        agent: 'claude-code',
+        account: 'main',
+        label: 'Claude (main)',
+        bars: [expect.objectContaining({ kind: 'agent-limit', label: '64% of 5h limit', ratio: 0.64 })],
+      },
+    ]);
     expect(engine.status()).toMatchObject({ busy: false, activeSession: { agent: 'claude-code' } });
   });
 
@@ -202,9 +206,15 @@ describe('sidebar model', () => {
       limit('five_hour', 23.5, 300, now + 3_600_000),
       limit('five_hour_old', 90, 300, now - 1),
     ]);
-    // API billing: an ordinary agent limit.
+    // API billing: the plan limits are shown per account, not in the status bar.
     expect(engine.sidebar().subscriptionLimits).toEqual([]);
-    expect(engine.sidebar().limit).toMatchObject({ label: 'Claude: 41% of weekly limit' });
+    expect(engine.sidebar().limit).toBeNull();
+    expect(engine.sidebar().accountLimits[0]!.bars.map((b) => [b.window, b.label, b.resetsAt])).toEqual([
+      ['five_hour', '24% of 5h limit', now + 3_600_000],
+      // Started over since the reading.
+      ['five_hour_old', '0% of 5h limit', null],
+      ['seven_day', '41% of weekly limit', now + 3 * 86_400_000],
+    ]);
 
     engine.setSettings({ billing: { 'claude-code': 'subscription' } });
     const model = engine.sidebar();
@@ -217,6 +227,60 @@ describe('sidebar model', () => {
     expect(engine.status().subscriptionLimits).toEqual([
       { window: 'five_hour', percent: 24, resetsAt: now + 3_600_000 },
       { window: 'seven_day', percent: 41, resetsAt: now + 3 * 86_400_000 },
+    ]);
+  });
+
+  it('tells the accounts apart: limits per account, attributed by the account folders', () => {
+    engine.setAccounts([
+      { agent: 'claude-code', id: 'main', name: 'main', home: '/h/.claude' },
+      { agent: 'claude-code', id: 'acc_w', name: 'Work', home: '/h/.oxytocin/accounts/claude/work/' },
+      { agent: 'codex', id: 'main', name: 'main', home: '/h/.codex' },
+      { agent: 'codex', id: 'acc_s', name: 'Side', home: '/h/.oxytocin/accounts/codex/side' },
+    ]);
+    expect(engine.accountOfPath('claude-code', '/h/.oxytocin/accounts/claude/work/projects/-p/s.jsonl')).toBe('acc_w');
+    expect(engine.accountOfPath('claude-code', '/h/.oxytocin/accounts/claude/workshop/x.jsonl')).toBe('main');
+    expect(engine.accountOfPath('codex', '/h/.oxytocin/accounts/codex/side/sessions/r.jsonl')).toBe('acc_s');
+    expect(engine.accountOfPath('codex', '/h/.codex/sessions/r.jsonl')).toBe('main');
+    let fired = 0;
+    engine.onLimitsChanged(() => fired++);
+    const limit = (agent: string, account: string, window: string, used: number, minutes: number) => ({
+      kind: 'limit' as const,
+      agent,
+      account,
+      window,
+      usedPercent: used,
+      windowMinutes: minutes,
+      resetsAt: now + 49 * 60_000,
+      observedAt: now - 60_000,
+    });
+    engine.ingest([
+      limit('codex', 'main', 'primary', 12, 300),
+      limit('claude-code', 'acc_w', 'five_hour', 75, 300),
+      limit('claude-code', 'main', 'five_hour', 28, 300),
+      limit('claude-code', 'gone', 'five_hour', 99, 300),
+    ]);
+    expect(fired).toBe(1);
+    expect(engine.sidebar().accountLimits.map((g) => [g.label, g.bars.map((b) => b.label)])).toEqual([
+      ['Claude (main)', ['28% of 5h limit']],
+      ['Claude (Work)', ['75% of 5h limit']],
+      ['Codex (main)', ['12% of 5h limit']],
+    ]);
+    expect(engine.accountLimits()).toEqual([
+      {
+        agent: 'claude',
+        accountId: 'acc_w',
+        windows: [
+          {
+            window: 'five_hour',
+            usedPercent: 75,
+            windowMinutes: 300,
+            resetsAt: now + 49 * 60_000,
+            observedAt: now - 60_000,
+          },
+        ],
+      },
+      expect.objectContaining({ agent: 'claude', accountId: 'main' }),
+      expect.objectContaining({ agent: 'codex', accountId: 'main' }),
     ]);
   });
 });

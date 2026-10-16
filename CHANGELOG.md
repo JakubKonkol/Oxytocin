@@ -3,6 +3,36 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Relay: hand work from one AI agent to the next.** The new built-in *Relay* plugin (*+* menu → *Tools → Relay*, or
+  *Relay: Show Relay Panel*) works with the agents running in a project, on any of your accounts:
+  - **Hand off at the limit.** When an agent finishes its turn and its account's 5-hour (or weekly) limit is at least
+    90% used (adjustable), the next free agent in the order you set — e.g. Claude Code, then Codex CLI on your main
+    account, then Codex CLI on a second account — gets your hand-off prompt, such as *"Continue the implementation
+    after {from}; the status is in TODO.md"*. Agents whose account is nearly out are skipped; when nobody is free,
+    Relay waits, also for the first agent's limit to start over, so the work can go round.
+  - **Review after each turn.** When an author finishes a turn that changed files, the reviewer agent gets the review
+    prompt with the names of the changed files; turns that end while the reviewer works are reviewed together, and
+    the reviewer's own turns start nothing.
+  - Relay types one short prompt per hand-off and nothing else — no status messages, no system prompts, no diffs (the
+    agents read the files themselves) — so the agents' context and limits go to the work. It only types into an
+    agent that waits for input and never over a question on screen; every hand-off shows a notification and is
+    listed in the panel, where *Send now* also sends the prompt by hand.
+
+### Changed
+
+- **Usage Monitor: plan limits per account.** The sidebar card lists the limits of each account under its name —
+  *Claude (main)*, *Claude (Work)*, *Codex (main)* — each window with how much is used, when it resets and when it was
+  read (*28% of 5h limit · resets in 49 min · as of 10:07*). Codex CLI limits are shown with the others. Added
+  accounts' sessions count towards the usage too (their transcripts, rollouts and chats are read from the
+  accounts' folders), and accounts that share the main account's settings report their own Claude limits through
+  the same status line. The limits are also available to other plugins.
+- **Plugin API 0.1.7:** agent accounts (`oxy.agents.listAccounts`, `AgentSnapshot.accountId`), plan limits
+  (`getLimits`, `reportLimits`) and `oxy.agents.sendPrompt` ([changelog](packages/plugin-api/CHANGELOG.md)).
+
 ## [0.9.6] - 2026-10-16
 
 ### Added

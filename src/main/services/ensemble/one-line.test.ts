@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { oneLine } from './ensemble-service';
+import { oneLine } from './prompt-delivery';
 
 describe('oneLine', () => {
   it('keeps the structure of a multi-line message on one line', () => {

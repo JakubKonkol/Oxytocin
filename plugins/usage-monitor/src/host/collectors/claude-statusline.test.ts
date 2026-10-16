@@ -22,6 +22,7 @@ describe('parseStatusLineInput', () => {
       {
         kind: 'limit',
         agent: 'claude-code',
+        account: 'main',
         window: 'five_hour',
         usedPercent: 23.5,
         windowMinutes: 300,
@@ -62,5 +63,29 @@ describe('ClaudeStatusLineReader', () => {
     } finally {
       reader.stop();
     }
+  });
+
+  it('reads the files of other accounts and attributes them by the transcript', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oxy-statusline-'));
+    const work = '/h/.oxytocin/accounts/claude/work';
+    await writeFile(
+      join(dir, 'usage-_h__oxytocin_accounts_claude_work.json'),
+      JSON.stringify({
+        transcript_path: `${work}/projects/-p/s1.jsonl`,
+        rate_limits: { five_hour: { used_percentage: 75 } },
+      }),
+    );
+    await writeFile(join(dir, STATUSLINE_DATA_FILE), input({ five_hour: { used_percentage: 28 } }));
+    await writeFile(join(dir, 'other.json'), input({ five_hour: { used_percentage: 1 } }));
+    const seen: AgentLimitRecord[] = [];
+    const reader = new ClaudeStatusLineReader(
+      dir,
+      (items) => seen.push(...items),
+      undefined,
+      (path) => (path?.startsWith(work) ? 'acc_work' : 'main'),
+    );
+    await reader.start();
+    reader.stop();
+    expect(seen.map((l) => `${l.account}:${l.usedPercent}`).sort()).toEqual(['acc_work:75', 'main:28']);
   });
 });

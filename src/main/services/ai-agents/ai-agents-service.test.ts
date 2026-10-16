@@ -193,6 +193,18 @@ describe('AiAgentsService', () => {
       env: { CLAUDE_CONFIG_DIR: work.home, ANTHROPIC_API_KEY: null, CLAUDE_CODE_OAUTH_TOKEN: null },
     });
     expect(service.accountHomes('claude')).toEqual([work.home]);
+    // Plugins see the main account of each CLI and the added ones, and which one an agent's terminal runs on.
+    expect(service.accountInfos().map((a) => `${a.agent}/${a.id}/${a.name}`)).toEqual([
+      'claude/main/main',
+      'codex/main/main',
+      'gemini/main/main',
+      `claude/${work.id}/Praca Ż`,
+      `codex/${state.accounts[1]!.id}/Praca Ż`,
+    ]);
+    expect(service.accountOf(launchId, 'claude-code')).toBe(work.id);
+    expect(service.accountOf(launchId, 'codex')).toBe('main');
+    expect(service.accountOf('bash', 'gemini-cli')).toBe('main');
+    expect(service.accountOf('bash', 'aider')).toBeUndefined();
 
     // Signed in from its terminal: the e-mail is read from the account's folder.
     await writeFile(

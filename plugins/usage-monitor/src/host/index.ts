@@ -1,10 +1,14 @@
+import { readFile } from 'node:fs/promises';
 import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
-import type { AgentSnapshot, PluginContext } from '@oxytocin/plugin-api';
+import type { AgentAccount, AgentLimits, AgentSnapshot, PluginContext } from '@oxytocin/plugin-api';
 import { type CollectorSettings, DEFAULT_SETTINGS, type TelemetrySettings, type UsageSettings } from './settings';
 import {
+  accountStatusLinePaths,
   findGitBash,
+  hasOwnStatusLine,
   installStatusLine,
+  isOxytocinStatusLine,
   isStatusLineInstalled,
   statusLinePaths,
   uninstallStatusLine,
@@ -61,6 +65,27 @@ function readTelemetrySettings(ctx: PluginContext): TelemetrySettings {
   };
 }
 
+/** Oxytocin's agent ids → the Usage Monitor's. */
+const USAGE_AGENT: Record<AgentAccount['agent'], string> = {
+  claude: 'claude-code',
+  codex: 'codex',
+  gemini: 'gemini-cli',
+};
+
+const usageAccounts = (accounts: AgentAccount[]) =>
+  accounts.map((a) => ({ agent: USAGE_AGENT[a.agent], id: a.id, name: a.name, home: a.home }));
+
+/** Whether a settings file already runs our status line (an account sharing the main account's settings). */
+async function runsOurStatusLine(settingsFile: string): Promise<boolean> {
+  try {
+    return isOxytocinStatusLine(
+      (JSON.parse(await readFile(settingsFile, 'utf8')) as Record<string, unknown>)['statusLine'],
+    );
+  } catch {
+    return false;
+  }
+}
+
 const agentRefs = (agents: AgentSnapshot[]) =>
   agents.map((a) => ({
     terminalId: a.terminalId,
@@ -111,7 +136,12 @@ export async function activate(ctx: PluginContext): Promise<void> {
   ctx.log.info(`Usage database ready (schema ${schemaVersion})`);
   await client.request('setSettings', readSettings(ctx));
 
-  // Claude subscription limits (opt-in): our status line script in Claude Code's settings saves its input.
+  // Agent accounts (Settings → AI Agents): their folders are read too, and their limits are told apart.
+  let accounts = await oxy.agents.listAccounts().catch(() => [] as AgentAccount[]);
+  await client.request('setAccounts', usageAccounts(accounts));
+
+  // Claude subscription limits (opt-in): our status line script in Claude Code's settings saves its input. Added
+  // accounts that share the main account's settings use the same script; one with settings of its own gets it too.
   const statusLine = statusLinePaths(process.env);
   let statusLineError: string | null = null;
   // Serialized: quick toggles must not install and remove the script concurrently.
@@ -119,11 +149,24 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const configureStatusLine = () => (statusLineQueue = statusLineQueue.then(applyStatusLine, applyStatusLine));
   const applyStatusLine = async () => {
     const enabled = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
+    const added = accounts.filter((a) => a.agent === 'claude' && !a.main).map((a) => accountStatusLinePaths(a.home));
+    const dirs: string[] = [];
     try {
       if (enabled) {
         const shell = process.platform !== 'win32' || (await findGitBash(process.env)) ? 'sh' : 'powershell';
         await installStatusLine(statusLine, shell);
-      } else await uninstallStatusLine(statusLine);
+        dirs.push(statusLine.dir);
+        for (const paths of added) {
+          // Shared settings run the main account's script, which keeps this account's readings apart.
+          if (!(await hasOwnStatusLine(paths)) && (await runsOurStatusLine(paths.settingsFile))) continue;
+          await installStatusLine(paths, shell);
+          dirs.push(paths.dir);
+        }
+      } else {
+        // Accounts first: only where the status line was set up for the account's own settings.
+        for (const paths of added) if (await hasOwnStatusLine(paths)) await uninstallStatusLine(paths);
+        await uninstallStatusLine(statusLine);
+      }
       statusLineError = null;
     } catch (e) {
       statusLineError = e instanceof Error ? e.message : String(e);
@@ -134,7 +177,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
         detail: statusLineError,
       });
     }
-    await client.request('statusline.configure', { dir: enabled ? statusLine.dir : null });
+    await client.request('statusline.configure', { dirs: enabled ? dirs : null });
   };
   const statusLineStatus = async (): Promise<StatusLineStatus> => ({
     enabled: oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false,
@@ -146,6 +189,24 @@ export async function activate(ctx: PluginContext): Promise<void> {
   let statusLineKey = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
   await configureStatusLine();
   registerUi(ctx, client, { statusLineStatus });
+
+  // The accounts' limits go to Oxytocin, where other plugins read them (e.g. to hand work to another agent).
+  const reportLimits = (list: AgentLimits[]) => {
+    for (const limits of list) oxy.agents.reportLimits(limits);
+  };
+  client.onEvent((event, payload) => {
+    if (event === 'limits') reportLimits(payload as AgentLimits[]);
+  });
+  reportLimits(await client.request<AgentLimits[]>('limits.list'));
+  ctx.subscriptions.push(
+    oxy.agents.onDidChangeAccounts((list) => {
+      accounts = list;
+      void client.request('setAccounts', usageAccounts(list)).then(async () => {
+        await configureStatusLine();
+        reportLimits(await client.request<AgentLimits[]>('limits.list'));
+      });
+    }),
+  );
 
   // Listening from here on: the UI can change settings while collectors and telemetry still start (their keys are
   // null until then, and their start reads the settings of that moment).

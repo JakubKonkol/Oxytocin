@@ -54,6 +54,8 @@ export interface SidebarModel {
   limit: LimitBar | null;
   limits: LimitBar[];
   subscriptionLimits: LimitBar[];
+  /** Plan limits per account ("Claude (main)", "Codex (Work)"). */
+  accountLimits: { agent: string; account: string; label: string; bars: LimitBar[] }[];
   sessions: LiveSession[];
   project: { id: string; name?: string; todayUsd: number; last7DaysUsd: number } | null;
   /** Every agent in use is billed by subscription: costs are hidden. */

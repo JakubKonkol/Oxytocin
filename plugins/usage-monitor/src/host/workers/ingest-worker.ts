@@ -2,7 +2,7 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { detectUserOtelConfig, type EngineOptions, UsageEngine } from '../engine';
 import type { ProjectRef } from '../attribution';
-import type { AgentRef } from '../engine';
+import type { AgentRef, UsageAccount } from '../engine';
 import type { BudgetInput } from '../analytics/budgets';
 import type { CollectorSettings, UsageSettings } from '../settings';
 import { serveWorker } from '../worker-rpc';
@@ -53,8 +53,10 @@ const emit = serveWorker(parentPort, {
     const endpoint = await (await ready).configureOtlp(enabled);
     return { endpoint, userConfig: detectUserOtelConfig(process.env) };
   },
-  /** Claude subscription limits from the status line script's folder (null: off). */
-  'statusline.configure': async ({ dir }: { dir: string | null }) => (await ready).configureClaudeStatusLine(dir),
+  /** Claude subscription limits from the status line scripts' folders (null or empty: off). */
+  'statusline.configure': async ({ dirs }: { dirs: string[] | null }) => (await ready).configureClaudeStatusLine(dirs),
+  setAccounts: async (accounts: UsageAccount[]) => (await ready).setAccounts(Array.isArray(accounts) ? accounts : []),
+  'limits.list': async () => (await ready).accountLimits(),
   'statusline.observedAt': async () => (await ready).claudeLimitsObservedAt(),
   startCollectors: async (options: CollectorSettings) => {
     const e = await ready;
@@ -90,6 +92,16 @@ const ready = UsageEngine.create({
   });
   e.onProgress((source, done, total) => emit('progress', { source, done, total }));
   e.onSessionLinked((link) => emit('sessionLinked', link));
+  // The accounts' limits for Oxytocin (other plugins hand work over by them); throttled like the views.
+  let limitsPending = false;
+  e.onLimitsChanged(() => {
+    if (limitsPending) return;
+    limitsPending = true;
+    setTimeout(() => {
+      limitsPending = false;
+      emit('limits', e.accountLimits());
+    }, CHANGE_THROTTLE_MS);
+  });
   setInterval(() => void e.maybeRefreshPricing(), PRICING_CHECK_MS).unref();
   e.applyRetention();
   setInterval(() => e.applyRetention(), RETENTION_MS).unref();

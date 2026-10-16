@@ -38,6 +38,8 @@ export const emptyTokens = (): UsageTokens => ({
 export interface AgentLimitRecord {
   kind: 'limit';
   agent: string;
+  /** The agent account (`main` or an added account's id); `main` when unknown. */
+  account?: string;
   window: string;
   usedPercent: number | null;
   windowMinutes: number | null;
