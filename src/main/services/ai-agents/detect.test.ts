@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type AiDetectDeps, detectAiAgents, ghUsers, jwtClaims, versionLine } from './detect';
+import { accountLogins, type AiDetectDeps, detectAiAgents, ghUsers, jwtClaims, versionLine } from './detect';
 
 const jwt = (claims: Record<string, unknown>) => `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`;
 
@@ -141,5 +141,36 @@ describe('AI agent detection', () => {
       { label: 'a', method: 'oauth' },
       { label: 'b', method: 'oauth', detail: 'ghe.example.com' },
     ]);
+  });
+
+  it('reads the sign-in of an added account from its own folder, not from the environment', async () => {
+    const acc = '/home/u/.oxytocin/accounts';
+    const d = deps({
+      bins: {},
+      env: { ANTHROPIC_API_KEY: 'sk-x', OPENAI_API_KEY: 'sk-y' },
+      files: {
+        [`${acc}/claude/work/.claude.json`]: JSON.stringify({ oauthAccount: { emailAddress: 'praca@firma.pl' } }),
+        [`${acc}/claude/work/.credentials.json`]: JSON.stringify({ claudeAiOauth: { subscriptionType: 'team' } }),
+        [`${acc}/codex/work/auth.json`]: JSON.stringify({ tokens: { id_token: jwt({ email: 'dev@firma.pl' }) } }),
+        [`${acc}/gemini/work/.gemini/google_accounts.json`]: JSON.stringify({ active: 'g@firma.pl' }),
+      },
+    });
+    expect(await accountLogins(d, 'claude', `${acc}/claude/work`)).toEqual([
+      { label: 'praca@firma.pl', method: 'oauth', plan: 'Team' },
+    ]);
+    expect(await accountLogins(d, 'codex', `${acc}/codex/work`)).toEqual([{ label: 'dev@firma.pl', method: 'oauth' }]);
+    expect(await accountLogins(d, 'gemini', `${acc}/gemini/work`)).toEqual([{ label: 'g@firma.pl', method: 'oauth' }]);
+    expect(await accountLogins(d, 'claude', `${acc}/claude/new`)).toEqual([]);
+  });
+
+  it('finds the Gemini CLI account in GEMINI_CLI_HOME', async () => {
+    const found = await detectAiAgents(
+      deps({
+        bins: { gemini: '/usr/bin/gemini' },
+        env: { GEMINI_CLI_HOME: '/data/g' },
+        files: { '/data/g/.gemini/google_accounts.json': JSON.stringify({ active: 'me@gmail.com' }) },
+      }),
+    );
+    expect(found[0]?.accounts).toEqual([{ label: 'me@gmail.com', method: 'oauth' }]);
   });
 });

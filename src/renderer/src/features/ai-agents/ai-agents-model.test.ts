@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  accountAlias,
+  accountEnv,
+  accountSlug,
+  AgentAccountSchema,
   type AiAgentsState,
   AiProfileSchema,
   newProfile,
   profileEnv,
+  validateAccountName,
   validateProfiles,
 } from '@shared/domain/ai-agents';
 import { agoText, menuEntries, profileSecretChanges, withHidden } from './ai-agents-model';
@@ -35,6 +40,28 @@ const state = (over: Partial<AiAgentsState> = {}): AiAgentsState => ({
   hidden: ['ai:gemini'],
   keys: [],
   encrypted: true,
+  accounts: [
+    AgentAccountSchema.parse({
+      id: 'a1',
+      agent: 'claude',
+      name: 'Work',
+      home: '/h/.oxytocin/accounts/claude/work',
+      createdAt: 1,
+    }),
+    AgentAccountSchema.parse({
+      id: 'a2',
+      agent: 'codex',
+      name: 'Side',
+      home: '/h/.oxytocin/accounts/codex/side',
+      createdAt: 1,
+    }),
+  ],
+  accountsInfo: {
+    mainHomes: {},
+    overridden: [],
+    logins: { a1: [{ label: 'praca@firma.pl', method: 'oauth' }] },
+    notes: {},
+  },
   ...over,
 });
 
@@ -44,11 +71,15 @@ describe('AI agents model', () => {
     expect(menuEntries(state())).toEqual([
       { launchId: 'ai:claude', name: 'Claude Code', detail: 'me@firma.pl', kind: 'agent' },
       { launchId: 'ai:codex', name: 'Codex CLI', detail: 'codex@firma.pl +1', kind: 'agent' },
+      { launchId: 'ai:account:a1', name: 'Claude Code · Work', detail: 'praca@firma.pl', kind: 'account' },
+      { launchId: 'ai:account:a2', name: 'Codex CLI · Side', detail: 'not signed in', kind: 'account' },
       { launchId: 'ai:profile:p1', name: 'Claude Code · GLM', detail: 'GLM (Z.ai)', kind: 'profile' },
     ]);
-    expect(menuEntries(state({ hidden: ['ai:profile:p1', 'ai:claude', 'ai:codex'] })).map((e) => e.launchId)).toEqual([
-      'ai:gemini',
-    ]);
+    expect(
+      menuEntries(state({ hidden: ['ai:profile:p1', 'ai:claude', 'ai:codex', 'ai:account:a1'] })).map(
+        (e) => e.launchId,
+      ),
+    ).toEqual(['ai:gemini', 'ai:account:a2']);
   });
 
   it('toggles hidden entries and collects key changes of existing profiles', () => {
@@ -91,6 +122,35 @@ describe('AI agents model', () => {
       'ANTHROPIC_AUTH_TOKEN',
       'ANTHROPIC_API_KEY',
     ]);
+  });
+
+  it('names account folders, checks names and builds the environment and shell aliases of accounts', () => {
+    expect(accountSlug('Praca – Żółw!', [])).toBe('praca-zolw');
+    expect(accountSlug('Work', ['work', 'WORK-2'])).toBe('work-3');
+    expect(accountSlug('???', [])).toBe('account');
+    const existing = [{ agent: 'claude' as const, name: 'Work' }];
+    expect(validateAccountName(' work ', 'claude', existing)).toMatch(/already/);
+    expect(validateAccountName('work', 'codex', existing)).toBeUndefined();
+    expect(validateAccountName('  ', 'claude', existing)).toMatch(/name/);
+    expect(validateAccountName('Main', 'claude', existing)).toMatch(/main account/);
+    expect(accountEnv({ agent: 'claude', home: '/a' })).toEqual({
+      CLAUDE_CONFIG_DIR: '/a',
+      ANTHROPIC_API_KEY: null,
+      CLAUDE_CODE_OAUTH_TOKEN: null,
+    });
+    expect(accountEnv({ agent: 'codex', home: '/a' })).toEqual({ CODEX_HOME: '/a' });
+    expect(accountEnv({ agent: 'gemini', home: '/a' })).toEqual({ GEMINI_CLI_HOME: '/a' });
+    expect(accountAlias({ agent: 'claude', home: '/home/j/.oxytocin/accounts/claude/work' }, 'posix')).toBe(
+      `alias claude-work='CLAUDE_CONFIG_DIR="/home/j/.oxytocin/accounts/claude/work" claude'`,
+    );
+    expect(accountAlias({ agent: 'codex', home: "/home/o'b/$x/codex/side" }, 'posix')).toBe(
+      `alias codex-side='CODEX_HOME="/home/o'\\''b/\\$x/codex/side" codex'`,
+    );
+    expect(
+      accountAlias({ agent: 'gemini', home: 'C:\\Users\\J\\.oxytocin\\accounts\\gemini\\work' }, 'powershell'),
+    ).toBe(
+      "function gemini-work { $env:GEMINI_CLI_HOME = 'C:\\Users\\J\\.oxytocin\\accounts\\gemini\\work'; try { gemini @args } finally { Remove-Item Env:GEMINI_CLI_HOME } }",
+    );
   });
 
   it('formats how long ago detection ran', () => {

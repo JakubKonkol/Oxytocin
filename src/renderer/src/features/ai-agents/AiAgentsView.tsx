@@ -20,6 +20,7 @@ import { notify } from '../../ui/Toast';
 import { newTerminal } from '../layout/layout-commands';
 import { getActiveWorkspace } from '../layout/workspace-registry';
 import { Check, Field, input, SecretInput, Section } from '../projects/settings/controls';
+import { AccountsSection } from './AccountsSection';
 import { agoText, profileDetail, profileSecretChanges, withHidden } from './ai-agents-model';
 import { useAiAgentsStore } from './ai-agents-store';
 
@@ -228,7 +229,8 @@ export function AiAgentsView() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void ensure();
+    // Who the added accounts are signed in with may have changed outside Oxytocin.
+    void ensure().then(() => ipc.invoke('aiAgents:refreshAccounts').catch(() => undefined));
   }, [ensure]);
   // A save or a detection elsewhere replaces an unchanged draft.
   const profiles = draft ?? state?.profiles ?? [];
@@ -320,6 +322,8 @@ export function AiAgentsView() {
           <p className="text-small text-fg-muted">Not found: {missing.map((m) => m.name).join(', ')}.</p>
         )}
       </Section>
+
+      <AccountsSection state={state} start={start} saveHidden={(hidden) => void save(hidden, false)} />
 
       {runtimes.length > 0 && (
         <Section title="Local models">

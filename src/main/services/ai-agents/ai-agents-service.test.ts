@@ -1,4 +1,4 @@
-import { mkdtemp } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,6 +6,7 @@ import { defaultSettings } from '@shared/domain/settings';
 import type { Logger } from '@shared/logging/logger';
 import { SecretStore, type SafeStorageLike } from '../secrets/secret-store';
 import { ProfileService } from '../terminals/profiles';
+import { nodeProvisionFs } from './accounts/node-fs';
 import { AiAgentsService } from './ai-agents-service';
 import type { AiDetectDeps } from './detect';
 
@@ -121,7 +122,7 @@ describe('AiAgentsService', () => {
       () => defaultSettings('linux'),
       Date.now,
       () => [],
-      (id) => service.launchProfile(id),
+      (id) => service.prepareLaunch(id),
     );
     const launch = await profiles.resolveLaunch('ai:profile:p1', '/tmp');
     expect(launch).toMatchObject({
@@ -136,5 +137,80 @@ describe('AiAgentsService', () => {
     // ai: profiles are not listed with the terminal profiles.
     expect((await profiles.list()).some((p) => p.id.startsWith('ai:'))).toBe(false);
     await expect(profiles.resolveLaunch('ai:profile:gone', '/tmp')).rejects.toThrow(/not found/);
+  });
+
+  it('adds accounts in folders of their own, starts them on their folder and removes them', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oxy-ai-accounts-'));
+    const home = join(dir, 'home');
+    await mkdir(join(home, '.claude'), { recursive: true });
+    await writeFile(join(home, '.claude', 'settings.json'), '{}');
+    const secrets = new SecretStore(join(dir, 'secrets.json'), safe, logger);
+    await secrets.load();
+    const deps = (): AiDetectDeps => ({
+      ...detectDeps(),
+      platform: process.platform,
+      home,
+      env: { CODEX_HOME: join(home, 'codex-main') },
+      readText: (p) => readFile(p, 'utf8').catch(() => null),
+    });
+    const service = new AiAgentsService({
+      file: join(dir, 'ai-agents.json'),
+      secrets,
+      detectDeps: deps,
+      logger,
+      now: () => 5,
+      accounts: { root: join(home, '.oxytocin', 'accounts'), fs: nodeProvisionFs },
+    });
+    await service.load();
+    const events: number[] = [];
+    service.onDidChange((s) => events.push(s.accounts.length));
+
+    let state = await service.addAccount({ agent: 'claude', name: 'Praca Ż', mode: 'shared' });
+    const work = state.accounts[0]!;
+    expect(work).toMatchObject({ agent: 'claude', name: 'Praca Ż', mode: 'shared', createdAt: 5 });
+    expect(work.home).toBe(join(home, '.oxytocin', 'accounts', 'claude', 'praca-z'));
+    expect(state.accountsInfo.mainHomes).toMatchObject({
+      claude: join(home, '.claude'),
+      codex: join(home, 'codex-main'),
+    });
+    expect(state.accountsInfo.overridden).toEqual(['CODEX_HOME']);
+    if (process.platform !== 'win32')
+      expect((await lstat(join(work.home, 'settings.json'))).isSymbolicLink()).toBe(true);
+    await expect(service.addAccount({ agent: 'claude', name: 'praca ż', mode: 'shared' })).rejects.toThrow(/already/);
+    // The same name for another agent is fine.
+    state = await service.addAccount({ agent: 'codex', name: 'Praca Ż', mode: 'isolated' });
+    expect(state.accounts[1]!.home).toBe(join(home, '.oxytocin', 'accounts', 'codex', 'praca-z'));
+    expect(events).toEqual([1, 2]);
+
+    // Started on its folder, without the user's API key or token taking over the account's sign-in.
+    const launchId = `ai:account:${work.id}`;
+    expect(await service.prepareLaunch(launchId)).toMatchObject({
+      id: launchId,
+      name: 'Claude Code · Praca Ż',
+      kind: 'agent',
+      command: 'claude',
+      icon: 'agent-claude',
+      env: { CLAUDE_CONFIG_DIR: work.home, ANTHROPIC_API_KEY: null, CLAUDE_CODE_OAUTH_TOKEN: null },
+    });
+    expect(service.accountHomes('claude')).toEqual([work.home]);
+
+    // Signed in from its terminal: the e-mail is read from the account's folder.
+    await writeFile(
+      join(work.home, '.claude.json'),
+      JSON.stringify({ oauthAccount: { emailAddress: 'praca@firma.pl' } }),
+    );
+    state = await service.refreshAccounts();
+    expect(state.accountsInfo.logins[work.id]).toEqual([{ label: 'praca@firma.pl', method: 'oauth' }]);
+
+    await service.save({ profiles: [], hidden: [launchId], secrets: [] });
+    state = await service.removeAccount(work.id);
+    expect(state.accounts.map((a) => a.agent)).toEqual(['codex']);
+    expect(state.hidden).toEqual([]);
+    expect(state.accountsInfo.logins).not.toHaveProperty(work.id);
+    await expect(lstat(work.home)).rejects.toThrow();
+    // The main account is untouched.
+    expect(await readFile(join(home, '.claude', 'settings.json'), 'utf8')).toBe('{}');
+    expect(service.launchProfile(launchId)).toBeUndefined();
+    await expect(service.removeAccount(work.id)).rejects.toThrow(/No such account/);
   });
 });

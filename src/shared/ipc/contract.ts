@@ -54,7 +54,7 @@ import {
   FinishActionSchema,
 } from '../domain/ensemble';
 import { DatabaseServerSchema, DiscoveryResultSchema } from '../domain/database-servers';
-import { AiAgentsStateSchema } from '../domain/ai-agents';
+import { AI_ACCOUNT_AGENTS, AiAgentsStateSchema } from '../domain/ai-agents';
 import type { InvokeChannel } from './channels';
 
 /** What the Ensemble panel may ask the conductor to do (the rest comes from agents or effects). */
@@ -342,6 +342,19 @@ export const invokeContract = {
     }),
     res: AiAgentsStateSchema,
   },
+  /** Adds an account of Claude Code, Codex CLI or Gemini CLI (a folder of its own, signed in from its terminal). */
+  'aiAgents:addAccount': {
+    req: z.object({
+      agent: z.enum(AI_ACCOUNT_AGENTS),
+      name: z.string().max(100),
+      mode: z.enum(['shared', 'isolated']).default('shared'),
+    }),
+    res: AiAgentsStateSchema,
+  },
+  /** Removes an added account and deletes its folder (sign-in, sessions, history). */
+  'aiAgents:removeAccount': { req: z.object({ id: z.string().max(100) }), res: AiAgentsStateSchema },
+  /** Reads again who the added accounts are signed in with. */
+  'aiAgents:refreshAccounts': { req: z.null().optional(), res: AiAgentsStateSchema },
   /** Which secrets of a project are set (`<resourceId>/<key>`), and whether they are encrypted. */
   'secrets:status': { req: z.object({ projectId: ProjectIdSchema }), res: SecretsStatusSchema },
   /** Write-only: there is no channel that returns a secret. */

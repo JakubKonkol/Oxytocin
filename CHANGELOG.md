@@ -3,6 +3,26 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Several accounts of Claude Code, Codex CLI and Gemini CLI.** *Settings → AI Agents → Accounts* lists the main
+  account of each agent and lets you **Add account** — e.g. a work subscription next to your own. An added account
+  gets a folder of its own (`~/.oxytocin/accounts/<agent>/<name>`, passed to the CLI as `CLAUDE_CONFIG_DIR`,
+  `CODEX_HOME` or `GEMINI_CLI_HOME`), so it signs in separately and runs at the same time as the main account in
+  other terminals; the main account stays exactly as it is. **Create and sign in** opens its first terminal, where the
+  CLI asks you to log in; the e-mail and plan appear next to the account afterwards. In the **shared setup**
+  (recommended) the account uses the main account's global instructions (`CLAUDE.md` through an import, `AGENTS.md`,
+  `GEMINI.md`), agents, skills, commands, settings, plugins and MCP servers, while its sign-in, sessions, history
+  and project memory stay separate; **Isolated** shares nothing. Folders are linked (junctions on Windows, no admin
+  rights needed); where Windows refuses a file link, Oxytocin keeps a copy that follows the main file, and anything
+  the account already has of its own is never overwritten. Accounts are in the **+** menu (*Claude Code · Work
+  (you@work.com)*), resume after a restart on their own folder, report their agent status like the main account,
+  and an account terminal never picks up `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` from your environment.
+  **Alias** copies a shell alias (`claude-work`) to use the account outside Oxytocin, and **Remove** deletes the
+  account's folder (and, on macOS, its Claude Code Keychain entry) without touching the main account.
+
 ## [0.9.5] - 2026-10-15
 
 ### Added

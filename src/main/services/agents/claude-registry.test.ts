@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,6 +63,20 @@ describe('Claude session registry', () => {
     registry.hasClaudeAgents = true;
     await registry.rescan();
     expect(registry.get(7)).toEqual({ pid: 7, status: 'idle', sessionId: 's' });
+    registry.dispose();
+  });
+
+  it('also reads the session folders of added accounts', async () => {
+    const account = join(dir, 'account-sessions');
+    await mkdir(account, { recursive: true });
+    await writeFile(join(account, '77.json'), JSON.stringify({ pid: 77, status: 'busy' }));
+    const registry = new ClaudeRegistry({ dir: join(dir, 'main'), logger });
+    registry.setExtraDirs([account, join(dir, 'not-yet')]);
+    await registry.rescan();
+    expect(registry.get(77)).toEqual({ pid: 77, status: 'busy' });
+    registry.setExtraDirs([]);
+    await registry.rescan();
+    expect(registry.get(77)).toBeUndefined();
     registry.dispose();
   });
 });

@@ -1,5 +1,11 @@
 import { posix, win32 } from 'node:path';
-import { AI_AGENT_CATALOG, type AiAccount, type AiAgentKind, type DetectedAiAgent } from '@shared/domain/ai-agents';
+import {
+  AI_AGENT_CATALOG,
+  type AiAccount,
+  type AiAccountAgent,
+  type AiAgentKind,
+  type DetectedAiAgent,
+} from '@shared/domain/ai-agents';
 
 /** I/O of the detection, injectable so it is unit-testable. */
 export interface AiDetectDeps {
@@ -66,36 +72,39 @@ const xdgConfig = (deps: AiDetectDeps) => envValue(deps, 'XDG_CONFIG_HOME') ?? j
 
 // ── accounts per agent (only names, e-mail addresses and plans are read; tokens never leave the files) ──
 
-async function claudeAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
-  const dir = envValue(deps, 'CLAUDE_CONFIG_DIR');
-  const config = await readJson(
-    deps,
-    dir ? joinPath(deps, dir, '.claude.json') : joinPath(deps, deps.home, '.claude.json'),
-  );
-  const credentials = await readJson(
-    deps,
-    joinPath(deps, dir ?? joinPath(deps, deps.home, '.claude'), '.credentials.json'),
-  );
-  const out: AiAccount[] = [];
+/** The Claude Code sign-in stored in a configuration folder (`.claude.json` + `.credentials.json`). */
+async function claudeLogin(deps: AiDetectDeps, configFile: string, configDir: string): Promise<AiAccount[]> {
+  const config = await readJson(deps, configFile);
+  const credentials = await readJson(deps, joinPath(deps, configDir, '.credentials.json'));
   const account = isObject(config?.['oauthAccount']) ? config['oauthAccount'] : undefined;
   const email = str(account?.['emailAddress']);
-  if (email) {
-    const oauth = isObject(credentials?.['claudeAiOauth']) ? credentials['claudeAiOauth'] : undefined;
-    const plan = str(oauth?.['subscriptionType']);
-    const org = str(account?.['organizationName']);
-    out.push({
+  if (!email) return [];
+  const oauth = isObject(credentials?.['claudeAiOauth']) ? credentials['claudeAiOauth'] : undefined;
+  const plan = str(oauth?.['subscriptionType']);
+  const org = str(account?.['organizationName']);
+  return [
+    {
       label: email,
       method: 'oauth',
       ...(plan ? { plan: capitalize(plan) } : {}),
       ...(org && !org.includes(email) ? { detail: `Organization: ${org}` } : {}),
-    });
-  }
+    },
+  ];
+}
+
+async function claudeAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
+  const dir = envValue(deps, 'CLAUDE_CONFIG_DIR')?.split(',')[0]?.trim();
+  const out = await claudeLogin(
+    deps,
+    dir ? joinPath(deps, dir, '.claude.json') : joinPath(deps, deps.home, '.claude.json'),
+    dir ?? joinPath(deps, deps.home, '.claude'),
+  );
   out.push(...apiKeyFromEnv(deps, 'ANTHROPIC_API_KEY'));
   return out;
 }
 
-async function codexAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
-  const home = envValue(deps, 'CODEX_HOME') ?? joinPath(deps, deps.home, '.codex');
+/** The Codex CLI sign-in in a CODEX_HOME (`auth.json`: a ChatGPT login's id token, or an API key). */
+async function codexLogin(deps: AiDetectDeps, home: string): Promise<AiAccount[]> {
   const auth = await readJson(deps, joinPath(deps, home, 'auth.json'));
   const tokens = isObject(auth?.['tokens']) ? auth['tokens'] : undefined;
   const idToken = str(tokens?.['id_token']);
@@ -107,27 +116,58 @@ async function codexAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
     if (email) return [{ label: email, method: 'oauth', ...(plan ? { plan: capitalize(plan) } : {}) }];
   }
   if (str(auth?.['OPENAI_API_KEY'])) return [{ label: 'API key', method: 'api-key', detail: 'Codex auth.json' }];
-  return apiKeyFromEnv(deps, 'OPENAI_API_KEY');
+  return [];
 }
 
-async function geminiLikeAccounts(deps: AiDetectDeps, folder: '.gemini' | '.qwen'): Promise<AiAccount[]> {
-  const dir = joinPath(deps, deps.home, folder);
+async function codexAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
+  const login = await codexLogin(deps, envValue(deps, 'CODEX_HOME') ?? joinPath(deps, deps.home, '.codex'));
+  return login.length ? login : apiKeyFromEnv(deps, 'OPENAI_API_KEY');
+}
+
+/** The Gemini CLI sign-in in a `.gemini` folder; null: none. */
+async function geminiLogin(deps: AiDetectDeps, dir: string): Promise<AiAccount[] | null> {
   const settings = await readJson(deps, joinPath(deps, dir, 'settings.json'));
   const security = isObject(settings?.['security']) ? settings['security'] : undefined;
   const auth = isObject(security?.['auth']) ? security['auth'] : undefined;
   const selected = str(auth?.['selectedType']) ?? str(settings?.['selectedAuthType']);
-  if (folder === '.qwen') {
-    if (selected === 'openai')
-      return [{ label: 'OpenAI-compatible API key', method: 'api-key', detail: 'Qwen Code settings' }];
-    if (await deps.exists(joinPath(deps, dir, 'oauth_creds.json'))) return [{ label: 'Qwen account', method: 'oauth' }];
-    return apiKeyFromEnv(deps, 'DASHSCOPE_API_KEY', 'OPENAI_API_KEY');
-  }
   if (selected === 'gemini-api-key') return [{ label: 'GEMINI_API_KEY', method: 'api-key' }];
   if (selected === 'vertex-ai') return [{ label: 'Vertex AI', method: 'other', detail: 'Google Cloud credentials' }];
   const accounts = await readJson(deps, joinPath(deps, dir, 'google_accounts.json'));
   const active = str(accounts?.['active']);
-  if (active) return [{ label: active, method: 'oauth' }];
-  return apiKeyFromEnv(deps, 'GEMINI_API_KEY', 'GOOGLE_API_KEY');
+  return active ? [{ label: active, method: 'oauth' }] : null;
+}
+
+/**
+ * Who an added account is signed in with, from the files in its own folder (the environment does not count: an
+ * account's terminals start without the user's API keys of Claude Code).
+ */
+export async function accountLogins(deps: AiDetectDeps, agent: AiAccountAgent, home: string): Promise<AiAccount[]> {
+  switch (agent) {
+    case 'claude':
+      return claudeLogin(deps, joinPath(deps, home, '.claude.json'), home);
+    case 'codex':
+      return codexLogin(deps, home);
+    case 'gemini':
+      return (await geminiLogin(deps, joinPath(deps, home, '.gemini'))) ?? [];
+  }
+}
+
+/** Gemini CLI keeps its files in `$GEMINI_CLI_HOME/.gemini` (default: the home folder). */
+async function geminiAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
+  const dir = joinPath(deps, envValue(deps, 'GEMINI_CLI_HOME') ?? deps.home, '.gemini');
+  return (await geminiLogin(deps, dir)) ?? apiKeyFromEnv(deps, 'GEMINI_API_KEY', 'GOOGLE_API_KEY');
+}
+
+async function qwenAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
+  const dir = joinPath(deps, deps.home, '.qwen');
+  const settings = await readJson(deps, joinPath(deps, dir, 'settings.json'));
+  const security = isObject(settings?.['security']) ? settings['security'] : undefined;
+  const auth = isObject(security?.['auth']) ? security['auth'] : undefined;
+  const selected = str(auth?.['selectedType']) ?? str(settings?.['selectedAuthType']);
+  if (selected === 'openai')
+    return [{ label: 'OpenAI-compatible API key', method: 'api-key', detail: 'Qwen Code settings' }];
+  if (await deps.exists(joinPath(deps, dir, 'oauth_creds.json'))) return [{ label: 'Qwen account', method: 'oauth' }];
+  return apiKeyFromEnv(deps, 'DASHSCOPE_API_KEY', 'OPENAI_API_KEY');
 }
 
 async function copilotAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
@@ -238,9 +278,9 @@ async function accountsOf(kind: AiAgentKind, deps: AiDetectDeps, path: string): 
     case 'codex':
       return codexAccounts(deps);
     case 'gemini':
-      return geminiLikeAccounts(deps, '.gemini');
+      return geminiAccounts(deps);
     case 'qwen':
-      return geminiLikeAccounts(deps, '.qwen');
+      return qwenAccounts(deps);
     case 'copilot':
       return copilotAccounts(deps);
     case 'opencode':

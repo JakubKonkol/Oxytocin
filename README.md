@@ -72,7 +72,9 @@ scrollback come back after a restart.
   Amp, Droid, Aider, Goose, Crush — and the account each one is signed in with. The **+** menu starts them by name,
   e.g. *Claude Code (you@example.com)*. **Profiles** run Claude Code against another Anthropic-compatible API (GLM,
   Kimi, OpenRouter, OrcaRouter, DeepSeek, MiniMax) or a local model in Ollama or llama.cpp, with the key kept in your
-  OS keychain.
+  OS keychain. **Several accounts** of Claude Code, Codex CLI and Gemini CLI — e.g. a work subscription next to your
+  own — run side by side: each added account signs in separately and shares your global instructions, skills,
+  settings and plugins with the main account (or nothing, if you choose).
 
 ### 🔍 Changes, review and git
 

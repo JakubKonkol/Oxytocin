@@ -234,6 +234,51 @@ export type AiProfile = z.infer<typeof AiProfileSchema>;
 /** The secret store's "project" of profile API keys (project ids are 12 hex characters). */
 export const AI_PROFILE_SECRET_SCOPE = 'ai-profiles';
 
+// ── added accounts: a second (third…) sign-in of Claude Code, Codex CLI or Gemini CLI ──
+
+/** The agents that can have added accounts, and the variable that points each at an account's folder. */
+export const AI_ACCOUNT_AGENTS = ['claude', 'codex', 'gemini'] as const;
+export type AiAccountAgent = (typeof AI_ACCOUNT_AGENTS)[number];
+export const AI_ACCOUNT_HOME_VARIABLES: Record<AiAccountAgent, string> = {
+  claude: 'CLAUDE_CONFIG_DIR',
+  codex: 'CODEX_HOME',
+  gemini: 'GEMINI_CLI_HOME',
+};
+
+/**
+ * An added account: its own configuration folder for the agent CLI (`~/.oxytocin/accounts/<agent>/<slug>`), so it
+ * signs in separately and runs next to the main account. The main account (the CLI's default folder) is untouched.
+ */
+export const AgentAccountSchema = z.looseObject({
+  id: z.string().regex(AI_PROFILE_ID_PATTERN),
+  agent: z.enum(AI_ACCOUNT_AGENTS),
+  /** Display name ("Work"); the signed-in e-mail is detected and shown next to it. */
+  name: z.string().trim().min(1).max(100),
+  /** Absolute folder; never changes after creation (macOS Keychain entries are keyed by it). */
+  home: z.string().min(1).max(1000),
+  /**
+   * `shared`: global instructions, agents, skills, commands, settings and plugins come from the main account; the
+   * sign-in, sessions, history and project memory stay separate. `isolated`: nothing is shared.
+   */
+  mode: z.enum(['shared', 'isolated']).default('shared'),
+  createdAt: z.number(),
+});
+export type AgentAccount = z.infer<typeof AgentAccountSchema>;
+export type AgentAccountMode = AgentAccount['mode'];
+
+/** Settings → AI Agents: the main account's folder of each agent and what Oxytocin found about added accounts. */
+export const AgentAccountsInfoSchema = z.object({
+  /** The folder of each agent's main account (its CLI's default, or the user's own variable). */
+  mainHomes: z.record(z.string(), z.string().max(1000)),
+  /** Home variables (CLAUDE_CONFIG_DIR…) set in the user's environment: a shell profile may override accounts. */
+  overridden: z.array(z.string().max(64)).max(10),
+  /** Per account: who it is signed in with (empty: not signed in yet). */
+  logins: z.record(z.string(), z.array(AiAccountSchema).max(20)),
+  /** Per account: what could not be shared at the last start (e.g. a file of its own). */
+  notes: z.record(z.string(), z.array(z.string().max(500)).max(50)),
+});
+export type AgentAccountsInfo = z.infer<typeof AgentAccountsInfoSchema>;
+
 export const AiAgentsStateSchema = z.object({
   /** When detection last ran (ms); null: never. */
   detectedAt: z.number().nullable(),
@@ -245,12 +290,17 @@ export const AiAgentsStateSchema = z.object({
   keys: z.array(z.string()).max(100),
   /** API keys are encrypted with an OS key (false on Linux without a keyring: only obfuscated). */
   encrypted: z.boolean(),
+  /** Added accounts of Claude Code, Codex CLI and Gemini CLI. */
+  accounts: z.array(AgentAccountSchema).max(50).default([]),
+  accountsInfo: AgentAccountsInfoSchema.default({ mainHomes: {}, overridden: [], logins: {}, notes: {} }),
 });
 export type AiAgentsState = z.infer<typeof AiAgentsStateSchema>;
 
 /** The terminal profile id that starts a detected agent or a profile (`ai:claude`, `ai:profile:<id>`). */
 export const aiAgentLaunchId = (agentId: string): string => `ai:${agentId}`;
 export const aiProfileLaunchId = (profileId: string): string => `ai:profile:${profileId}`;
+export const aiAccountLaunchId = (accountId: string): string => `ai:account:${accountId}`;
+export const ACCOUNT_LAUNCH_PREFIX = 'ai:account:';
 export const isAiLaunchId = (id: string): boolean => id.startsWith('ai:');
 
 /** The account shown next to an agent's name ("you@example.com", "API key"). */
@@ -329,4 +379,78 @@ export function newProfile(existing: readonly AiProfile[], providerId: string, m
     baseUrl: preset.baseUrl,
     ...(model ? { model } : {}),
   });
+}
+
+// ── added accounts: helpers shared by main and the renderer ──
+
+export const isAccountAgent = (id: string): id is AiAccountAgent =>
+  (AI_ACCOUNT_AGENTS as readonly string[]).includes(id);
+
+/** The agent's display name ("Claude Code"). */
+export const agentName = (id: string): string => AI_AGENT_CATALOG.find((a) => a.id === id)?.name ?? id;
+
+/**
+ * The environment that starts the agent CLI on an account. For Claude Code, an API key or OAuth token of the user's
+ * environment would take precedence over the account's own sign-in, so they are removed.
+ */
+export function accountEnv(account: Pick<AgentAccount, 'agent' | 'home'>): Record<string, string | null> {
+  switch (account.agent) {
+    case 'claude':
+      return { CLAUDE_CONFIG_DIR: account.home, ANTHROPIC_API_KEY: null, CLAUDE_CODE_OAUTH_TOKEN: null };
+    case 'codex':
+      return { CODEX_HOME: account.home };
+    case 'gemini':
+      return { GEMINI_CLI_HOME: account.home };
+  }
+}
+
+/** The folder name of a new account ("Work stuff" → "work-stuff"), unique among `taken` (case-insensitive). */
+export function accountSlug(name: string, taken: readonly string[]): string {
+  const base =
+    name
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      // Letters without a decomposition.
+      .replace(/[łđøßæœ]/g, (c) => ({ ł: 'l', đ: 'd', ø: 'o', ß: 'ss', æ: 'ae', œ: 'oe' })[c] ?? c)
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40)
+      .replace(/-+$/, '') || 'account';
+  const used = new Set(taken.map((t) => t.toLowerCase()));
+  let slug = base;
+  for (let n = 2; used.has(slug); n++) slug = `${base}-${n}`;
+  return slug;
+}
+
+/** Problems that block adding an account with this name. */
+export function validateAccountName(
+  name: string,
+  agent: AiAccountAgent,
+  existing: readonly Pick<AgentAccount, 'agent' | 'name'>[],
+): string | undefined {
+  const trimmed = name.trim();
+  if (!trimmed) return 'Give the account a name.';
+  if (trimmed.length > 100) return 'The name is too long.';
+  if (/^main$/i.test(trimmed)) return '"Main" is the name of the main account.';
+  if (existing.some((a) => a.agent === agent && a.name.trim().toLowerCase() === trimmed.toLowerCase()))
+    return `There is already an account named "${trimmed}".`;
+  return undefined;
+}
+
+/**
+ * A shell alias that starts the agent on the account outside Oxytocin (`claude-work`), for bash/zsh or PowerShell.
+ */
+export function accountAlias(account: Pick<AgentAccount, 'agent' | 'home'>, shell: 'posix' | 'powershell'): string {
+  const variable = AI_ACCOUNT_HOME_VARIABLES[account.agent];
+  const command = AI_AGENT_CATALOG.find((a) => a.id === account.agent)?.command ?? account.agent;
+  const slug = account.home.split(/[\\/]/).filter(Boolean).at(-1) ?? 'account';
+  const name = `${command}-${slug}`;
+  if (shell === 'powershell') {
+    const path = account.home.replace(/'/g, "''");
+    return `function ${name} { $env:${variable} = '${path}'; try { ${command} @args } finally { Remove-Item Env:${variable} } }`;
+  }
+  // Escaped for the double quotes first, then for the single quotes around the alias.
+  const path = account.home.replace(/(["$`\\])/g, '\\$1').replace(/'/g, `'\\''`);
+  return `alias ${name}='${variable}="${path}" ${command}'`;
 }

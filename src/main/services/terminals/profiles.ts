@@ -62,8 +62,13 @@ export class ProfileService {
     private readonly now: () => number = Date.now,
     /** Profiles contributed by plugins (`contributes.terminalProfiles`). */
     private readonly pluginProfiles: () => TerminalProfile[] = () => [],
-    /** AI agents and profiles of Settings → AI Agents (`ai:…` ids); not listed with the terminal profiles. */
-    private readonly aiProfile: (id: string) => TerminalProfile | undefined = () => undefined,
+    /**
+     * AI agents, profiles and accounts of Settings → AI Agents (`ai:…` ids); not listed with the terminal profiles.
+     * Asynchronous: an account's folder is set up before it starts.
+     */
+    private readonly aiProfile: (
+      id: string,
+    ) => TerminalProfile | undefined | Promise<TerminalProfile | undefined> = () => undefined,
   ) {}
 
   private async detect(): Promise<TerminalProfile[]> {
@@ -124,7 +129,7 @@ export class ProfileService {
     const profiles = await this.list();
     const requested = profileId
       ? (profiles.find((p) => p.id === profileId) ??
-        (profileId.startsWith('ai:') ? this.aiProfile(profileId) : undefined))
+        (profileId.startsWith('ai:') ? await this.aiProfile(profileId) : undefined))
       : undefined;
     if (profileId && !requested) throw new OxyError('NOT_FOUND', `Terminal profile "${profileId}" not found`);
     const profile = requested ?? (await this.defaultShellProfile());

@@ -18,6 +18,7 @@ import {
 } from 'electron';
 import { DEFAULT_PROJECT_ID } from '@shared/domain/terminal';
 import { OxyError } from '@shared/errors';
+import { ACCOUNT_LAUNCH_PREFIX } from '@shared/domain/ai-agents';
 import type { ConfirmRequest } from '@shared/domain/confirm';
 import type { Platform } from '@shared/domain/terminal-profile';
 import type { NotificationPayload } from '@shared/ipc/events';
@@ -85,6 +86,7 @@ import { ResourceService } from './services/resources/resource-service';
 import { ResourcesController } from './services/resources/resources-controller';
 import { DatabaseServerService } from './services/resources/database-servers';
 import { AiAgentsService } from './services/ai-agents/ai-agents-service';
+import { deleteKeychainEntry, nodeProvisionFs } from './services/ai-agents/accounts/node-fs';
 import { nodeAiDetectDeps } from './services/ai-agents/detect-node';
 import { EnsembleService } from './services/ensemble/ensemble-service';
 import { detectCommand } from './services/ensemble/cli-detect';
@@ -161,8 +163,8 @@ function bootstrap(): void {
     Date.now,
     // Plugins are discovered later in bootstrap; profiles are only listed afterwards.
     () => pluginTerminalProfiles(plugins.contributions()),
-    // Settings → AI Agents: the "+" menu starts detected agents and profiles by `ai:` ids.
-    (id) => aiAgents.launchProfile(id),
+    // Settings → AI Agents: the "+" menu starts detected agents, profiles and added accounts by `ai:` ids.
+    (id) => aiAgentsReady.then(() => aiAgents.prepareLaunch(id)),
   );
   // Shell/agent detection (PATH lookups, `reg`, `wsl -l`) runs while the window loads, not when the first
   // terminal is requested.
@@ -216,6 +218,8 @@ function bootstrap(): void {
     secrets: secretStore,
     detectDeps: () => nodeAiDetectDeps(() => shellEnv),
     logger: createLogger('ai-agents'),
+    // Added accounts of Claude Code, Codex CLI and Gemini CLI: a short path that also works in a shell alias.
+    accounts: { root: join(homedir(), '.oxytocin', 'accounts'), fs: nodeProvisionFs, deleteKeychainEntry },
   });
   const aiAgentsReady = Promise.all([resourcesReady, aiAgents.load()]).catch((e: unknown) =>
     log.error('AI agents could not be loaded', e),
@@ -295,6 +299,26 @@ function bootstrap(): void {
     if (configDir && configDir !== process.env['CLAUDE_CONFIG_DIR']) claudeRegistry.setDir(join(configDir, 'sessions'));
     claudeRegistry.start();
   });
+  // Added Claude Code accounts keep their sessions in their own folders.
+  const watchAccountSessions = () =>
+    claudeRegistry.setExtraDirs(aiAgents.accountHomes('claude').map((home) => join(home, 'sessions')));
+  void aiAgentsReady.then(watchAccountSessions);
+  aiAgents.onDidChange(watchAccountSessions);
+  // Signing in happens in an account's terminal: who it is signed in with is read again when its agent or the
+  // terminal changes state.
+  const accountTerminalStates = new Map<string, string>();
+  let accountRefresh: ReturnType<typeof setTimeout> | undefined;
+  terminals.onDidUpdate((info) => {
+    if (!info.profileId.startsWith(ACCOUNT_LAUNCH_PREFIX)) return;
+    const key = `${info.state}|${info.agent?.state ?? ''}`;
+    if (accountTerminalStates.get(info.id) === key) return;
+    accountTerminalStates.set(info.id, key);
+    if (accountRefresh) clearTimeout(accountRefresh);
+    accountRefresh = setTimeout(() => {
+      aiAgents.refreshAccounts().catch((e: unknown) => log.warn('Account sign-ins could not be read', e));
+    }, 1500);
+  });
+  terminals.onDidRemove((id) => accountTerminalStates.delete(id));
 
   const activity = new ActivityService(terminals, () => projects.list().map((p) => p.id));
   const osNotifications: { title: string; body: string; click: () => void }[] = [];
@@ -1112,6 +1136,18 @@ function bootstrap(): void {
       'aiAgents:save': async (req) => {
         await aiAgentsReady;
         return aiAgents.save(req);
+      },
+      'aiAgents:addAccount': async (req) => {
+        await Promise.all([aiAgentsReady, shellEnvReady]);
+        return aiAgents.addAccount(req);
+      },
+      'aiAgents:removeAccount': async ({ id }) => {
+        await aiAgentsReady;
+        return aiAgents.removeAccount(id);
+      },
+      'aiAgents:refreshAccounts': async () => {
+        await aiAgentsReady;
+        return aiAgents.refreshAccounts();
       },
       'resources:brief': async ({ projectId }) => {
         await resourcesReady;

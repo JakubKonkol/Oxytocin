@@ -97,9 +97,25 @@ export class ClaudeRegistry implements Disposable {
   private usingCli = false;
 
   private dir: string;
+  /** Session folders of added Claude Code accounts (`<account>/sessions`). */
+  private extraDirs: string[] = [];
+  private readonly extraWatchers = new Map<string, FSWatcher>();
 
   constructor(private readonly o: ClaudeRegistryOptions) {
     this.dir = o.dir;
+  }
+
+  /** Also watches these folders (added accounts); the main folder stays. */
+  setExtraDirs(dirs: readonly string[]): void {
+    const next = [...new Set(dirs)].filter((d) => d !== this.dir);
+    if (JSON.stringify(next) === JSON.stringify(this.extraDirs)) return;
+    this.extraDirs = next;
+    for (const [dir, watcher] of this.extraWatchers) {
+      if (next.includes(dir)) continue;
+      watcher.close();
+      this.extraWatchers.delete(dir);
+    }
+    if (this.rescanTimer) void this.rescan();
   }
 
   /** Switches the watched directory (CLAUDE_CONFIG_DIR resolved from the login shell). */
@@ -129,13 +145,15 @@ export class ClaudeRegistry implements Disposable {
     this.tryWatch();
   }
 
+  private onWatchEvent = (): void => {
+    if (this.debounce) clearTimeout(this.debounce);
+    this.debounce = setTimeout(() => void this.rescan(), 50);
+  };
+
   private tryWatch(): void {
     if (this.watcher) return;
     try {
-      this.watcher = watch(this.dir, () => {
-        if (this.debounce) clearTimeout(this.debounce);
-        this.debounce = setTimeout(() => void this.rescan(), 50);
-      });
+      this.watcher = watch(this.dir, this.onWatchEvent);
       this.watcher.on('error', () => {
         this.watcher?.close();
         this.watcher = undefined;
@@ -143,6 +161,36 @@ export class ClaudeRegistry implements Disposable {
     } catch {
       // The directory appears once Claude Code runs for the first time; retried on each rescan.
     }
+  }
+
+  private tryWatchExtra(dir: string): void {
+    if (this.extraWatchers.has(dir)) return;
+    try {
+      const watcher = watch(dir, this.onWatchEvent);
+      watcher.on('error', () => {
+        watcher.close();
+        this.extraWatchers.delete(dir);
+      });
+      this.extraWatchers.set(dir, watcher);
+    } catch {
+      // Appears when the account's Claude Code runs for the first time; retried on each rescan.
+    }
+  }
+
+  private async readDir(dir: string, into: Map<number, RegistryEntry>): Promise<void> {
+    const files = await readdir(dir).catch(() => [] as string[]);
+    await Promise.all(
+      files
+        .filter((f) => /^\d+\.json$/.test(f))
+        .map(async (f) => {
+          try {
+            const entry = parseRegistryEntry(JSON.parse(await readFile(join(dir, f), 'utf8')));
+            if (entry) into.set(entry.pid, entry);
+          } catch {
+            // partially written file — picked up by the next event
+          }
+        }),
+    );
   }
 
   async rescan(): Promise<void> {
@@ -153,19 +201,18 @@ export class ClaudeRegistry implements Disposable {
     );
     if (exists) {
       this.tryWatch();
-      const files = await readdir(this.dir).catch(() => [] as string[]);
-      await Promise.all(
-        files
-          .filter((f) => /^\d+\.json$/.test(f))
-          .map(async (f) => {
-            try {
-              const entry = parseRegistryEntry(JSON.parse(await readFile(join(this.dir, f), 'utf8')));
-              if (entry) next.set(entry.pid, entry);
-            } catch {
-              // partially written file — picked up by the next event
-            }
-          }),
-      );
+      await this.readDir(this.dir, next);
+    }
+    for (const dir of this.extraDirs) {
+      if (
+        !(await stat(dir).then(
+          (s) => s.isDirectory(),
+          () => false,
+        ))
+      )
+        continue;
+      this.tryWatchExtra(dir);
+      await this.readDir(dir, next);
     }
     this.usingCli = !exists && this.hasClaudeAgents && this.o.cliFallback !== undefined;
     if (this.usingCli && this.o.cliFallback) {
@@ -189,6 +236,8 @@ export class ClaudeRegistry implements Disposable {
     if (this.rescanTimer) clearInterval(this.rescanTimer);
     if (this.debounce) clearTimeout(this.debounce);
     this.watcher?.close();
+    for (const watcher of this.extraWatchers.values()) watcher.close();
+    this.extraWatchers.clear();
     this.emitter.dispose();
   }
 }
