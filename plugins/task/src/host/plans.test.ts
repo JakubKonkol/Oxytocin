@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -41,7 +41,11 @@ describe('Task plans', () => {
         message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: outside } }] },
       }),
     );
-    expect(await captureClaudePlan(home, 'session', 0)).toEqual({ path, text: '# Approved steps' });
+    // Temp paths can use Windows short names or macOS /var aliases; capture returns the canonical path.
+    expect(await captureClaudePlan(home, 'session', 0)).toEqual({
+      path: await realpath(path),
+      text: '# Approved steps',
+    });
     expect(await captureClaudePlan(home, '../session', 0)).toBeNull();
     expect(await captureClaudePlan(home, 'other-session', 0)).toBeNull();
     await utimes(path, 1, 1);
