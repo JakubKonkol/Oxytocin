@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { launchApp, repoRoot } from './helpers/launch';
+import { freePort } from './helpers/mcp';
 import { oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js');
 const fakeCli = join(repoRoot, 'tests/fixtures/agents/fake-claude-plugin-cli.mjs');
-const PORT = 47391;
 
 interface Agent {
   terminalId: string;
@@ -39,6 +39,7 @@ test('Claude Code Bridge: hook events drive agent states; the setup panel instal
   const cliLog = join(work, 'cli.log');
   await writeFile(cliLog, '');
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  const port = await freePort();
   const hooksJson = join(
     userData,
     'plugin-data/oxytocin.claude-code-bridge/claude-marketplace/oxytocin-bridge/hooks/hooks.json',
@@ -46,7 +47,7 @@ test('Claude Code Bridge: hook events drive agent states; the setup panel instal
   await writeFile(
     join(userData, 'settings.json'),
     JSON.stringify({
-      'claudeBridge.port': PORT,
+      'claudeBridge.port': port,
       'claudeBridge.claudeCommand': await claudeWrapper(work, cliLog),
       'terminal.env': { FAKE_CLAUDE_HOOKS: hooksJson },
     }),
@@ -62,7 +63,7 @@ test('Claude Code Bridge: hook events drive agent states; the setup panel instal
     // The generated Claude Code plugin points at the configured port.
     await expect
       .poll(() => readFile(hooksJson, 'utf8').catch(() => ''))
-      .toContain(`http://127.0.0.1:${PORT}/claude/hook`);
+      .toContain(`http://127.0.0.1:${port}/claude/hook`);
 
     await run(win, `node "${fakeClaude}"`);
     await expect.poll(() => oxyTest(win).text(id)).toContain('fake-claude>');
@@ -85,7 +86,7 @@ test('Claude Code Bridge: hook events drive agent states; the setup panel instal
     await expect(badge).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
     expect((await agents(win)).find((a) => a.terminalId === id)?.stateSource).toBe('hook');
     // Without the token (Claude Code outside Oxytocin): rejected.
-    const outside = await fetch(`http://127.0.0.1:${PORT}/claude/hook`, {
+    const outside = await fetch(`http://127.0.0.1:${port}/claude/hook`, {
       method: 'POST',
       headers: { authorization: 'Bearer ', 'x-oxytocin-terminal': id },
       body: '{"hook_event_name":"UserPromptSubmit"}',
@@ -98,7 +99,7 @@ test('Claude Code Bridge: hook events drive agent states; the setup panel instal
     const frame = () => win.frames().find((f) => f.url().startsWith('oxy-plugin://oxytocin.claude-code-bridge/'));
     await expect.poll(() => !!frame(), { timeout: 15_000 }).toBe(true);
     const panel = frame()!;
-    await expect(panel.locator('#status-endpoint')).toHaveText(`listening on 127.0.0.1:${PORT}`);
+    await expect(panel.locator('#status-endpoint')).toHaveText(`listening on 127.0.0.1:${port}`);
     await expect(panel.locator('#status-installed')).toHaveText('not installed');
     await expect(panel.locator('#status-events')).toContainText('3 received');
     await panel.locator('#install').click();

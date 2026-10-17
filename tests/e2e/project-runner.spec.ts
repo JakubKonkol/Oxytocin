@@ -4,10 +4,8 @@ import { basename, join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
 import { defaultUiState } from '../../src/shared/domain/ui-state';
 import { launchApp } from './helpers/launch';
+import { freePort } from './helpers/mcp';
 import { activeProjectId, oxyTest, waitForTerminal } from './helpers/terminal';
-
-const MCP_PORT = 47392;
-const LEGACY_PORT = 47393;
 
 /** A dev server that prints its URL like Vite and keeps running until interrupted. */
 const SERVER = `const http = require('http');
@@ -143,9 +141,10 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
   await writeFile(join(project, 'server.js'), SERVER);
   const claude = await fakeClaude(work);
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  const mcpPort = await freePort();
   await writeFile(
     join(userData, 'settings.json'),
-    JSON.stringify({ 'mcp.port': MCP_PORT, 'mcp.claudeCommand': claude.command }),
+    JSON.stringify({ 'mcp.port': mcpPort, 'mcp.claudeCommand': claude.command }),
   );
   await withRunInLeftSidebar(userData);
   const { app, win } = await launchApp({ userData, project });
@@ -208,7 +207,7 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
     ).not.toContain('mcpToken');
     await expect.poll(() => readFile(join(userData, 'mcp.json'), 'utf8').catch(() => '')).toContain('token');
     const { token } = JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string };
-    const hub = { port: MCP_PORT, token, session: {} as { id?: string } };
+    const hub = { port: mcpPort, token, session: {} as { id?: string } };
     expect(
       ((await mcp(hub, 'initialize', { protocolVersion: '2025-06-18' })).result as { serverInfo: unknown }).serverInfo,
     ).toMatchObject({ name: 'oxytocin' });
@@ -276,7 +275,7 @@ test("Project Runner: detects apps, runs them in background terminals, edits pro
       '--transport',
       'http',
       'oxytocin',
-      `http://127.0.0.1:${MCP_PORT}/mcp`,
+      `http://127.0.0.1:${mcpPort}/mcp`,
       '--header',
       `Authorization: Bearer ${token}`,
       '--header',
@@ -322,7 +321,7 @@ test('Project Runner: custom scripts — a script file of the project in a new t
       : 'echo "Hello from the script in $PWD"\nread -n 1 -s -r -p "Press any key to continue . . . "\necho\n',
   );
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
-  const port = MCP_PORT + 3;
+  const port = await freePort();
   await writeFile(
     join(userData, 'settings.json'),
     JSON.stringify({ 'mcp.port': port, 'projectRunner.mcp.enabled': false }),
@@ -528,6 +527,7 @@ test('Project Runner: a question of a starting app is asked once, in the Run vie
 
 test('Project Runner: the old oxytocin-runner server keeps working where it was used, and can be turned off', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  const legacyPort = await freePort();
   // An install from before 0.6.5: the runner created a token for its own server.
   await mkdir(join(userData, 'plugin-data/oxytocin.project-runner'), { recursive: true });
   await writeFile(
@@ -536,7 +536,7 @@ test('Project Runner: the old oxytocin-runner server keeps working where it was 
   );
   await writeFile(
     join(userData, 'settings.json'),
-    JSON.stringify({ 'projectRunner.mcp.port': LEGACY_PORT, 'mcp.port': MCP_PORT }),
+    JSON.stringify({ 'projectRunner.mcp.port': legacyPort, 'mcp.port': await freePort() }),
   );
   await withRunInLeftSidebar(userData);
   const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
@@ -544,7 +544,7 @@ test('Project Runner: the old oxytocin-runner server keeps working where it was 
   try {
     await waitForTerminal(win);
     await runnerFrame(win);
-    const legacy = { port: LEGACY_PORT, token: 'old-token-0123456789' };
+    const legacy = { port: legacyPort, token: 'old-token-0123456789' };
     await expect
       .poll(async () =>
         (
@@ -561,7 +561,7 @@ test('Project Runner: the old oxytocin-runner server keeps working where it was 
     await win.evaluate(() => window.oxy.invoke('settings:update', { 'projectRunner.mcp.enabled': false }));
     await expect
       .poll(() =>
-        fetch(`http://127.0.0.1:${LEGACY_PORT}/mcp`, { method: 'POST' }).then(
+        fetch(`http://127.0.0.1:${legacyPort}/mcp`, { method: 'POST' }).then(
           () => 'up',
           () => 'down',
         ),
