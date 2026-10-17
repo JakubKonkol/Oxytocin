@@ -2,21 +2,23 @@
 
 Everything below is proposed behavior, not an existing API. Read [research](research.md) for the inspected implementation baseline.
 
+This document specifies milestone A, the structural foundation. [Learning and context](learning-and-context.md) extends it in B; [the visualizer](visualizer.md) defines C. The complete product is an optional self-learning context layer, with one core service serving agents, core management UI, and plugins.
+
 ## User experience
 
 Add **Project settings → Code Map** with an **Enable Code Map** switch and this explanation:
 
-> Build a local map of saved code so agents can find symbols and dependencies. Updates automatically while Oxytocin is running.
+> Build a local map of saved code so agents can find symbols and dependencies. Updates automatically while Oxytocin is running. Optionally retain useful findings from agents for future tasks.
 
-Show state, supported languages, indexed/skipped/error counts, last successful update, cache size, and whether agent access through MCP is available. Provide **Rebuild**, **Pause updates / Resume updates**, **Clear cache**, exclusions, and **Copy agent instructions**. Rebuild is asynchronous and cancellable. The status view must remain useful with MCP disabled; show the existing Agent Tools setup entry point when needed.
+Show state, supported languages, indexed/skipped/error counts, last successful update, cache size, and whether agent access through MCP is available. Provide **Rebuild**, **Pause updates / Resume updates**, **Clear index cache**, exclusions, and **Copy agent instructions**. Rebuild is asynchronous and cancellable. The status view must remain useful with MCP disabled; show the existing Agent Tools setup entry point when needed. When B ships, add memory mode and Learnings management; when C is installed, add **Open Code Map**. Display separate indexing, memory, and visualizer availability rather than one ambiguous enabled indicator.
 
 States: `disabled`, `indexing`, `ready`, `updating`, `paused`, `degraded`, `error`. `ready` means no known pending changes at the latest checkpoint, not complete semantic knowledge. Parser failures can produce `degraded` coverage with useful results; a missing/unreadable root with no usable graph produces `error`. Display diagnostics without repeated toasts on every edit.
 
-Enabling begins enumeration and indexing; it does not require an agent session. Disabling cancels work, releases watches, denies subsequent map reads for that project, and retains the cache for fast re-enabling. Pause suspends updates but permits explicitly stale reads. Clear cache cancels in-flight work and removes only that project's validated application-owned cache; if enabled and not paused, it then rebuilds. Removing a project evicts its cache and checkout registrations. Changing its root invalidates the old association before indexing the new root.
+Enabling begins enumeration and indexing; it does not require an agent session. Disabling cancels work, releases watches, denies subsequent map reads for that project, and retains the cache for fast re-enabling. Pause suspends updates but permits explicitly stale reads. Clear index cache cancels in-flight work and removes only that project's validated application-owned structural cache; if enabled and not paused, it then rebuilds. Removing a project evicts its structural cache and checkout registrations; durable learnings follow the separate retention/removal contract in B. Changing its root invalidates the old association before indexing the new root.
 
 No global master switch in the first release: project opt-in is sufficient. No automatic changes to `CLAUDE.md`, `AGENTS.md`, `.mcp.json`, or `.gitignore`. New agent sessions receive a short MCP brief; existing sessions discover changes through the existing tool-list mechanism and tool descriptions. Do not assume clients reread initialization instructions dynamically.
 
-The first release offers status and agent tools. A later explorer can show package/file clusters and a selected symbol's neighborhood, with relation/confidence filters and **Open file**. It must use the same queries, limit nodes, and provide a list alternative; never render the entire large graph by default.
+Milestone A offers status and agent tools. C adds a concrete explorer plugin with package/file clusters, symbol neighborhoods, relation/evidence filters, source navigation, and a list alternative. Graph construction belongs to core even when the plugin is absent; never render the entire large graph by default.
 
 ## Process ownership
 
@@ -25,16 +27,20 @@ flowchart LR
   UI[Project settings] --> Main[CodeMapService in main]
   Agent[Agent MCP client] --> Hub[Existing MCP Hub]
   Hub --> Main
+  View[Visualizer iframe] --> Plugin[Plugin backend]
+  Plugin -->|Public bounded API| Main
   Main <-->|Validated Port RPC| Host[Code Map utility host]
   Files[Saved project files] --> Watch[Parcel watcher]
   Watch --> Host
   Host --> Parser[WASM parser and resolver]
   Parser --> Cache[Versioned local snapshots]
   Cache --> Query[Bounded search and traversal]
+  Host --> Memory[Durable learnings in milestone B]
+  Memory --> Query
   Query --> Host
 ```
 
-Main owns settings, authorized checkout identities, subscriptions, supervision, and orchestration. The host owns enumeration, filesystem watching, parsing, content hashes, graph assembly, search indexes, and cache I/O. Renderer receives compact status updates and bounded results through the existing validated IPC/preload route. Neither main nor renderer parses code or receives a whole graph.
+Main owns settings, authorized checkout identities, subscriptions, supervision, and orchestration. The host owns enumeration, filesystem watching, parsing, content hashes, graph assembly, search indexes, and cache I/O; B adds durable memory and context assembly in the same host. Renderer receives compact status updates and bounded results through the existing validated IPC/preload route. The plugin uses the public backend API through main, without access to the host's private storage format. Neither main nor renderer parses code or receives a whole graph.
 
 Use a new `src/code-map-host` with `UtilityHost`, an entry in the Electron build, and explicit ESLint/TypeScript boundaries. Reuse `@parcel/watcher` in this host initially. A separate watch subscription is an intentional first-release cost: sharing the current Git watcher would require generalizing ownership, ignores, event types, and support for Git-disabled projects. Do not create both a new watch feed in Workspace Host and duplicate subscriptions in Code Map Host.
 
@@ -52,6 +58,8 @@ codeMap?: {
 ```
 
 Pause is runtime state in v1; reopening resumes enabled projects and reconciles first. Hard resource limits are internal defaults until measurement justifies user controls. Runtime status and graph data do not belong in `projects.json`. Add schema defaults/migration tests and preserve this field in all project-settings draft/save paths.
+
+In B, memory settings extend this object as specified in [learning and context](learning-and-context.md#settings-and-user-control). The immutable-cache disposal rules below apply only to derived structural data, never to durable memory. Pausing updates prevents new automatic learning admission that requires current evidence; explicit stale context may expose applicable-at-checkpoint knowledge with its age, never label it current.
 
 Cache location: `<userData>/code-map/<checkoutKey>/`. Main supplies this location. `checkoutKey` is a hash of the canonical real root plus the project's identity; include checkout identity rather than only Git common directory, branch name, or HEAD. Graph symbols use root-relative POSIX paths, while cache identity honors filesystem case rules (including case-sensitive directories on Windows). Do not globally lowercase paths. Resolve junctions/symlinks when establishing containment; do not follow links outside the registered root.
 
@@ -73,6 +81,8 @@ Node IDs derive from relative path, kind, qualified owner/name, and a determinis
 Define source locations centrally: 1-based lines and 0-based UTF-16 columns for consumers, with byte offsets retained inside extraction. Convert parser offsets explicitly and test Unicode, CRLF, and BOMs. Do not equate parser byte columns with Monaco/LSP columns.
 
 Initial node kinds: file, function, method, class, interface, type, enum, variable. Relations: `contains`, `imports`, `calls`, `references`, `extends`, `implements`; each extractor advertises actual supported relations. Provenance values: `syntax`, `binding`, `heuristic`, `unresolved`; future semantic enrichment may add `semantic`. These are evidence categories, not calibrated probabilities. Default impact traversal excludes heuristic edges; callers can request them separately.
+
+Add derived directory/package grouping for overview queries, with deterministic IDs and counts. Grouped import edges summarize existing edges; they do not assert architectural ownership or runtime communication. Keep this projection distinct from B's learning/evidence nodes and links. A TS type-only import, a runtime import, and a call are different evidence; retain that distinction in extraction and traversal filters. Cross-process IPC, event subscriptions, dynamically registered tools, and dependency injection are especially relevant to Oxytocin but remain unresolved until an explicit tested extractor supports them. Do not claim that a syntax graph captures the app's entire runtime architecture.
 
 For TS/JS, implement original extraction rules for declarations, arrow functions, exports, imports, common static calls, and class members. Resolve lexical scope/shadowing and explicit imported bindings first. Support relative imports, extension/index lookup, static re-exports, and local package boundaries. Parse tsconfig path mappings and package metadata as data without executing configuration. Unsupported aliases, dynamic imports, computed property calls, dependency injection, event buses, and runtime dispatch remain unresolved and contribute diagnostics. Do not infer a call just because another file has a unique matching name.
 
@@ -116,6 +126,8 @@ The main Hub bearer token currently grants broad app tool access: this proposal 
 Validate all arguments with zod. Proposed bounds: query length 2,000 characters; limit 1–50 (default 8); depth 1–3 (default 1); output 2,000–24,000 characters (default 8,000). Bound visited nodes/edges separately (initially 2,000/5,000). Include `truncated` and refinement guidance; never treat a bounded impact set as exhaustive. Validate output schemas too. Paths are relative, normalized, and rechecked against canonical containment before reads; exclusions also apply to direct outline requests and exports.
 
 Search v1 uses identifier splitting, exact name/path boosts, signature terms, and modest nearby-symbol expansion. Prefer multiple relevant files over many symbols from one file; let `pathPrefix` constrain monorepo packages. Do not implement PageRank until it improves a labeled retrieval corpus. “No matches” suggests ordinary text search; the map must complement access to source.
+
+Relations responses include explicit node/edge records rather than only prose, so agents can traverse a subgraph using IDs and inspect each edge's evidence. A compact `whyIncluded` field explains lexical or neighbor selection. Graph layout coordinates do not belong in these agent results. B adds `oxy_task_context`, `oxy_propose_learning`, and `oxy_learning_feedback` without changing the meaning of structural edges. C exposes bounded projections through the public plugin API, with a separate visual payload budget.
 
 Copyable agent rule (original wording):
 

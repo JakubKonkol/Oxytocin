@@ -2,6 +2,8 @@
 
 The runtime feature has not been implemented or benchmarked. All thresholds below are proposed engineering targets; replace them with measured results during implementation.
 
+The structural matrix and first-release checklist apply to A. Additional sections below define B (self-learning context) and C (visualizer); A passing alone does not validate the whole proposed product.
+
 ## Correctness and recovery matrix
 
 | Scenario                                                      | Required outcome                                                                                                             |
@@ -67,7 +69,7 @@ Compare the same agent/model/version/settings with mapping disabled and enabled.
 
 Suggested benefit gate: at least 15% lower median uncached input tokens or exploration tool calls, with no observed correctness regression and no material median task-time regression. This small sample is directional evidence, not a statistical guarantee. Report dispersion, paired results, and tasks harmed by mapping; expand the sample before making marketing claims. Use Usage Monitor where it exposes the necessary fields, but verify measurement boundaries and keep external agent-run logs when needed. Never equate “characters not returned” with actual billed tokens saved.
 
-## First-release acceptance checklist
+## Milestone A acceptance checklist
 
 - [ ] Project opt-in, settings persistence, status, exclusion controls, rebuild/pause/clear/disable work.
 - [ ] JS/TS coverage and unresolved cases are documented; source spans are correct.
@@ -79,3 +81,80 @@ Suggested benefit gate: at least 15% lower median uncached input tokens or explo
 - [ ] No repository setup files or source files are changed by enabling/indexing/querying.
 - [ ] License notices, relevant tests, build/start checks, and measured performance results are recorded.
 - [ ] Agent outcome evaluation is recorded; benefits are described only to the extent supported by results.
+
+## Learning correctness and recovery (milestone B)
+
+| Scenario                                                         | Required outcome                                                                                                                                                                   |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory absent/off; switch automatic → review → off               | Missing means off; writes/read reuse respect current mode; unreviewed auto-admitted entries stop appearing in review mode; disabling does not erase durable knowledge.             |
+| Same proposal retried, two agents correcting one entry           | Idempotent retry returns the same result; expected-revision conflict prevents silent overwrite and duplicate corroboration.                                                        |
+| Evidence hash supplied by agent differs from disk                | Service computes/verifies its own evidence; changed-during-read returns an explicit error.                                                                                         |
+| Evidence is unchanged but claim is incorrect                     | Origin/admission remains distinguishable from truth; a test must not assert correctness just because hashes match.                                                                 |
+| Evidence file/config changes while structural rebuild runs       | Affected applicability is invalidated before a latest context response can reuse the entry.                                                                                        |
+| Rename/delete, same-named symbol, rollback to older branch       | No guessed reattachment; old claims do not become active through name matching or timestamps. Revalidation is explicit.                                                            |
+| Contradictory records / explicit supersession                    | Known conflicts are excluded until resolved; an unreviewed replacement cannot silently supersede a reviewed entry. Unknown semantic contradictions remain a documented limitation. |
+| Useful/irrelevant feedback repeated or forged                    | Counts are bounded/deduplicated; missing/expired/cross-checkout receipts are rejected; popularity never converts a claim into verified evidence.                                   |
+| Generic Hub caller claims another author/role                    | Origin records the actual available authentication context; supplied identity/test success remains unverified metadata.                                                            |
+| Ensemble role revoked; worktree removed or merged                | Writes/reads stop at revocation; knowledge is not automatically promoted into another checkout after merge/removal.                                                                |
+| A project-scoped entry matches one worktree but not another      | Applicability is evaluated independently; no leakage of an unmerged decision as an applicable fact.                                                                                |
+| Clear index cache, grammar upgrade, corrupt structural snapshot  | Durable learnings survive; their anchors are rechecked against rebuilt data.                                                                                                       |
+| Kill host during durable mutation/migration; malformed memory    | Atomic recovery preserves prior knowledge; incompatible memory is not discarded as cache.                                                                                          |
+| Forget/delete followed by restart, export, and cache rebuild     | Stored recovery copies/indexes cannot resurrect deleted bodies; external prior exports are outside deletion guarantees.                                                            |
+| Secret-path reference, excluded document, prompt-injection prose | Reference rejected where excluded; no tool execution, rule installation, credential read, or automatic external fetch from memory contents.                                        |
+| Unanchored entry or out-of-scope URL                             | No automatic activation; user-reviewed unanchored entries have an expiry; URL content is not implicitly trusted/fetched.                                                           |
+| Very large proposal/store/feedback stream                        | Explicit caps and rate limits prevent growth; writes fail recoverably without breaking existing reads.                                                                             |
+| Paused index or unavailable current generation                   | No automatic admission requiring fresh evidence; explicitly stale reads carry checkpoint status.                                                                                   |
+| Memory disabled/unavailable during context assembly              | Code-only result identifies memory state; no concealed empty-memory claim and no loss of structural access.                                                                        |
+
+Use fixtures for admission, evidence races, conflict/revision handling, and prompt-like data. Do not test semantic truth with implementation-shaped assertions such as “active means correct.” Include deliberately plausible but false claims in manual/agent evaluation.
+
+## Longitudinal learning evaluation
+
+Use at least ten task sequences, with three or more separate sessions per sequence: discover a non-obvious constraint, solve a related task, then change the relevant code/configuration and solve a follow-up. Include unrelated later tasks and incorrect memories, not only favorable reuse examples. Fix reference answers, scope, and validation tests before running.
+
+Compare paired arms under the same client/model/settings:
+
+| Arm      | Enabled behavior                                      | What it isolates                                     |
+| -------- | ----------------------------------------------------- | ---------------------------------------------------- |
+| Baseline | Ordinary tools and unchanged repository instructions. | Existing agent performance.                          |
+| A        | Structural graph tools only.                          | Index/retrieval benefit without memory.              |
+| B-review | A plus user-reviewed learnings.                       | Reuse benefit and human review workload.             |
+| B-auto   | A plus automatic admission of eligible proposals.     | Capture/admission quality and fully automatic reuse. |
+
+Use at least three repeats per sequence/arm, fresh isolated stores per run, randomized arm order, and the same starting repository state. A later session may use only learnings actually generated in preceding sessions of that run. No reference solutions, future task descriptions, or reviewer corrections from another arm may enter memory. Report first-session capture overhead separately and amortized across the full sequence. Tune ranking/admission on different fixtures from the held-out sequences.
+
+Measure task success, repeated mistakes, actual input/output/cache tokens, latency, storage, proposal counts, proposal rejection/duplication, useful learning precision, retrieval recall, wrong-scope/stale reuse, correction time, and human review minutes. Report the source of every cost metric and missing data. Reuse count and `characters / 4` are not monetary/token savings.
+
+Initial B release gates: zero wrong-checkout or known-invalidated entries in deterministic retrieval tests; no observed task-correctness regression against A in the evaluated sequences; at least 80% of emitted learnings judged relevant and useful by the predefined rubric; and either 10% lower median exploration cost on related follow-up tasks or a documented reduction in recurring errors, with whole-sequence costs and review time reported. These are proposed directional gates, not statistical guarantees. Distinguish relevance from factual correctness; report harmful false statements separately even if they were topically relevant.
+
+Always publish cases where memory increased cost or caused errors. If automatic admission fails, improve/constrain it and repeat the affected held-out evaluation with new uncontaminated fixtures. Do not hide failures behind a favorable pooled average or market reviewed memory results as evidence for automatic mode.
+
+## Visualizer and public API validation (milestone C)
+
+Test the new public API with authorized and unauthorized fixture plugins, including a plugin with structural read permission but no knowledge permission. Ensure mixed projections do not leak knowledge through labels/counts when permission is absent. Test revocation/disable with an outstanding request, cancellation and stale generation errors, late view replies, root containment, and source-column conversion. New permissions constrain API calls; tests must not claim they sandbox arbitrary Node plugin code.
+
+The same fixture slice queried through core/MCP and plugin projections must agree on node identity, relationships, provenance, and coverage, after accounting for their different budgets. Aggregated edges must equal the counted underlying relations in the selected scope. Include cyclic graphs, high-degree hubs, unsupported files, unresolved imports, and knowledge linked to deleted symbols.
+
+E2E: enable project → open visualizer → choose checkout → search/expand → inspect evidence → open source → save an edit → refresh → switch project rapidly → hide/show panel → disable plugin → verify MCP still answers. Repeat with B off, pending/active/stale knowledge, and a removed Ensemble checkout. Verify keyboard-only list navigation and that style differences are not color-only.
+
+Run the [renderer experiment](visualizer.md#rendering-decision-and-experiment) in a packaged Windows build offline, at default and hard slice limits. Record transferred bytes, layout time, interaction p95, memory retained after disposal, and terminal p95. Test graphics initialization failure with a usable list fallback. No background layout when hidden and no retained subscriptions after disposal.
+
+## Milestone B and C acceptance checklists
+
+B:
+
+- [ ] Memory mode, manager, proposals, reviews, automatic eligibility, evidence, corrections, scope promotion, export, and deletion work without the plugin.
+- [ ] All three B tools validate both sides of the boundary, obey budgets/policies, and bind to the proper checkout.
+- [ ] A later independent session reuses applicable knowledge; changed evidence prevents stale reuse.
+- [ ] Durable migration/crash recovery, revision conflicts, worktree isolation, and forget semantics pass.
+- [ ] No transcript collection, automatic repository edits, or background provider calls occur.
+- [ ] Review and automatic modes have separate longitudinal results including capture overhead and harmful cases.
+
+C:
+
+- [ ] Public plugin API/version, capability checks, permissions, source navigation, and invalidation delivery are documented/tested.
+- [ ] Overview and Neighborhood are complete; Knowledge/Task context overlays are available only with B capabilities.
+- [ ] All views obey node/edge/byte caps and identify checkout, generation, coverage, and omissions.
+- [ ] Disable/dispose and rapid context changes are correct; agents work when the plugin is absent.
+- [ ] Keyboard/list alternative and packaged offline renderer checks pass.
+- [ ] Renderer dependencies/licenses and measured performance/terminal impact are recorded.

@@ -1,5 +1,7 @@
 # Code Map research
 
+This is the structural research from round one, retained as the foundation. [Round two](research-round-2.md) expands the product into self-learning context and specifies a visualizer plugin; it supersedes the earlier decision to exclude learnings. Baselines below describe the first inspection, not the current Oxytocin checkout.
+
 ## Evidence and scope
 
 Primary evidence is the local sibling checkout `../Trail-Code`, commit `ead585b2707055f47f1e97d9b0d4209af5285805`, inspected without installing or running its software. Its working tree was clean. Oxytocin baseline: `ad97316fb4ed90a737adb58157a9b15aa9652f31` (0.9.3), also initially clean. These findings are source inspection, not a reproduced benchmark or runtime audit.
@@ -36,7 +38,7 @@ The source exposes tool families for finding code, exhaustive search, tracing ca
 
 The [README](https://github.com/trailhq/Trail-Code/blob/ead585b2707055f47f1e97d9b0d4209af5285805/README.md) reports 46% fewer tool calls, 42% fewer uncached input tokens, and 60% less time over 162 runs, alongside other benchmark sets. These are upstream-reported results, not independently verified measurements or forecasts for Oxytocin. Indexing, injected instructions, tool schemas, unsuccessful searches, and extra context can also increase total cost. Evaluate complete tasks, including correctness and setup overhead.
 
-Learnings, conversation mining, team sharing, telemetry, and cloud functionality belong to a broader Trail product. They are not needed to implement the requested code map and are excluded here.
+Learnings, conversation mining, team sharing, telemetry, and cloud functionality belong to a broader Trail product. Round one excluded all of them. Round two brings local, evidence-linked learnings into scope because a structural index alone does not meet the self-learning requirement. Conversation mining, cloud services, and team synchronization are still excluded from the proposed A–C milestones.
 
 ## Existing Oxytocin seams
 
@@ -56,16 +58,16 @@ Paths in this table are relative to the repository root and were inspected at th
 
 ## Alternatives and recommendation
 
-| Alternative                               | Tradeoff                                                                                                                          | Recommendation                                                                                    |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Wrap the Trail CLI                        | Fast prototype, but inherits setup writes, runtime/tool lifecycle, packaging, and unrelated product behavior.                     | Do not use for this feature.                                                                      |
-| Native Tree-sitter bindings               | Potential speed advantage, additional Electron/Node ABI and Windows installation considerations.                                  | Keep as fallback only if measured WASM results fail.                                              |
-| Tree-sitter WASM with original extractors | Language-extensible, locally packaged parser assets; still requires ABI/version pinning and careful grammar distribution.         | Preferred, subject to packaged Windows spike.                                                     |
-| TypeScript compiler API                   | Strong TS/JS binding/type resolution; TS is currently a dev dependency and semantic programs add memory/configuration complexity. | Reconsider for later TS semantic enrichment if extraction precision is insufficient.              |
-| LSP servers for every language            | Better semantic answers where supported; server installation, execution, and lifecycle burden.                                    | Later, explicit integration.                                                                      |
-| Core service versus built-in plugin       | Current public plugin API does not automatically provide all lifecycle/watch/checkout contracts required here.                    | Core service first; a public read-only map API can follow real plugin demand.                     |
-| Markdown as canonical storage             | Easy agent access, but many generated files, stale copies, and repository churn.                                                  | App cache is canonical; optional export later.                                                    |
-| Graph database/SQLite                     | Useful at higher scale, adds migration/runtime complexity before scale is known.                                                  | Versioned immutable JSON snapshots first, measured size limits; reconsider storage if gates fail. |
+| Alternative                               | Tradeoff                                                                                                                          | Recommendation                                                                                                             |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Wrap the Trail CLI                        | Fast prototype, but inherits setup writes, runtime/tool lifecycle, packaging, and unrelated product behavior.                     | Do not use for this feature.                                                                                               |
+| Native Tree-sitter bindings               | Potential speed advantage, additional Electron/Node ABI and Windows installation considerations.                                  | Keep as fallback only if measured WASM results fail.                                                                       |
+| Tree-sitter WASM with original extractors | Language-extensible, locally packaged parser assets; still requires ABI/version pinning and careful grammar distribution.         | Preferred, subject to packaged Windows spike.                                                                              |
+| TypeScript compiler API                   | Strong TS/JS binding/type resolution; TS is currently a dev dependency and semantic programs add memory/configuration complexity. | Reconsider for later TS semantic enrichment if extraction precision is insufficient.                                       |
+| LSP servers for every language            | Better semantic answers where supported; server installation, execution, and lifecycle burden.                                    | Later, explicit integration.                                                                                               |
+| Core service versus built-in plugin       | Current public plugin API does not provide map lifecycle/watch/checkout contracts. Visualization is now a concrete consumer.      | Core service for indexing, memory, and retrieval; explicit public query API and separate visualizer plugin in milestone C. |
+| Markdown as canonical storage             | Easy agent access, but many generated files, stale copies, and repository churn.                                                  | App cache is canonical; optional export later.                                                                             |
+| Graph database/SQLite                     | Useful at higher scale, adds migration/runtime complexity before scale is known.                                                  | Versioned immutable JSON snapshots first, measured size limits; reconsider storage if gates fail.                          |
 
 Tree-sitter officially supports [WASM parser builds](https://tree-sitter.github.io/tree-sitter/cli/build.html) and a [JavaScript WASM binding](https://github.com/tree-sitter/tree-sitter/blob/master/lib/binding_web/README.md). This supports the packaging direction, but does not prove compatibility with Oxytocin's packaged Electron runtime. The MCP [tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) documents tool discovery and list-change notifications; reuse Oxytocin's existing implementation instead of expanding protocol scope.
 
