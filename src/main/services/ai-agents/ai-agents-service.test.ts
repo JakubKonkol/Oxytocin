@@ -31,7 +31,7 @@ const detectDeps = (): AiDetectDeps => ({
   httpJson: () => Promise.resolve(null),
 });
 
-async function setup() {
+async function setup(commands: Record<string, string> = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'oxy-ai-'));
   const secrets = new SecretStore(join(dir, 'secrets.json'), safe, logger);
   await secrets.load();
@@ -41,12 +41,31 @@ async function setup() {
     detectDeps,
     logger,
     now: () => 1000,
+    commands: () => commands,
   });
   await service.load();
   return { dir, secrets, service };
 }
 
 describe('AiAgentsService', () => {
+  it('uses custom commands for agents and API profiles without changing their environment', async () => {
+    const { service } = await setup({ claude: 'claude --model opusplan', codex: 'codex --yolo' });
+    await service.detect();
+    expect(service.launchProfile('ai:codex')?.command).toBe('codex --yolo');
+    await service.save({
+      profiles: [
+        { id: 'p', name: 'Local', provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'local-model' },
+      ],
+      hidden: [],
+      secrets: [],
+    });
+    expect(service.launchProfile('ai:profile:p')).toMatchObject({
+      command: 'claude --model opusplan',
+      env: { ANTHROPIC_MODEL: 'local-model' },
+    });
+    expect(service.launchProfile('ai:claude')?.command).toBe('claude --model opusplan');
+  });
+
   it('detects agents, stores the result and starts them by their command', async () => {
     const { service, dir, secrets } = await setup();
     expect(service.state()).toMatchObject({ detectedAt: null, agents: [] });

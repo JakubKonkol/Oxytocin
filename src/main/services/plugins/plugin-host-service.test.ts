@@ -160,6 +160,31 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
 }
 
 describe('PluginHostService', () => {
+  it('protects shared agent launching with permissions and validates the project and request', async () => {
+    const s = setup({
+      list: [
+        descriptor('task.one', { permissions: ['agents.read', 'terminals.create', 'terminals.write'] }),
+        descriptor('readonly.one', { permissions: ['agents.read'] }),
+      ],
+    });
+    s.core.agents.launchers = () => [{ launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent' }];
+    s.core.projects.get = (id) => (id === 'p' ? s.core.projects.list()[0] : undefined);
+    const launch = vi.fn(() => Promise.resolve({ terminalId: 't1', reused: true, sent: true }));
+    s.core.agents.launch = launch;
+    expect(await s.api('readonly.one', 'agents.listLaunchers')).toEqual([
+      { launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent' },
+    ]);
+    await expect(s.api('readonly.one', 'agents.launch', { projectId: 'p', launchId: 'ai:codex' })).rejects.toThrow();
+    await expect(s.api('task.one', 'agents.launch', { projectId: 'missing', launchId: 'ai:codex' })).rejects.toThrow(
+      /Project not found/,
+    );
+    await expect(s.api('task.one', 'agents.launch', { projectId: 'p', launchId: 'shell' })).rejects.toThrow();
+    expect(
+      await s.api('task.one', 'agents.launch', { projectId: 'p', launchId: 'ai:codex', prompt: 'Review changes' }),
+    ).toEqual({ terminalId: 't1', reused: true, sent: true });
+    expect(launch).toHaveBeenCalledTimes(1);
+    s.service.dispose();
+  });
   describe('start-up barrier for terminal environments', () => {
     const envPlugin = () => descriptor('env.one', { permissions: ['terminals.env'], activationEvents: ['onStartup'] });
 

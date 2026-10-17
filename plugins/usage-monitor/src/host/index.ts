@@ -188,7 +188,15 @@ export async function activate(ctx: PluginContext): Promise<void> {
   });
   let statusLineKey = oxy.settings.get<boolean>('usage.claudeLimits.statusLine') ?? false;
   await configureStatusLine();
-  registerUi(ctx, client, { statusLineStatus });
+  registerUi(ctx, client, {
+    statusLineStatus,
+    repairStatusLine: async () => {
+      if (!oxy.settings.get<boolean>('usage.claudeLimits.statusLine'))
+        throw new Error('Enable Claude subscription limits first.');
+      await configureStatusLine();
+      if (statusLineError) throw new Error(statusLineError);
+    },
+  });
 
   // The accounts' limits go to Oxytocin, where other plugins read them (e.g. to hand work to another agent).
   const reportLimits = (list: AgentLimits[]) => {

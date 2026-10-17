@@ -37,6 +37,23 @@ const DEFAULT_IGNORED_FOLDERS = [
 
 /** Core settings schema. Keys are flat, dotted, like VS Code. */
 export const CORE_SETTINGS = {
+  'aiAgents.commands': def(
+    z.record(
+      z.string().max(64),
+      z
+        .string()
+        .trim()
+        .max(2000)
+        .refine((s) => !/[\r\n\0]/.test(s)),
+    ),
+    {},
+    'Launch command per agent CLI, including arguments. Empty values use the default command. Applies to added accounts and API profiles too.',
+  ),
+  'git.reviewPrompt': def(
+    z.string().trim().min(1).max(8000),
+    'Review the current uncommitted changes, including staged and untracked files. Identify bugs, regressions and worthwhile improvements. Report actionable findings as a concise list with file and line references. Do not edit files.',
+    'Instruction sent to the AI agent from Changes > Send to review.',
+  ),
   'appearance.theme': def(
     z.enum(['dark', 'light', 'system']),
     'dark',

@@ -107,6 +107,8 @@ function ClaudeLimits() {
   const { data: status, reload } = useRequest<StatusLineStatus | null>('statusLine');
   // The user's choice shows right away; the backend's state follows once it has set up (or removed) the status line.
   const [pending, setPending] = useState<boolean | null>(null);
+  const [repairing, setRepairing] = useState(false);
+  const [repairError, setRepairError] = useState('');
   const enabled = pending ?? status?.enabled ?? false;
   const toggle = async (enabled: boolean) => {
     setPending(enabled);
@@ -123,7 +125,7 @@ function ClaudeLimits() {
         : 'no reading yet — send a message in Claude Code'
     }`;
   else if (status?.enabled)
-    state = `The status line in ${status.settingsFile} was changed — turn this off and on again.`;
+    state = `The status line in ${status.settingsFile} was changed. Repair it to resume limit updates.`;
   return (
     <section data-testid="usage-claude-limits">
       <h3>CLAUDE SUBSCRIPTION LIMITS</h3>
@@ -147,6 +149,24 @@ function ClaudeLimits() {
       <div className="muted" data-testid="usage-claude-limits-state">
         {state}
       </div>
+      {status?.enabled && !status.installed && (
+        <button
+          data-testid="usage-repair-limits"
+          disabled={repairing}
+          onClick={() => {
+            setRepairing(true);
+            setRepairError('');
+            void view
+              .request('repairStatusLine')
+              .then(reload)
+              .catch((e: unknown) => setRepairError(String(e)))
+              .finally(() => setRepairing(false));
+          }}
+        >
+          {repairing ? 'Repairing…' : 'Repair limit updates'}
+        </button>
+      )}
+      {repairError && <p role="alert">{repairError}</p>}
     </section>
   );
 }

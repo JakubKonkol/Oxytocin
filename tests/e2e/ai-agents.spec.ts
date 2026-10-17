@@ -23,7 +23,7 @@ async function fakeAgents(): Promise<{ bin: string; home: string }> {
       [
         '@echo off',
         'if "%1"=="--version" (echo 9.8.7 ^(Claude Code^)& exit /b 0)',
-        'echo FAKE-CLAUDE base=[%ANTHROPIC_BASE_URL%] key=[%ANTHROPIC_AUTH_TOKEN%] model=[%ANTHROPIC_MODEL%]',
+        'echo FAKE-CLAUDE base=[%ANTHROPIC_BASE_URL%] key=[%ANTHROPIC_AUTH_TOKEN%] model=[%ANTHROPIC_MODEL%] args=[%*]',
       ].join('\r\n'),
     );
   } else {
@@ -33,7 +33,7 @@ async function fakeAgents(): Promise<{ bin: string; home: string }> {
       [
         '#!/bin/sh',
         'if [ "$1" = "--version" ]; then echo "9.8.7 (Claude Code)"; exit 0; fi',
-        'echo "FAKE-CLAUDE base=[$ANTHROPIC_BASE_URL] key=[$ANTHROPIC_AUTH_TOKEN] model=[$ANTHROPIC_MODEL]"',
+        'echo "FAKE-CLAUDE base=[$ANTHROPIC_BASE_URL] key=[$ANTHROPIC_AUTH_TOKEN] model=[$ANTHROPIC_MODEL] args=[$*]"',
       ].join('\n'),
     );
     await chmod(script, 0o755);
@@ -88,6 +88,21 @@ test('AI agents: detects installed agents with their accounts and starts them fr
     // Tokens are never read into Oxytocin's files.
     expect(await readFile(join(userData, 'ai-agents.json'), 'utf8')).not.toContain('never-shown');
 
+    // Launch commands are configured in the same AI Agents settings and used by the + menu.
+    await win.getByTestId('ai-command-claude').fill('claude --custom-test');
+    await win.getByTestId('ai-commands-save').click();
+    await expect
+      .poll(
+        async () =>
+          (
+            JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8').catch(() => '{}')) as Record<
+              string,
+              Record<string, string>
+            >
+          )['aiAgents.commands']?.['claude'],
+      )
+      .toBe('claude --custom-test');
+
     // The "+" menu has an AI agents section: "Claude Code (naszekonto@mail.to)".
     let before = await oxyTest(win).terminalIds();
     await win.getByTestId('group-add').first().click();
@@ -96,6 +111,7 @@ test('AI agents: detects installed agents with their accounts and starts them fr
     await expect(item).toContainText('(naszekonto@mail.to)');
     await item.click();
     await expect.poll(() => newestTerminalText(win, before), { timeout: 20_000 }).toContain('FAKE-CLAUDE base=[]');
+    await expect.poll(() => newestTerminalText(win, before)).toContain('args=[--custom-test]');
 
     // A profile runs Claude Code against another API with its key; the key never reaches the renderer's state.
     await openAiAgents(win);

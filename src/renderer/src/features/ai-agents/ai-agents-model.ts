@@ -4,9 +4,6 @@ import {
   type AiAgentsState,
   type AiProfile,
   agentName,
-  aiAccountLaunchId,
-  aiAgentLaunchId,
-  aiProfileLaunchId,
   presetOf,
 } from '@shared/domain/ai-agents';
 import type { SecretChange } from '@shared/domain/project-resources';
@@ -31,28 +28,7 @@ export function accountLoginText(state: AiAgentsState, id: string): string {
 }
 
 /** Detected agents (not local runtimes), added accounts and profiles, minus the ones hidden from the "+" menu. */
-export function menuEntries(state: AiAgentsState | null): AiMenuEntry[] {
-  if (!state) return [];
-  const hidden = new Set(state.hidden);
-  const agents: AiMenuEntry[] = state.agents
-    .filter((a) => a.category === 'agent' && !hidden.has(aiAgentLaunchId(a.id)))
-    .map((a) => {
-      const account = accountLabel(a);
-      return { launchId: aiAgentLaunchId(a.id), name: a.name, ...(account ? { detail: account } : {}), kind: 'agent' };
-    });
-  const profiles: AiMenuEntry[] = state.profiles
-    .filter((p) => !hidden.has(aiProfileLaunchId(p.id)))
-    .map((p) => ({ launchId: aiProfileLaunchId(p.id), name: p.name, detail: profileDetail(p), kind: 'profile' }));
-  const accounts: AiMenuEntry[] = state.accounts
-    .filter((a) => !hidden.has(aiAccountLaunchId(a.id)))
-    .map((a) => ({
-      launchId: aiAccountLaunchId(a.id),
-      name: accountTitle(a),
-      detail: accountLoginText(state, a.id),
-      kind: 'account',
-    }));
-  return [...agents, ...accounts, ...profiles];
-}
+export { agentLaunchers as menuEntries } from '@shared/domain/agent-launch';
 
 /** "GLM (Z.ai) · glm-4.6". */
 export function profileDetail(p: AiProfile): string {

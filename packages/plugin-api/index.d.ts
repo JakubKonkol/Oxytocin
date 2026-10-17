@@ -226,7 +226,38 @@ export interface AgentLimits {
   windows: AgentLimitWindow[];
 }
 
+/** The visible choices from + > AI Agents. Since API 0.1.8. */
+export interface AgentLauncher {
+  launchId: string;
+  name: string;
+  detail?: string;
+  kind: 'agent' | 'profile' | 'account';
+}
+export interface AgentLaunchRequest {
+  projectId: string;
+  launchId: string;
+  terminalId?: string;
+  prompt?: string;
+  /** false opens a fresh session unless terminalId explicitly selects one. Default true. */
+  reuse?: boolean;
+  /** Claude Code only, for new sessions. Existing sessions keep their current mode. */
+  planMode?: boolean;
+}
+export interface AgentLaunchResult {
+  terminalId: string;
+  reused: boolean;
+  sent: boolean;
+  error?: string;
+}
 export interface AgentsApi {
+  /** agents.read ? same choices as + > AI Agents; no credentials. Since API 0.1.8. */
+  listLaunchers(): Promise<AgentLauncher[]>;
+  /**
+   * agents.read + terminals.create + terminals.write ? reuses a matching session or opens an ordinary terminal.
+   * Sends the optional prompt only when ready; inspect sent/error and let the user retry if it is busy or waiting.
+   * terminalId explicitly selects a running session of this profile and project. Since API 0.1.8.
+   */
+  launch(options: AgentLaunchRequest): Promise<AgentLaunchResult>;
   list(): Promise<AgentSnapshot[]>;
   onDidChange: Event<AgentSnapshot[]>;
   /** agents.annotate — a session id found by the plugin (e.g. by correlating Codex/Gemini session files). */

@@ -37,6 +37,7 @@ const emit = serveWorker(parentPort, {
     (await ready).activeProjectId = id;
   },
   'view.sidebar': async () => (await ready).sidebar(),
+  'usage.refresh': async () => (await ready).refreshUsage(),
   'dash.overview': async () => (await ready).overview(),
   'dash.sessions': async (opts: Parameters<UsageEngine['sessionList']>[0]) => (await ready).sessionList(opts ?? {}),
   'dash.session': async ({ id }: { id: string }) => (await ready).sessionDetail(id),

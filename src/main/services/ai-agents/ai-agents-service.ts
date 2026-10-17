@@ -53,6 +53,7 @@ export interface AiAgentsServiceDeps {
   detectDeps: () => AiDetectDeps;
   logger: Logger;
   now?: () => number;
+  commands?: () => Record<string, string>;
   /** Added accounts: their folders live in `root` (`~/.oxytocin/accounts`). */
   accounts?: {
     root: string;
@@ -341,7 +342,7 @@ export class AiAgentsService implements Disposable {
       file: '',
       args: [],
       source: 'builtin-agent',
-      command,
+      command: this.deps.commands?.()[id]?.trim() || command,
       icon: `agent-${id}`,
     };
   }
@@ -357,7 +358,7 @@ export class AiAgentsService implements Disposable {
       file: '',
       args: [],
       source: 'builtin-agent',
-      command: detected?.command ?? kind?.command ?? account.agent,
+      command: this.deps.commands?.()[account.agent]?.trim() || detected?.command || kind?.command || account.agent,
       icon: `agent-${account.agent}`,
       env: accountEnv(account),
     };
@@ -372,7 +373,7 @@ export class AiAgentsService implements Disposable {
       file: '',
       args: [],
       source: 'builtin-agent',
-      command: 'claude',
+      command: this.deps.commands?.()['claude']?.trim() || 'claude',
       icon: 'agent-claude',
       env: profileEnv(profile, key),
     };

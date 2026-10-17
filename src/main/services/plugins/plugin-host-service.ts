@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  AgentLaunchRequestSchema,
+  type AgentLaunchRequest,
+  type AgentLaunchResult,
+  type AgentLauncher,
+} from '@shared/domain/agent-launch';
 import { type AgentInfoWithTerminal, type AgentStateReport, AgentStateReportSchema } from '@shared/domain/agent';
 import type { AgentAccountInfo, AgentLimits } from '@shared/domain/agent-limits';
 import type { RepoStatus } from '@shared/domain/git';
@@ -81,6 +87,8 @@ export interface PluginCorePort {
     listeningPorts(id: string): Promise<number[]>;
   };
   agents: {
+    launchers?(): AgentLauncher[];
+    launch?(request: AgentLaunchRequest): Promise<AgentLaunchResult>;
     list(): AgentInfoWithTerminal[];
     reportSession(terminalId: string, sessionId: string): void;
     reportState(terminalId: string, report: AgentStateReport): void;
@@ -826,6 +834,18 @@ export class PluginHostService implements Disposable {
         this.permission(plugin, 'agents.annotate');
         core.agents.reportSession(String(p['terminalId']), String(p['sessionId']));
         return undefined;
+      case 'agents.listLaunchers':
+        this.permission(plugin, 'agents.read');
+        return core.agents.launchers?.() ?? [];
+      case 'agents.launch': {
+        this.permission(plugin, 'agents.read');
+        this.permission(plugin, 'terminals.create');
+        this.permission(plugin, 'terminals.write');
+        const request = AgentLaunchRequestSchema.parse(p);
+        if (!core.projects.get(request.projectId)) throw new OxyError('NOT_FOUND', 'Project not found.');
+        if (!core.agents.launch) throw new OxyError('NOT_FOUND', 'Agent launching is unavailable.');
+        return core.agents.launch(request);
+      }
       case 'agents.listAccounts':
         this.permission(plugin, 'agents.read');
         return core.agents.accounts();

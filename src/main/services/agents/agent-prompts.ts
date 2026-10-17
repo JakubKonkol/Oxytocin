@@ -22,7 +22,7 @@ export interface AgentPromptDeps {
 /** Sources that report an agent's state exactly: a delivery waits for "working" instead of new output. */
 const PRECISE_SOURCES = new Set(['hook', 'claude-registry', 'program-status']);
 
-export const MAX_PROMPT_LENGTH = 8000;
+export const MAX_PROMPT_LENGTH = 200_000;
 
 /**
  * Types a prompt into the agent of a terminal for plugins (`oxy.agents.sendPrompt`), the way Ensemble does: only

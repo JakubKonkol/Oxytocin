@@ -82,7 +82,7 @@ export async function fileInfo(path: string): Promise<TailFileInfo> {
 }
 
 export function needsRead(info: TailFileInfo, cursor: Cursor | undefined): boolean {
-  return !cursor || cursor.fileId !== info.fileId || info.size !== cursor.offset;
+  return !cursor || cursor.fileId !== info.fileId || info.size !== cursor.offset || info.mtimeMs !== cursor.mtimeMs;
 }
 
 /**
@@ -100,7 +100,12 @@ export async function* tailFile(
   const current = info ?? (await fileInfo(path));
   let start = cursor?.offset ?? 0;
   let reset = false;
-  if (cursor && (cursor.fileId !== current.fileId || current.size < cursor.offset)) {
+  if (
+    cursor &&
+    (cursor.fileId !== current.fileId ||
+      current.size < cursor.offset ||
+      (current.size === cursor.size && current.mtimeMs !== cursor.mtimeMs && cursor.offset === current.size))
+  ) {
     start = 0;
     reset = true;
   }

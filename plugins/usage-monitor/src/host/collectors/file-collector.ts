@@ -107,8 +107,9 @@ export class FileCollector {
   private markDirty(path: string | null): void {
     if (path && !this.spec.match(path)) return;
     this.dirty.add(path ?? '*');
-    clearTimeout(this.debounce);
+    if (this.debounce) return;
     this.debounce = setTimeout(() => {
+      this.debounce = undefined;
       const paths = [...this.dirty];
       this.dirty.clear();
       void this.enqueue(async () => {

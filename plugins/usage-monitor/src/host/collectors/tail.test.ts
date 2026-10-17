@@ -33,6 +33,18 @@ async function read(path: string, cursor: Cursor | undefined, chunk?: number) {
   return { lines, next, reset };
 }
 
+it('reads a same-size rewrite with a new timestamp instead of keeping the old cursor', async () => {
+  const file = join(dir, 'rewrite.jsonl');
+  await writeFile(file, 'one\n');
+  const first = await read(file, undefined);
+  await writeFile(file, 'two\n');
+  const info = await fileInfo(file);
+  // Use a distinct cursor timestamp even on filesystems with coarse timestamp resolution.
+  const cursor = { ...first.next, mtimeMs: info.mtimeMs - 1000 };
+  expect(needsRead(info, cursor)).toBe(true);
+  expect(await read(file, cursor)).toMatchObject({ lines: ['two'], reset: true });
+});
+
 describe('tailFile', () => {
   it('reads complete lines only and continues from the cursor', async () => {
     const f = join(dir, 'a.jsonl');

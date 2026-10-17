@@ -23,6 +23,21 @@ async function setup(settings?: unknown) {
 }
 
 describe('Claude Code status line setup', () => {
+  it('repairs a removed status line without losing the previous command backup', async () => {
+    const original = { type: 'command', command: 'echo mine' };
+    const { paths } = await setup({ model: 'opus', statusLine: original });
+    await installStatusLine(paths, 'sh');
+    await writeFile(paths.settingsFile, JSON.stringify({ model: 'opus' }));
+    expect(await isStatusLineInstalled(paths)).toBe(false);
+    await installStatusLine(paths, 'sh');
+    expect(await isStatusLineInstalled(paths)).toBe(true);
+    expect(await readFile(join(paths.dir, 'original-command'), 'utf8')).toBe('echo mine');
+    await uninstallStatusLine(paths);
+    expect(JSON.parse(await readFile(paths.settingsFile, 'utf8')) as unknown).toEqual({
+      model: 'opus',
+      statusLine: original,
+    });
+  });
   it('uses the first CLAUDE_CONFIG_DIR folder, else ~/.claude', () => {
     expect(statusLinePaths({ CLAUDE_CONFIG_DIR: ' /a , /b' }, '/home/u').dir).toBe(join('/a', 'oxytocin-statusline'));
     expect(statusLinePaths({}, '/home/u').settingsFile).toBe(join('/home/u', '.claude', 'settings.json'));

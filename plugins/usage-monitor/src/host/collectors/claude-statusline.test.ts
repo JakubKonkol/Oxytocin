@@ -1,9 +1,14 @@
-import { mkdtemp, rename, writeFile } from 'node:fs/promises';
+import { mkdtemp, rename, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentLimitRecord } from '../model';
-import { ClaudeStatusLineReader, parseStatusLineInput, STATUSLINE_DATA_FILE } from './claude-statusline';
+import {
+  ClaudeStatusLineReader,
+  parseStatusLineInput,
+  STATUSLINE_DATA_FILE,
+  STATUSLINE_POLL_MS,
+} from './claude-statusline';
 
 const input = (rateLimits: unknown) =>
   JSON.stringify({ session_id: 's1', model: { id: 'claude-opus-5-5' }, rate_limits: rateLimits });
@@ -44,6 +49,42 @@ describe('parseStatusLineInput', () => {
 });
 
 describe('ClaudeStatusLineReader', () => {
+  it('polls even without watcher events and stops polling on disposal', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oxy-statusline-poll-'));
+    const reader = new ClaudeStatusLineReader(dir, () => undefined);
+    vi.useFakeTimers();
+    try {
+      await reader.start();
+      const read = vi.spyOn(reader, 'read');
+      await vi.advanceTimersByTimeAsync(STATUSLINE_POLL_MS);
+      expect(read).toHaveBeenCalledTimes(1);
+      reader.stop();
+      await vi.advanceTimersByTimeAsync(STATUSLINE_POLL_MS);
+      expect(read).toHaveBeenCalledTimes(1);
+    } finally {
+      reader.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retries a partial file with the same timestamp instead of caching a failed read', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oxy-statusline-retry-'));
+    const file = join(dir, STATUSLINE_DATA_FILE);
+    await writeFile(file, '{');
+    const at = (await stat(file)).mtime;
+    const seen: AgentLimitRecord[] = [];
+    const reader = new ClaudeStatusLineReader(dir, (items) => seen.push(...items));
+    try {
+      await reader.start();
+      expect(seen).toEqual([]);
+      await writeFile(file, input({ five_hour: { used_percentage: 37 } }));
+      await utimes(file, at, at);
+      await reader.read();
+      expect(seen).toEqual([expect.objectContaining({ usedPercent: 37 })]);
+    } finally {
+      reader.stop();
+    }
+  });
   it('reports the file at start and again when the script replaces it', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'oxy-statusline-'));
     const file = join(dir, STATUSLINE_DATA_FILE);

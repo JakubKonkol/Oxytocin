@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.8
+
+- `oxy.agents.listLaunchers()` (`agents.read`): the same visible agents, added accounts and API profiles as the
+  workspace's + menu, without credentials.
+- `oxy.agents.launch(options)` (`agents.read`, `terminals.create`, `terminals.write`): reuses a matching terminal or
+  opens an ordinary terminal with the configured launch command. Optionally selects an existing session, opens a
+  fresh session, starts a new Claude session in plan mode, and delivers a prompt only when the agent is ready.
+  Returns the terminal id and delivery result; blocked delivery can be retried explicitly.
+- `oxy.agents.sendPrompt` accepts up to 200,000 characters to support approved plan documents.
+
 ## 0.1.7
 
 - Agent accounts: `oxy.agents.listAccounts()` and `onDidChangeAccounts` (`agents.read`) — the main account of Claude

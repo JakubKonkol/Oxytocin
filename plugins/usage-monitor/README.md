@@ -20,4 +20,9 @@ Built-in Oxytocin plugin: token usage and cost of AI coding agents.
   (Work)"). An account with its own `CLAUDE_CONFIG_DIR` writes `usage-<folder as a key>.json` next to `usage.json`
   (a shared `settings.json` runs the same script); the reading's `transcript_path` tells whose it is. Codex CLI
   limits belong to the account whose `CODEX_HOME` holds the rollout. The limits are reported to Oxytocin
-  (`oxy.agents.reportLimits`) for other plugins, e.g. Relay.
+  (`oxy.agents.reportLimits`) for other plugins.
+- Freshness: source logs are watched and rescanned periodically. Claude status line files also have a ten-second
+  polling fallback, and failed or partial reads are retried. **Refresh usage data** in the sidebar menu or
+  **Refresh data** in the dashboard rescans the source files. If Claude's status line configuration was removed,
+  **Repair limit updates** reconnects it while preserving the previous status line command. Limit timestamps
+  always reflect the last reading reported by the agent, not the time the UI refreshed.

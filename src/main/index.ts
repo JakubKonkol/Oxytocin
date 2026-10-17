@@ -87,6 +87,8 @@ import { ResourcesController } from './services/resources/resources-controller';
 import { DatabaseServerService } from './services/resources/database-servers';
 import { AiAgentsService } from './services/ai-agents/ai-agents-service';
 import { AgentLimitsStore } from './services/agents/agent-limits-store';
+import { AgentLauncherService } from './services/agents/agent-launcher';
+import { agentLaunchers } from '@shared/domain/agent-launch';
 import { AgentPromptService } from './services/agents/agent-prompts';
 import { deleteKeychainEntry, nodeProvisionFs } from './services/ai-agents/accounts/node-fs';
 import { nodeAiDetectDeps } from './services/ai-agents/detect-node';
@@ -216,6 +218,7 @@ function bootstrap(): void {
   );
   // Settings → AI Agents: installed agent CLIs and their accounts, profiles for other Anthropic-compatible APIs.
   const aiAgents = new AiAgentsService({
+    commands: () => settings.get()['aiAgents.commands'],
     file: join(app.getPath('userData'), 'ai-agents.json'),
     secrets: secretStore,
     detectDeps: () => nodeAiDetectDeps(() => shellEnv),
@@ -309,6 +312,28 @@ function bootstrap(): void {
     platform: process.platform,
   });
   terminals.onDidRemove((id) => agentPrompts.forget(id));
+  const agentLauncher = new AgentLauncherService({
+    profile: (id) => aiAgents.prepareLaunch(id),
+    agents: () => agents.list(),
+    terminals: (id) => terminals.list(id),
+    create: (projectId, profileId, initialCommand) =>
+      terminals.create({
+        projectId,
+        profileId,
+        ...(initialCommand ? { initialCommand } : {}),
+      }),
+    show: (terminalId, projectId) => {
+      terminals.markShown(terminalId);
+      if (mainWindow && !mainWindow.isDestroyed())
+        sendEvent(mainWindow.webContents, 'terminals:openPanel', {
+          terminalId,
+          projectId,
+          placement: 'right',
+        });
+    },
+    send: (id, prompt) => agentPrompts.send(id, prompt),
+  });
+
   void shellEnvReady.then((env) => {
     const configDir = env['CLAUDE_CONFIG_DIR'];
     if (configDir && configDir !== process.env['CLAUDE_CONFIG_DIR']) claudeRegistry.setDir(join(configDir, 'sessions'));
@@ -566,6 +591,8 @@ function bootstrap(): void {
       },
       agents: {
         list: () => agents.list(),
+        launchers: () => agentLaunchers(aiAgents.state()),
+        launch: (o) => agentLauncher.launch(o),
         reportSession: (id, sessionId) => agents.reportSession(id, sessionId),
         reportState: (id, report) => agents.reportState(id, report),
         accounts: () => aiAgents.accountInfos(),
@@ -1154,6 +1181,10 @@ function bootstrap(): void {
       'dbServers:discover': async (req) => {
         await resourcesReady;
         return resourcesController.discover(req);
+      },
+      'aiAgents:launch': async (req) => {
+        await Promise.all([aiAgentsReady, shellEnvReady]);
+        return agentLauncher.launch(req);
       },
       'aiAgents:get': async () => {
         await aiAgentsReady;

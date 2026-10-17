@@ -45,6 +45,7 @@ export interface LimitBar {
 }
 
 export interface SidebarModel {
+  claudeStatusLine?: StatusLineStatus | null;
   /** Added by the backend from the settings (absent: everything is shown). */
   display?: SidebarDisplay;
   now: number;

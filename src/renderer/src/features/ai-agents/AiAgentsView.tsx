@@ -13,6 +13,7 @@ import {
   validateProfiles,
 } from '@shared/domain/ai-agents';
 import { cn } from '../../lib/cn';
+import { useSettingsStore } from '../../stores/settings-store';
 import { ipc } from '../../lib/ipc-client';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
@@ -31,6 +32,55 @@ type KeyEdits = Record<string, { value: string } | { remove: true }>;
 type ProfilePatch = { [K in keyof AiProfile]?: AiProfile[K] | undefined };
 
 const METHOD_LABELS = { oauth: 'signed in', 'api-key': 'API key', local: 'local', other: '' } as const;
+
+function LaunchCommands() {
+  const saved = useSettingsStore((s) => s.settings?.['aiAgents.commands']);
+  const [draft, setDraft] = useState<Record<string, string> | null>(null);
+  const [saving, setSaving] = useState(false);
+  const values = draft ?? saved ?? {};
+  const save = async () => {
+    setSaving(true);
+    try {
+      await ipc.invoke('settings:update', { 'aiAgents.commands': values });
+      setDraft(null);
+      notify('success', 'Agent launch commands saved');
+    } catch (e) {
+      notify('error', 'Could not save launch commands', { description: errorText(e) });
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Section
+      title="Launch commands"
+      action={
+        <Button size="sm" disabled={!draft || saving} onClick={() => void save()} data-testid="ai-commands-save">
+          <Save size={12} /> Save commands
+        </Button>
+      }
+    >
+      <p className="text-small text-fg-muted">
+        Commands for new sessions, including added accounts and API profiles. Leave empty for the default. Existing
+        sessions keep running.
+      </p>
+      <div className="grid grid-cols-2 items-center gap-2">
+        {AI_AGENT_CATALOG.filter((a) => a.category === 'agent').map((a) => (
+          <Field key={a.id} label={a.name}>
+            <input
+              aria-label={`${a.name} launch command`}
+              data-testid={`ai-command-${a.id}`}
+              className={cn(input, 'font-mono')}
+              placeholder={a.command}
+              value={values[a.id] ?? ''}
+              maxLength={2000}
+              onChange={(e) => setDraft({ ...values, [a.id]: e.target.value })}
+            />
+          </Field>
+        ))}
+      </div>
+    </Section>
+  );
+}
 
 function start(launchId: string, name: string): void {
   const ws = getActiveWorkspace();
@@ -323,6 +373,7 @@ export function AiAgentsView() {
         )}
       </Section>
 
+      <LaunchCommands />
       <AccountsSection state={state} start={start} saveHidden={(hidden) => void save(hidden, false)} />
 
       {runtimes.length > 0 && (

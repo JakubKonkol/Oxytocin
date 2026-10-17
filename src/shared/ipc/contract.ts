@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AgentLaunchRequestSchema, AgentLaunchResultSchema } from '../domain/agent-launch';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
 import {
@@ -330,6 +331,7 @@ export const invokeContract = {
     res: DiscoveryResultSchema,
   },
   /** Settings → AI Agents: detected agents with their accounts, profiles, which are hidden from the "+" menu. */
+  'aiAgents:launch': { req: AgentLaunchRequestSchema, res: AgentLaunchResultSchema },
   'aiAgents:get': { req: z.null().optional(), res: AiAgentsStateSchema },
   /** Looks for installed agents and their accounts again. */
   'aiAgents:detect': { req: z.null().optional(), res: AiAgentsStateSchema },

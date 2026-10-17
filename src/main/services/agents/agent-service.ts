@@ -105,6 +105,8 @@ export interface AgentServiceDeps {
 }
 
 interface Tracked {
+  /** A CLI can report readiness before the process monitor has identified it. */
+  pendingProgramStatus?: { status: string; kind?: string; app?: string; at: number };
   id: string;
   projectId: string;
   /** Set for agent-profile terminals until the process monitor confirms the agent (max 10 s). */
@@ -155,7 +157,7 @@ export class AgentService implements Disposable {
     this.store.add(pty.onEvent('terminal:progress', (e) => this.onProgress(e.id, e.state)));
     this.store.add(pty.onEvent('terminal:bell', (e) => this.onBell(e.id)));
     this.store.add(pty.onEvent('terminal:notification', (e) => this.onBell(e.id, e.body)));
-    this.store.add(pty.onEvent('terminal:programStatus', (e) => this.onProgramStatus(e.id, e.state, e.kind)));
+    this.store.add(pty.onEvent('terminal:programStatus', (e) => this.onProgramStatus(e.id, e.state, e.kind, e.app)));
     this.store.add(pty.onEvent('terminal:title', (e) => this.onTitle(e.id, e.title)));
     this.store.add(pty.onEvent('terminal:userInput', (e) => this.onUserInput(e.id)));
     this.store.add(pty.onEvent('terminal:command', (e) => this.onCommand(e.id, e.phase)));
@@ -280,6 +282,11 @@ export class AgentService implements Disposable {
       }
       this.updateRegistryFlag();
       this.applyRegistryTo(t);
+      const pending = t.pendingProgramStatus;
+      if (pending && this.now() - pending.at < STARTING_MAX_MS && (!pending.app || pending.app === c.rule.id)) {
+        delete t.pendingProgramStatus;
+        this.onProgramStatus(t.id, pending.status, pending.kind, pending.app);
+      }
       this.publish(t, { kind: 'agent', foreground, agent: t.agent });
       return;
     }
@@ -353,9 +360,17 @@ export class AgentService implements Disposable {
   }
 
   /** OSC 7501 (Codex CLI): working, blocked (on a permission, a question, a login), idle, done or failed. */
-  private onProgramStatus(id: string, status: string, kind?: string): void {
+  private onProgramStatus(id: string, status: string, kind?: string, app?: string): void {
     const t = this.tracked.get(id);
-    if (!t?.agent || status === 'clear') return;
+    if (!t) return;
+    if (status === 'clear') {
+      delete t.pendingProgramStatus;
+      return;
+    }
+    if (!t.agent || t.agent.state === 'starting') {
+      t.pendingProgramStatus = { status, at: this.now(), ...(kind ? { kind } : {}), ...(app ? { app } : {}) };
+      return;
+    }
     t.reportsState = true;
     const state: AgentState = status === 'working' ? 'working' : status === 'blocked' ? 'waiting' : 'idle';
     this.signal(id, 'program-status', state, state === 'waiting' ? kind : undefined);

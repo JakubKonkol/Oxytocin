@@ -101,6 +101,7 @@ export const INVOKE_CHANNELS = [
   'dbServers:get',
   'dbServers:save',
   'dbServers:discover',
+  'aiAgents:launch',
   'aiAgents:get',
   'aiAgents:detect',
   'aiAgents:save',

@@ -165,6 +165,18 @@ describe('AgentService', () => {
     expect(s.info().kind).toBe('agent');
   });
 
+  it('retains CLI readiness reported before process detection', () => {
+    const s = setup({ kind: 'agent', profileId: 'ai:codex', profileName: 'Codex CLI' });
+    s.emit('terminal:programStatus', { id: 't1', state: 'idle', app: 'codex' });
+    s.emit('terminal:process', {
+      id: 't1',
+      descendants: [
+        { pid: 201, ppid: 100, name: 'node', commandLine: 'node /x/node_modules/@openai/codex/bin/codex.js' },
+      ],
+    });
+    expect(s.info().agent).toMatchObject({ agentId: 'codex', state: 'idle', stateSource: 'program-status' });
+  });
+
   it('keeps agent-profile terminals "starting" until detection, at most 10 s', () => {
     const s = setup({ kind: 'agent', profileId: 'agent:claude', profileName: 'Claude Code' });
     expect(s.info().agent).toMatchObject({ agentId: 'claude-code', state: 'starting' });

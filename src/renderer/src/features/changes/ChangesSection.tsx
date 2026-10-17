@@ -34,6 +34,7 @@ import { openFile } from '../editor/editor-actions';
 import { openReview } from '../review/review-actions';
 import { BranchBar, stashChanges } from './BranchBar';
 import { CommitBox } from './CommitBox';
+import { SendToReview } from './SendToReview';
 import { discardAll, discardFiles, gitAction, stageState, toggleStaged, undoLastCommit } from './git-actions';
 import { fileOpenersFor, openWithOpener } from '../plugins/plugin-commands';
 import {
@@ -759,6 +760,7 @@ export function ChangesSection() {
     body = (
       <>
         <BranchBar projectId={project.id} status={status} />
+        <SendToReview projectId={project.id} count={status.files.length} />
         {status.files.length > 0 && <CommitBox projectId={project.id} status={status} />}
         {!status.hasHead && status.files.length > 0 && (
           <div className="mb-1 text-small text-fg-muted">No commits yet — all files are new</div>

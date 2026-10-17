@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  AgentLauncher,
+  AgentLaunchResult,
   AgentAccount,
   AgentLimits,
   AgentSnapshot,
@@ -252,6 +254,16 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       environment,
     },
     agents: {
+      listLaunchers: async () => {
+        require('agents.read');
+        return call<AgentLauncher[]>('agents.listLaunchers');
+      },
+      launch: async (options) => {
+        require('agents.read');
+        require('terminals.create');
+        require('terminals.write');
+        return call<AgentLaunchResult>('agents.launch', options);
+      },
       list: async () => {
         require('agents.read');
         return call<AgentSnapshot[]>('agents.list');

@@ -739,6 +739,15 @@ export class UsageEngine {
     this.collectors.clear();
   }
 
+  /** Explicit refresh reads the sources, rather than repainting cached database values. */
+  async refreshUsage(): Promise<void> {
+    await Promise.all([
+      ...[...this.collectors.values()].map((c) => c.rescan()),
+      ...[...this.statusLines.values()].map((r) => r.read()),
+    ]);
+    this.emitChanged(1);
+  }
+
   viewContext(): ViewContext {
     return {
       now: this.now(),

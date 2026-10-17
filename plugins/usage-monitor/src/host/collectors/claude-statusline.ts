@@ -60,6 +60,7 @@ export function parseStatusLineInput(text: string, observedAt: number, account =
 }
 
 const DEBOUNCE_MS = 100;
+export const STATUSLINE_POLL_MS = 10_000;
 
 /**
  * Watches the folder of the status line script and reports the limits in its data files whenever the script replaces
@@ -69,6 +70,9 @@ const DEBOUNCE_MS = 100;
 export class ClaudeStatusLineReader {
   private watcher: FSWatcher | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private poll: ReturnType<typeof setInterval> | undefined;
+  private queue = Promise.resolve();
+  private stopped = false;
   private readonly lastMtime = new Map<string, number>();
 
   constructor(
@@ -83,18 +87,33 @@ export class ClaudeStatusLineReader {
     try {
       this.watcher = watch(this.dir, (_event, name) => {
         if (name && !DATA_FILE.test(String(name))) return;
-        clearTimeout(this.timer);
-        this.timer = setTimeout(() => void this.read(), DEBOUNCE_MS);
+        if (this.timer) return;
+        this.timer = setTimeout(() => {
+          this.timer = undefined;
+          void this.read();
+        }, DEBOUNCE_MS);
       });
       this.watcher.on('error', (e) => this.warn('Watching the Claude status line data failed', e));
     } catch (e) {
       this.warn('Watching the Claude status line data failed', e);
     }
     await this.read();
+    if (this.stopped) return;
+    // fs.watch may miss atomic replacements or stop reporting after sleep / a watcher error.
+    this.poll = setInterval(() => void this.read(), STATUSLINE_POLL_MS);
+    this.poll.unref?.();
   }
 
   /** Reads the data files written since the last read. */
-  async read(): Promise<void> {
+  read(): Promise<void> {
+    this.queue = this.queue
+      .then(() => this.readFiles())
+      .catch((e: unknown) => this.warn('Reading Claude limits failed', e));
+    return this.queue;
+  }
+
+  private async readFiles(): Promise<void> {
+    if (this.stopped) return;
     const names = (await readdir(this.dir).catch(() => [] as string[])).filter((n) => DATA_FILE.test(n));
     for (const name of names) await this.readFile(join(this.dir, name));
   }
@@ -102,18 +121,24 @@ export class ClaudeStatusLineReader {
   private async readFile(file: string): Promise<void> {
     try {
       const { mtimeMs } = await stat(file);
-      if (mtimeMs <= (this.lastMtime.get(file) ?? 0)) return;
-      this.lastMtime.set(file, mtimeMs);
+      if (mtimeMs === this.lastMtime.get(file)) return;
       const text = await readFile(file, 'utf8');
+      if (this.stopped) return;
       const items = parseStatusLineInput(text, Math.round(mtimeMs), this.accountOf(transcriptPathOf(text)));
-      if (items.length > 0) this.onLimits(items);
+      if (items.length > 0) {
+        this.onLimits(items);
+        // Failed or partial reads must be retried even when the timestamp did not change.
+        this.lastMtime.set(file, mtimeMs);
+      }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') this.warn('Reading the Claude status line data failed', e);
     }
   }
 
   stop(): void {
+    this.stopped = true;
     clearTimeout(this.timer);
+    clearInterval(this.poll);
     this.watcher?.close();
     this.watcher = undefined;
   }

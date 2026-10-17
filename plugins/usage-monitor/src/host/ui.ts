@@ -88,6 +88,7 @@ export interface StatusLineStatus {
 
 export interface UiExtras {
   statusLineStatus?: () => Promise<StatusLineStatus>;
+  repairStatusLine?: () => Promise<void>;
 }
 
 const usd = (v: number) => (v > 0 && v < 0.01 ? '<$0.01' : `$${v.toFixed(2)}`);
@@ -133,6 +134,7 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
   const sidebarModel = async () => ({
     ...(await client.request<Record<string, unknown>>('view.sidebar')),
     display: sidebarDisplay((k) => oxy.settings.get(k)),
+    claudeStatusLine: (await extras.statusLineStatus?.()) ?? null,
   });
   const pushSidebars = async () => {
     const visible = [...sidebars].filter((v) => v.visible);
@@ -218,6 +220,15 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
           if (visible) void pushSidebars();
         });
         view.onRequest('model', sidebarModel);
+        view.onRequest('refreshUsage', async () => {
+          await client.request('usage.refresh');
+          refresh();
+        });
+        view.onRequest('repairStatusLine', async () => {
+          await extras.repairStatusLine?.();
+          await client.request('usage.refresh');
+          refresh();
+        });
         view.onRequest<{ key: keyof SidebarDisplay; value: unknown }, void>('display.set', async ({ key, value }) => {
           const setting = Object.hasOwn(SIDEBAR_SETTINGS, key) ? SIDEBAR_SETTINGS[key] : undefined;
           if (!setting) throw new Error(`${String(key)} cannot be changed here`);
@@ -234,6 +245,7 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
         dashboards.add(view);
         view.onDidDispose(() => dashboards.delete(view));
         view.title = 'Usage';
+        view.onRequest('refreshUsage', () => client.request('usage.refresh'));
         view.onRequest('overview', () => client.request('dash.overview'));
         view.onRequest('sessions', (opts) => client.request('dash.sessions', opts));
         view.onRequest<{ id: string }, unknown>('session', ({ id }) => client.request('dash.session', { id }));
@@ -244,6 +256,7 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
         view.onRequest('pricing.refresh', () => client.request('pricing.refresh'));
         view.onRequest('sources', () => client.request('dash.sources'));
         view.onRequest('statusLine', () => extras.statusLineStatus?.() ?? null);
+        view.onRequest('repairStatusLine', () => extras.repairStatusLine?.());
         view.onRequest('settings', () => Object.fromEntries(EDITABLE_SETTINGS.map((k) => [k, oxy.settings.get(k)])));
         view.onRequest<{ key: string; value: unknown }, void>('settings.set', async ({ key, value }) => {
           if (!(EDITABLE_SETTINGS as readonly string[]).includes(key)) throw new Error(`${key} cannot be changed here`);

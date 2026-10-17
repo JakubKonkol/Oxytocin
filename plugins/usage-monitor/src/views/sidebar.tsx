@@ -140,6 +140,8 @@ function Empty({ sources }: { sources: SourceStatus | null }) {
 function App() {
   const view = useOxyView();
   const [model, setModel] = useState<SidebarModel | null>(null);
+  const [refreshError, setRefreshError] = useState('');
+  const [repairing, setRepairing] = useState(false);
   const [sources, setSources] = useState<SourceStatus | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const height = useHeight();
@@ -182,6 +184,7 @@ function App() {
     const choice = await view.showContextMenu(
       [
         { id: 'dashboard', label: 'Open dashboard' },
+        { id: 'refresh', label: 'Refresh usage data' },
         { id: 'pricing', label: 'Refresh pricing' },
         { id: 'settings', label: 'Settings' },
         { id: 'sources', label: 'Data sources' },
@@ -194,6 +197,10 @@ function App() {
       { x: e.clientX, y: e.clientY },
     );
     if (choice === 'dashboard') void view.request('openDashboard', {});
+    if (choice === 'refresh') {
+      setRefreshError('');
+      void view.request('refreshUsage').catch((e: unknown) => setRefreshError(String(e)));
+    }
     if (choice === 'pricing') void view.request('refreshPricing');
     if (choice === 'settings') void view.request('openDashboard', { tab: 'pricing' });
     if (choice === 'sources') void view.request('openDashboard', { tab: 'sources' });
@@ -234,6 +241,29 @@ function App() {
   const hasPlanLimits = accountLimits.length > 0;
   return (
     <div className={`card${compact ? ' compact' : ''}`} data-testid="usage-card">
+      {refreshError && (
+        <p role="alert" className="muted">
+          {refreshError}
+        </p>
+      )}
+      {model.claudeStatusLine?.enabled && !model.claudeStatusLine.installed && (
+        <div className="empty" data-testid="usage-limits-disconnected">
+          <span>Claude limit updates are disconnected: the status line configuration changed.</span>
+          <button
+            disabled={repairing}
+            onClick={() => {
+              setRepairing(true);
+              setRefreshError('');
+              void view
+                ?.request('repairStatusLine')
+                .catch((e: unknown) => setRefreshError(String(e)))
+                .finally(() => setRepairing(false));
+            }}
+          >
+            {repairing ? 'Repairing…' : 'Repair limit updates'}
+          </button>
+        </div>
+      )}
       {!model.hasData || !showCost || !display.showToday ? (
         <div className="row head">
           {!showCost && (

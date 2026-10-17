@@ -1,0 +1,46 @@
+{
+  "name": "@oxytocin/task",
+  "version": "0.1.0",
+  "description": "Plan, approve, implement and optionally review a task in ordinary agent terminals",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "oxytocin": {
+    "id": "oxytocin.task",
+    "displayName": "Task",
+    "description": "A lightweight task: plan with one agent, approve the document, implement with another, and optionally review. Reuses your agent profiles and terminals.",
+    "publisher": "oxytocin",
+    "engine": "^0.1.8",
+    "main": "dist/host.js",
+    "activationEvents": [
+      "onStartup",
+      "onPanel:task.panel",
+      "onCommand:task.show"
+    ],
+    "permissions": [
+      "projects.read",
+      "agents.read",
+      "terminals.read-metadata",
+      "terminals.create",
+      "terminals.write",
+      "fs.read-home"
+    ],
+    "contributes": {
+      "panels": [
+        {
+          "type": "task.panel",
+          "title": "Task",
+          "entry": "dist/views/task.html",
+          "singleton": "project",
+          "showInAddMenu": true
+        }
+      ],
+      "commands": [
+        {
+          "id": "task.show",
+          "title": "Task: Plan and Implement a Task"
+        }
+      ]
+    }
+  }
+}

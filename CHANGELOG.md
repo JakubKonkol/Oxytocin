@@ -3,6 +3,38 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Added
+
+- **Task:** a lightweight plan → approve → implement → optional review workflow. Choose agents, accounts and API
+  profiles from the same list as **+ → AI Agents**. Claude Code's native plan document is captured automatically;
+  plans can also be pasted or edited before approval. Approval saves a frozen document and sends only the task and
+  that plan to the implementer. Start review manually when implementation is ready. Agents run in ordinary
+  interactive terminals, with matching session reuse and a fresh-session option; tasks survive app restarts.
+- **AI Agents launch commands:** configure a command with arguments for each CLI in Settings → AI Agents, such as
+  `codex --yolo`. Commands apply to new sessions, including added accounts and Claude API profiles.
+- **Changes → Send to review:** choose an agent from the usual AI Agents list to review staged, unstaged and
+  untracked changes. Reuses a matching terminal or opens one. Edit the instruction and save it as the default in
+  the review dialog; it is also available as `git.reviewPrompt` in Settings.
+- **Plugin API 0.1.8:** shared agent launch choices and profile-aware launching with optional prompt delivery,
+  existing-session selection, fresh sessions and Claude plan mode.
+
+### Fixed
+
+- **Usage Monitor freshness:** Claude subscription limits are polled every ten seconds as a fallback for missed
+  filesystem notifications. Partial or failed reads are retried. Continuous file activity no longer postpones log
+  ingestion indefinitely; same-size log and chat rewrites are detected. **Refresh usage data** in the sidebar menu
+  and **Refresh data** in the dashboard rescan source files rather than repainting cached totals. Dashboard values
+  also refresh periodically and when the panel becomes visible. Limit timestamps continue to show when the agent
+  actually reported them; refreshing does not invent a new limit reading.
+- Detects when Claude's status line configuration has been removed or changed and shows **Repair limit updates**
+  in the sidebar and Usage settings. Repair preserves the previous status line backup.
+
+### Removed
+
+- The built-in **Relay** plugin. Its general-purpose plugin API additions remain available.
+
 ## [0.9.7] - 2026-10-16
 
 ### Added

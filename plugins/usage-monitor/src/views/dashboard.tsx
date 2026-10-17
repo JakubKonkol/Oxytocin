@@ -25,6 +25,8 @@ function App() {
   const view = useOxyView<{ tab?: Tab; sessionId?: string }, { tab: Tab }>();
   const [chosenTab, setTab] = useState<Tab | null>(null);
   const [chosenSession, setSessionId] = useState<string | undefined>();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
   const [revision, setRevision] = useState(0);
   // Until the user navigates, the panel opens where it was asked to (params) or where it was left (state).
   const tab: Tab = chosenTab ?? view?.params?.tab ?? view?.getState()?.tab ?? 'overview';
@@ -44,7 +46,15 @@ function App() {
         if (m.sessionId) setSessionId(m.sessionId);
       }
     });
+    const periodic = setInterval(() => {
+      if (view.visible) setRevision((r) => r + 1);
+    }, 30_000);
+    const offVisible = view.onVisibilityChange((visible) => {
+      if (visible) setRevision((r) => r + 1);
+    });
     return () => {
+      clearInterval(periodic);
+      offVisible();
       clearTimeout(timer);
       off();
     };
@@ -65,7 +75,24 @@ function App() {
                 {label}
               </button>
             ))}
+            <button
+              type="button"
+              data-testid="usage-refresh"
+              disabled={refreshing}
+              onClick={() => {
+                setRefreshing(true);
+                setRefreshError('');
+                void view
+                  .request('refreshUsage')
+                  .then(() => setRevision((r) => r + 1))
+                  .catch((e: unknown) => setRefreshError(String(e)))
+                  .finally(() => setRefreshing(false));
+              }}
+            >
+              {refreshing ? 'Refreshing?' : 'Refresh data'}
+            </button>
           </div>
+          {refreshError && <p role="alert">{refreshError}</p>}
           <div className="content">
             {tab === 'overview' && <OverviewTab />}
             {tab === 'sessions' && (

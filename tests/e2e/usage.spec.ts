@@ -107,6 +107,8 @@ test('Usage Monitor: today from fixtures, live update, dashboard and budget noti
     // Dashboard from the status bar item.
     await win.getByTestId('status-item-usage.today').click();
     const dashboard = await frameOf(win, 'dashboard.html');
+    await dashboard.getByTestId('usage-refresh').click();
+    await expect(dashboard.getByTestId('usage-refresh')).toBeEnabled({ timeout: 20_000 });
     await expect(dashboard.getByTestId('usage-kpi-today')).toContainText(`$${next.toFixed(2)}`);
     await expect(dashboard.getByTestId('usage-chart')).toBeVisible();
 
@@ -225,6 +227,15 @@ test('Usage Monitor: Claude subscription limits through the Claude Code status l
     await expect(sidebar.getByTestId('usage-subscription-hint')).toHaveCount(0);
     await expect(sidebar.getByTestId('usage-plan-heading')).toHaveText('PLAN LIMITS');
     await expect(section.getByTestId('usage-claude-limits-state')).toContainText('last reading');
+
+    // External settings changes can disconnect limit updates. Expose and repair the source instead of repainting stale readings.
+    await writeFile(settingsFile, JSON.stringify({ model: 'opus' }));
+    await dashboard.getByTestId('usage-refresh').click();
+    await expect(section.getByTestId('usage-repair-limits')).toBeVisible();
+    await expect(sidebar.getByTestId('usage-limits-disconnected')).toBeVisible();
+    await section.getByTestId('usage-repair-limits').click();
+    await expect.poll(async () => (await statusLine())?.command ?? '').toContain('oxytocin-statusline');
+    expect(await readFile(join(dir, 'original-command'), 'utf8')).toBe('echo mine');
 
     // An added account (Settings → AI Agents) shares the main settings, so the same script saves its readings in
     // a file of its own; the transcript tells whose they are.

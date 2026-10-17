@@ -53,6 +53,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   const platformArgs = process.platform === 'linux' ? ['--no-sandbox'] : [];
   // Packaged smoke tests run the installed/unpacked app instead of out/ (OXYTOCIN_EXECUTABLE).
   const executablePath = process.env['OXYTOCIN_EXECUTABLE'];
+  const fixtureHome = opts.env?.['HOME'] || opts.env?.['USERPROFILE'];
   const app = await electron.launch({
     ...(executablePath ? { executablePath } : {}),
     args: [
@@ -68,6 +69,11 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     env: {
       ...(process.env as Record<string, string>),
       OXYTOCIN_E2E: '1',
+      // A default E2E instance must not read real usage or install/remove the user's Claude status line.
+      // Tests with an explicit fixture home keep deriving the CLI folders from that home as before.
+      CLAUDE_CONFIG_DIR: fixtureHome ? '' : join(userData, 'agent-homes', 'claude'),
+      CODEX_HOME: fixtureHome ? join(fixtureHome, '.codex') : join(userData, 'agent-homes', 'codex'),
+      GEMINI_CLI_HOME: fixtureHome || join(userData, 'agent-homes', 'gemini'),
       ...opts.env,
     },
   });

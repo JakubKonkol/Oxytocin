@@ -194,7 +194,7 @@ export async function installStatusLine(paths: StatusLinePaths, shell: 'sh' | 'p
   await writeFile(join(paths.dir, SH_SCRIPT), shScript(paths.dir), { mode: 0o755 });
   await writeFile(join(paths.dir, PS_SCRIPT), psScript(paths.dir));
   const current = settings['statusLine'] as StatusLineSetting | undefined;
-  if (!isOxytocinStatusLine(current)) {
+  if (!isOxytocinStatusLine(current) && (current != null || !(await hasOwnStatusLine(paths)))) {
     await writeAtomic(join(paths.dir, BACKUP), `${JSON.stringify({ statusLine: current ?? null }, null, 2)}\n`);
     const original = current?.type === 'command' && typeof current.command === 'string' ? current.command : '';
     await writeAtomic(join(paths.dir, ORIGINAL_COMMAND), original);

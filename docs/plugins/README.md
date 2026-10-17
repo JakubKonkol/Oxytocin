@@ -15,7 +15,7 @@ This guide walks you through building a complete plugin, then documents every pa
 - [Debugging](#debugging) · [Packaging and distribution](#packaging-and-distribution) ·
   [Security](#security) · [Best practices](#best-practices)
 
-Plugin API version: **0.1.7** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
+Plugin API version: **0.1.8** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
 contain breaking changes; declare the versions your plugin supports with `engine`.
 
 ## How a plugin works
@@ -600,8 +600,24 @@ const result = await oxy.agents.sendPrompt(agent.terminalId, 'Continue with the 
 if (!result.ok) ctx.log.warn(result.error);
 ```
 
-The Usage Monitor reports the limits it reads (`oxy.agents.reportLimits`, `agents.annotate`); the built-in Relay
-plugin uses them to hand work to the next agent before an account runs out.
+The Usage Monitor reports the limits it reads (`oxy.agents.reportLimits`, `agents.annotate`); plugins can use them
+without accessing account credentials.
+
+Since API **0.1.8**, `oxy.agents.listLaunchers()` (`agents.read`) returns the same visible agents, added accounts and
+API profiles as **+ → AI Agents**. `oxy.agents.launch(options)` requires `agents.read`, `terminals.create` and
+`terminals.write` and opens an ordinary terminal, reusing a matching session by default:
+
+```ts
+const launchers = await oxy.agents.listLaunchers();
+const result = await oxy.agents.launch({ projectId, launchId: launchers[0].launchId,
+  prompt: 'Review the uncommitted changes. Do not edit files.' });
+if (!result.sent) ctx.log.warn(result.error ?? 'No prompt requested');
+```
+
+Use `terminalId` to choose a particular running session of the same project and profile, or `reuse: false` for a fresh
+session. Busy sessions and open questions receive no prompt; show the error and let the user retry explicitly.
+`planMode: true` starts **new Claude Code sessions** in plan mode; reused sessions retain their current mode.
+Launch commands from **Settings → AI Agents → Launch commands** apply to these terminals too.
 
 #### Status bar items, commands and settings
 
