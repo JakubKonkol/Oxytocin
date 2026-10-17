@@ -1,4 +1,4 @@
-import type { AddPanelPositionOptions, IDockviewPanelProps } from 'dockview-react';
+import type { AddPanelPositionOptions, DockviewApi, IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useState } from 'react';
 import { OxyError } from '@shared/errors';
 import { useProjectsStore } from '../../stores/projects-store';
@@ -6,7 +6,7 @@ import { usePluginsStore } from '../../stores/plugins-store';
 import { EmptyState } from '../../ui/EmptyState';
 import { workspaceFor } from '../attention/reveal';
 import { newPanelId } from '../layout/panel-registry';
-import { findSidebarPluginTool, revealSidebarTool } from '../tools/tools';
+import { addSidebarTool, sidebarToolFor, findSidebarPluginTool, revealSidebarTool } from '../tools/tools';
 import { getWorkspaceApi } from '../layout/workspace-registry';
 import { useWorkspaceVisible } from '../layout/workspace-visibility';
 import { usePluginViewMeta } from './view-meta-store';
@@ -24,9 +24,27 @@ export interface PluginPanelParams {
 
 const newViewId = () => newPanelId('plg').replace('plg-', 'pv-');
 
+function matchingPanel(
+  api: DockviewApi,
+  panelType: string,
+  singleton: false | 'global' | 'project' | undefined,
+  panelParams?: unknown,
+) {
+  const same = api.panels.filter((p) => {
+    const params = p.params as Partial<PluginPanelParams> | undefined;
+    return p.api.component === 'plugin' && params?.panelType === panelType;
+  });
+  return singleton === 'global'
+    ? same[0]
+    : singleton === 'project'
+      ? same.find(
+          (p) => JSON.stringify((p.params as PluginPanelParams).params ?? null) === JSON.stringify(panelParams ?? null),
+        )
+      : undefined;
+}
+
 /**
- * Opens a plugin panel (`contributes.panels`) in a project's workspace, honouring `singleton`
- *.
+ * Opens a plugin panel (`contributes.panels`) in a workspace or sidebar, honouring `singleton`.
  */
 export async function openPluginPanel(
   panelType: string,
@@ -34,7 +52,7 @@ export async function openPluginPanel(
     projectId?: string;
     params?: unknown;
     title?: string;
-    placement?: 'active-group' | 'right' | 'below';
+    placement?: 'active-group' | 'right' | 'below' | 'sidebar';
     /** Exact position (the group whose "+" menu opened it); wins over `placement`. */
     position?: AddPanelPositionOptions;
   } = {},
@@ -48,22 +66,34 @@ export async function openPluginPanel(
     revealSidebarTool(inSidebar.id);
     return;
   }
+  if (o.placement === 'sidebar') {
+    const activeId = useProjectsStore.getState().activeId;
+    const api = activeId ? (getWorkspaceApi(activeId) ?? (await workspaceFor(activeId))) : null;
+    const existing = api && matchingPanel(api, panelType, contribution.singleton, o.params);
+    if (existing) {
+      existing.api.setActive();
+      return;
+    }
+    addSidebarTool(
+      {
+        ...sidebarToolFor({
+          id: `plugin:${panelType}`,
+          title: o.title ?? contribution.title,
+          pluginId: contribution.pluginId,
+          panelType,
+        }),
+        ...(o.params !== undefined ? { params: o.params } : {}),
+      },
+      undefined,
+      'right',
+    );
+    return;
+  }
   const projectId = o.projectId ?? useProjectsStore.getState().activeId;
   if (!projectId) throw new OxyError('INVALID', 'Open a project first');
   const api = getWorkspaceApi(projectId) ?? (await workspaceFor(projectId));
   if (!api) throw new OxyError('UNAVAILABLE', 'The workspace is not ready');
-  const same = api.panels.filter((p) => {
-    const params = p.params as Partial<PluginPanelParams> | undefined;
-    return p.api.component === 'plugin' && params?.panelType === panelType;
-  });
-  const existing =
-    contribution.singleton === 'global'
-      ? same[0]
-      : contribution.singleton === 'project'
-        ? same.find(
-            (p) => JSON.stringify((p.params as PluginPanelParams).params ?? null) === JSON.stringify(o.params ?? null),
-          )
-        : undefined;
+  const existing = matchingPanel(api, panelType, contribution.singleton, o.params);
   if (existing) {
     existing.api.setActive();
     return;

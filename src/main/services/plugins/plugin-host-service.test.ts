@@ -160,6 +160,18 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
 }
 
 describe('PluginHostService', () => {
+  it('forwards sidebar panel placement and drops unknown placements', async () => {
+    const s = setup({
+      list: [
+        descriptor('a.one', { contributes: { panels: [{ type: 'test.panel', title: 'Test', entry: 'view.html' }] } }),
+      ],
+    });
+    await s.api('a.one', 'ui.openPanel', { panelType: 'test.panel', placement: 'sidebar' });
+    expect(s.toRenderer).toHaveBeenLastCalledWith('openPanel', { panelType: 'test.panel', placement: 'sidebar' });
+    await s.api('a.one', 'ui.openPanel', { panelType: 'test.panel', placement: 'unknown' });
+    expect(s.toRenderer).toHaveBeenLastCalledWith('openPanel', { panelType: 'test.panel' });
+    s.service.dispose();
+  });
   it('protects shared agent launching with permissions and validates the project and request', async () => {
     const s = setup({
       list: [

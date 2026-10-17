@@ -784,6 +784,10 @@ With React, `useOxyView()`, `useOxyMessage()` and `useOxyTheme()` come from `@ox
   not tied to a project: `view.projectId` is empty there, so follow the active project
   (`oxy.projects.getActive/onDidChangeActive`) or keep the project in the panel's params. `oxy.ui.openPanel` of a
   `singleton` panel reveals the one already in a sidebar (with the same params) instead of opening another.
+- `oxy.ui.openPanel(panelType, { placement: 'sidebar' })` (API 0.1.9) opens a tool in the right sidebar, even without
+  an active project. A matching singleton in either sidebar or the active project's workspace is revealed instead.
+  Other placements are `active-group` (default), `right` and `below`, opening in the workspace. Sidebar views have no
+  `view.projectId`; follow `oxy.projects.getActive()` and `oxy.projects.onDidChangeActive`.
 
 ## Debugging
 

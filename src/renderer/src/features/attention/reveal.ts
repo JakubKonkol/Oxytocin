@@ -1,6 +1,7 @@
 import type { DockviewApi, IDockviewPanel } from 'dockview-react';
 import { useProjectsStore } from '../../stores/projects-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
+import { terminalRegistry } from '../terminals/terminal-registry';
 import { addExistingTerminalPanel } from '../layout/workspace-actions';
 import type { TerminalPanelParams } from '../layout/panel-registry';
 import { getWorkspaceApi } from '../layout/workspace-registry';
@@ -51,6 +52,8 @@ export async function revealTerminal(projectId: string, terminalId: string): Pro
     if (panel) {
       if (api.hasMaximizedGroup() && !panel.api.isMaximized()) api.exitMaximizedGroup();
       panel.api.setActive();
+      await nextFrame();
+      terminalRegistry.get(terminalId)?.focus();
       return true;
     }
     await nextFrame();

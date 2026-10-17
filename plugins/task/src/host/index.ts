@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { AgentSnapshot, PluginContext, PluginView } from '@oxytocin/plugin-api';
+import type { AgentSnapshot, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
 import { z } from 'zod';
 import {
   implementationPrompt,
@@ -16,7 +16,7 @@ import { captureClaudePlan, readPlan } from './plans';
 
 export async function activate(ctx: PluginContext): Promise<void> {
   const { oxy } = ctx;
-  const views = new Map<PluginView, string | undefined>();
+  const views = new Map<PluginView, { selected?: string; shown?: string }>();
   const storeFile = join(ctx.storage.globalDir, 'tasks.json');
   let raw: unknown;
   try {
@@ -42,20 +42,43 @@ export async function activate(ctx: PluginContext): Promise<void> {
       });
     return writes;
   };
-  const model = async (projectId: string, selected?: string) => ({
+  let active: ProjectInfo | undefined;
+  const projectOf = (view: PluginView) => view.projectId ?? active?.id;
+  const model = async (projectId: string | undefined, selected?: string) => ({
+    project: projectId
+      ? { id: projectId, name: (await oxy.projects.list()).find((p) => p.id === projectId)?.name ?? projectId }
+      : null,
     tasks: tasks
       .filter((t) => t.projectId === projectId)
       .map((t) => ({ id: t.id, description: t.description.slice(0, 160), phase: t.phase })),
     task: tasks.find((t) => t.projectId === projectId && (!selected || t.id === selected)) ?? null,
     launchers: await oxy.agents.listLaunchers(),
-    agents: (await oxy.agents.list()).filter((a) => a.projectId === projectId),
-    terminals: await oxy.terminals.list({ projectId }),
+    agents: projectId ? (await oxy.agents.list()).filter((a) => a.projectId === projectId) : [],
+    terminals: projectId ? await oxy.terminals.list({ projectId }) : [],
   });
   const push = async () => {
-    for (const [view, selected] of views)
-      if (view.visible && view.projectId)
-        await view.postMessage({ type: 'model', model: await model(view.projectId, selected) });
+    for (const [view, state] of views) {
+      if (!view.visible) continue;
+      const projectId = projectOf(view);
+      const next = await model(projectId, state.selected);
+      if (projectId !== projectOf(view)) continue;
+      await view.postMessage({ type: 'model', model: next });
+      if (projectId) state.shown = projectId;
+      else delete state.shown;
+    }
   };
+  let projectEvents = 0;
+  ctx.subscriptions.push(
+    oxy.projects.onDidChangeActive((project) => {
+      projectEvents++;
+      active = project;
+      for (const [view, state] of views) if (!view.projectId) delete state.selected;
+      void push().catch((e: unknown) => ctx.log.warn(String(e)));
+    }),
+  );
+  const initialEvents = projectEvents;
+  const initial = await oxy.projects.getActive();
+  if (projectEvents === initialEvents) active = initial;
   const save = async (t: Task) => {
     t.updatedAt = Date.now();
     await persist();
@@ -132,20 +155,38 @@ export async function activate(ctx: PluginContext): Promise<void> {
   ctx.subscriptions.push(
     oxy.ui.registerPanelProvider('task.panel', {
       resolve(view) {
-        const projectId = view.projectId;
-        if (!projectId) throw new Error('Open Task in a project.');
-        views.set(view, undefined);
+        const state: { selected?: string; shown?: string } = {};
+        views.set(view, state);
+        const currentProject = async () => {
+          const projectId = projectOf(view);
+          if (!projectId) throw new Error('Open a project first.');
+          if (projectId !== state.shown) {
+            await push();
+            throw new Error('The active project changed. Check the task and try again.');
+          }
+          return projectId;
+        };
         view.onDidDispose(() => views.delete(view));
         view.onDidChangeVisibility((visible) => {
           if (visible) void push().catch((e: unknown) => ctx.log.warn(String(e)));
         });
-        view.onRequest('model', () => model(projectId, views.get(view)));
+        view.onRequest('model', async () => {
+          const projectId = projectOf(view);
+          const next = await model(projectId, state.selected);
+          if (projectId === projectOf(view)) {
+            if (projectId) state.shown = projectId;
+            else delete state.shown;
+          }
+          return next;
+        });
         view.onRequest('select', async (id: unknown) => {
+          const projectId = await currentProject();
           const t = requireTask(projectId, id);
-          views.set(view, t.id);
+          state.selected = t.id;
           return model(projectId, t.id);
         });
         view.onRequest('create', async (input: unknown) => {
+          const projectId = await currentProject();
           const parsed = TaskInputSchema.parse(input);
           const selected = [parsed.planner, parsed.implementer, parsed.reviewer].flatMap((r) =>
             r?.terminalId ? [r.terminalId] : [],
@@ -162,7 +203,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
             updatedAt: Date.now(),
           };
           tasks.unshift(t);
-          views.set(view, t.id);
+          state.selected = t.id;
           await mkdir(taskDir(t), { recursive: true });
           await persist();
           await locked(t.id, async () => {
@@ -176,6 +217,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           return t.id;
         });
         view.onRequest('retryPlan', async (raw: unknown) => {
+          const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           if (t.approvedPlan) throw new Error('This plan has already been approved.');
           await locked(t.id, async () => {
@@ -184,6 +226,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           });
         });
         view.onRequest('approve', async (raw: unknown) => {
+          const projectId = await currentProject();
           const input = z.object({ id: z.uuid(), plan: z.string().trim().min(1).max(180_000) }).parse(raw);
           const t = requireTask(projectId, input.id);
           await locked(t.id, async () => {
@@ -199,6 +242,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           });
         });
         view.onRequest('implement', async (raw: unknown) => {
+          const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           if (t.phase !== 'ready' || !t.approvedPlan) throw new Error('Approve a plan before starting implementation.');
           await locked(t.id, async () => {
@@ -207,6 +251,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           });
         });
         view.onRequest('review', async (raw: unknown) => {
+          const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           if (t.phase !== 'implementing' || !t.reviewer)
             throw new Error('Finish implementation before requesting the configured review.');
@@ -216,6 +261,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           });
         });
         view.onRequest('done', async (raw: unknown) => {
+          const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           if (!['implementing', 'reviewing'].includes(t.phase))
             throw new Error('This task has not started implementation.');
@@ -226,6 +272,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           });
         });
         view.onRequest('delete', async (raw: unknown) => {
+          const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           await locked(t.id, async () => {
             tasks.splice(tasks.indexOf(t), 1);
@@ -234,6 +281,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           });
         });
         view.onRequest('show', async (raw: unknown) => {
+          const projectId = await currentProject();
           const input = z.object({ id: z.uuid(), role: z.enum(['planner', 'implementer', 'reviewer']) }).parse(raw);
           const t = requireTask(projectId, input.id);
           const id = t[input.role]?.terminalId;
@@ -242,9 +290,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
       },
     }),
     oxy.commands.register('task.show', async () => {
-      const project = await oxy.projects.getActive();
-      if (!project) throw new Error('Open a project first.');
-      await oxy.ui.openPanel('task.panel', { projectId: project.id });
+      await oxy.ui.openPanel('task.panel', { placement: 'sidebar' });
     }),
   );
   let polling = false;

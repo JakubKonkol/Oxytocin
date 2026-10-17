@@ -24,11 +24,11 @@ export async function openPluginTerminal(req: {
     (p) => (p.params as { terminalId?: string } | undefined)?.terminalId === req.terminalId,
   );
   if (!exists) {
+    const reference = api.activeGroup;
     const id = addExistingTerminalPanel(api, req.terminalId, info?.title ?? 'Terminal');
     if (req.placement !== 'active-group') {
       const panel = api.getPanel(id);
-      const reference = api.activeGroup;
-      if (panel && reference && reference !== panel.group)
+      if (panel && reference)
         panel.api.moveTo({ group: reference, position: req.placement === 'right' ? 'right' : 'bottom' });
     }
   }

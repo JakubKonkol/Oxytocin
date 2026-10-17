@@ -2,13 +2,22 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import type { AgentLaunchRequest, PluginContext, PluginView, ViewProvider } from '@oxytocin/plugin-api';
+import type { AgentLaunchRequest, PluginContext, PluginView, ProjectInfo, ViewProvider } from '@oxytocin/plugin-api';
 import { activate } from './index';
 import type { Task } from '../shared/task';
 
-async function setup(dir?: string) {
+async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boolean } = {}) {
   dir ??= await mkdtemp(join(tmpdir(), 'oxy-task-host-'));
   let provider: ViewProvider | undefined;
+  let active = options.noProject ? undefined : ({ id: 'p', name: 'First' } as ProjectInfo);
+  let changed: (p: ProjectInfo | undefined) => void = () => {};
+  const postMessage = vi.fn(() => Promise.resolve(true));
+  const list = vi.fn(() =>
+    Promise.resolve([
+      { id: 'p', name: 'First' },
+      { id: 'q', name: 'Second' },
+    ]),
+  );
   const requests = new Map<string, (p: unknown) => unknown>();
   const launch = vi.fn(
     (_options: AgentLaunchRequest): Promise<{ terminalId: string; reused: boolean; sent: boolean }> =>
@@ -23,6 +32,14 @@ async function setup(dir?: string) {
     storage: { globalDir: dir, projectDir: (id: string) => join(dir, id) },
     log: { warn: vi.fn() },
     oxy: {
+      projects: {
+        getActive: () => Promise.resolve(active),
+        list,
+        onDidChangeActive: (handler: typeof changed) => {
+          changed = handler;
+          return { dispose: vi.fn() };
+        },
+      },
       agents: {
         listLaunchers: () => Promise.resolve([]),
         list: () => Promise.resolve([]),
@@ -41,21 +58,78 @@ async function setup(dir?: string) {
   } as unknown as PluginContext;
   await activate(ctx);
   await provider!.resolve({
-    projectId: 'p',
+    ...(options.sidebar ? {} : { projectId: 'p' }),
     visible: true,
-    postMessage: () => Promise.resolve(true),
+    postMessage,
     onDidDispose: vi.fn(),
     onDidChangeVisibility: vi.fn(),
     onRequest: (method: string, handler: (p: unknown) => unknown) => requests.set(method, handler),
   } as unknown as PluginView);
   const request = async <T = unknown>(method: string, value?: unknown): Promise<T> =>
     requests.get(method)!(value) as Promise<T>;
+  await request('model');
   const task = async () => (await request<{ task: Task }>('model')).task;
   const dispose = () => ctx.subscriptions.forEach((d) => d.dispose());
-  return { request, task, launch, dir, dispose };
+  return {
+    request,
+    task,
+    launch,
+    dir,
+    dispose,
+    postMessage,
+    list,
+    changeProject: (id?: string) => {
+      active = id ? ({ id, name: id === 'p' ? 'First' : 'Second' } as ProjectInfo) : undefined;
+      changed(active);
+    },
+  };
 }
 
 describe('Task workflow', () => {
+  it('follows the active project in a sidebar, clears selection and rejects a stale click', async () => {
+    const s = await setup(undefined, { sidebar: true });
+    const input = { description: 'Search', planner: { launchId: 'ai:claude' }, implementer: { launchId: 'ai:codex' } };
+    try {
+      expect(await s.request('model')).toMatchObject({ project: { id: 'p', name: 'First' } });
+      const first = await s.request('create', input);
+      const second = await s.request('create', { ...input, description: 'Second task' });
+      await s.request('select', first);
+      s.changeProject('q');
+      await expect(s.request('delete', first)).rejects.toThrow('The active project changed');
+      expect(await s.request('model')).toMatchObject({ project: { id: 'q' }, task: null, tasks: [] });
+      await s.request('create', input);
+      expect(s.launch.mock.calls.at(-1)?.[0].projectId).toBe('q');
+      s.changeProject('p');
+      expect(await s.request('model')).toMatchObject({ project: { id: 'p' }, task: { id: second } });
+      expect(s.postMessage).toHaveBeenCalled();
+    } finally {
+      s.dispose();
+    }
+  });
+  it('shows an empty model without a project and refuses mutations', async () => {
+    const s = await setup(undefined, { sidebar: true, noProject: true });
+    try {
+      expect(await s.request('model')).toMatchObject({ project: null, tasks: [], agents: [], terminals: [] });
+      await expect(s.request('create', {})).rejects.toThrow('Open a project first.');
+    } finally {
+      s.dispose();
+    }
+  });
+  it('keeps a workspace view tied to its own project', async () => {
+    const s = await setup();
+    try {
+      s.changeProject('q');
+      expect(await s.request('model')).toMatchObject({ project: { id: 'p' } });
+      await s.request('create', {
+        description: 'Search',
+        planner: { launchId: 'ai:claude' },
+        implementer: { launchId: 'ai:codex' },
+      });
+      expect(s.launch.mock.calls.at(-1)?.[0].projectId).toBe('p');
+    } finally {
+      s.dispose();
+    }
+  });
   it('requires approval, freezes the document, sends one prompt per stage and persists across activation', async () => {
     const s = await setup();
     try {

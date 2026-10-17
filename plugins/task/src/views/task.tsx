@@ -1,12 +1,13 @@
 import { useOxyView } from '@oxytocin/plugin-sdk/react';
 import '@oxytocin/plugin-sdk/theme.css';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AgentLauncher, AgentSnapshot, TerminalMeta } from '@oxytocin/plugin-api';
 import type { Role, Task, TaskInput } from '../shared/task';
 import './task.css';
 
 interface Model {
+  project: { id: string; name: string } | null;
   tasks: Pick<Task, 'id' | 'description' | 'phase'>[];
   task: Task | null;
   launchers: AgentLauncher[];
@@ -95,25 +96,39 @@ function TaskPanel() {
   const [pending, setPending] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [error, setError] = useState('');
+  const shownProject = useRef<string | undefined>(undefined);
+  const receiveModel = useCallback((next: Model) => {
+    if (shownProject.current !== next.project?.id) {
+      shownProject.current = next.project?.id;
+      const reset = (role: Role | undefined) => (role ? { launchId: role.launchId } : undefined);
+      setPlanner(reset);
+      setImplementer(reset);
+      setReviewer(reset);
+      setDraft(null);
+      setDeleteArmed(false);
+      setCreating(false);
+    }
+    setModel(next);
+  }, []);
   useEffect(() => {
     if (!view) return;
     const off = view.onMessage((raw) => {
       const msg = raw as { type: string; model: Model };
-      if (msg.type === 'model') setModel(msg.model);
+      if (msg.type === 'model') receiveModel(msg.model);
     });
     void view
       .request<Model>('model')
-      .then(setModel)
+      .then(receiveModel)
       .catch((e: unknown) => setError(message(e)));
     return off;
-  }, [view]);
+  }, [view, receiveModel]);
   const action = async (method: string, params: unknown) => {
     if (!view || pending) return;
     setPending(true);
     setError('');
     try {
       await view.request(method, params, { timeoutMs: 60_000 });
-      setModel(await view.request<Model>('model'));
+      receiveModel(await view.request<Model>('model'));
       if (method === 'create') {
         setCreating(false);
         setDraft(null);
@@ -137,7 +152,7 @@ function TaskPanel() {
     <main className="task-panel" data-testid="task-panel" aria-busy={pending}>
       <header className="toolbar">
         <div>
-          <span className="eyebrow">WORKFLOW</span>
+          <span className="eyebrow">WORKFLOW{model.project ? ` · ${model.project.name}` : ''}</span>
           <h1>Task</h1>
         </div>
         <div className="toolbar-actions">
@@ -164,7 +179,7 @@ function TaskPanel() {
             </select>
           )}
           <button
-            disabled={pending}
+            disabled={pending || !model.project}
             onClick={() => {
               setCreating(true);
               setDraft(null);
@@ -189,7 +204,9 @@ function TaskPanel() {
           {error || task?.error}
         </div>
       )}
-      {!task ? (
+      {!model.project ? (
+        <p className="muted">Open a project to plan a task.</p>
+      ) : !task ? (
         <section className="compose">
           <div>
             <h2>What needs to be done?</h2>

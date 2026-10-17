@@ -3,6 +3,18 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Changed
+
+- Task opens in the right sidebar and works in either sidebar, following the active project, or as a workspace tab.
+  Its layout fits a narrow sidebar. Agent terminals started or reused by Task and Changes → Send to review are
+  revealed and focused in the workspace.
+
+### Added
+
+- Plugin API 0.1.9: `oxy.ui.openPanel(…, { placement: 'sidebar' })` opens a tool in the right sidebar.
+
 ## [0.9.8] - 2026-10-17
 
 ### Added

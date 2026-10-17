@@ -192,6 +192,7 @@ function publicLastCommand({ interrupted: _interrupted, ...rest }: NonNullable<T
   return rest;
 }
 
+const PanelPlacementSchema = z.enum(['active-group', 'right', 'below', 'sidebar']);
 const PlacementSchema = z.enum(['active-group', 'right', 'below']);
 /** `showNotification` buttons (at most three, short titles). */
 const NotificationActionsSchema = z
@@ -951,12 +952,13 @@ export class PluginHostService implements Disposable {
         const panelType = String(p['panelType']);
         if (!plugin.manifest.contributes.panels.some((x) => x.type === panelType))
           throw new OxyError('INVALID', `Panel type ${panelType} is not declared by ${pluginId}`);
+        const placement = PanelPlacementSchema.safeParse(p['placement']);
         core.toRenderer('openPanel', {
           panelType,
           ...(typeof p['projectId'] === 'string' ? { projectId: p['projectId'] } : {}),
           ...(p['params'] !== undefined ? { params: p['params'] } : {}),
           ...(typeof p['title'] === 'string' ? { title: p['title'] } : {}),
-          ...(typeof p['placement'] === 'string' ? { placement: p['placement'] } : {}),
+          ...(placement.success ? { placement: placement.data } : {}),
         });
         return undefined;
       }

@@ -1,6 +1,11 @@
 # Task
 
-A lightweight workflow in a project's **+ → Tools → Task** panel:
+A lightweight workflow opened by **Task: Plan and Implement a Task** in the right sidebar. Use the section header
+buttons to move it to the left sidebar or the workspace; a workspace tab's menu offers **Move to right sidebar**.
+In either sidebar, Task follows the active project and shows its name. It is also available in **+ > Tools > Task**.
+Agent terminals open or are reused in the main workspace and are brought to front with keyboard focus.
+
+The workflow:
 
 1. Describe the task and choose a planner, implementer and optional reviewer from **+ → AI Agents**'s choices.
 2. Plan interactively in the planner's ordinary terminal. New Claude sessions can start in plan mode; for a reused

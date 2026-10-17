@@ -329,6 +329,7 @@ function bootstrap(): void {
           terminalId,
           projectId,
           placement: 'right',
+          focus: true,
         });
     },
     send: (id, prompt) => agentPrompts.send(id, prompt),

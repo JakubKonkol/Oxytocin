@@ -129,7 +129,10 @@ leaves your machine.
 A lightweight **plan → approve → implement → optional review** workflow. Choose agents from the same list as the
 workspace's + menu. Claude Code's native plan document is captured for your approval; the implementer receives only
 the task and the approved plan. Agents work in ordinary interactive terminals, reusing matching sessions or opening
-fresh ones. Start the optional review yourself when implementation is ready.
+fresh ones. Task opens in the right sidebar and follows the active project in either sidebar. The header buttons
+move it to the left sidebar or workspace; the tab menu can move it back. Agent terminals open or are reused in the
+main workspace and are brought to front with keyboard focus. Start the optional review yourself when implementation
+is ready.
 
 <p align="center">
   <img alt="Usage dashboard: daily cost over the last 30 days, tokens, projects and models" src="docs/images/usage-dashboard.png" width="960" />

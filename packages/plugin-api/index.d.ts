@@ -254,6 +254,7 @@ export interface AgentsApi {
   listLaunchers(): Promise<AgentLauncher[]>;
   /**
    * agents.read + terminals.create + terminals.write ? reuses a matching session or opens an ordinary terminal.
+   * Reveals and focuses the terminal in its project's workspace (since API 0.1.9).
    * Sends the optional prompt only when ready; inspect sent/error and let the user retry if it is busy or waiting.
    * terminalId explicitly selects a running session of this profile and project. Since API 0.1.8.
    */
@@ -312,9 +313,18 @@ export interface UiApi {
   registerViewProvider(viewId: string, provider: ViewProvider): Disposable;
   /** panelType from contributes.panels */
   registerPanelProvider(panelType: string, provider: ViewProvider): Disposable;
+  /**
+   * With placement: 'sidebar' (since API 0.1.9), opens a right-sidebar tool following the active project,
+   * without view.projectId. Reveals a matching singleton in either sidebar or the active workspace instead.
+   */
   openPanel(
     panelType: string,
-    o?: { projectId?: string; params?: unknown; title?: Localized; placement?: 'active-group' | 'right' | 'below' },
+    o?: {
+      projectId?: string;
+      params?: unknown;
+      title?: Localized;
+      placement?: 'active-group' | 'right' | 'below' | 'sidebar';
+    },
   ): Promise<void>;
   /** id from contributes.statusBarItems */
   statusBarItem(id: string): StatusBarItem;

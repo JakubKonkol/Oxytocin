@@ -198,3 +198,46 @@ textarea:focus-visible {
     gap: 4px;
   }
 }
+
+@media (max-width: 420px) {
+  .task-panel {
+    padding: 12px;
+    gap: 16px;
+  }
+  h1 {
+    font-size: var(--font-size-ui);
+  }
+  .eyebrow {
+    overflow-wrap: anywhere;
+  }
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .step {
+    min-width: 0;
+  }
+  .toolbar-actions {
+    width: 100%;
+  }
+  .toolbar select {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+  }
+  .role-card {
+    padding: 10px;
+  }
+  .plan-document {
+    min-height: 160px;
+  }
+  .footer button {
+    max-width: 100%;
+    white-space: normal;
+  }
+  .footer .primary {
+    width: 100%;
+  }
+  .sessions button {
+    flex-wrap: wrap;
+  }
+}

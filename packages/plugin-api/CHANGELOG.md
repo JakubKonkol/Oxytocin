@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9
+
+- `oxy.ui.openPanel(…, { placement: 'sidebar' })` opens a right-sidebar tool without requiring a project. It follows
+  the active project with no `view.projectId`. A matching singleton in either sidebar or the active workspace is
+  revealed instead of opening another panel.
+- `oxy.agents.launch` reveals and focuses the terminal in its project's workspace, including reused sessions.
+
 ## 0.1.8
 
 - `oxy.agents.listLaunchers()` (`agents.read`): the same visible agents, added accounts and API profiles as the

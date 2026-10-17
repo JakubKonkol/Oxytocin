@@ -254,5 +254,5 @@ export const OpenPanelRequestSchema = z.object({
   projectId: z.string().optional(),
   params: z.unknown().optional(),
   title: z.string().optional(),
-  placement: z.enum(['active-group', 'right', 'below']).optional(),
+  placement: z.enum(['active-group', 'right', 'below', 'sidebar']).optional(),
 });
