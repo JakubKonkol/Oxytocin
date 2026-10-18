@@ -1,0 +1,197 @@
+# The `.oxy` directory and Code Map files
+
+Proposed specification (not shipped). It implements FR-DIR and FR-BLD-1 of the [requirements](requirements.md) and
+replaces the application-cache layout of the earlier [design](design.md#settings-and-persistence).
+
+## Layout
+
+```text
+<checkout root>/
+├─ .gitignore                 ← gets "/.oxy/" appended once (main project root of a Git project only)
+└─ .oxy/
+   ├─ .gitignore              "*" — ignores everything in .oxy, including itself
+   ├─ README.md               what this folder is; safe to delete; how to disable Code Map
+   └─ code-map/
+      ├─ manifest.json        format version, state, counts, coverage, timings (the only file with timestamps)
+      ├─ graph.json           the deterministic graph
+      ├─ MAP.md               the deterministic, bounded overview for agents and people
+      ├─ cache/               per-file extraction records, keyed by content hash
+      │  └─ <aa>/<sha256>.json
+      └─ owner.lock           which Oxytocin instance writes this map
+```
+
+`<checkout root>` is the project's root folder, or the corresponding folder inside an Ensemble/Task worktree. `.oxy/` is
+reserved for Oxytocin; each feature gets its own subfolder (`code-map/`, later possibly `learnings/`), so a feature's
+**Delete data** removes only its own subfolder.
+
+## Keeping `.oxy` out of Git
+
+On enable, in this order:
+
+1. Create `.oxy/` and write `.oxy/.gitignore` with the single line `*`. Git then ignores the whole folder even before (or
+   without) the root entry: this covers worktrees, non-Git folders that later become repositories, and users who revert
+   the root edit.
+2. If the project root is inside a Git work tree (`git rev-parse --is-inside-work-tree`) **and** the project is not a
+   worktree managed by Ensemble/Task, update `<project root>/.gitignore`:
+   - Skip when a line already matches `.oxy`, `.oxy/`, `/.oxy`, `/.oxy/` (ignoring surrounding whitespace).
+   - Otherwise append `# Oxytocin local data (Code Map)` and `/.oxy/`, preceded by a newline if the file does not end
+     with one. Keep the file's line ending style (CRLF if the file uses CRLF), BOM and existing content byte for byte.
+   - Create the file when it does not exist (LF line endings, UTF-8 without BOM).
+   - Refuse — and show an error state, keeping the map enabled — if `.gitignore` is a symlink, is outside the project
+     after resolving real paths, or is not writable.
+   - When the project is a subfolder of a repository, the entry goes into the project folder's own `.gitignore`
+     (Git honours nested `.gitignore` files), never into a parent folder.
+3. The change shows up in the Changes panel as an ordinary modification. Oxytocin does not stage or commit it.
+
+Disabling Code Map or deleting its data does not remove the `.gitignore` line. Re-enabling repeats step 2 (and does
+nothing if the line is still there).
+
+`.oxy/` is excluded from Code Map enumeration at every depth (nested projects have their own `.oxy`) and is always ignored
+by Oxytocin's Git watcher (`src/workspace-host/git/repo-watcher.ts`), independent of the user-editable
+`git.ignoredFolders` setting. Because it is Git-ignored, `rg`, `git grep` and agent search tools that honour `.gitignore`
+skip it by default; agents reach the map through explicit paths.
+
+## Writing rules
+
+- The Code Map host is the only writer. Every write goes to a temporary file in the same folder (`*.tmp-<random>`) and is
+  renamed over the target. On Windows, transient `EPERM`/`EBUSY` errors on rename are retried with backoff for up to 2 s;
+  if publication still fails the previous file stays in place and the state becomes `degraded` with the reason.
+- Order of publication: cache entries → `graph.json` → `MAP.md` → `manifest.json`. A reader that sees a manifest can rely
+  on the graph it names (`graphSha256`). Startup validates `graph.json` against the manifest; mismatches or schema errors
+  trigger a rebuild, keeping the last good in-memory graph for explicitly stale reads.
+- Leftover `*.tmp-*` files older than one hour are removed on start.
+- `owner.lock` contains `{ "instanceId", "pid", "app": "Oxytocin 0.x.y", "heartbeatAt" }`, refreshed every 30 s. An
+  instance takes over a lock whose heartbeat is older than 2 minutes or whose process is gone. A non-owning instance
+  serves read-only answers from the files and shows “Updated by another Oxytocin instance”.
+- Paths are created with `mkdir` + containment checks equivalent to `resolveInside`/`assertWritable` in
+  `src/workspace-host/files/project-files.ts`: the real path of `.oxy` must be inside the real project root; a symlinked
+  `.oxy` pointing outside the project is refused.
+
+## `graph.json`
+
+Machine format for the visualizer, MCP tools and any tool that wants to read it. Validated by a zod schema in
+`src/shared/domain/code-map.ts`. The schema version changes on any incompatible change; any mismatch (older or newer
+schema) makes Oxytocin rebuild the map without asking, because the map is derived data. Values below are illustrative.
+
+```jsonc
+{
+  "format": "oxytocin.code-map",
+  "schemaVersion": 1,
+  "generator": {
+    "oxytocin": "0.10.0",
+    "extractors": { "typescript": 1, "files": 1 },
+    "grammars": { "tree-sitter-typescript": "0.23.2", "tree-sitter-javascript": "0.23.1" },
+    "settingsHash": "sha256:…" // exclusions and other inputs that change the output
+  },
+  "groups": [{ "id": "d:src/main", "path": "src/main", "parent": "d:src", "files": 412 }],
+  "files": [
+    {
+      "id": "f:src/main/index.ts",
+      "path": "src/main/index.ts",
+      "group": "d:src/main",
+      "language": "typescript",
+      "bytes": 5120,
+      "lines": 141,
+      "sha256": "…",
+      "status": "ok", // ok | syntax-errors | skipped-too-large | unsupported | failed
+      "test": false
+    }
+  ],
+  "packages": [{ "id": "p:electron", "name": "electron", "external": true }],
+  "symbols": [
+    {
+      "id": "s:src/main/hosts/hosts.ts#Hosts",
+      "file": "f:src/main/hosts/hosts.ts",
+      "kind": "class",
+      "name": "Hosts",
+      "owner": null,
+      "exported": true,
+      "signature": "class Hosts",
+      "span": [41, 0, 160, 1] // start line (1-based), start column (0-based UTF-16), end line, end column
+    }
+  ],
+  "edges": [
+    {
+      "from": "f:src/main/index.ts",
+      "to": "f:src/main/hosts/hosts.ts",
+      "rel": "imports", // contains | imports | exports | calls | references | extends | implements
+      "prov": "binding", // syntax | binding | heuristic
+      "typeOnly": false,
+      "at": [3, 0]
+    }
+  ],
+  "unresolved": [{ "from": "f:src/x.ts", "rel": "imports", "target": "@alias/thing", "at": [2, 0], "reason": "no-path-mapping" }],
+  "coverage": {
+    "files": { "indexed": 1830, "unsupported": 220, "skipped": 14, "failed": 0 },
+    "byLanguage": { "typescript": 1702, "javascript": 128 },
+    "unresolved": { "imports": 3, "calls": 5120 }
+  }
+}
+```
+
+Determinism rules (tested, FR-BLD-1 / NFR-7):
+
+- No timestamps, durations, absolute paths, host names, process IDs or random values in `graph.json`, `MAP.md` or cache
+  records. They live only in `manifest.json` and `owner.lock`.
+- Paths are root-relative POSIX paths using the on-disk spelling; enumeration results are sorted by a fixed comparison
+  (UTF-16 code unit order of the path) before any processing, never relying on directory listing or `Map` insertion order.
+- IDs are derived from path, kind, owner and name with a deterministic discriminator for duplicates/overloads
+  (`#name~2`), never from line numbers or counters that depend on processing order.
+- All arrays are sorted by ID (edges by `from`, `rel`, `to`, `at`); object keys are written in schema order; one JSON
+  document, no indentation, `\n` at the end, UTF-8 without BOM.
+- Parsing and resolution are independent of the batch order and of whether a file came from the cache, so cold and
+  incremental builds are equal. The cache key includes the extractor version, so an upgrade invalidates stale records.
+- Numbers derived from text use UTF-16 columns computed from decoded text; CRLF, BOM and Unicode handling are covered by
+  fixtures.
+
+## `manifest.json`
+
+```jsonc
+{
+  "format": "oxytocin.code-map.manifest",
+  "schemaVersion": 1,
+  "state": "ready", // indexing | ready | updating | paused | degraded | error | limit
+  "graphSha256": "…",
+  "generation": 42, // increases with every publication of this checkout
+  "builtAt": "2026-10-18T10:15:02.120Z",
+  "lastReconciledAt": "2026-10-18T10:16:02.000Z",
+  "lastFullHashAt": "2026-10-18T10:00:00.000Z",
+  "durationsMs": { "enumerate": 120, "parse": 3400, "resolve": 410, "write": 95 },
+  "counts": { "files": 2064, "symbols": 18233, "edges": 91220 },
+  "limits": { "files": 50000, "symbols": 500000, "edges": 2000000, "bytes": 536870912 },
+  "warnings": ["3 imports could not be resolved"]
+}
+```
+
+## `MAP.md`
+
+The agent's starting point (FR-AG-1). Generated from `graph.json` only, deterministic, at most 32 KiB (≈ 8k tokens;
+the exact budget is tuned in the agent evaluation). Sections are emitted in this order and truncated as whole lines with a
+`… N more (use oxy_repo_map with pathPrefix)` marker:
+
+1. **Header** — “Generated by Oxytocin Code Map. Do not edit.” Graph hash (not a timestamp), coverage summary, and how to
+   use it: read this overview, then use the MCP tools (`oxy_find_code`, `oxy_file_outline`, `oxy_code_relations`) or open
+   `.oxy/code-map/graph.json`; always read current source before editing; missing edges do not prove code is unused.
+2. **Layout** — the folder tree down to a depth that fits the budget, with file counts, dominant language and test-folder
+   marks.
+3. **Entry points** — `package.json` `main`/`bin`/`exports`, workspace packages, files with no importers that are
+   referenced from configuration, test roots. Derived from data, not guessed.
+4. **Hubs** — files with the most incoming imports (ties broken by path), with their importer counts.
+5. **Public API** — for the hubs and entry points, exported symbols with signatures, grouped by file, until the budget is
+   used.
+6. **Coverage notes** — unsupported languages, skipped files and unresolved-import patterns.
+
+`MAP.md` contains no source bodies beyond signatures, no comments from the code and no instructions taken from code.
+
+## `README.md` in `.oxy`
+
+A fixed English text: “This folder is created by Oxytocin. It holds local, regenerable data such as the Code Map. It is
+ignored by Git. You can delete it at any time; disable Code Map in Project settings to stop it from being recreated.”
+
+## Sizes and cleanup
+
+- Cache entries are written only for indexed files; entries whose hash no longer occurs in the checkout are pruned after
+  each successful publication.
+- The total size of `.oxy/code-map/` counts toward the 512 MiB limit; exceeding it yields the `limit` state.
+- **Delete map data** removes `.oxy/code-map/` after cancelling work, then removes `.oxy/` only if it contains nothing but
+  `.gitignore` and `README.md`.

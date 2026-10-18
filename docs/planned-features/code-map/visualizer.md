@@ -1,17 +1,20 @@
 # Code Map Visualizer
 
-Proposed milestone C: a bundled, independently disableable plugin in `plugins/code-map-visualizer`, manifest ID `oxytocin.code-map-visualizer`, display name **Code Map Visualizer**. Its purpose is to explain and navigate relationships that the core already exposes to agents. It owns neither indexing nor durable memory.
+Proposed phases 3–4 of the [implementation plan](implementation-plan.md) (requirements FR-VIS in [requirements](requirements.md#56-visualizer-fr-vis)): a bundled, independently disableable plugin in `plugins/code-map-visualizer`, manifest ID `oxytocin.code-map-visualizer`, display name **Code Map Visualizer**. Its purpose is to explain and navigate relationships that the core already exposes to agents. It owns neither indexing nor durable memory.
 
 ## Useful views of the same graph
 
 | View         | Default content                                                                                      | User action / value                                                                                  |
 | ------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Overview     | Bounded package/directory groups with aggregated import dependencies and coverage counts.            | Find a subsystem and drill into its files.                                                           |
-| Neighborhood | Selected file/symbol, incoming/outgoing neighbors, depth one by default.                             | Trace a dependency or inspect a likely impact area with evidence.                                    |
-| Knowledge    | Applicable learning nodes connected to source/evidence anchors, with optional stale/pending filters. | See why a constraint exists, inspect origin, open the core Learnings manager. Requires milestone B.  |
-| Task context | A selected query's bounded projection when a live receipt is explicitly opened by the user.          | Inspect what the context tool returned and why it selected those items. No automatic focus stealing. |
+| Overview     | Bounded package/directory groups with aggregated import dependencies and coverage counts.            | Find a subsystem and drill into its files. (Phase 3)                                                 |
+| File         | A file's outline (symbols), its imports and its importers.                                           | Understand one file's role before reading it. (Phase 3)                                              |
+| Neighborhood | Selected file/symbol, incoming/outgoing neighbors, depth one by default.                             | Trace a dependency or inspect a likely impact area with evidence. (Phase 3)                          |
+| Changes      | Uncommitted (or worktree) changes highlighted, with potential dependents in indexed code shaded.     | Review what an agent's change touches and what could depend on it. (Phase 4, needs `git.read`)       |
+| Impact       | Incoming relations of a node to depth 3, grouped by folder.                                          | Estimate the reach of a change; worded as “potential dependents in indexed code”. (Phase 4)          |
+| Knowledge    | Applicable learning nodes connected to source/evidence anchors, with optional stale/pending filters. | See why a constraint exists, inspect origin, open the core Learnings manager. Only with phase 6.     |
+| Task context | A selected query's bounded projection when a live receipt is explicitly opened by the user.          | Inspect what the context tool returned and why it selected those items. Only with phase 6.           |
 
-Directory/package grouping is a deterministic projection, not an inferred architecture. Label a manually named subsystem as user-authored; automatic architectural summaries belong to a later evaluated extension. Initial implementation requires Overview and Neighborhood. Knowledge/Task context appear when B capabilities exist, not as broken controls before B ships.
+Directory/package grouping is a deterministic projection, not an inferred architecture. Label a manually named subsystem as user-authored; automatic architectural summaries belong to a later evaluated extension. Phase 3 requires Overview, File, Neighborhood and Search; phase 4 adds Changes and Impact. Knowledge/Task context appear only when phase-6 capabilities exist, not as broken controls before.
 
 Every panel shows the selected project **and checkout**, generation/checkpoint, coverage, known pending changes, and truncation. A graph with no incoming edges does not prove a symbol is unused. For impact views, say **Potential dependents in indexed code**; do not call the result a complete blast radius.
 
@@ -23,7 +26,7 @@ The core produces graph data without a visualizer installed. Add a shared bounde
 type GraphSliceRequest = {
   projectId: string;
   checkoutId: string;
-  view: 'overview' | 'neighborhood' | 'knowledge';
+  view: 'overview' | 'file' | 'neighborhood' | 'impact' | 'knowledge'; // 'knowledge' only with phase 6
   root?: { path: string } | { symbolId: string } | { learningId: string };
   generation?: string;
   relations?: string[]; // validated enum per graph layer in the actual schema
@@ -45,7 +48,7 @@ The first protocol returns a full bounded slice and compact invalidation events,
 
 ## Public plugin API changes
 
-Add a versioned `oxy.codeMap` namespace to the public backend API. These proposed methods do not exist in the current `0.1.7` API:
+Add a versioned `oxy.codeMap` namespace to the public backend API (plugin API `0.2.0`). These proposed methods do not exist in the current `0.1.9` API:
 
 | Method / event                      | Contract                                                                                                                                                    |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -55,13 +58,35 @@ Add a versioned `oxy.codeMap` namespace to the public backend API. These propose
 | `onDidChange(listener)`             | Project/checkout, state, new generation/memory revision; invalidation only, no source bodies.                                                               |
 | `openSource(locator)`               | Resolve a current, authorized map locator and delegate to the existing editor navigation service. Reject excluded/escaped paths and stale mismatched spans. |
 
-Add `code-map.read` for structural queries and `code-map.knowledge.read` for memory contents; require both for mixed graph slices. The visualizer also needs existing `projects.read`. These permissions apply to API access and must be checked in both the facade and main dispatch, with project opt-in and disposal/revocation checked on every operation. They do not OS-sandbox a Node plugin backend.
+Add `code-map.read` for structural queries (phase 3); `code-map.knowledge.read` for memory contents is added only with phase 6, and mixed slices then require both. The visualizer also needs existing `projects.read`, and `git.read` for the phase-4 Changes view. These permissions apply to API access and must be checked in both the facade and main dispatch, with project opt-in and disposal/revocation checked on every operation. They do not OS-sandbox a Node plugin backend.
 
 The plugin obtains checkout IDs from the public API; it cannot invent a worktree path, enable indexing by querying, or fall back to the active project when a selected checkout disappears. On disabled maps, show a core settings link. Add documented core commands for opening Code Map settings, the Learnings manager, and a live task-context receipt, with validated project/checkout/learning/receipt IDs; extend the existing command allowlist rather than using private renderer IPC. Receipt queries obey the historical-availability and revocation contract in [learning and context](learning-and-context.md#agent-tools-and-task-context-assembly); an expired receipt displays an explicit unavailable state.
 
 Do not request `mcp.tools`, terminal read/write permissions, or file-read permissions for the bundled visualizer. Core owns agent tools and source reads. Do not route through the MCP HTTP endpoint or expose its bearer token to the iframe. UI preferences such as filters, zoom, and pinned positions belong in plugin storage; code/knowledge remains in core stores. Disabling/uninstalling the plugin must not delete them.
 
 Integration work touches `packages/plugin-api/index.d.ts` and changelog, `src/shared/domain/plugin.ts`, new shared schemas, `src/plugin-host/api.ts`, `src/main/services/plugins/plugin-host-service.ts`, and event delivery/host contracts. Verify actual source locations before implementation. Use `@oxytocin/plugin-sdk` view requests, validate every message, and publish capability/version handling for older engines.
+
+## Screen layout
+
+```text
+┌ Code Map — Oxytocin · main checkout · Ready (generation 42, 2 s ago) · 2,064 files ───────────────┐
+│ [Search files and symbols…]  View: (Overview|File|Neighborhood|Changes)  Relations ▾  Depth 1 ▾   │
+├───────────────────────────────────────────────────────────────┬──────────────────────────────────┤
+│                                                               │ src/main/hosts/hosts.ts           │
+│   ┌ src/main ───────┐        ┌ src/shared ──────┐             │ file · TypeScript · 160 lines     │
+│   │ hosts  services │ ─128─▶ │ rpc  domain ipc  │             │ Imports 9 · Imported by 14        │
+│   └─────────────────┘        └──────────────────┘             │ Exports: Hosts, SupervisedHost    │
+│            │ 42                       ▲ 77                    │ [Open in editor] [Neighborhood]   │
+│            ▼                          │                       │ Evidence: import at line 3 …      │
+│   ┌ src/code-map-host ┐      ┌ src/renderer ┐                 │                                   │
+│   └───────────────────┘      └──────────────┘                 │                                   │
+├───────────────────────────────────────────────────────────────┴──────────────────────────────────┤
+│ Showing 38 of 412 nodes (limit) · 3 unresolved imports · [List view] [Fit] [Back]                  │
+└────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The header always names project, checkout, state and generation; the footer states truncation and coverage. The list
+view replaces the canvas with an accessible table of the same slice (node, kind, relation, direction, evidence).
 
 ## Interaction and lifecycle
 

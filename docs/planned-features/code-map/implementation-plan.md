@@ -1,149 +1,346 @@
 # Code Map implementation plan
 
-This is a future execution brief. The current research task changes documentation only. Re-read root `CLAUDE.md` and inspect current source before implementation; paths below are integration targets, not permission to bypass current architecture.
+Execution plan for the [requirements](requirements.md). It replaces the A/B/C milestone plan of round two (see
+[research round three](research-round-3.md) for what changed). Nothing is implemented yet. Before each phase, re-read
+`CLAUDE.md`, check the current source against the paths below (they were verified at `cdee9fe`, 0.9.9) and update this
+plan if the code has moved.
 
 ## Delivery rules
 
-- Implement original code and fixtures; use the upstream research to understand behavior, not as a copying task.
-- Work on `main` under repository rules. Do not introduce rollout flags. Per-project opt-in is the requested product behavior.
-- Steps 1–4 form **milestone A — structural map**: enable, index, update, query through MCP, inspect status, disable, recover. Step 5 delivers **B — self-learning context**, and step 6 delivers **C — visualizer plugin**. A is independently useful; the requested self-learning product is not complete until B is delivered. Internal preparatory commits may be small, but do not release a visible nonfunctional switch.
-- Keep parser and retrieval code outside main, shared contracts free of Node/Electron APIs, and every boundary validated. Every new subscription/job has disposal and cancellation behavior.
-- For implementation commits, follow the repository's checks, relevant E2E, build/start, changelog, attribution, and push workflow. Do not add predicted savings to UI copy.
+- Work on `main`; Conventional Commits with scope `code-map` (`feat(code-map): …`, `test(code-map): …`); `npm run check`,
+  the relevant E2E suites, build and start green before every commit; CHANGELOG `## [Unreleased]` entry for every
+  user-visible step; push.
+- **No feature flags.** Internal commits that add code without any UI (host, extractor, writer) are allowed because they
+  change nothing visible. The Code Map tab appears only in the commit that makes the whole phase-1 loop work.
+- Every phase ends in a complete, usable state and can be released on its own.
+- Architecture: parsing and file I/O only in the new Code Map host; main orchestrates; renderer and plugins get bounded
+  results; zod on every IPC/RPC/file boundary; `Disposable` for every subscription and timer; no sync I/O in main.
+- Original code and fixtures. Trail-Code is a behavioural reference only (MIT, attribution kept in the research).
+- No savings claims in UI/CHANGELOG before the phase-4 evaluation.
 
 ```mermaid
 flowchart LR
-  S1[1. Parser and packaging spike] --> S2[2. Core index]
-  S2 --> S3[3. MCP and checkout identity]
-  S3 --> S4[4. Settings and release A]
-  S4 --> S5[5. Memory and context: B]
-  S4 --> S6[6. Public API and visualizer: C]
-  S5 --> Overlay[Knowledge and task overlays in C]
-  S6 --> Overlay
+  P0[0. Spike: parser + packaging] --> P1[1. Map on disk + background updates]
+  P1 --> P2[2. Agent tools over MCP + worktrees]
+  P1 --> P3[3. Visualizer plugin]
+  P2 --> P4[4. Insights + agent evaluation]
+  P3 --> P4
+  P4 --> P5[5. More languages]
+  P4 -.owner decision Q1.-> P6[6. Learnings]
 ```
 
-Recommended order is A, B, C so context value is established before visual polish. C's structural views can be built after A; their core query API must not depend on memory being enabled. No calendar estimates are asserted before the packaging and API spikes.
+Phases 2 and 3 are independent after phase 1 and may be swapped; the recommended order is 2 then 3, because agent
+benefit is the primary goal (G1) and phase 3 reuses phase 2's query engine.
 
-## 1. Prove the parser and package boundary
+## Phase 0 — parser and packaging spike
 
-Dependencies: none. Output: a documented engineering decision and a packaged parser fixture.
+Goal: decide the parser runtime with measurements. No product change; the output is a results file
+`docs/planned-features/code-map/results/<date>-parser-spike.md` and a prototype script under `scripts/` that is deleted
+(or turned into the phase-1 benchmark) afterwards.
 
-- Prototype the pinned WASM runtime and JS/TS/TSX grammars in a utility process. Use original fixtures with imports, shadowing, re-exports, arrow functions, JSX, Unicode, syntax errors, and large files.
-- Compare cold start, parse throughput, memory, and bundle size in development and packaged Windows builds, including non-ASCII paths and a machine without a compiler/toolchain. Disable network during the packaged test.
-- Audit all shipped grammar/runtime licenses and hashes. Resolve runtime/grammar ABI compatibility and asset lookup in ASAR/resources. Record versions and reproducible grammar generation provenance.
-- Decide WASM versus native based on measurements. If WASM misses the targets in [validation](validation.md), first profile extraction and serialization before introducing native modules.
-- Define source offset conversion and cache-version inputs. Freeze initial supported syntax and explicitly unresolved forms.
+Tasks:
 
-Likely files: `electron.vite.config.ts`, `electron-builder.yml`, `package.json`, lockfile, third-party notices, `src/code-map-host`, build scripts, TypeScript and ESLint boundaries.
+1. Prototype `web-tree-sitter` with `tree-sitter-typescript` (TS + TSX) and `tree-sitter-javascript` WASM grammars inside an
+   Electron `utilityProcess`, loading `.wasm` files from the build output (dev) and from `resources/` / ASAR (packaged).
+2. Prototype the same extraction with the TypeScript compiler API (`ts.createSourceFile`, syntax only) as the fallback.
+3. Measure on Oxytocin itself and on a generated 10,000-file fixture (`scripts/make-fixtures.ts` can host the generator):
+   cold parse throughput, memory, bundle size, startup time; dev and packaged Windows build; offline; path with spaces and
+   non-ASCII characters; no compiler toolchain on the machine.
+4. Check exact versions, licenses (`npm run licenses:check`), ABI pairing of runtime and grammars, and whether grammars are
+   published as prebuilt `.wasm` or must be built (`tree-sitter build --wasm`, then committed under `resources/code-map/`
+   with provenance).
+5. Decide: Tree-sitter WASM (recommended: one framework for phase-5 languages) or the TS compiler API for TS/JS. Record
+   numbers and the decision in the results file.
 
-Exit: packaged offline fixture passes on Windows; no runtime download, toolchain, or project command execution; no parser work on main. Record actual numbers and remaining gaps.
+Exit: a packaged Windows build parses the fixture offline; numbers recorded; decision written down. If WASM misses NFR-1
+by more than 2×, profile before switching; if still missing, use the TS compiler API for TS/JS and keep Tree-sitter for
+phase 5.
 
-## 2. Build the deterministic index and lifecycle
+## Phase 1 — map on disk with background updates (first release)
 
-Depends on 1. Output: a supervised service with a stable internal query contract.
+User-visible result: in Project settings → Code Map the user enables Code Map; `.oxy/` is created and ignored by Git; the
+map builds in the background and stays current; `MAP.md` and `graph.json` are available to every agent; status, pause,
+rebuild, delete and copyable agent instructions work. Covers FR-EN, FR-DIR, FR-BLD-1…12, FR-UPD-1…7, FR-AG-1, FR-AG-6,
+FR-ST.
 
-- Add `src/shared/domain/code-map.ts` schemas and `src/shared/rpc/contracts/code-map-host.ts` for configure/remove/status/query/rebuild/pause and compact status events. Include errors, generation metadata, coverage, and cancellation semantics. Reserve explicit layer/provenance discrimination, without implementing unused memory abstractions in A.
-- Add `src/code-map-host/{index,enumerate,watch,scheduler,extract,resolve,store,query}` modules as needed; avoid precreating abstraction layers without callers.
-- Add `src/main/services/code-map/code-map-service.ts` to own checkout registrations and host lifecycle. Register through the app's existing service/bootstrap pattern; inspect actual bootstrap location before editing.
-- Implement per-file hashed extraction reuse, full relation resolution, immutable snapshot publication, corruption recovery, budgets, and cleanup. Implement watcher-first initialization and event-sequence tracking.
-- Use saved working-tree contents, including untracked files, rather than HEAD. Apply ignores, file caps, canonical-path containment, and nested-repository boundaries consistently to enumeration and query paths.
-- Implement explicit freshness modes and status/error envelopes. Ensure restart reattaches enabled projects and reconciles before latest queries.
+### 1.1 Shared contracts (internal commit)
 
-Exit: cold and incremental graphs are equivalent for the same tree; rapid edits/deletes/renames/branch changes produce no dangling edges; restart and interrupted writes recover; non-Git projects and Git-disabled projects work; selected source excerpts never knowingly mismatch their snapshot.
+- `src/shared/domain/code-map.ts` (new): `CodeMapSettingsSchema` (`enabled`, `excludedPaths`), `CodeMapStateSchema`,
+  `CodeMapStatusSchema` (state, progress, counts, coverage, last update, size, error, owner), `CodeMapGraphSchema` and
+  `CodeMapManifestSchema` (the file formats of [oxy-directory](oxy-directory.md)), diagnostics schema.
+- `src/shared/domain/project.ts`: `ProjectSettingsSchema.codeMap` optional (absent = disabled).
+- `src/shared/rpc/contracts/code-map-host.ts` (new): methods `checkout:configure` (root, mode `project`/`worktree`,
+  exclusions, git path), `checkout:remove`, `checkout:rebuild`, `checkout:pause`, `checkout:resume`,
+  `checkout:deleteData`, `checkout:status`, `checkout:diagnostics`; events `checkout:status` (compact, throttled to 4/s).
+  Query methods are added in phase 2.
+- Tests: schema defaults, old `projects.json` without `codeMap` loads, round-trip of graph/manifest fixtures.
 
-## 3. Connect MCP and every supported checkout context
+### 1.2 Code Map host skeleton (internal commit)
 
-Depends on 2. Output: agents can discover and use bounded structural context.
+- `src/code-map-host/index.ts`: bootstrap like the other hosts (port RPC, health ping, logging).
+- `src/main/hosts/hosts.ts`: `codeMapHost` entry (`HostEntry` union, `Oxytocin Code Map Host`, inspect port 9235),
+  started lazily by the service when the first checkout is configured, stopped when none remain.
+- `src/main/app/paths.ts` `hostEntry` union, `electron.vite.config.ts` input `codeMapHost`, `eslint.config.mjs` import
+  boundaries (host may import `@shared` only), `tsconfig.node.json` include, WASM asset copying (phase-0 layout),
+  `electron-builder.yml` (`resources/code-map/*.wasm` or `asarUnpack` per spike result).
+- After the host starts, main lowers its priority (`os.setPriority(pid, os.constants.priority.PRIORITY_BELOW_NORMAL)`),
+  with a test of the call on the host process handle.
+- Tests: `utility-host`-style supervision test (restart, health), packaging test in `scripts/packaging.test.ts` that the
+  host bundle and grammars are present.
 
-- Add a dedicated `src/main/services/mcp/code-map-tools.ts` builder rather than expanding the large core-tools file indefinitely. Inject service dependencies into `mcp-hub.ts`; reuse registry policies and call logs.
-- Implement the four tools in [design](design.md), argument/output validation, response budgets, error codes, and cancellation. Add an availability predicate analogous to resource tools without pretending Code Map is a database resource.
-- Add a short conditional MCP initialization brief and capability descriptions. Keep the tool descriptions useful for already-connected sessions. Reuse client configuration export; test generic HTTP MCP access without requiring a new CLI installer.
-- Implement strict map-specific checkout resolution. Do not globally change existing core tool project-selection behavior as an incidental cleanup.
-- Inspect `src/main/services/ensemble/ensemble-service.ts`, `ensemble-tools.ts`, and the Hub bridge. Extend authenticated role context with the actual worktree root/identity where needed. Explicitly bridge read-only map tools and verify no selector can escape that checkout.
-- Stop and revoke map access when a project is disabled or a task/worktree disappears. Do not return the main checkout map as a fallback for a missing worktree map.
+### 1.3 `.oxy` directory, `.gitignore`, writer (internal commit)
 
-Exit: tests cover two projects and two divergent worktrees; queries select the requested code even while another project is active; authenticated Ensemble roles cannot query a sibling checkout; disabled maps reject direct calls even if cached tool definitions remain in the client.
+- `src/code-map-host/store/oxy-dir.ts`: create `.oxy/`, `.oxy/.gitignore`, `.oxy/README.md`, `code-map/`; containment
+  (real paths, symlink refusal); `owner.lock` with heartbeat and takeover.
+- `src/code-map-host/store/gitignore.ts`: pure `ensureOxyIgnored(text): string | null` (detect existing entry, preserve
+  EOL/BOM/final newline) + the guarded file update; skipped for worktrees and non-Git folders.
+- `src/code-map-host/store/writer.ts`: atomic temp + rename with Windows retries, publication order, manifest/graph hash
+  validation on start, temp cleanup, cache pruning, size accounting.
+- `src/workspace-host/git/repo-watcher.ts`: always ignore `.oxy` (next to `ALWAYS_IGNORED_IN_GIT`), independent of
+  `git.ignoredFolders`.
+- Tests (unit-node): every `.gitignore` case (missing file, CRLF, BOM, no final newline, entry variants, symlink,
+  subfolder project), lock takeover, interrupted publication (kill between writes) leaves a readable last good graph,
+  `repo-watcher` emits no `fs` refresh for `.oxy` writes.
 
-## 4. Complete project settings and first-release verification
+### 1.4 Enumeration, watching, scheduling (internal commit)
 
-Depends on 2–3. Output: a complete usable first release.
+- `src/code-map-host/enumerate.ts`: `git ls-files -z --cached --others --exclude-standard` (with `--no-optional-locks`)
+  for Git folders, a gitignore-aware walk for non-Git folders; built-in and user exclusions, secret-name filter, binary
+  sniffing (NUL byte in the first 8 KiB), 2 MiB cap; nested repositories/submodules as boundaries; sorted output.
+- `src/code-map-host/watch.ts`: `@parcel/watcher` subscription registered **before** the initial scan; events buffered
+  with a sequence number; overflow/error → reconciliation.
+- `src/code-map-host/scheduler.ts`: debounce 300 ms / max 2 s; periodic reconciliation (60 s active / 10 min inactive /
+  30 min full hash audit, FR-UPD-3); triggers for start, focus/resume (`app` events forwarded by main), `.gitignore`/
+  `tsconfig`/`package.json`/exclusion changes, HEAD/index changes; one build per checkout; global queue with active
+  project first; batch size bounded so health pings stay responsive.
+- `src/code-map-host/fingerprint.ts`: stat fingerprint (size, mtime, inode/file id) + SHA-256 content hash.
+- Main forwards “active project” and “projects with running terminals” hints (already known to the terminal/activity
+  services) to the host.
+- Tests: scheduler with fake timers (debounce, max delay, coalescing a 5,000-file branch switch into one pass, no
+  rebuild loop when idle), enumeration fixtures (ignored, untracked, nested repo, secrets, binary, large), integration test
+  with real filesystem events (`tests/integration/code-map-host.test.ts`).
 
-- Extend `ProjectSettingsSchema`, project-settings draft/patch helpers, and their tests. Update all alternate settings writers so new fields round-trip correctly.
-- Add Code Map tab/status UI, progress, coverage and diagnostics, rebuild/pause/cache actions, exclusions, and copyable instructions. Use CSS tokens and existing settings controls. Wire IPC through channels/contracts/router/preload, with sender validation.
-- Verify lifecycle when switching projects, restarting the app, changing root, disabling mapping during a query, and disabling MCP while keeping local indexing enabled.
-- Run the correctness and packaged smoke matrix in [validation](validation.md), and the repository's `npm run check`, `npm run build`, and relevant Playwright suites. Add feature-specific E2E tests and run existing project-settings, MCP Hub, Ensemble, and host tests affected by the change.
-- Update CHANGELOG only for the implemented behavior, dependency notices, user documentation, and the feature status in this directory. Record measured limits and unresolved coverage honestly.
+### 1.5 Extraction and resolution (internal commits, one per concern)
 
-Exit: the acceptance checklist is green; terminal/Git responsiveness remains within measured targets; users can enable, observe, use, and disable the feature without manually modifying their repository.
+- `src/code-map-host/parse/runtime.ts`: grammar loading and parser pool (from phase 0).
+- `src/code-map-host/extract/typescript.ts`: TS/TSX/JS/JSX/MJS/CJS → file record (symbols with spans and signatures,
+  imports/exports incl. type-only and re-exports, call sites with callee expressions, heritage clauses). Offsets
+  converted to 1-based lines / 0-based UTF-16 columns.
+- `src/code-map-host/extract/files.ts`: file-only records for other text files (language from
+  `src/shared/utils/language.ts`, line count).
+- `src/code-map-host/resolve/modules.ts`: relative paths, extension/`index` lookup, `tsconfig`/`jsconfig` `baseUrl`/
+  `paths`/`extends` (parsed as JSONC data), npm workspaces from `package.json`, external packages as `package` nodes.
+- `src/code-map-host/resolve/bindings.ts`: lexical scopes and shadowing, imported bindings, `this`/class member calls,
+  namespace imports; `heuristic` only for explicitly marked fallbacks; everything else `unresolved` with a reason.
+- `src/code-map-host/graph/build.ts`: assemble records → groups, nodes, edges; deterministic IDs and sort; limits.
+- Fixtures: `tests/fixtures/code-map/*` small original repositories with expected graphs (`expected.json` reviewed by
+  hand), covering shadowing, same-named functions, re-export chains, path aliases, workspaces, CRLF/BOM/Unicode, syntax
+  errors, cycles.
+- Tests: precision/recall per fixture, **determinism**: shuffled enumeration, cold vs incremental after edits/deletes/
+  renames, Windows-style paths and CRLF produce byte-identical `graph.json` (runs on the Windows CI job and the
+  `full-tests` matrix).
 
-## 5. Deliver self-learning context (milestone B)
+### 1.6 `MAP.md` (internal commit)
 
-Depends on A. Output: a new session can retrieve a useful finding from an earlier session, with its origin, evidence, and applicability; the user can correct or remove it without the visualizer.
+- `src/code-map-host/map-md.ts`: renderer per [oxy-directory](oxy-directory.md#mapmd), budget 32 KiB, whole-line
+  truncation, deterministic ranking.
+- Tests: golden files for fixtures, budget enforcement, no source bodies/comments, determinism.
 
-### 5.1 Durable storage and applicability
+### 1.7 Main service and IPC (internal commit)
 
-- Implement the schemas and state machine in [learning and context](learning-and-context.md). Keep derived graph storage separate from durable learning records, revision history, evidence indexes, and optional scope promotion.
-- Add host-owned memory store/admission/applicability modules, version checks, atomic mutation, bounded recovery, expected-revision conflicts, idempotency, and capacity handling. Define an explicit migration path; do not reuse discard-and-rebuild cache migration for memory.
-- Implement evidence hashing and reverse invalidation for indexed code plus explicitly referenced allowed documents/config files. Test races between graph publication, learning submission, and context reads.
-- Keep worktree-local records isolated; user-promoted records get independent applicability in each checkout. Add no automatic learning merge on Git branch/task merge.
+- `src/main/services/code-map/code-map-service.ts` (new): reads `settings.codeMap` from the project service, configures/
+  removes checkouts on enable/disable/root change/project removal, caches status, emits status to the renderer, restarts
+  configuration after a host restart, forwards activity hints. Registered in the main bootstrap next to the other
+  services.
+- IPC: channels in `src/shared/ipc/channels.ts` (`codeMap:getStatus`, `codeMap:rebuild`, `codeMap:pause`,
+  `codeMap:resume`, `codeMap:deleteData`, `codeMap:getDiagnostics`, event `codeMap:status`), zod contracts in
+  `contract.ts`/`events.ts`, handlers via `src/main/ipc/router.ts`, preload bindings on `window.oxy`.
+- Tests: service lifecycle with a fake host (enable → configure, disable → remove, root change, host restart re-sends
+  configuration, project removal), IPC validation rejects malformed payloads.
 
-Exit: interrupted writes preserve durable knowledge; stale evidence removes eligibility before reuse; cache deletion leaves memory intact; forget removes content from recovery copies and derived indexes; concurrent corrections cannot silently overwrite each other.
+### 1.8 UI (the user-visible commit of phase 1)
 
-### 5.2 Retrieval and write tools
+- `src/renderer/src/features/projects/ProjectSettingsDialog.tsx`: `code-map` tab; `project-settings-model.ts` draft
+  round-trips `codeMap` (tests that saving any other tab keeps it).
+- `src/renderer/src/features/projects/settings/CodeMapTab.tsx` (new): switch + confirmation dialog (FR-EN-2), status
+  block, progress, coverage, size, MCP availability (from the existing MCP settings), Pause/Resume, Rebuild, Delete map
+  data (confirm), exclusions editor, diagnostics list, **Copy agent instructions**, “Open MAP.md” (in Oxytocin's editor).
+- `src/renderer/src/features/projects/ProjectItem.tsx`: small status indicator (CSS tokens only), tooltip, click opens the
+  tab.
+- Project removal dialog: one line that `.oxy/` stays in the folder.
+- Copyable instructions (original wording, English):
+  > This project has an Oxytocin Code Map. Start by reading `.oxy/code-map/MAP.md` for the layout, entry points and key
+  > APIs. Use `.oxy/code-map/graph.json` (or the `oxy_*` Code Map tools when available) to find symbols, imports and
+  > callers before broad searches. The map covers saved files and may lag a few seconds; always read current source
+  > before editing, and fall back to normal search when the map has no answer.
+- E2E `tests/e2e/code-map.spec.ts`: enable on a fixture project → confirmation → `.oxy/` + `.gitignore` entry → Ready →
+  `graph.json` has expected symbols → edit + save → graph and `MAP.md` updated → Pause (edit not applied) → Resume
+  (applied) → Rebuild → disable (no further updates) → Delete map data. Second test: non-Git folder (no root
+  `.gitignore` created). Extend the project-settings E2E for round-tripping.
+- CHANGELOG (Added): “**Code Map:** enable it in Project settings → Code Map to keep a local, deterministic map of the
+  project's code in `.oxy/` (ignored by Git). It updates in the background while Oxytocin runs. Agents can read
+  `.oxy/code-map/MAP.md`; copy ready-made agent instructions from the tab. TypeScript and JavaScript symbols; other files
+  appear as files.”
 
-- Add the three B tools with distinct read/write policies and concise discovery. Reuse authentication, cancellation, strict selection, and error handling. Explicitly extend Ensemble's allowlist and derive proposal origin/scope from the authenticated role.
-- Implement bounded context assembly with source/memory allocation, relevance reasons, layer-specific provenance, and a pinned code generation/memory revision. Add lexical/anchor memory retrieval before any embedding or graph-ranking experiment.
-- Make generic MCP origin metadata honest: neither a session label nor terminal header proves author identity. Bind feedback receipts to the available context and reject expired/cross-checkout references.
-- Extend the copyable agent guidance: request context when useful, read source, propose only reusable evidence-backed findings, and report stale/incorrect memory. Do not require one learning per task or force a stop hook.
+### 1.9 Verification before release
 
-Exit: two independent client sessions complete query → work → proposal → reuse → changed evidence → suppression/correction; offline fake-client integration is deterministic. Run manual interoperability checks with at least two supported MCP clients and record client versions, discovery behavior, and observed tool use without claiming automatic compliance.
+- Performance experiment of [validation](validation.md#performance-experiment) on the 10,000-file fixture and Oxytocin
+  itself (NFR-1…6), results in `results/<date>-phase-1.md`.
+- Packaged Windows smoke: offline, spaces/non-ASCII path, no toolchain, host starts, grammars load.
+- Dogfood on Oxytocin's own repository for at least a few days.
 
-### 5.3 Complete controls and evaluate learning
+Exit: phase-1 checklist in [validation](validation.md#phase-1-acceptance-checklist) green.
 
-- Add off/review/automatic preferences with round-trip tests, a basic core Learnings manager, proposal/review details, scope promotion, export, delete/forget, and memory status distinct from index status.
-- Give the user a clear explanation of what the selected mode saves and reuses. No transcript collector, model credentials, hidden inference job, or Usage Monitor internal dependency is introduced.
-- Run B's adversarial, durability, worktree, and multi-session evaluation matrix. Separate capture cost, retrieval cost, and subsequent-task benefit. Tune admission/relevance using training fixtures, not held-out evaluation tasks.
-- Update user documentation and CHANGELOG for actual B behavior. Do not market A alone as self-learning or report reuse counts as tokens saved.
+## Phase 2 — agent tools over MCP and worktree maps
 
-Exit: the B acceptance checklist in [validation](validation.md) passes. If automatic admission fails its quality gate, fix or constrain the policy before shipping automatic mode; review-only memory remains an independently useful outcome but does not satisfy automatic-mode acceptance.
+User-visible result: agents connected to the Oxytocin MCP Hub get five Code Map tools with fresh, bounded answers;
+Ensemble/Task worktrees have their own maps; the instruction block can be inserted into `CLAUDE.md`/`AGENTS.md`. Covers
+FR-AG-2…8, FR-UPD-8, FR-WT-1…2.
 
-## 6. Deliver the visualizer plugin (milestone C)
+### 2.1 Query engine in the host
 
-Depends on A and stable bounded graph queries. B is required only for knowledge/task-context overlays. Output: an inspectable graph using the public plugin API, with no duplicate index or requirement to keep the panel open.
+- `src/code-map-host/query/search.ts`: in-memory index per checkout (identifier splitting of camelCase/snake_case, path
+  segments, signature terms, exact-name/path boosts, test files ranked lower, diversity across files); deterministic
+  tie-breaking.
+- `src/code-map-host/query/outline.ts`, `query/relations.ts` (bounded BFS with visited caps 2,000 nodes / 5,000 edges,
+  provenance filter, direction), `query/repo-map.ts` (`MAP.md` sections for a `pathPrefix`), `query/freshness.ts` (drain
+  events, metadata probe, wait ≤ 2 s, `latest` / `allow-stale` / `verified` modes, `INDEX_UPDATING` result).
+- Excerpts are read from disk only after re-checking the file hash.
+- RPC methods `query:*` in `code-map-host.ts` with cancellation.
+- Tests: ranking on labelled fixtures (recall@8), bounds and truncation flags, freshness races (query during build,
+  edit right before query), cancellation of one caller does not cancel a shared refresh.
 
-1. Add graph aggregation/slice operations and verify that every edge/count comes from the selected generation. Freeze hard node/edge/byte caps and generation-change behavior before UI integration.
-2. Add `oxy.codeMap`, permission enum/descriptions, facade/main enforcement, subscriptions, cancellation, source navigation, public type declarations, API changelog/version, and capability discovery. Extend documented core navigation commands. Test an unauthorized third-party fixture as well as the built-in plugin.
-3. Prototype the rendering candidates in the actual plugin iframe using the [visualizer experiment](visualizer.md#rendering-decision-and-experiment). Record versions, licenses, CSP/offline behavior, and performance; choose one renderer based on results.
-4. Create `plugins/code-map-visualizer` using public APIs only. Deliver Overview, Neighborhood, search/filter, checkout selector, evidence detail, source navigation, keyboard/list alternative, truncation/coverage, and stable refresh behavior. Add B overlays when available.
-5. Exercise hide/show/dispose, plugin disable/reload, map disable, permission change, rapid project switches, removed worktrees, and late replies. Verify the agent tools still work with the plugin disabled.
-6. Add the plugin to the repository's built-in discovery/build/package flow, update manifests/docs/notices, run relevant plugin/E2E checks, and repeat the packaged Windows smoke test.
+### 2.2 MCP tools
 
-Exit: C's acceptance checklist passes; one core index serves both MCP and the plugin; source locators remain scoped; large projects produce bounded useful views; no measurable terminal regression outside the stated target.
+- `src/main/services/mcp/code-map-tools.ts` (new): `oxy_code_map_status`, `oxy_repo_map`, `oxy_find_code`,
+  `oxy_file_outline`, `oxy_code_relations` ([design](design.md#agent-api)); zod input/output; character budgets; read-only
+  policy; listed only when at least one project has Code Map enabled (tool-list change notification on change); every call
+  re-checks that the selected project is enabled.
+- `src/main/services/mcp/caller-context.ts`: Code Map-specific strict checkout resolution (terminal mapping → explicit
+  `cwd` → explicit `project`; never the active UI project; conflicting selectors rejected).
+- `src/main/services/mcp/mcp-hub.ts`: wire the builder; append a short Code Map paragraph to the initialization
+  instructions when Code Map is enabled for the caller's project.
+- Tests: `code-map-tools.test.ts` (validation, budgets, disabled project denied even with a cached tool list, wrong
+  project never answered), extend `tests/integration/mcp-hub.test.ts` with real HTTP calls against a fixture map.
 
-## 7. Improve based on evidence
+### 2.3 Worktrees
 
-Each item is a separate follow-up with its own usable outcome:
+- `src/main/services/ensemble/ensemble-service.ts`: when a worktree is ready (`workspace-ready`) and the project has Code
+  Map enabled, configure a `worktree` checkout (no root `.gitignore` edit); remove it when the worktree is removed.
+- Ensemble MCP bridge (`ensembleBridgeTools` in `mcp-hub.ts`, `ensemble-tools.ts`): allowlist the read-only Code Map
+  tools; the checkout is derived from the authenticated role's worktree, never from caller-supplied selectors.
+- Tests: two projects + two divergent worktrees; a role cannot query a sibling checkout; removed worktree → access denied.
+- Extend `tests/e2e/ensemble*.spec.ts` with a worktree map check.
 
-| Extension                                              | Start only when                                                                                                                       |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Python/Go and further languages                        | Real project demand exists and parser/resolver fixtures plus license/packaging checks are ready.                                      |
-| Semantic TS/LSP enrichment                             | Measured missed/incorrect relations justify lifecycle and memory cost.                                                                |
-| SQLite or incremental relation updates                 | Profiling shows JSON publication/full resolution is the limiting factor.                                                              |
-| Static Markdown export or managed instruction adapters | Agent clients demonstrably cannot use the existing MCP flow adequately; export staleness and file ownership are specified.            |
-| Graph-aware ranking                                    | Labeled retrieval tests improve beyond the lexical baseline without regressions across scopes.                                        |
-| Semantic memory search / embeddings                    | Lexical and anchor retrieval miss useful held-out learnings; quality gains justify model distribution, memory, and indexing cost.     |
-| Optional session-summary adapters                      | Clients demonstrably fail to submit useful proposals; data selection, retention, provider cost, and consent are specified separately. |
-| Architecture/document synthesis                        | Evidence-linked manual/derived groups are insufficient and generated claims pass correctness and invalidation evaluation.             |
-| Team export/import and synchronization                 | Scope, provenance, trust, conflict resolution, and deletion semantics are specified; local-only behavior remains usable.              |
+### 2.4 Instruction block
 
-Persistent local learnings and context assembly are required milestone B work, not items in this optional-extension table. Automated transcript mining, hosted collaboration, and autonomous model synthesis remain separate proposals. Optional extensions must not weaken the core freshness, evidence, or worktree contracts.
+- Code Map tab: **Add to CLAUDE.md** / **Add to AGENTS.md** / **Remove** — inserts the instruction text between
+  `<!-- oxytocin:code-map:start -->` and `<!-- oxytocin:code-map:end -->` (idempotent; preserves EOL; refuses symlinks
+  outside the root). The copyable text now also names the MCP tools.
+- Tests: unit tests of the insertion function; E2E click → file contains one block → Remove → file restored.
 
-## Execution checkpoints
+### 2.5 Release
 
-| Checkpoint              | Reviewable evidence required before continuing                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Parser/storage decision | Packaged parser result, grammar manifest/licenses, measured parse/memory numbers, original resolver fixtures.                         |
-| A release               | Structural acceptance, checkout isolation, packaged offline result, agent baseline and A comparison.                                  |
-| B release               | Admission/invalidation matrix, crash/delete semantics, two-session demo, longitudinal A versus B comparison including negative cases. |
-| C release               | Public API contract/version, permission tests, packaged renderer measurements, source-navigation and accessibility results.           |
+- CHANGELOG (Added): “**Code Map for agents:** agents connected to Oxytocin's MCP server get `oxy_find_code`,
+  `oxy_file_outline`, `oxy_code_relations`, `oxy_repo_map` and `oxy_code_map_status` for projects with Code Map. Answers
+  are bounded and say how fresh they are. Task and Ensemble worktrees get their own maps. Add the agent instructions to
+  `CLAUDE.md` or `AGENTS.md` with one click.”
+- E2E: deterministic fake MCP client (`tests/e2e/code-map.spec.ts`): query → edit → query sees edit → disable → denied.
 
-Record measurements in a dated results file alongside these documents when implementation begins, with repository revision, machine, client/model versions, fixtures, raw measurement locations, and failed cases. Do not replace proposed targets with invented results. This research change creates no runtime, plugin bundle, or production dependency.
+Exit: phase-2 checklist in [validation](validation.md) green; manual check with Claude Code and Codex CLI recorded
+(client versions, whether they discovered and used the tools).
+
+## Phase 3 — Code Map Visualizer plugin
+
+User-visible result: **Code Map** opens as a tab/panel and shows Overview, Neighborhood, File and Search views of the
+current map with source navigation. Covers FR-VIS-1…9, FR-VIS-13. Detailed UX in [visualizer](visualizer.md).
+
+### 3.1 Graph slices in the host
+
+- `src/code-map-host/query/slice.ts`: `overview` (folder groups with aggregated `imports` counts, expandable),
+  `neighborhood`, `file`; caps 150/300 default, 500/1,000 hard, 512 KiB payload; truncation reasons; every count from the
+  same generation; `SNAPSHOT_CHANGED` for expansions of an old generation.
+- Tests: aggregated edge counts equal underlying edges, caps, cycles, hubs, determinism of slices.
+
+### 3.2 Public plugin API (plugin API 0.2.0)
+
+- `packages/plugin-api/index.d.ts`: `oxy.codeMap` namespace — `listCheckouts(projectId)`, `status(ref)`,
+  `query(request, { signal })` (search / outline / relations / slice), `onDidChange(listener)` (invalidations only),
+  `openSource(locator)`; version bump to `0.2.0` and its CHANGELOG.
+- `src/shared/domain/plugin.ts`: permission `code-map.read` with description; `src/plugin-host/api.ts` facade and
+  `src/main/services/plugins/plugin-host-service.ts` dispatch, both checking the permission and the project's opt-in;
+  validated requests/results; cancellation; revocation on disable.
+- `docs/plugins/README.md`: document the namespace and permission.
+- Tests: unauthorized fixture plugin is rejected; disabled project rejected; outstanding request cancelled on disable.
+
+### 3.3 Renderer spike and plugin
+
+- Measure Cytoscape.js (+ a compound-capable layout such as fcose, if its license passes) against the
+  [rendering experiment](visualizer.md#rendering-decision-and-experiment) in the packaged plugin iframe; record versions,
+  licenses, CSP/offline behaviour and numbers in `results/<date>-renderer.md`. Sigma.js only if the measurements require
+  WebGL.
+- `plugins/code-map-visualizer/` (new, `@oxytocin/code-map-visualizer`, id `oxytocin.code-map-visualizer`, engine
+  `^0.2.0`, permissions `projects.read`, `code-map.read`): panel `codeMap.view` (`singleton: "project"`,
+  `showInAddMenu: true`), command `codeMap.open`; host backend relays bounded requests; view built with
+  `@oxytocin/plugin-sdk`, theme tokens, imperative graph updates (no React state per layout tick), list view, details
+  panel, search, filters, back/forward, stable positions across refreshes, request sequence + checkout identity to drop
+  late replies, layout stopped when hidden.
+- Core: “Open Code Map” in the Code Map tab and project context menu calls the plugin command when the plugin is enabled.
+- Build/package: built-in plugin discovery, `scripts/build-plugins.ts`, notices.
+- E2E `tests/e2e/code-map-visualizer.spec.ts`: open → overview shows fixture folders → search symbol → neighborhood →
+  open in editor at the right line → save an edit → view refreshes keeping positions → switch project → disable plugin →
+  MCP still answers. Keyboard-only list navigation.
+- CHANGELOG (Added): “**Code Map Visualizer:** explore a project's Code Map — folders and their dependencies, a file's
+  imports and importers, a symbol's callers and callees — and jump to the code.” Plus the plugin API 0.2.0 entry.
+
+Exit: phase-3 checklist in [validation](validation.md) green, measured terminal impact within NFR-4.
+
+## Phase 4 — insights and evaluation
+
+User-visible result: the visualizer helps review changes; benefits are measured. Covers FR-VIS-10…12, FR-WT-3, success
+metrics.
+
+- **Changes overlay:** the plugin combines `oxy.git` status (existing `git.read` permission) with a host query
+  `dependents(paths, depth)`; changed files highlighted, potential dependents shaded, list grouped by folder. For Task/
+  Ensemble, choose the worktree checkout and compare against its base.
+- **Impact view** for a node: incoming relations to depth 3 with “Potential dependents in indexed code” wording.
+- **Checkout selector** for active worktrees.
+- **Export** of the current view as SVG/PNG (Could).
+- **Agent evaluation** ([validation](validation.md#does-it-actually-help-agents)): ≥ 20 tasks, Code Map off vs on, same
+  agent/model, three repeats; tune `MAP.md` budget and tool descriptions on training tasks only; publish
+  `results/<date>-agent-evaluation.md` including negative cases. Only then may README/CHANGELOG describe measured benefits.
+
+## Phase 5 — more languages
+
+One release per language group, in the order of owner decision Q5 (proposed: Python, Go, Rust, C#, Java). Each needs a
+pinned grammar with license check, an extractor with its own fixtures (precision/recall, determinism), module resolution
+rules (for example Python packages/`sys.path`-free relative imports, Go modules, Cargo workspaces), coverage text in the UI
+and `MAP.md`, and a CHANGELOG line. No language ships with only file-level nodes presented as “supported”.
+
+## Phase 6 — learnings (pending owner decision Q1)
+
+If confirmed, implement the self-learning layer specified in [learning and context](learning-and-context.md) with these
+adjustments: storage under `.oxy/learnings/` (separate from `.oxy/code-map/`, never removed by **Delete map data** or
+**Rebuild**), memory mode per project (off/review/automatic), tools `oxy_task_context`, `oxy_propose_learning`,
+`oxy_learning_feedback`, a core Learnings manager, and the knowledge overlay in the visualizer. It is the only part of
+Code Map whose content comes from agents; it is never presented as deterministic.
+
+## Effort and risk overview
+
+No calendar estimate is given before phase 0. Relative size and main risks:
+
+| Phase | Relative size | Main risk                                                    | Gate                                       |
+| ----- | ------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| 0     | S             | WASM packaging in ASAR / performance                         | Packaged offline parse on Windows          |
+| 1     | XL            | Resolver correctness, determinism, non-interference           | Phase-1 checklist, performance experiment  |
+| 2     | M             | Checkout selection, freshness races                          | Two-project/two-worktree isolation tests   |
+| 3     | L             | Public API design, rendering dense graphs                    | Renderer experiment, permission tests      |
+| 4     | M             | Evaluation effort and honest reporting                       | Published evaluation                       |
+| 5     | M per language | Language-specific resolution                                 | Fixtures per language                      |
+| 6     | XL            | Admission and invalidation quality of agent-written learnings | [Validation B](validation.md)              |
+
+## Results files
+
+Record every measurement in `docs/planned-features/code-map/results/` with date, repository revision, machine,
+Electron/Node versions, fixture, raw numbers and failed cases. Targets in these documents stay targets until a results
+file replaces them with measurements.

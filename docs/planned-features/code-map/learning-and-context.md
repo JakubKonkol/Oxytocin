@@ -1,6 +1,8 @@
 # Learning and task context
 
-Proposed milestone B. The [structural design](design.md) supplies checkout selection, code generations, source spans, and freshness. This document defines durable knowledge and the loop that makes the complete feature self-learning. There is no background model service in this milestone.
+> **Status after round three (2026-10-18):** deferred to the optional phase 6 of the [implementation plan](implementation-plan.md), pending owner decision Q1 in the [requirements](requirements.md#11-open-questions-for-the-owner). If implemented, durable records live in `<checkout root>/.oxy/learnings/` instead of `<userData>/code-map-memory/`, next to (never inside) `.oxy/code-map/`, and are never removed by **Rebuild** or **Delete map data**. References below to milestones A and C mean phases 1–2 and 3–4. The rest of this document is kept as the specification for that phase.
+
+Formerly proposed milestone B. The [structural design](design.md) supplies checkout selection, code generations, source spans, and freshness. This document defines durable knowledge and the loop that makes the complete feature self-learning. There is no background model service in this milestone.
 
 ## Product behavior and a complete learning loop
 
@@ -97,7 +99,7 @@ Automatic reactivation after evidence changes requires a new proposal/revision w
 
 ## Worktrees, concurrency, and storage
 
-Store durable records under `<userData>/code-map-memory/<projectId>/`, separate from `<userData>/code-map/<checkoutKey>/`. The Code Map host is the single writer; main supplies validated locations and authorizes operations. Start with a versioned JSON state and atomic replacement, bounded to a proposed 2,000 live records / 32 MiB per project, including retained revisions. Preserve the last valid state for crash recovery; do not discard incompatible memory schemas as if they were a regenerable cache. Failed migrations leave the old data intact and memory unavailable with a recoverable error.
+Store durable records (round three: under `.oxy/learnings/`, see the status note at the top; originally proposed `<userData>/code-map-memory/<projectId>/`) separately from the structural map. The Code Map host is the single writer; main supplies validated locations and authorizes operations. Start with a versioned JSON state and atomic replacement, bounded to a proposed 2,000 live records / 32 MiB per project, including retained revisions. Preserve the last valid state for crash recovery; do not discard incompatible memory schemas as if they were a regenerable cache. Failed migrations leave the old data intact and memory unavailable with a recoverable error.
 
 Mutations use an expected revision and idempotency key. A conflict returns `REVISION_CONFLICT`; no last-writer-wins overwrites of two agents' corrections. Reject writes at capacity with pruning guidance; keep existing reads usable. Bound history and raw feedback separately; compact counters without removing current claims or audit origin. No silent eviction of user-reviewed knowledge to fit a cap.
 

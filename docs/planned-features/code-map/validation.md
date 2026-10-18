@@ -2,7 +2,7 @@
 
 The runtime feature has not been implemented or benchmarked. All thresholds below are proposed engineering targets; replace them with measured results during implementation.
 
-The structural matrix and first-release checklist apply to A. Additional sections below define B (self-learning context) and C (visualizer); A passing alone does not validate the whole proposed product.
+Phase mapping (round three): the structural matrix and the `.oxy`/determinism matrix apply to phases 1–2, the visualizer section to phases 3–4, and the “milestone B” sections only to the optional learnings phase 6. Requirement IDs refer to [requirements](requirements.md).
 
 ## Correctness and recovery matrix
 
@@ -31,11 +31,30 @@ The structural matrix and first-release checklist apply to A. Additional section
 
 Use original small repositories with expected relations to measure both precision and recall. Assert semantic graph equivalence while excluding generation timestamps. Add regression fixtures for every resolver bug rather than snapshotting the entire implementation output blindly.
 
+## `.oxy` directory and determinism matrix (phase 1)
+
+| Scenario                                                                     | Required outcome                                                                                                                                   |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enable in a Git project without `.gitignore`                                 | `.gitignore` created with the comment and `/.oxy/`; `.oxy/.gitignore` is `*`; `git status` shows only `.gitignore`.                              |
+| Existing `.gitignore` with CRLF, BOM, no final newline                        | Only the appended lines differ; style preserved byte for byte.                                                                                     |
+| `.gitignore` already contains `.oxy`, `.oxy/`, `/.oxy` or `/.oxy/`             | File unchanged.                                                                                                                                    |
+| Project is a subfolder of a repository                                        | Entry goes into the project folder's `.gitignore`; parent untouched.                                                                               |
+| Ensemble/Task worktree, non-Git folder                                        | No root `.gitignore` edit; `.oxy/.gitignore` present; worktree shows no Code Map change in `git status`.                                          |
+| `.gitignore` or `.oxy` is a symlink out of the project; read-only folder     | Refused with a visible error state; nothing written outside the project.                                                                           |
+| Code Map publishes while the Git panel is open                                | No Git status refresh or Code Map rebuild triggered by `.oxy` writes (FR-DIR-6).                                                                   |
+| Two Oxytocin instances on one project                                         | One owner writes; the other reads and says so; takeover after a stale heartbeat.                                                                  |
+| Same tree built twice, shuffled enumeration, cold vs incremental              | `graph.json` and `MAP.md` byte-identical (FR-BLD-1).                                                                                               |
+| Same tree on Windows (CRLF checkout, case-insensitive FS) and Linux (LF)      | Byte-identical outputs, except where file content (and therefore hashes) genuinely differs; CI compares the outputs of the Windows and Linux jobs. |
+| Map files scanned for absolute paths, user name, timestamps                   | None found in `graph.json`, `MAP.md` or cache records (FR-DIR-5).                                                                                  |
+| `MAP.md` on the 10,000-file fixture                                           | At most 32 KiB, sections in order, truncation markers, no source bodies or comments.                                                               |
+| Kill host between cache, graph, `MAP.md` and manifest writes                  | Next start serves the last consistent graph and rebuilds; no partial file is ever read as valid.                                                   |
+| Delete map data                                                               | Only `.oxy/code-map/` removed (and empty `.oxy/`); `.gitignore` line kept; nothing outside `.oxy` touched.                                        |
+
 ## Integration and E2E coverage
 
 Add meaningful tests to existing Vitest projects for extraction, resolution, scheduler races, cache publication, strict checkout selection, and tool budget enforcement. Integration tests should launch the host with real filesystem events and exercise MCP through the existing HTTP transport. Include a malformed IPC/RPC/file payload test at each new boundary.
 
-Add `tests/e2e/code-map.spec.ts` for project enable → ready → agent query → edit → updated result → disable, using isolated fixtures and a deterministic fake agent/MCP client. Extend existing settings and Ensemble suites for preference round-tripping and actual worktree selection. Do not require a paid model in CI.
+Add `tests/e2e/code-map.spec.ts` for project enable → confirmation → `.oxy` and `.gitignore` → ready → `graph.json`/`MAP.md` content → edit → updated result → pause/resume → disable → delete data (phase 1), and agent query through a deterministic fake MCP client (phase 2), using isolated fixtures. Add `tests/e2e/code-map-visualizer.spec.ts` in phase 3. Extend existing settings and Ensemble suites for preference round-tripping and actual worktree selection. Do not require a paid model in CI.
 
 Run `npm run check`, `npm run build`, the new suite and affected `project-settings`, `mcp-hub`, `ensemble`, and `ipc-hosts` suites. Add a packaged Windows smoke test verifying bundled grammars, offline operation, paths with spaces/non-ASCII characters, and startup without a system compiler. Exercise macOS/Linux on their supported CI environments before declaring cross-platform support.
 
@@ -69,7 +88,15 @@ Compare the same agent/model/version/settings with mapping disabled and enabled.
 
 Suggested benefit gate: at least 15% lower median uncached input tokens or exploration tool calls, with no observed correctness regression and no material median task-time regression. This small sample is directional evidence, not a statistical guarantee. Report dispersion, paired results, and tasks harmed by mapping; expand the sample before making marketing claims. Use Usage Monitor where it exposes the necessary fields, but verify measurement boundaries and keep external agent-run logs when needed. Never equate “characters not returned” with actual billed tokens saved.
 
-## Milestone A acceptance checklist
+## Phase 1 acceptance checklist
+
+- [ ] FR-EN, FR-DIR, FR-BLD-1…12, FR-UPD-1…7, FR-AG-1, FR-AG-6 and FR-ST implemented and covered by tests.
+- [ ] `.oxy` and determinism matrix green on the Windows CI job and the `full-tests` matrix.
+- [ ] Performance experiment recorded; NFR-1…6 met or documented with a decision.
+- [ ] Packaged Windows build works offline with bundled parsers, no toolchain.
+- [ ] Dogfooded on Oxytocin's own repository; CHANGELOG entry without savings claims.
+
+## Phase 2 acceptance checklist (structural tools; formerly milestone A)
 
 - [ ] Project opt-in, settings persistence, status, exclusion controls, rebuild/pause/clear/disable work.
 - [ ] JS/TS coverage and unresolved cases are documented; source spans are correct.
@@ -78,11 +105,11 @@ Suggested benefit gate: at least 15% lower median uncached input tokens or explo
 - [ ] Ensemble queries its authenticated checkout; no cross-worktree fallback.
 - [ ] App restart/crash/cache corruption recovery and resource limits pass.
 - [ ] Packaged Windows operation is offline and requires no additional toolchain.
-- [ ] No repository setup files or source files are changed by enabling/indexing/querying.
+- [ ] Apart from the `.gitignore` entry and `.oxy/`, no repository files are changed by enabling/indexing/querying; the instruction block is written only on explicit user action.
 - [ ] License notices, relevant tests, build/start checks, and measured performance results are recorded.
 - [ ] Agent outcome evaluation is recorded; benefits are described only to the extent supported by results.
 
-## Learning correctness and recovery (milestone B)
+## Learning correctness and recovery (optional phase 6, formerly milestone B)
 
 | Scenario                                                         | Required outcome                                                                                                                                                                   |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +156,7 @@ Initial B release gates: zero wrong-checkout or known-invalidated entries in det
 
 Always publish cases where memory increased cost or caused errors. If automatic admission fails, improve/constrain it and repeat the affected held-out evaluation with new uncontaminated fixtures. Do not hide failures behind a favorable pooled average or market reviewed memory results as evidence for automatic mode.
 
-## Visualizer and public API validation (milestone C)
+## Visualizer and public API validation (phases 3–4)
 
 Test the new public API with authorized and unauthorized fixture plugins, including a plugin with structural read permission but no knowledge permission. Ensure mixed projections do not leak knowledge through labels/counts when permission is absent. Test revocation/disable with an outstanding request, cancellation and stale generation errors, late view replies, root containment, and source-column conversion. New permissions constrain API calls; tests must not claim they sandbox arbitrary Node plugin code.
 
@@ -139,9 +166,9 @@ E2E: enable project → open visualizer → choose checkout → search/expand �
 
 Run the [renderer experiment](visualizer.md#rendering-decision-and-experiment) in a packaged Windows build offline, at default and hard slice limits. Record transferred bytes, layout time, interaction p95, memory retained after disposal, and terminal p95. Test graphics initialization failure with a usable list fallback. No background layout when hidden and no retained subscriptions after disposal.
 
-## Milestone B and C acceptance checklists
+## Phase 6 and phase 3 acceptance checklists
 
-B:
+Phase 6 (learnings):
 
 - [ ] Memory mode, manager, proposals, reviews, automatic eligibility, evidence, corrections, scope promotion, export, and deletion work without the plugin.
 - [ ] All three B tools validate both sides of the boundary, obey budgets/policies, and bind to the proper checkout.
@@ -150,7 +177,7 @@ B:
 - [ ] No transcript collection, automatic repository edits, or background provider calls occur.
 - [ ] Review and automatic modes have separate longitudinal results including capture overhead and harmful cases.
 
-C:
+Phase 3 (visualizer):
 
 - [ ] Public plugin API/version, capability checks, permissions, source navigation, and invalidation delivery are documented/tested.
 - [ ] Overview and Neighborhood are complete; Knowledge/Task context overlays are available only with B capabilities.
