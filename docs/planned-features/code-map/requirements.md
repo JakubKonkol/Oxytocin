@@ -1,6 +1,7 @@
 # Code Map — business requirements
 
-Status: requirements for implementation, derived from the owner's brief of 2026-10-18 and research rounds one to three.
+Status: requirements for implementation, derived from the owner's brief of 2026-10-18, the owner's answers to the open
+questions (same day, [section 11](#11-owner-decisions-on-the-open-questions)) and research rounds one to three.
 Nothing here is shipped. Where this document and older research disagree, this document and
 [research round three](research-round-3.md) win.
 
@@ -41,8 +42,8 @@ Business goals:
 
 Scenarios the feature must support end to end:
 
-- **S1 — Enable.** P1 opens Project settings → Code Map, turns it on and confirms. Oxytocin creates `.oxy/`, adds it to
-  `.gitignore`, and shows progress. A minute later (typical repository) the map is ready. P1 commits the `.gitignore` line.
+- **S1 — Enable.** P1 opens Project settings → Code Map, turns it on and confirms. The confirmation has **Keep `.oxy` out of Git** checked by default;
+  Oxytocin creates `.oxy/`, adds it to `.gitignore`, and shows progress. A minute later (typical repository) the map is ready. P1 commits the `.gitignore` line.
 - **S2 — Agent session.** P1 starts Claude Code in an Oxytocin terminal. The agent reads `.oxy/code-map/MAP.md` or calls
   `oxy_find_code`, goes straight to the right files, uses `oxy_code_relations` to check callers before changing a function,
   and reads only the source it needs.
@@ -57,25 +58,31 @@ Scenarios the feature must support end to end:
 
 ## 4. Scope
 
-**In scope (product v1 = phases 1–4 of the [implementation plan](implementation-plan.md))**
+**In scope (product = phases 1–6 of the [implementation plan](implementation-plan.md))**
 
-- Per-project opt-in, `.oxy/` directory and `.gitignore` handling.
+- Per-project opt-in, `.oxy/` directory, `.gitignore` handling (on by default, can be turned off).
 - Deterministic graph of files, folders, symbols and their relations, built by Oxytocin's own code (no AI).
-- Symbol-level extraction for TypeScript and JavaScript; file-level nodes for every other text file.
+- Full support (symbols, imports, calls) for **JavaScript/TypeScript and C#** in the first release; Go, Java and Python in
+  phase 5 ([languages](languages.md)); file-level nodes for every other text file.
 - Background build and continuous updates (watcher + periodic reconciliation + freshness check on query).
 - Agent access through `MAP.md` and MCP tools of the existing Oxytocin MCP Hub; copyable agent instructions.
 - Visualizer as a built-in plugin, with a public plugin API for the map.
 - Status, diagnostics and controls in Project settings.
 - Ensemble/Task worktrees get their own maps.
+- Self-learning context in phase 6: agents propose learnings with evidence, Oxytocin stores them in `.oxy/learnings/`,
+  checks whether they still apply and returns relevant ones with task context
+  ([learning and context](learning-and-context.md)). This is the only part whose content comes from agents; the map itself
+  stays deterministic.
 
-**Later (phases 5–6, separate decisions)**
+**Later (on demand)**
 
-- Symbol extraction for more languages (Python, Go, Rust, C#, Java first).
-- Self-learning context (agent-proposed learnings with evidence), see [learning and context](learning-and-context.md).
+- Rust, PHP and other languages ([languages](languages.md#plan-and-complexity)).
+- Team sharing of learnings beyond committing `.oxy` with the Git option turned off.
 
 **Out of scope**
 
-- Any AI/LLM use while building or updating the map (summaries, embeddings, classification).
+- Any AI/LLM use by Oxytocin itself while building or updating the map or learnings (summaries, embeddings,
+  classification, background model calls). Learnings are written by the user's own agents through MCP.
 - Uploading code or the map anywhere; team sync; cloud services.
 - Running project code, build scripts, package managers or language servers.
 - Indexing unsaved editor buffers; indexing while Oxytocin is closed.
@@ -92,7 +99,7 @@ Priority: **M** = must (release blocker for the phase), **S** = should, **C** = 
 | ID      | Requirement                                                                                                                                                                                                            | Prio | Phase |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----- |
 | FR-EN-1 | Project settings get a **Code Map** tab with an **Enable Code Map** switch. Code Map is off for existing and new projects until the user turns it on.                                                                  | M    | 1     |
-| FR-EN-2 | Turning it on shows a one-time confirmation that names what will happen: create `.oxy/` in the project folder, add `/.oxy/` to `.gitignore`, index saved files in the background.                                      | M    | 1     |
+| FR-EN-2 | Turning it on shows a one-time confirmation that names what will happen: create `.oxy/` in the project folder, add `/.oxy/` to `.gitignore` (checkbox **Keep `.oxy` out of Git**, checked by default), index saved files in the background.                                      | M    | 1     |
 | FR-EN-3 | Enabling starts the first build immediately; no agent session is needed.                                                                                                                                              | M    | 1     |
 | FR-EN-4 | **Pause updates / Resume updates** stops and restarts background work without deleting data; while paused, agents get explicitly stale answers only.                                                                 | S    | 1     |
 | FR-EN-5 | **Rebuild** discards the extraction cache and rebuilds from scratch; it is cancellable.                                                                                                                                | M    | 1     |
@@ -108,10 +115,11 @@ Details in the [`.oxy` directory specification](oxy-directory.md).
 
 | ID       | Requirement                                                                                                                                                                                                          | Prio | Phase |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----- |
-| FR-DIR-1 | Oxytocin creates `<project root>/.oxy/` with `.gitignore` (content `*`), `README.md` (what the folder is, that it is safe to delete) and `code-map/`.                                                                 | M    | 1     |
-| FR-DIR-2 | In a Git project, enabling appends `/.oxy/` (with a comment line) to `<project root>/.gitignore`, creating the file if needed, unless an equivalent entry already exists. Existing content, line endings, BOM and final newline are preserved. | M    | 1     |
-| FR-DIR-3 | Oxytocin never edits `.gitignore` in Ensemble/Task worktrees or in any folder other than the enabled project's root.                                                                                                 | M    | 1     |
-| FR-DIR-4 | Oxytocin never writes outside `.oxy/` except the single `.gitignore` edit of FR-DIR-2 (and, on explicit user action, the instruction block of FR-AG-7).                                                             | M    | 1     |
+| FR-DIR-1 | Oxytocin creates `<project root>/.oxy/` with `.gitignore`, `README.md` (what the folder is, that it is safe to delete) and `code-map/`.                                                                                 | M    | 1     |
+| FR-DIR-2 | **Keep `.oxy` out of Git** is on by default. When on, in a Git project enabling appends `/.oxy/` (with a comment line) to `<project root>/.gitignore`, creating the file if needed, unless an equivalent entry already exists, and `.oxy/.gitignore` contains `*`. Existing content, line endings, BOM and final newline are preserved. | M    | 1     |
+| FR-DIR-3 | Oxytocin never edits `.gitignore` in Ensemble/Task worktrees (their `.oxy/` is always fully ignored through `.oxy/.gitignore`) or in any folder other than the enabled project's root.                               | M    | 1     |
+| FR-DIR-9 | The user can turn **Keep `.oxy` out of Git** off in the enable confirmation and in the Code Map tab. When off, Oxytocin adds no root entry, offers to remove the exact entry it added earlier (only if unchanged), and `.oxy/.gitignore` ignores only machine-local files (cache, lock, manifest, temporary files), so deterministic `graph.json`, `MAP.md` and learnings can be committed and shared. The tab warns that map files then appear in Changes and commits. Turning it on again restores FR-DIR-2. | M    | 1     |
+| FR-DIR-4 | Oxytocin never writes outside `.oxy/` except the `.gitignore` entry of FR-DIR-2/FR-DIR-9 (and, on explicit user action, the instruction block of FR-AG-7).                                                             | M    | 1     |
 | FR-DIR-5 | The map never contains absolute paths, user names, machine names, timestamps of files or secrets read from files; paths are project-relative POSIX paths.                                                          | M    | 1     |
 | FR-DIR-6 | Writes in `.oxy/` do not trigger Oxytocin's own Git status refresh, file watcher or Code Map rebuild loops.                                                                                                          | M    | 1     |
 | FR-DIR-7 | If `.oxy/` cannot be created or written (read-only folder, permissions), Code Map shows an error state with the reason; it does not silently write elsewhere.                                                      | M    | 1     |
@@ -126,14 +134,15 @@ Details in the [`.oxy` directory specification](oxy-directory.md).
 | FR-BLD-3 | Indexed files: saved working-tree files that Git would track or show as untracked (tracked + untracked, not ignored), or all files in non-Git folders, minus built-in exclusions and user exclusions.             | M    | 1     |
 | FR-BLD-4 | Built-in exclusions: `.git`, `.oxy`, the folders in `git.ignoredFolders` defaults (`node_modules`, `dist`, `build`, `out`…), binary files, files over 2 MiB, lock files, likely secrets (`.env*`, `*.pem`, `*.key`, `id_rsa*`…). | M    | 1     |
 | FR-BLD-5 | Users can add exclusion patterns (project-relative globs) in the Code Map tab.                                                                                                                                      | M    | 1     |
-| FR-BLD-6 | Nodes: folder groups, files (all indexed files, with language and size), and for TS/JS: functions, methods, classes, interfaces, type aliases, enums, exported variables, with name, kind, signature, export state and source span. | M    | 1     |
+| FR-BLD-6 | Nodes: folder groups, files (all indexed files, with language and size), and for TS/JS and C#: the declarations listed in [languages](languages.md) (functions, methods, classes, interfaces, types, enums, namespaces, properties…), with name, kind, signature, export state or visibility and source span. C# projects (`.csproj`) and solutions are group nodes. | M    | 1     |
 | FR-BLD-7 | Relations: `contains` (folder → file → symbol), `imports` (file → file, with type-only flag), `exports`/re-exports, `calls`, `extends`, `implements`, `references` where statically resolvable.               | M    | 1     |
 | FR-BLD-8 | Every relation records how it was resolved (`syntax`, `binding`, `heuristic`) and where (source line). Unresolved imports/calls are counted and listed, never guessed into a wrong edge.                          | M    | 1     |
-| FR-BLD-9 | Imports resolve relative paths, extension and `index` lookup, `tsconfig` `paths`/`baseUrl`, and npm-workspace packages inside the project; external packages become `package` nodes without indexing their code. | M    | 1     |
+| FR-BLD-9 | TS/JS imports resolve relative paths, extension and `index` lookup, `tsconfig` `paths`/`baseUrl`, and npm-workspace packages inside the project. C# resolves types through namespaces, `using`/`global using`/implicit usings, `ProjectReference` and partial types. External packages (npm, NuGet) become `package` nodes without indexing their code. Rules in [languages](languages.md). | M    | 1     |
 | FR-BLD-10 | Coverage is reported: indexed, skipped (with reason), unsupported-language and failed files; unresolved relation counts.                                                                                          | M    | 1     |
 | FR-BLD-11 | A syntax error in a file keeps the file's last good symbols marked as stale for that file, and reports it; it does not fail the whole build.                                                                     | S    | 1     |
 | FR-BLD-12 | Protective limits (initial: 50,000 indexed files, 500,000 symbols, 2,000,000 edges, 512 MiB of map data) stop the build with a visible “limit reached — add exclusions” state instead of a silently partial map. | M    | 1     |
-| FR-BLD-13 | Symbol extraction for Python, Go, Rust, C# and Java, each with its own fixtures and coverage description.                                                                                                         | S    | 5     |
+| FR-BLD-13 | Go and Java with symbols, imports and calls; Python with symbols, imports and simple calls — each with its own fixtures and coverage description ([languages](languages.md)).                                     | S    | 5     |
+| FR-BLD-14 | The UI, `MAP.md` and `oxy_code_map_status` show the support level per language (Files / Symbols / Imports / Calls).                                                                                              | M    | 1     |
 
 ### 5.4 Background updates (FR-UPD)
 
@@ -196,6 +205,22 @@ Details in the [`.oxy` directory specification](oxy-directory.md).
 | FR-WT-2 | A worktree map is created when the worktree is ready and stopped when it is removed; the main project's map is never returned for a worktree.                                     | M    | 2     |
 | FR-WT-3 | The visualizer offers a checkout selector (main folder, active worktrees).                                                                                                          | S    | 4     |
 
+### 5.9 Learnings — self-learning context (FR-LRN)
+
+Detailed contract in [learning and context](learning-and-context.md). All phase 6.
+
+| ID       | Requirement                                                                                                                                                                                                       | Prio |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| FR-LRN-1 | A per-project **Learnings** mode: Off, Review before reuse, Automatic (default Review once Code Map is enabled; changing it is a user preference).                                                                  | M    |
+| FR-LRN-2 | Agents submit short learnings (constraint, decision, pitfall, validation, failed approach) with evidence anchors through `oxy_propose_learning`; users can add their own.                                          | M    |
+| FR-LRN-3 | Oxytocin validates scope and evidence itself (hashes of the anchored files), deduplicates, detects explicit conflicts and stores versioned records in `.oxy/learnings/`.                                          | M    |
+| FR-LRN-4 | `oxy_task_context` returns bounded code pointers, a small relation slice and up to three applicable learnings with origin, review state and evidence; `oxy_learning_feedback` records used/irrelevant/outdated/incorrect. | M    |
+| FR-LRN-5 | A learning whose evidence changed stops being reused until it is revalidated; worktree learnings stay in their worktree until the user promotes them.                                                              | M    |
+| FR-LRN-6 | A core **Learnings** manager (search, detail, accept, reject, edit as new revision, supersede, delete, export, forget all) works without the visualizer.                                                           | M    |
+| FR-LRN-7 | **Rebuild** and **Delete map data** never remove learnings; **Forget all learnings** is a separate, confirmed action.                                                                                             | M    |
+| FR-LRN-8 | The visualizer shows learnings linked to their code anchors, visually distinct from deterministic structure and by review state.                                                                                  | S    |
+| FR-LRN-9 | No transcript mining and no background model calls: learnings come only from agents' explicit tool calls and from the user.                                                                                       | M    |
+
 ## 6. Non-functional requirements
 
 Targets are initial engineering targets to be confirmed in phase 0 and the [validation](validation.md) experiments; they
@@ -248,8 +273,8 @@ are not measured results.
 - Agents decide themselves whether to use `MAP.md` and the tools; Oxytocin can encourage (brief, instructions) but cannot
   force them.
 - The map covers saved files while Oxytocin runs. After a restart it reconciles before answering.
-- TypeScript/JavaScript first because Oxytocin and many of its users' repositories are TS/JS; other files are still
-  visible as file nodes.
+- JavaScript/TypeScript and C# first (owner priority); Go, Java and Python next because their grammars ship as prebuilt
+  WASM and their module systems are explicit ([languages](languages.md)). Other files are still visible as file nodes.
 
 ## 10. Risks
 
@@ -259,16 +284,20 @@ are not measured results.
 | Map adds context but does not reduce agent cost                | Bounded `MAP.md`, on-demand tools, evaluation before claims; tune or trim what agents receive.                |
 | Wrong or missing relations mislead agents                      | Provenance per edge, unresolved counts, “not exhaustive” wording, fixtures for every resolver rule.           |
 | Background work slows the app                                  | Separate process, low priority, batching, active-project priority, measured non-interference gate.            |
-| `.gitignore` edit surprises users or conflicts                  | Explicit confirmation, minimal append, preserved formatting, never in worktrees, nested `.oxy/.gitignore`.     |
+| `.gitignore` edit surprises users or conflicts                  | Explicit confirmation with an opt-out, minimal append, preserved formatting, never in worktrees, nested `.oxy/.gitignore`. |
+| C# resolution without a compiler is imprecise                   | Declared-type based rules, provenance, unresolved counts, honest “Calls” coverage text; Roslyn is not used (needs a .NET toolchain). |
+| Learnings mislead agents (wrong or stale claims)                | Evidence hashing, invalidation on change, review mode as default, feedback, visible origin and review state.  |
 | Large monorepos exceed limits                                  | Visible limit state with exclusion guidance; limits revisited after measurements.                             |
 | Visualizer unusable on dense graphs                            | Server-side aggregation and bounded slices, list fallback, renderer spike before choosing a library.          |
 
-## 11. Open questions for the owner
+## 11. Owner decisions on the open questions
 
-| ID  | Question                                                                                                                                         | Proposed default                                                                                         |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Q1  | Is the self-learning layer (agent-proposed learnings) still wanted, and if so after the visualizer?                                              | Yes, as phase 6 after v1 has been evaluated; storage in `.oxy/learnings/`.                               |
-| Q2  | Should the enable confirmation offer an opt-out of the root `.gitignore` edit?                                                                    | No opt-out: the brief says `.oxy` is added to `.gitignore`; the nested `.oxy/.gitignore` covers edge cases. |
-| Q3  | Should enabling also offer to insert the agent instruction block into `CLAUDE.md`/`AGENTS.md` (still only on click)?                            | Offer it as a separate button in the Code Map tab, not inside the enable confirmation.                    |
-| Q4  | Is a global “enable Code Map for new projects” preference wanted?                                                                                | Not in v1; per-project opt-in only.                                                                       |
-| Q5  | Which non-TS languages matter most for phase 5?                                                                                                  | Python, then Go, Rust, C#, Java.                                                                         |
+Answered by the owner on 2026-10-18.
+
+| ID  | Question                                                                                         | Decision                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | Is the self-learning layer still wanted?                                                         | **Yes.** It is phase 6 of the product (FR-LRN), after the visualizer; storage in `.oxy/learnings/`.                                                                            |
+| Q2  | Should the root `.gitignore` edit be optional?                                                   | **On by default, can be turned off** (FR-DIR-2, FR-DIR-9).                                                                                                                     |
+| Q3  | Offer the `CLAUDE.md`/`AGENTS.md` instruction block inside the enable confirmation?              | No answer; the proposed default stands: a separate button in the Code Map tab (FR-AG-7).                                                                                       |
+| Q4  | Global “enable for new projects” preference?                                                     | No answer; the proposed default stands: per-project opt-in only in v1.                                                                                                         |
+| Q5  | Which languages?                                                                                 | **JavaScript/TypeScript and C# first** (phase 1). Others where not complicated: Go, Java and Python in phase 5; Rust and PHP on demand ([languages](languages.md)).            |

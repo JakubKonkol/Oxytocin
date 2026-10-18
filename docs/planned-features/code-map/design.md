@@ -2,7 +2,7 @@
 
 Everything below is proposed behavior, not an existing API. Read [research](research.md) for the inspected implementation baseline.
 
-> **Round three (2026-10-18) overrides this document where they differ.** The map is stored in the project's `.oxy/code-map/` folder ([specification](oxy-directory.md)), `/.oxy/` is added to `.gitignore`, agents also get a bounded `MAP.md`, and delivery follows the phases of the [implementation plan](implementation-plan.md). Business requirements are in [requirements](requirements.md). Self-learning ([learning and context](learning-and-context.md)) is the optional phase 6.
+> **Round three (2026-10-18) overrides this document where they differ.** The map is stored in the project's `.oxy/code-map/` folder ([specification](oxy-directory.md)), `/.oxy/` is added to `.gitignore`, agents also get a bounded `MAP.md`, and delivery follows the phases of the [implementation plan](implementation-plan.md). Business requirements are in [requirements](requirements.md). Self-learning ([learning and context](learning-and-context.md)) is phase 6. Languages (TS/JS and C# first) are specified in [languages](languages.md); `.gitignore` handling is on by default and can be turned off.
 
 This document specifies the structural foundation (phases 1–2). [The visualizer](visualizer.md) covers phases 3–4. One core service serves agents, the core management UI, and plugins.
 
@@ -37,7 +37,7 @@ flowchart LR
   Host --> Parser[WASM parser and resolver]
   Parser --> Cache[.oxy/code-map files]
   Cache --> Query[Bounded search and traversal]
-  Host --> Memory[Learnings, optional phase 6]
+  Host --> Memory[Learnings, phase 6]
   Memory --> Query
   Query --> Host
 ```
@@ -56,6 +56,7 @@ Proposed optional settings shape:
 codeMap?: {
   enabled: boolean;           // absent means false
   excludedPaths?: string[];  // project-relative glob patterns
+  ignoreInGit?: boolean;      // absent means true: "Keep .oxy out of Git"
 }
 ```
 
@@ -86,7 +87,7 @@ Initial node kinds: file, function, method, class, interface, type, enum, variab
 
 Add derived directory/package grouping for overview queries, with deterministic IDs and counts. Grouped import edges summarize existing edges; they do not assert architectural ownership or runtime communication. Keep this projection distinct from B's learning/evidence nodes and links. A TS type-only import, a runtime import, and a call are different evidence; retain that distinction in extraction and traversal filters. Cross-process IPC, event subscriptions, dynamically registered tools, and dependency injection are especially relevant to Oxytocin but remain unresolved until an explicit tested extractor supports them. Do not claim that a syntax graph captures the app's entire runtime architecture.
 
-For TS/JS, implement original extraction rules for declarations, arrow functions, exports, imports, common static calls, and class members. Resolve lexical scope/shadowing and explicit imported bindings first. Support relative imports, extension/index lookup, static re-exports, and local package boundaries. Parse tsconfig path mappings and package metadata as data without executing configuration. Unsupported aliases, dynamic imports, computed property calls, dependency injection, event buses, and runtime dispatch remain unresolved and contribute diagnostics. Do not infer a call just because another file has a unique matching name.
+Per-language rules for TS/JS, C#, Go, Java and Python are in [languages](languages.md). For TS/JS, implement original extraction rules for declarations, arrow functions, exports, imports, common static calls, and class members. Resolve lexical scope/shadowing and explicit imported bindings first. Support relative imports, extension/index lookup, static re-exports, and local package boundaries. Parse tsconfig path mappings and package metadata as data without executing configuration. Unsupported aliases, dynamic imports, computed property calls, dependency injection, event buses, and runtime dispatch remain unresolved and contribute diagnostics. Do not infer a call just because another file has a unique matching name.
 
 Use bundled, version-pinned WASM runtime/grammars. Never fetch grammars on first use. The implementation spike determines the build asset layout and ABI pairing. Add additional languages only with their extraction/resolution fixtures and honest coverage descriptions.
 

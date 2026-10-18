@@ -21,6 +21,23 @@ The owner described the feature as follows (translated from Polish, wording kept
 6. Code Map **runs in the background from time to time and updates itself** so that it stays current.
 7. There is a **visualizer** of the graph.
 
+## Owner answers to the open questions (2026-10-18)
+
+- **Q1 — learnings:** wanted. They are phase 6 of the product.
+- **Q2 — `.gitignore`:** `.oxy` is always in `.gitignore` by default, but the user can turn that off.
+- **Languages:** JavaScript/TypeScript and C# matter most now; add a few more if that is not complicated.
+- Push everything to the main branch (the owner wrote “master”; the repository's only branch is `main`).
+
+### Follow-up research: how expensive are more languages?
+
+Checked on the npm registry the same day: the official grammar packages `tree-sitter-javascript` 0.25.0,
+`tree-sitter-typescript` 0.23.2, `tree-sitter-c-sharp` 0.23.5, `tree-sitter-python` 0.25.0, `tree-sitter-go` 0.25.0,
+`tree-sitter-java` 0.23.5, `tree-sitter-rust` 0.24.0 and `tree-sitter-php` 0.24.2 are MIT-licensed and each contains a
+**prebuilt `.wasm`** grammar next to its native Node bindings; `web-tree-sitter` 0.27.1 is MIT. No Emscripten build is
+needed, so a language costs an extractor, resolution rules and fixtures — not toolchain work. C# is the largest grammar
+(5.35 MB WASM). Resolution effort differs a lot: Go and Java have explicit module systems, Python is dynamically typed, C#
+resolves through namespaces and partial types. Details and the resulting plan are in [languages](languages.md).
+
 ## What changes against rounds one and two
 
 | Earlier recommendation                                                   | Decision now                                                                                                                                                       | Why                                                                                                                                                                                                                      |
@@ -28,7 +45,7 @@ The owner described the feature as follows (translated from Polish, wording kept
 | Canonical cache in `<userData>/code-map/<checkoutKey>/`, outside the repo | Canonical store is **`<checkout root>/.oxy/code-map/`**.                                                                                                           | Owner decision (brief 2). It also gives every checkout (Ensemble worktree, second clone) its own map without a checkout-key scheme, and lets any agent read the map as plain files, with or without MCP.                |
 | “No automatic changes to `.gitignore`”                                    | Enabling Code Map appends `/.oxy/` to the project's `.gitignore` (Git projects), and `.oxy/.gitignore` containing `*` is always written as a safety net.          | Owner decision (brief 2). The nested `.gitignore` keeps worktrees and repositories whose root `.gitignore` edit was reverted clean.                                                                                      |
 | MCP is the only agent surface                                            | MCP tools **plus** a deterministic, bounded `.oxy/code-map/MAP.md` that any agent can read.                                                                        | Brief 5: every agent should benefit, including agents not connected to the Oxytocin MCP Hub. Trail ships both (Markdown projections and MCP tools).                                                                      |
-| Self-learning context (milestone B) is part of the requested scope        | Learnings are **not** part of the first product. They stay specified in [learning and context](learning-and-context.md) as an optional later phase (phase 6).      | The brief describes a deterministic graph, background updates and a visualizer. Learnings are agent-written (not deterministic) and are the largest risk in the earlier plan. Open question Q1 in the requirements.    |
+| Self-learning context (milestone B) is part of the requested scope        | Learnings stay in scope as **phase 6**, after the deterministic map, agent tools and visualizer (owner answer to Q1).                                              | Learnings are agent-written (not deterministic) and are the largest risk; building them on top of a measured map keeps both honest.                                                                                       |
 | Release order A (structure) → B (memory) → C (visualizer)                 | Map on disk → agent tools → visualizer → insights and languages → (learnings).                                                                                     | Each step is a complete, usable state (`CLAUDE.md` rule 4) and the visualizer is an explicit requirement.                                                                                                               |
 | Generation directories with a pointer file                                | One `graph.json` replaced atomically, plus an extraction cache keyed by content hash.                                                                              | Files in `.oxy` are now a public, agent-readable artefact; one stable file name is simpler for agents and the visualizer. The host keeps the last good graph in memory for pinned reads.                                |
 
@@ -80,10 +97,11 @@ remain upstream claims; see [validation](validation.md#does-it-actually-help-age
 | Question                          | Decision                                                                                                                                                                         |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Where does the map live?          | `<checkout root>/.oxy/code-map/`, specified in [oxy-directory](oxy-directory.md).                                                                                                |
-| How is it kept out of Git?        | `/.oxy/` appended to the project's `.gitignore` on enable (Git projects) and `.oxy/.gitignore` with `*` always.                                                                 |
+| How is it kept out of Git?        | By default `/.oxy/` is appended to the project's `.gitignore` (Git projects) and `.oxy/.gitignore` contains `*`; the user can turn this off.                                     |
 | What does “deterministic” mean?   | The same saved files, settings and Oxytocin version produce byte-identical `graph.json` and `MAP.md` on every platform. No model, no network, no clock or absolute path in them. |
 | When does it update?              | Watcher-driven (debounced), periodic reconciliation, on app start/focus and branch switches, and a freshness check before each agent query. Details in the requirements.          |
 | How do agents use it?             | `MAP.md` + five MCP tools through the existing Hub + a copyable or user-inserted instruction block.                                                                              |
 | Visualizer?                       | Built-in plugin `oxytocin.code-map-visualizer` on a public `oxy.codeMap` API, Cytoscape.js as the first renderer candidate.                                                       |
-| Languages?                        | TypeScript/JavaScript (TS, TSX, JS, JSX, MJS, CJS) with symbols first; every other file appears as a file node. Python, Go, Rust, C#, Java follow in phase 5.                     |
-| Learnings?                        | Deferred to phase 6, owner decision pending (Q1).                                                                                                                                |
+| Languages?                        | JS/TS (phase 1a) and C# (phase 1b) first; Go, Java, Python in phase 5; Rust and PHP on demand ([languages](languages.md)). Every other file appears as a file node.                |
+| Learnings?                        | Phase 6, confirmed by the owner; storage in `.oxy/learnings/`.                                                                                                                   |
+| Can `.oxy` be committed?          | Yes, if the user turns **Keep `.oxy` out of Git** off; machine-local files stay ignored ([oxy-directory](oxy-directory.md#option-off)).                                          |

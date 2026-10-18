@@ -2,7 +2,7 @@
 
 The runtime feature has not been implemented or benchmarked. All thresholds below are proposed engineering targets; replace them with measured results during implementation.
 
-Phase mapping (round three): the structural matrix and the `.oxy`/determinism matrix apply to phases 1–2, the visualizer section to phases 3–4, and the “milestone B” sections only to the optional learnings phase 6. Requirement IDs refer to [requirements](requirements.md).
+Phase mapping (round three): the structural matrix and the `.oxy`/determinism matrix apply to phases 1–2, the visualizer section to phases 3–4, and the “milestone B” sections to the learnings phase 6. Per-language fixtures are listed in [languages](languages.md#validation-per-language). Requirement IDs refer to [requirements](requirements.md).
 
 ## Correctness and recovery matrix
 
@@ -48,6 +48,9 @@ Use original small repositories with expected relations to measure both precisio
 | Map files scanned for absolute paths, user name, timestamps                   | None found in `graph.json`, `MAP.md` or cache records (FR-DIR-5).                                                                                  |
 | `MAP.md` on the 10,000-file fixture                                           | At most 32 KiB, sections in order, truncation markers, no source bodies or comments.                                                               |
 | Kill host between cache, graph, `MAP.md` and manifest writes                  | Next start serves the last consistent graph and rebuilds; no partial file is ever read as valid.                                                   |
+| Option **Keep `.oxy` out of Git** unticked on enable                          | No root entry; `.oxy/.gitignore` lists only machine-local files; `git status` shows `graph.json`/`MAP.md`, never cache, manifest or lock.         |
+| Option switched off after an entry was added                                  | The unchanged two-line block is removed on confirmation; an edited entry is left alone with a message.                                            |
+| Option off in an Ensemble/Task worktree                                       | Worktree `.oxy/.gitignore` is still `*`; agent diffs contain no map files.                                                                         |
 | Delete map data                                                               | Only `.oxy/code-map/` removed (and empty `.oxy/`); `.gitignore` line kept; nothing outside `.oxy` touched.                                        |
 
 ## Integration and E2E coverage
@@ -109,7 +112,7 @@ Suggested benefit gate: at least 15% lower median uncached input tokens or explo
 - [ ] License notices, relevant tests, build/start checks, and measured performance results are recorded.
 - [ ] Agent outcome evaluation is recorded; benefits are described only to the extent supported by results.
 
-## Learning correctness and recovery (optional phase 6, formerly milestone B)
+## Learning correctness and recovery (phase 6, formerly milestone B)
 
 | Scenario                                                         | Required outcome                                                                                                                                                                   |
 | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
