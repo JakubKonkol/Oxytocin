@@ -1,0 +1,1052 @@
+{
+  "recordedAt": "2026-10-19T18:35:17.301Z",
+  "revision": "bd1355de2db8989a9f7ac46bf1432ba1fb9d10b8",
+  "machine": {
+    "platform": "win32",
+    "architecture": "x64",
+    "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+    "threads": 16,
+    "memoryGiB": 31.92010498046875
+  },
+  "hostNode": "v24.11.1",
+  "assetBytes": 9923991,
+  "packagedBytes": 406975263,
+  "runs": [
+    {
+      "packaged": false,
+      "results": [
+        {
+          "name": "oxytocin-tree-sitter",
+          "forkToResultMs": 2159.5678000000003,
+          "result": {
+            "offline": true,
+            "backend": "tree-sitter",
+            "files": 791,
+            "bytes": 4601972,
+            "declarations": 16607,
+            "syntaxErrors": 2,
+            "durationMs": 1651.4222,
+            "readMs": 43.08320000000026,
+            "parseMs": 1608.1540000000002,
+            "syntaxErrorFiles": [
+              "plugins/task/src/views/task.tsx",
+              "src/renderer/src/features/changes/CommitBox.tsx"
+            ],
+            "filesPerSecond": 478.98108672633805,
+            "runtimeInitMs": 15.702400000000011,
+            "readyMs": 117.38510000000002,
+            "maxRssMiB": 141.46875,
+            "rssMiB": 139.3828125,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 11.45519999999999,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 10.202199999999948,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 10.283199999999965,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 14.550799999999981,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 8.832699999999988,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 8.567600000000027,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 8.418799999999976,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "oxytocin-typescript",
+          "forkToResultMs": 1066.0344,
+          "result": {
+            "offline": true,
+            "backend": "typescript",
+            "files": 791,
+            "bytes": 4601972,
+            "declarations": 17391,
+            "syntaxErrors": 0,
+            "durationMs": 705.8559,
+            "readMs": 35.591000000000065,
+            "parseMs": 670.1402999999996,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 1120.625328767529,
+            "runtimeInitMs": 11.189400000000035,
+            "readyMs": 58.18599999999998,
+            "maxRssMiB": 145.9375,
+            "rssMiB": 144.07421875,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 3.0527000000000157,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 3.514099999999985,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 2.6696000000000026,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 7.322600000000023,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 1.4069999999999823,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 1.6196999999999662,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 1.3468000000000302,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "fixture-10000-tree-sitter",
+          "forkToResultMs": 2275.3898999999997,
+          "result": {
+            "offline": true,
+            "backend": "tree-sitter",
+            "files": 10000,
+            "bytes": 4826711,
+            "declarations": 70000,
+            "syntaxErrors": 0,
+            "durationMs": 1904.4033,
+            "readMs": 378.47710000000046,
+            "parseMs": 1524.490900000001,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 5250.988590494461,
+            "runtimeInitMs": 12.916699999999992,
+            "readyMs": 63.31369999999998,
+            "maxRssMiB": 159.69140625,
+            "rssMiB": 159,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 2.7460000000000377,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 3.5272999999999683,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 2.516999999999996,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 6.425999999999988,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 1.335800000000006,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 1.1037000000000035,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 1.485900000000015,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "fixture-10000-typescript",
+          "forkToResultMs": 1254.1127999999999,
+          "result": {
+            "offline": true,
+            "backend": "typescript",
+            "files": 10000,
+            "bytes": 4826711,
+            "declarations": 70000,
+            "syntaxErrors": 0,
+            "durationMs": 871.6988,
+            "readMs": 325.0933999999994,
+            "parseMs": 545.6542999999999,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 11471.852433432283,
+            "runtimeInitMs": 12.624099999999999,
+            "readyMs": 68.2022,
+            "maxRssMiB": 150.18359375,
+            "rssMiB": 141.5,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 4.206900000000019,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 4.863400000000013,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 4.0330000000000155,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 5.716700000000003,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 1.2255999999999858,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 1.1333999999999946,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 1.245299999999986,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "csharp-10000",
+          "forkToResultMs": 1144.4205999999995,
+          "result": {
+            "offline": true,
+            "backend": "tree-sitter",
+            "files": 10000,
+            "bytes": 2116670,
+            "declarations": 50000,
+            "syntaxErrors": 0,
+            "durationMs": 793.3709,
+            "readMs": 0,
+            "parseMs": 793.3025,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 12604.445159256533,
+            "runtimeInitMs": 11.335300000000018,
+            "readyMs": 48.726099999999974,
+            "maxRssMiB": 157.76953125,
+            "rssMiB": 137.9609375,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 3.2923999999999864,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 2.3910999999999945,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 2.942200000000014,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 6.2024000000000115,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 1.543799999999976,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 1.875,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 1.870999999999981,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "packaged": true,
+      "results": [
+        {
+          "name": "oxytocin-tree-sitter",
+          "forkToResultMs": 2020.8239,
+          "result": {
+            "offline": true,
+            "backend": "tree-sitter",
+            "files": 791,
+            "bytes": 4601972,
+            "declarations": 16607,
+            "syntaxErrors": 2,
+            "durationMs": 1555.6401,
+            "readMs": 41.84720000000044,
+            "parseMs": 1513.6241000000002,
+            "syntaxErrorFiles": [
+              "plugins/task/src/views/task.tsx",
+              "src/renderer/src/features/changes/CommitBox.tsx"
+            ],
+            "filesPerSecond": 508.472364526988,
+            "runtimeInitMs": 14.826899999999966,
+            "readyMs": 119.85400000000004,
+            "maxRssMiB": 141.75,
+            "rssMiB": 137.76953125,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 11.50060000000002,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 10.812700000000007,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 10.67670000000004,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 13.03860000000003,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 9.275800000000004,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 8.863,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 10.28449999999998,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "oxytocin-typescript",
+          "forkToResultMs": 1053.4548,
+          "result": {
+            "offline": true,
+            "backend": "typescript",
+            "files": 791,
+            "bytes": 4601972,
+            "declarations": 17391,
+            "syntaxErrors": 0,
+            "durationMs": 698.2971,
+            "readMs": 40.717299999999625,
+            "parseMs": 657.4258,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 1132.7556709028293,
+            "runtimeInitMs": 14.01769999999999,
+            "readyMs": 60.91640000000001,
+            "maxRssMiB": 146.4921875,
+            "rssMiB": 146.5234375,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 3.875699999999995,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 2.4015999999999735,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 2.4635999999999854,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 6.284299999999973,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 1.262200000000007,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 1.5013999999999896,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 1.3134000000000015,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "fixture-10000-tree-sitter",
+          "forkToResultMs": 2262.092,
+          "result": {
+            "offline": true,
+            "backend": "tree-sitter",
+            "files": 10000,
+            "bytes": 4826711,
+            "declarations": 70000,
+            "syntaxErrors": 0,
+            "durationMs": 1890.0531,
+            "readMs": 400.92969999999826,
+            "parseMs": 1487.7542000000005,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 5290.856643128174,
+            "runtimeInitMs": 13.399699999999996,
+            "readyMs": 68.94549999999998,
+            "maxRssMiB": 159.34375,
+            "rssMiB": 158.91015625,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 2.6444000000000187,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 3.313699999999983,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 3.379700000000014,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 9.583300000000008,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 1.3530000000000086,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 1.543299999999988,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 2.088799999999992,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "fixture-10000-typescript",
+          "forkToResultMs": 1364.5365000000002,
+          "result": {
+            "offline": true,
+            "backend": "typescript",
+            "files": 10000,
+            "bytes": 4826711,
+            "declarations": 70000,
+            "syntaxErrors": 0,
+            "durationMs": 980.3359,
+            "readMs": 383.4295999999997,
+            "parseMs": 595.7882999999997,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 10200.585329987405,
+            "runtimeInitMs": 10.034600000000012,
+            "readyMs": 71.56119999999999,
+            "maxRssMiB": 152.58203125,
+            "rssMiB": 143.84765625,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 2.48660000000001,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 3.5300000000000296,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 2.509299999999996,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 9.691499999999962,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 2.4360000000000355,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 2.634899999999959,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 1.790300000000002,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        },
+        {
+          "name": "csharp-10000",
+          "forkToResultMs": 1335.570499999999,
+          "result": {
+            "offline": true,
+            "backend": "tree-sitter",
+            "files": 10000,
+            "bytes": 2116670,
+            "declarations": 50000,
+            "syntaxErrors": 0,
+            "durationMs": 918.1034999999999,
+            "readMs": 0,
+            "parseMs": 918.0395000000001,
+            "syntaxErrorFiles": [],
+            "filesPerSecond": 10892.018165707897,
+            "runtimeInitMs": 11.71040000000005,
+            "readyMs": 76.2348,
+            "maxRssMiB": 157.20703125,
+            "rssMiB": 137.4921875,
+            "smoke": [
+              {
+                "language": "javascript",
+                "loadMs": 5.313500000000033,
+                "abi": 15,
+                "bytes": 411770
+              },
+              {
+                "language": "typescript",
+                "loadMs": 3.6134999999999877,
+                "abi": 14,
+                "bytes": 1413849
+              },
+              {
+                "language": "tsx",
+                "loadMs": 5.199700000000007,
+                "abi": 14,
+                "bytes": 1445638
+              },
+              {
+                "language": "csharp",
+                "loadMs": 16.125200000000007,
+                "abi": 15,
+                "bytes": 5350581
+              },
+              {
+                "language": "go",
+                "loadMs": 3.5246999999999957,
+                "abi": 15,
+                "bytes": 217182
+              },
+              {
+                "language": "java",
+                "loadMs": 4.5785999999999945,
+                "abi": 14,
+                "bytes": 414641
+              },
+              {
+                "language": "python",
+                "loadMs": 2.024400000000014,
+                "abi": 15,
+                "bytes": 457883
+              }
+            ],
+            "abi": {
+              "minimum": 13,
+              "maximum": 15
+            },
+            "versions": {
+              "node": "24.21.0",
+              "acorn": "8.18.0",
+              "ada": "4.0.0",
+              "amaro": "1.1.11",
+              "ares": "1.34.8",
+              "brotli": "1.2.0",
+              "cldr": "48.0",
+              "icu": "78.2",
+              "llhttp": "9.4.3",
+              "merve": "1.2.2",
+              "modules": "149",
+              "napi": "10",
+              "nbytes": "0.1.4",
+              "ncrypto": "0.0.1",
+              "nghttp2": "1.70.0",
+              "nghttp3": "",
+              "ngtcp2": "",
+              "openssl": "0.0.0",
+              "simdjson": "4.6.7",
+              "simdutf": "7.7.0",
+              "sqlite": "3.53.4",
+              "tz": "2025c",
+              "undici": "7.29.1",
+              "unicode": "17.0",
+              "uv": "1.52.1",
+              "uvwasi": "0.0.23",
+              "v8": "15.2.124.28-electron.0",
+              "zlib": "1.3.2.1-motley",
+              "zstd": "1.6.0",
+              "electron": "44.4.5",
+              "chrome": "152.0.7977.130"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

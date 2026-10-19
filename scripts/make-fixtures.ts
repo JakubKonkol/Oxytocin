@@ -5,12 +5,50 @@
  *
  * Usage: `tsx scripts/make-fixtures.ts --source claude|codex|gemini --in <file.jsonl> --out <file.jsonl>
  *         [--cwd /fixture/proj] [--limit <usage records>]`
+ *        `tsx scripts/make-fixtures.ts --source code-map --out <directory> [--count 10000]`
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 
 type Json = Record<string, unknown>;
 type Source = 'claude' | 'codex' | 'gemini';
+
+/** Deterministic module graph with cross-package imports, classes, types and Unicode. */
+export function codeMapFixtureSource(index: number): string {
+  const dependency = Math.max(0, index - 1);
+  return [
+    index
+      ? `import { Service${dependency} } from '../package-${Math.floor(dependency / 100)}/module-${dependency}';`
+      : '',
+    `export interface Input${index} { name: string; count: number }`,
+    `export type Result${index} = { value: string; count: number };`,
+    `export class Service${index} {`,
+    `  readonly label = 'zażółć 🗺️';`,
+    `  run(input: Input${index}): Result${index} {`,
+    index ? `    const previous = new Service${dependency}().run(input);` : '    const previous = input;',
+    `    return { value: this.label + input.name, count: previous.count + 1 };`,
+    '  }',
+    '}',
+    `export function create${index}(): Service${index} { return new Service${index}(); }`,
+    '',
+  ].join('\n');
+}
+
+export async function makeCodeMapFixture(root: string, count = 10_000): Promise<void> {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 50_000) throw new Error('Invalid fixture file count');
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'code-map-fixture', private: true }));
+  for (let start = 0; start < count; start += 100) {
+    const directory = join(root, `package-${Math.floor(start / 100)}`);
+    await mkdir(directory, { recursive: true });
+    await Promise.all(
+      Array.from({ length: Math.min(100, count - start) }, (_, offset) => {
+        const index = start + offset;
+        return writeFile(join(directory, `module-${index}.ts`), codeMapFixtureSource(index));
+      }),
+    );
+  }
+}
 
 const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -111,15 +149,19 @@ async function main(): Promise<void> {
     const i = args.indexOf(`--${name}`);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  const source = arg('source') as Source | undefined;
+  const source = arg('source');
   const input = arg('in');
   const output = arg('out');
+  if (source === 'code-map' && output) {
+    await makeCodeMapFixture(output, Number(arg('count') ?? 10_000));
+    return;
+  }
   if (!source || !['claude', 'codex', 'gemini'].includes(source) || !input || !output) {
     console.error('Usage: tsx scripts/make-fixtures.ts --source claude|codex|gemini --in <file> --out <file>');
     process.exit(2);
   }
   const limit = arg('limit');
-  const result = anonymize(source, await readFile(input, 'utf8'), {
+  const result = anonymize(source as Source, await readFile(input, 'utf8'), {
     cwd: arg('cwd') ?? '/fixture/proj',
     ...(limit ? { limit: Number(limit) } : {}),
   });

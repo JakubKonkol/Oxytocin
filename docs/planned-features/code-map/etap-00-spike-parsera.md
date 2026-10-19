@@ -58,12 +58,12 @@ dostaje własny test uruchomienia w `scripts/`).
 
 ## Kryteria ukończenia
 
-- [ ] Spakowany build Windows parsuje fixture offline, bez toolchainu.
-- [ ] Liczby (przepustowość, pamięć, rozmiar, start, ładowanie C#) zapisane w `results/<data>-parser-spike.md` z
+- [x] Spakowany build Windows parsuje fixture offline, bez toolchainu.
+- [x] Liczby (przepustowość, pamięć, rozmiar, start, ładowanie C#) zapisane w `results/<data>-parser-spike.md` z
       rewizją, maszyną, wersjami Electron/Node i gramatyk.
-- [ ] Decyzja o runtime i o układzie pakowania (ścieżka, `asarUnpack`, ładowanie leniwe) zapisana w pliku wyników.
-- [ ] Wszystkie licencje gramatyk i runtime potwierdzone jako MIT.
-- [ ] Tabela w sekcji 8.8 `README.md` poprawiona, jeśli wersje lub rozmiary się zmieniły.
+- [x] Decyzja o runtime i o układzie pakowania (ścieżka, `asarUnpack`, ładowanie leniwe) zapisana w pliku wyników.
+- [x] Wszystkie licencje gramatyk i runtime potwierdzone jako MIT.
+- [x] Tabela w sekcji 8.8 `README.md` poprawiona, jeśli wersje lub rozmiary się zmieniły.
 
 ## Commity i CHANGELOG
 

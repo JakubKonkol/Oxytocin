@@ -1,0 +1,67 @@
+{
+  "runtime": {
+    "package": "web-tree-sitter",
+    "version": "0.27.1",
+    "file": "web-tree-sitter.wasm",
+    "sha256": "beca80e44cccbf2299ed4d1e3fa6462a9a6fe818aeebf847547a392227ce4acc",
+    "license": "MIT"
+  },
+  "grammars": [
+    {
+      "language": "javascript",
+      "package": "tree-sitter-javascript",
+      "version": "0.25.0",
+      "file": "tree-sitter-javascript.wasm",
+      "sha256": "5fb488d0cabb4775a594bab85682de5ad6ce83c0d6ac997a9f82dd084d571240",
+      "license": "MIT"
+    },
+    {
+      "language": "typescript",
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2",
+      "file": "tree-sitter-typescript.wasm",
+      "sha256": "778025db5a8be0e70f8ccc3671e486dfeddd048c25d9e8a70c26de2e1bf6f97d",
+      "license": "MIT"
+    },
+    {
+      "language": "tsx",
+      "package": "tree-sitter-typescript",
+      "version": "0.23.2",
+      "file": "tree-sitter-tsx.wasm",
+      "sha256": "79e5da75ea62855a0cd67177685f0164eac87d5f630b3cbe1e0a099751ad30f8",
+      "license": "MIT"
+    },
+    {
+      "language": "csharp",
+      "package": "tree-sitter-c-sharp",
+      "version": "0.23.5",
+      "file": "tree-sitter-c_sharp.wasm",
+      "sha256": "6f69e1cae44e1c32c1eccc170dc5a9778fb94ff716f71113fe1f8c4299aa2f40",
+      "license": "MIT"
+    },
+    {
+      "language": "go",
+      "package": "tree-sitter-go",
+      "version": "0.25.0",
+      "file": "tree-sitter-go.wasm",
+      "sha256": "9504573f352b20be7f2f1911754d710622aedc15afff16d5ed8fb5645681aee7",
+      "license": "MIT"
+    },
+    {
+      "language": "java",
+      "package": "tree-sitter-java",
+      "version": "0.23.5",
+      "file": "tree-sitter-java.wasm",
+      "sha256": "4fdeac4ca6ca089f06c6f7e562abcac1733cd465728cc7031ebb73c2019122c4",
+      "license": "MIT"
+    },
+    {
+      "language": "python",
+      "package": "tree-sitter-python",
+      "version": "0.25.0",
+      "file": "tree-sitter-python.wasm",
+      "sha256": "16108b50df4ee9a30168794252ab55e7c93bfc5765d7fa0aa3e335752c515f47",
+      "license": "MIT"
+    }
+  ]
+}

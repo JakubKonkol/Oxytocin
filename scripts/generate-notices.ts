@@ -5,6 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { GrammarManifestSchema } from './code-map-grammar-manifest';
 
 interface LicenseInfo {
   licenses?: string | string[];
@@ -24,6 +25,27 @@ const raw = execFileSync(
   },
 );
 const packages = JSON.parse(raw) as Record<string, LicenseInfo>;
+
+// Grammar packages are build dependencies; their prebuilt WASM is shipped without native bindings.
+const grammars = GrammarManifestSchema.parse(
+  JSON.parse(readFileSync(join(root, 'resources/code-map/grammars.json'), 'utf8')),
+);
+for (const grammar of grammars.grammars) {
+  const name = `${grammar.package}@${grammar.version}`;
+  const directory = join(root, 'node_modules', grammar.package);
+  const metadata = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
+    license: string;
+    version: string;
+    repository?: { url?: string } | string;
+  };
+  if (metadata.license !== grammar.license || metadata.version !== grammar.version)
+    throw new Error(`Grammar license/version mismatch: ${name}`);
+  packages[name] = {
+    licenses: grammar.license,
+    repository: typeof metadata.repository === 'string' ? metadata.repository : metadata.repository?.url,
+    licenseFile: join(directory, 'LICENSE'),
+  };
+}
 
 const manualEntries = join(root, 'resources/notices/manual.md');
 
