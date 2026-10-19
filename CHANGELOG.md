@@ -14,6 +14,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   way) or **Reject**; every version is kept. While planning, edits inside the project and `git commit`, `push`,
   `checkout` and `reset` are denied for that session only; your Claude Code settings files are not changed. When
   Oxytocin does not answer, Claude Code asks in the terminal as usual.
+- An empty workspace offers more than **New terminal**: start an AI agent directly, or open anything from the group's
+  **+** menu (terminal profiles, agents, tools) with **Open…**.
 
 ### Fixed
 

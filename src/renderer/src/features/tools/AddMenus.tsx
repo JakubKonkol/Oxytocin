@@ -71,19 +71,24 @@ const report = (what: string) => (e: unknown) =>
   notify('error', `Could not open ${what}`, { description: e instanceof Error ? e.message : String(e) });
 
 /**
- * The "+" of a workspace group: a new terminal (default or another profile) or a tool (scratchpad, plugin panels
- * with `showInAddMenu`), opened in that group.
+ * The "+" of a workspace group: a new terminal (default or another profile), an AI agent or a tool (scratchpad,
+ * plugin panels with `showInAddMenu`), opened in that group. Without a group (an empty workspace) it opens the first
+ * panel; `trigger` replaces the "+" button.
  */
 export function WorkspaceAddMenu({
   api,
   group,
   projectId,
   onOpen,
+  trigger,
+  align = 'end',
 }: {
   api: DockviewApi;
-  group: DockviewGroupPanel;
+  group?: DockviewGroupPanel;
   projectId: () => string | undefined;
   onOpen?: () => void;
+  trigger?: ReactNode;
+  align?: 'start' | 'center' | 'end';
 }) {
   const tools = useAvailableTools();
   const [profiles, setProfiles] = useState<TerminalProfile[] | null>(null);
@@ -95,7 +100,12 @@ export function WorkspaceAddMenu({
 
   const terminal = (profileId?: string) => {
     const p = projectId();
-    if (p) void addTerminalPanel(api, { projectId: p, ...(profileId ? { profileId } : {}) }, { referenceGroup: group });
+    if (p)
+      void addTerminalPanel(
+        api,
+        { projectId: p, ...(profileId ? { profileId } : {}) },
+        group ? { referenceGroup: group } : undefined,
+      );
   };
 
   return (
@@ -108,10 +118,10 @@ export function WorkspaceAddMenu({
       }}
     >
       <DropdownMenu.Trigger asChild>
-        <IconButton data-testid="group-add" label="New terminal or tool" icon={<Plus size={14} />} />
+        {trigger ?? <IconButton data-testid="group-add" label="New terminal or tool" icon={<Plus size={14} />} />}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" sideOffset={4} className={menuContent} data-testid="group-add-menu">
+        <DropdownMenu.Content align={align} sideOffset={4} className={menuContent} data-testid="group-add-menu">
           <DropdownMenu.Label className={menuLabel}>Terminal</DropdownMenu.Label>
           <DropdownMenu.Item data-testid="add-terminal" className={menuItem} onSelect={() => terminal()}>
             <SquareTerminal size={14} className="flex-none text-fg-muted" />
@@ -191,7 +201,8 @@ export function WorkspaceAddMenu({
             tools={tools}
             onPick={(t) => {
               const p = projectId();
-              if (p) void openToolInWorkspace(t, { api, projectId: p, group }).catch(report(t.title));
+              if (p)
+                void openToolInWorkspace(t, { api, projectId: p, ...(group ? { group } : {}) }).catch(report(t.title));
             }}
           />
         </DropdownMenu.Content>
