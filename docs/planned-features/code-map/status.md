@@ -6,7 +6,8 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 
 - Stage 00 complete: reproducible parser and Windows ASAR packaging benchmark, grammar integrity manifest and deterministic 10,000-file fixture. Decision: Tree-sitter WASM, lazy grammars, explicit CommonJS runtime entry.
 - Stage 01 complete: contracts, lazy host supervision and build assets, safe storage and Git ignores.
-- Stages 02–14 pending. No user-facing Code Map functionality is available yet.
+- Stage 02 complete: enumeration, live observation, fingerprints, global scheduling and activity hints.
+- Stages 03–14 pending. No user-facing Code Map functionality is available yet.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
@@ -37,3 +38,14 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Validation: Windows full `npm run check` passed. Linux focused suite: 47 tests passed, including symlink/unwritable-ignore cases. Docker/Xvfb app build plus `ipc-hosts.spec.ts` and `smoke.spec.ts`: 5 tests passed, including actual Code Map Host ping, malformed RPC rejection and restart after a crash. Actual output contains `out/main/codeMapHost.js`, runtime WASM, grammar manifest and C# grammar.
 - Upstream release 0.9.10 (`487e7db`) was merged after the first push was rejected; stage 00 commits and the merge are on origin/main.
 - Next: stage 02 — enumeration, fingerprints, watcher and scheduler; then stage 03 — extraction/resolution/publication. There is still no user-facing Code Map feature.
+
+### Stage 02 — enumeration and scheduling
+
+- Git tracked/untracked enumeration stays within the project; non-Git traversal uses pinned MIT `ignore` 7.0.13 with nested rule overrides. Built-in exclusions, user globs, secret-name filtering before reads, binary/size filtering, nested repository boundaries and contained real paths are covered by fixtures.
+- Watcher starts before scanning and retains events newer than the committed sequence. It excludes `.oxy`, bounds pending path storage, reconciles after errors/overflow and observes Git metadata outside subprojects/worktrees.
+- Scheduler allows one build globally; 300 ms quiet / 2 s maximum debounce, 500-path batches promoted to reconciliation, active-project priority with aging, pause/resume/cancellation. Unchanged files reuse fingerprints; rebuild reparses all without losing deleted-file tracking.
+- Periodic metadata reconciliation: 60 s for active/terminal projects, 10 min otherwise; full hashes at startup and every 30 min. Main sends compact activity hints and requests audits after focus/resume without starting a disabled host.
+- File metadata stays in runtime memory. Reads use bounded buffers and retry stat/content races; no project scripts execute. Parsing and graph publication still belong to stage 03; the current internal controller reports inventory readiness only and has no UI entry point.
+- Validation: Windows `npm run check` passed; real watcher integration passed on Windows and Linux. Linux focused unit suite: 53 passed; final bounded-reader regression: 5 passed. Docker/Xvfb full app build and host/smoke E2E: 5 passed. No desktop windows were created.
+- Dependency notices regenerated in Docker; retain its optional-package lock entries when later running Windows npm.
+- Next: stage 03, using `CheckoutIndexer` hooks to extract only changed files and assemble/publish a fresh graph. Preserve `InventorySnapshot` checkpoints and ownership checks. Investigated spike TSX errors: both involve bare `&` in JSX text; add an explicit regression fixture rather than treating every valid declaration in those files as absent.

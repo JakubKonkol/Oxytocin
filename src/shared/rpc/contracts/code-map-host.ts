@@ -18,6 +18,16 @@ export const ConfigureCodeMapCheckoutSchema = z
 export type ConfigureCodeMapCheckout = z.infer<typeof ConfigureCodeMapCheckoutSchema>;
 
 export const CodeMapHostContracts = {
+  'hints:update': {
+    params: z
+      .object({
+        activeProjectId: z.string().nullable(),
+        terminalProjectIds: z.array(z.string()).max(1000),
+        reconcile: z.boolean().default(false),
+      })
+      .strict(),
+    result: z.null(),
+  },
   'checkout:configure': { params: ConfigureCodeMapCheckoutSchema, result: CodeMapStatusSchema },
   'checkout:remove': { params: CodeMapCheckoutSchema, result: z.null() },
   'checkout:rebuild': { params: CodeMapCheckoutSchema, result: CodeMapStatusSchema },

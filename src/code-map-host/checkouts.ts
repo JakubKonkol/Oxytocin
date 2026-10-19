@@ -10,11 +10,16 @@ import { ConfigureCodeMapCheckoutSchema, type ConfigureCodeMapCheckout } from '@
 import { deleteMapData, prepareOxyDirectory } from './store/oxy-dir';
 import { loadSnapshot } from './store/writer';
 import type { OwnerLock } from './store/owner-lock';
+import { CheckoutIndexer } from './indexer';
+import { CodeMapScheduler } from './scheduler';
+import { CodeMapLimitError } from './enumerate';
 
 interface Checkout {
   config: ConfigureCodeMapCheckout;
   status: CodeMapStatus;
   lease: OwnerLock | null;
+  indexer?: CheckoutIndexer;
+  diagnostics: CodeMapDiagnostics;
 }
 
 export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
@@ -40,6 +45,7 @@ export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
 export class CodeMapCheckouts {
   private readonly checkouts = new Map<string, Checkout>();
   private mutation: Promise<unknown> = Promise.resolve();
+  private readonly scheduler = new CodeMapScheduler();
   constructor(
     private readonly app: string,
     private readonly onStatus: (status: CodeMapStatus) => void,
@@ -53,7 +59,12 @@ export class CodeMapCheckouts {
     config.root = await realpath(config.root);
     await this.removeNow(config.checkoutId);
     const status = initialCodeMapStatus(config.checkoutId);
-    const checkout: Checkout = { config, status, lease: null };
+    const checkout: Checkout = {
+      config,
+      status,
+      lease: null,
+      diagnostics: { skipped: [], failed: [], unresolved: [], truncated: false },
+    };
     this.checkouts.set(config.checkoutId, checkout);
     try {
       const prepared = await prepareOxyDirectory({ ...config, app: this.app });
@@ -69,6 +80,51 @@ export class CodeMapCheckouts {
         status.updatedAt = snapshot.manifest.builtAt;
       }
       status.state = prepared.warning && !status.readOnly ? 'error' : 'paused';
+      if (prepared.lease) {
+        checkout.indexer = new CheckoutIndexer({
+          ...config,
+          scheduler: this.scheduler,
+          hooks: {
+            start: (total) => {
+              status.progress = { completed: 0, total };
+              if (!status.error) status.state = status.generation ? 'updating' : 'indexing';
+              this.changed(checkout);
+            },
+            file: () => {
+              if (status.progress) status.progress.completed++;
+            },
+            removed: () => undefined,
+            failed: () => undefined,
+            pending: (count) => {
+              status.pendingFiles = count;
+              if (status.state === 'ready') status.state = 'updating';
+              this.changed(checkout);
+            },
+            complete: (inventory) => {
+              checkout.diagnostics = inventory.diagnostics;
+              status.counts.files = inventory.files.size;
+              status.coverage.files = {
+                indexed: inventory.files.size,
+                unsupported: 0,
+                skipped: inventory.skippedCount,
+                failed: inventory.diagnostics.failed.length,
+              };
+              status.progress = null;
+              status.pendingFiles = 0;
+              status.state = status.error ? 'error' : 'ready';
+              this.changed(checkout);
+            },
+            error: (error) => {
+              status.state = error instanceof CodeMapLimitError ? 'limit' : 'error';
+              status.progress = null;
+              status.error = error instanceof Error ? error.message : String(error);
+              this.changed(checkout);
+            },
+          },
+        });
+        status.state = status.error ? 'error' : 'indexing';
+        await checkout.indexer.start();
+      }
     } catch (error) {
       status.state = 'error';
       status.error = error instanceof Error ? error.message : String(error);
@@ -79,18 +135,22 @@ export class CodeMapCheckouts {
     return CodeMapStatusSchema.parse(this.get(checkoutId).status);
   }
   diagnostics(checkoutId: string): CodeMapDiagnostics {
-    this.get(checkoutId);
-    return { skipped: [], failed: [], unresolved: [], truncated: false };
+    return structuredClone(this.get(checkoutId).diagnostics);
   }
   pause(checkoutId: string): CodeMapStatus {
     const checkout = this.get(checkoutId);
+    checkout.indexer?.pause();
     checkout.status.state = 'paused';
     return this.changed(checkout);
   }
   resume(checkoutId: string): CodeMapStatus {
-    return this.pause(checkoutId);
+    const checkout = this.get(checkoutId);
+    checkout.indexer?.resume();
+    if (!checkout.status.readOnly) checkout.status.state = 'updating';
+    return this.changed(checkout);
   }
   rebuild(checkoutId: string): CodeMapStatus {
+    this.get(checkoutId).indexer?.rebuild();
     return this.resume(checkoutId);
   }
   async remove(checkoutId: string): Promise<void> {
@@ -99,8 +159,9 @@ export class CodeMapCheckouts {
   private async removeNow(checkoutId: string): Promise<void> {
     const checkout = this.checkouts.get(checkoutId);
     if (!checkout) return;
-    this.checkouts.delete(checkoutId);
+    await checkout.indexer?.dispose();
     await checkout.lease?.dispose();
+    this.checkouts.delete(checkoutId);
   }
   async deleteData(checkoutId: string): Promise<CodeMapStatus> {
     return this.serialize(() => this.deleteDataNow(checkoutId));
@@ -108,6 +169,7 @@ export class CodeMapCheckouts {
   private async deleteDataNow(checkoutId: string): Promise<CodeMapStatus> {
     const checkout = this.get(checkoutId);
     if (checkout.status.readOnly) throw new Error('Updated by another Oxytocin instance');
+    await checkout.indexer?.dispose();
     await deleteMapData(checkout.config.root, checkout.lease ?? undefined);
     await this.removeNow(checkoutId);
     const status = initialCodeMapStatus(checkoutId);
@@ -117,7 +179,12 @@ export class CodeMapCheckouts {
   async dispose(): Promise<void> {
     await this.serialize(async () => {
       for (const id of this.checkouts.keys()) await this.removeNow(id);
+      this.scheduler.dispose();
     });
+  }
+  hints(hints: { activeProjectId: string | null; terminalProjectIds: string[]; reconcile: boolean }): void {
+    this.scheduler.hints(hints.activeProjectId, hints.terminalProjectIds);
+    if (hints.reconcile) for (const checkout of this.checkouts.values()) checkout.indexer?.reconcileSoon(true);
   }
   private serialize<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.mutation.then(operation);

@@ -27,6 +27,10 @@ const checkouts = new CodeMapCheckouts(`Oxytocin ${__OXYTOCIN_VERSION__}`, (stat
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
 const impl: Impl = {
+  'hints:update': (input) => {
+    checkouts.hints(CodeMapHostContracts['hints:update'].params.parse(input));
+    return null;
+  },
   'checkout:configure': (input) => checkouts.configure(CodeMapHostContracts['checkout:configure'].params.parse(input)),
   'checkout:remove': async (input) => {
     await checkouts.remove(CodeMapHostContracts['checkout:remove'].params.parse(input).checkoutId);

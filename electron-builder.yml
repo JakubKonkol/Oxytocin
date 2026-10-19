@@ -25,6 +25,7 @@ files:
   - node_modules/libpg-query/**
   - node_modules/@pgsql/types/**
   - node_modules/web-tree-sitter/**
+  - node_modules/ignore/**
 asar: true
 asarUnpack:
   - '**/node_modules/node-pty/**'

@@ -11,6 +11,7 @@ import {
   MessageChannelMain,
   nativeImage,
   Notification,
+  powerMonitor,
   safeStorage,
   screen,
   session,
@@ -69,6 +70,7 @@ import { ClaudeRegistry, claudeAgentsCli } from './services/agents/claude-regist
 import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
+import { CodeMapActivityHints } from './services/code-map/activity-hints';
 import { projectPathsFromArgv } from './app/argv';
 import { WorkspaceStateService } from './services/workspace-state/workspace-state-service';
 import { sessionRestoredLabel } from './services/terminals/scrollback-format';
@@ -365,6 +367,30 @@ function bootstrap(): void {
   terminals.onDidRemove((id) => accountTerminalStates.delete(id));
 
   const activity = new ActivityService(terminals, () => projects.list().map((p) => p.id));
+  const codeMapHints = new CodeMapActivityHints({
+    host: hosts.codeMap,
+    current: () => ({
+      activeProjectId: projects.activeProjectId,
+      terminalProjectIds: [
+        ...new Set(
+          terminals
+            .list()
+            .filter((terminal) => terminal.state === 'running')
+            .map((terminal) => terminal.projectId),
+        ),
+      ],
+    }),
+    subscribe: (changed) => [
+      projects.onDidChangeActive(changed),
+      projects.onDidChange(changed),
+      terminals.onDidUpdate(changed),
+      terminals.onDidRemove(changed),
+    ],
+    logger: createLogger('map'),
+  });
+  const reconcileCodeMap = () => codeMapHints.reconcile();
+  app.on('browser-window-focus', reconcileCodeMap);
+  powerMonitor.on('resume', reconcileCodeMap);
   const osNotifications: { title: string; body: string; click: () => void }[] = [];
   let attentionCount = 0;
   const applyAttention = ({ count, overlay }: { count: number; overlay?: string | undefined }) => {
@@ -1699,6 +1725,9 @@ function bootstrap(): void {
         // Open SSE streams would keep the MCP server from closing.
         await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
         resourcesController.dispose();
+        codeMapHints.dispose();
+        app.off('browser-window-focus', reconcileCodeMap);
+        powerMonitor.off('resume', reconcileCodeMap);
         await withTimeout(ensemble.flush(), 3000).catch(() => undefined);
         await Promise.all([
           uiState.flush(),

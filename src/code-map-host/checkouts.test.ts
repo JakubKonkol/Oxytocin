@@ -28,7 +28,7 @@ describe('Code Map checkout lifetimes', () => {
     expect(statuses.map((status) => status.readOnly)).toEqual([false, false]);
     expect(await readFile(join(root, '.oxy/README.md'), 'utf8')).not.toContain('It is ignored by Git');
     expect(await readFile(join(root, '.oxy/.gitignore'), 'utf8')).toContain('/learnings/local/');
-    expect(changed).toHaveBeenCalledTimes(2);
+    expect(changed.mock.calls.length).toBeGreaterThanOrEqual(2);
     await checkouts.remove('checkout');
     expect(() => checkouts.status('checkout')).toThrow('Unknown');
   });

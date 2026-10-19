@@ -69,9 +69,16 @@ Poza zakresem: parsowanie (etap 03), sygnały „aktywny projekt” w UI (przeka
 
 ## Kryteria ukończenia
 
-- [ ] `npm run check` zielone (łącznie z projektem `integration`).
-- [ ] Brak pętli przebudowy w spoczynku (test).
-- [ ] Brak zmian widocznych dla użytkownika.
+- [x] `npm run check` zielone (łącznie z projektem `integration`).
+- [x] Brak pętli przebudowy w spoczynku (test).
+- [x] Brak zmian widocznych dla użytkownika.
+
+## Implementation decisions
+
+- `ignore` 7.0.13 supplies Gitignore matching for non-Git folders; project scripts and package configurations are never executed.
+- `CheckoutIndexer` owns fingerprints and observation; extraction/publication hooks connect stage 03 without retaining all source text in memory.
+- Pending watcher/scheduler path sets are bounded to 500; overflow requests full reconciliation. Queue aging prevents a continuously active project from starving another checkout.
+- Main activity/focus/resume hints are sent only to a running host. Stage 04 will add the opt-in service that starts it for enabled projects.
 
 ## Commity i CHANGELOG
 

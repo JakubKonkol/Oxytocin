@@ -16,7 +16,7 @@ const def = <S extends z.ZodType>(
 ): SettingDefinition<S> =>
   description ? { schema, default: defaultValue, description } : { schema, default: defaultValue };
 
-const DEFAULT_IGNORED_FOLDERS = [
+export const DEFAULT_IGNORED_FOLDERS = [
   'node_modules',
   '.next',
   '.nuxt',
