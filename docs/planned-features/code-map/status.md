@@ -5,7 +5,8 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 ## Current work
 
 - Stage 00 complete: reproducible parser and Windows ASAR packaging benchmark, grammar integrity manifest and deterministic 10,000-file fixture. Decision: Tree-sitter WASM, lazy grammars, explicit CommonJS runtime entry.
-- Stages 01–14 pending. No production Code Map functionality is available yet.
+- Stage 01 complete: contracts, lazy host supervision and build assets, safe storage and Git ignores.
+- Stages 02–14 pending. No user-facing Code Map functionality is available yet.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
@@ -25,3 +26,14 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Additional Linux full check: unit tests passed; integration consistently times out at the existing PTY flow-control test (`tests/integration/pty-host.test.ts:231`). This stage does not change PTY code. Windows full check and Docker E2E are green; retain this limitation when comparing later runs.
 - Cross-platform npm lock repair adds missing optional `@emnapi` entries without changing existing versions. Notices regenerated in Linux to preserve existing platform notices.
 - Next: stage 01. Wire asset copying into Vite/electron-builder, keep the CommonJS runtime alias from the spike, add shared contracts, supervised lazy host, safe `.oxy` storage and watcher exclusions. The pinned TSX grammar reports syntax errors in two valid repository files; investigate in stage 03 and expose partial coverage.
+
+### Stage 01 — host and storage foundation
+
+- Shared graph/manifest/status/settings/diagnostics schemas and validated checkout RPC. Old projects remain opt-out. Project settings now preserve the optional field at the schema boundary; draft UI preservation belongs to stage 04.
+- Lazy supervised Code Map Host (inspect 9235), lowered OS priority, health/restart status, throttled status events. The internal checkout controller deliberately remains paused until scheduling and graph construction arrive in stages 02–03. No UI or indexing is exposed yet; main service lifecycle wiring belongs to stage 04.
+- Build verifies and copies WASM to `out/code-map`; electron-builder copies it to external resources. Pass the repository root explicitly to the copy helper from Vite because bundling relocates `import.meta.dirname`.
+- Storage: contained real paths, atomic writes with Windows retry, graph-hash validation, bounded cache publication/pruning, old-temp cleanup, heartbeat leases and serialized claims. An extra machine-local `owner.lock.guard/` prevents racing claims. Deletion retires the owned map directory by rename and preserves learnings.
+- Git protection preserves BOM/EOL, handles opt-out and removes only the exact generated block; worktrees never edit root ignores. Workspace watcher always excludes `.oxy`, including callback-level filtering.
+- Validation: Windows full `npm run check` passed. Linux focused suite: 47 tests passed, including symlink/unwritable-ignore cases. Docker/Xvfb app build plus `ipc-hosts.spec.ts` and `smoke.spec.ts`: 5 tests passed, including actual Code Map Host ping, malformed RPC rejection and restart after a crash. Actual output contains `out/main/codeMapHost.js`, runtime WASM, grammar manifest and C# grammar.
+- Upstream release 0.9.10 (`487e7db`) was merged after the first push was rejected; stage 00 commits and the merge are on origin/main.
+- Next: stage 02 — enumeration, fingerprints, watcher and scheduler; then stage 03 — extraction/resolution/publication. There is still no user-facing Code Map feature.

@@ -7,12 +7,15 @@
   },
   "include": [
     "electron.vite.config.ts",
+    "scripts/code-map-assets.ts",
+    "scripts/code-map-grammar-manifest.ts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/pty-host/**/*",
     "src/workspace-host/**/*",
     "src/plugin-host/**/*",
     "src/connections-host/**/*",
+    "src/code-map-host/**/*",
     "src/shared/**/*"
   ]
 }

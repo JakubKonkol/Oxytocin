@@ -75,6 +75,7 @@ export class RepoWatcher {
     const gitDirs = [this.o.gitDir, this.o.commonDir].filter((d): d is string => !!d);
     const inRoot = gitDirs.filter((d) => isInside(d, this.o.root));
     const rootIgnore = [
+      ...ignorePatterns(['.oxy']),
       ...ignorePatterns(this.o.ignoredFolders),
       ...inRoot.flatMap((d) => ALWAYS_IGNORED_IN_GIT.map((sub) => toPosix(relative(this.o.root, `${d}${sep}${sub}`)))),
     ];
@@ -114,6 +115,7 @@ export class RepoWatcher {
         continue;
       }
       if (!isInside(e.path, this.o.root)) continue;
+      if (toPosix(relative(this.o.root, e.path)).split('/').includes('.oxy')) continue;
       fs = true;
       this.touched.add(toPosix(relative(this.o.root, e.path)));
     }

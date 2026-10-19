@@ -24,12 +24,14 @@ files:
   # are bundled into out/main.
   - node_modules/libpg-query/**
   - node_modules/@pgsql/types/**
+  - node_modules/web-tree-sitter/**
 asar: true
 asarUnpack:
   - '**/node_modules/node-pty/**'
   - '**/node_modules/@parcel/watcher*/**'
   - '**/node_modules/ps-list/vendor/**'
 extraResources:
+  - { from: out/code-map, to: code-map }
   - { from: resources/icons, to: icons }
   - { from: resources/shell-integration, to: shell-integration }
   - { from: LICENSE, to: LICENSE }

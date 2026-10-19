@@ -1,4 +1,6 @@
 import { utilityProcess } from 'electron';
+import { constants, setPriority } from 'node:os';
+import type { CodeMapHostEvents, CodeMapHostMethods } from '@shared/rpc/contracts/code-map-host';
 import type { ConnectionsHostEvents, ConnectionsHostMethods } from '@shared/rpc/contracts/connections-host';
 import type { PluginHostEvents, PluginHostMethods } from '@shared/rpc/contracts/plugin-host';
 import type { PtyHostEvents, PtyHostMethods } from '@shared/rpc/contracts/pty-host';
@@ -17,7 +19,7 @@ export type SupervisedHost = Pick<
   'status' | 'start' | 'stop' | 'kill' | 'name'
 >;
 
-type HostEntry = 'ptyHost' | 'workspaceHost' | 'pluginHost' | 'connectionsHost';
+type HostEntry = 'ptyHost' | 'workspaceHost' | 'pluginHost' | 'connectionsHost' | 'codeMapHost';
 
 function forkHost(
   entry: HostEntry,
@@ -28,6 +30,14 @@ function forkHost(
 ): HostProcess {
   const execArgv = process.env['OXYTOCIN_INSPECT_HOSTS'] === '1' ? [`--inspect=${inspectPort}`] : [];
   const child = utilityProcess.fork(appPaths.hostEntry(entry), [], { serviceName, stdio: 'pipe', env, execArgv });
+  if (entry === 'codeMapHost')
+    child.once('spawn', () => {
+      try {
+        if (child.pid) setPriority(child.pid, constants.priority.PRIORITY_BELOW_NORMAL);
+      } catch (error) {
+        logger.warn('Could not lower Code Map Host priority', error);
+      }
+    });
   child.stdout?.on('data', (chunk: Buffer) => logger.info(chunk.toString().trimEnd()));
   child.stderr?.on('data', (chunk: Buffer) => logger.warn(chunk.toString().trimEnd()));
   return child;
@@ -44,6 +54,7 @@ export class Hosts {
   readonly externalPlugin: UtilityHost<PluginHostMethods, PluginHostEvents>;
   /** Database drivers and API requests of project resources; started on first use. */
   readonly connections: UtilityHost<ConnectionsHostMethods, ConnectionsHostEvents>;
+  readonly codeMap: UtilityHost<CodeMapHostMethods, CodeMapHostEvents>;
   private readonly statusEmitter = new Emitter<HostStatus[]>();
   readonly onDidChangeStatus = this.statusEmitter.event;
 
@@ -95,6 +106,7 @@ export class Hosts {
       'conn',
       9234,
     );
+    this.codeMap = make<CodeMapHostMethods, CodeMapHostEvents>('codeMapHost', 'Oxytocin Code Map Host', 'map', 9235);
   }
 
   /** Starts the Connections Host when it is not running (it is only needed once a project has resources). */
@@ -103,8 +115,13 @@ export class Hosts {
     if (state === 'stopped' || state === 'failed') this.connections.start();
   }
 
+  ensureCodeMap(): void {
+    const state = this.codeMap.state;
+    if (state === 'stopped' || state === 'failed') this.codeMap.start();
+  }
+
   all(): SupervisedHost[] {
-    return [this.pty, this.workspace, this.plugin, this.externalPlugin, this.connections];
+    return [this.pty, this.workspace, this.plugin, this.externalPlugin, this.connections, this.codeMap];
   }
 
   status(): HostStatus[] {

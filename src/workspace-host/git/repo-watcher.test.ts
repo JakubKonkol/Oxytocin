@@ -29,6 +29,14 @@ async function setup(opts: { gitDir?: string } = {}) {
 }
 
 describe('RepoWatcher', () => {
+  it('always excludes .oxy and never emits fs refreshes or touched paths for its writes', async () => {
+    const s = await setup();
+    expect(s.subs[0]!.ignore).toEqual(expect.arrayContaining(['.oxy', '**/.oxy', '**/.oxy/**']));
+    s.subs[0]!.cb(null, [{ path: join(root, '.oxy', 'code-map', 'graph.json'), type: 'update' }]);
+    expect(s.refresh).not.toHaveBeenCalled();
+    expect(s.touched).not.toHaveBeenCalled();
+    await s.watcher.dispose();
+  });
   it('watches the tree with ignores and classifies events', async () => {
     vi.useFakeTimers();
     try {

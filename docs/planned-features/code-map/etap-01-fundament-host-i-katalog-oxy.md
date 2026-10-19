@@ -88,10 +88,17 @@ Unit (`unit-node`):
 
 ## Kryteria ukończenia
 
-- [ ] `npm run check` zielone; aplikacja się buduje i startuje (host nie startuje, bo nikt nie włączył Code Map).
-- [ ] Test pakowania potwierdza bundle hosta i gramatyki w paczce.
-- [ ] Wszystkie przypadki `.gitignore` z macierzy w sekcji „Testy” pokryte.
-- [ ] Brak zmian widocznych dla użytkownika.
+- [x] `npm run check` zielone; aplikacja się buduje i startuje (host nie startuje, bo nikt nie włączył Code Map).
+- [x] Test pakowania potwierdza bundle hosta i gramatyki w paczce.
+- [x] Wszystkie przypadki `.gitignore` z macierzy w sekcji „Testy” pokryte.
+- [x] Brak zmian widocznych dla użytkownika.
+
+## Implementation decisions
+
+- Claims, heartbeat replacement and release use a short-lived `owner.lock.guard/` with an identity token. It is explicitly machine-local in `.oxy/.gitignore`; stale or dead-process guards can be reclaimed.
+- Map deletion uses an ownership-checked rename to a temporary sibling before removal, so it cannot remove a newly configured map at the original path. Empty-parent cleanup uses non-recursive `rmdir`.
+- Vite passes an explicit repository root to asset copying: a default based on the helper's `import.meta.dirname` points to the wrong directory after config bundling.
+- The host skeleton remains paused internally until stages 02–03 provide real indexing. The UI and main service opt-in loop remain deferred to stage 04.
 
 ## Commity i CHANGELOG
 

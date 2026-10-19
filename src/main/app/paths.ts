@@ -7,7 +7,9 @@ export const appPaths = {
   mainDir: __dirname,
   rendererDir: join(__dirname, '../renderer'),
   preload: join(__dirname, '../preload/index.js'),
-  hostEntry: (name: 'ptyHost' | 'workspaceHost' | 'pluginHost' | 'connectionsHost') => join(__dirname, `${name}.js`),
+  hostEntry: (name: 'ptyHost' | 'workspaceHost' | 'pluginHost' | 'connectionsHost' | 'codeMapHost') =>
+    join(__dirname, `${name}.js`),
+  codeMapAssets: () => (app.isPackaged ? join(process.resourcesPath, 'code-map') : resolve(__dirname, '../code-map')),
   builtinPluginsDir: () =>
     app.isPackaged ? join(process.resourcesPath, 'plugins') : resolve(__dirname, '../../plugins'),
   resourcesDir: () => (app.isPackaged ? process.resourcesPath : resolve(__dirname, '../../resources')),

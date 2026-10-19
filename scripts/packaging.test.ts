@@ -3,7 +3,15 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(__dirname, '..');
-const RUNTIME_DIRS = ['src/main', 'src/preload', 'src/pty-host', 'src/workspace-host', 'src/plugin-host', 'src/shared'];
+const RUNTIME_DIRS = [
+  'src/main',
+  'src/preload',
+  'src/pty-host',
+  'src/workspace-host',
+  'src/plugin-host',
+  'src/code-map-host',
+  'src/shared',
+];
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -64,6 +72,14 @@ function packagedPatterns(): RegExp[] {
 }
 
 describe('packaging', () => {
+  it('builds the lazy Code Map Host and includes verified WASM as external resources', () => {
+    const vite = readFileSync(join(root, 'electron.vite.config.ts'), 'utf8');
+    const builder = readFileSync(join(root, 'electron-builder.yml'), 'utf8');
+    expect(vite).toContain("codeMapHost: resolve('src/code-map-host/index.ts')");
+    expect(vite).toContain("copyCodeMapAssets(resolve('out/code-map'), resolve('.'))");
+    expect(builder).toContain('from: out/code-map, to: code-map');
+    expect(builder).toContain('node_modules/web-tree-sitter/**');
+  });
   it('ships every module main and the hosts load at runtime, with their dependencies', () => {
     const imports = runtimeImports();
     expect(imports.size).toBeGreaterThan(5);

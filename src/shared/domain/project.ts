@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProjectIdSchema } from './terminal';
+import { CodeMapSettingsSchema } from './code-map';
 
 export { ProjectIdSchema };
 export type { ProjectId } from './terminal';
@@ -30,6 +31,7 @@ export const StartupTerminalSchema = z.object({
 export type StartupTerminal = z.infer<typeof StartupTerminalSchema>;
 
 export const ProjectSettingsSchema = z.object({
+  codeMap: CodeMapSettingsSchema.optional(),
   defaultProfileId: z.string().optional(),
   env: z.record(z.string(), z.string().nullable()).optional(),
   startupTerminals: z.array(StartupTerminalSchema).optional(),

@@ -23,7 +23,7 @@ export default defineConfig({
           name: 'unit-node',
           environment: 'node',
           include: [
-            'src/{shared,main,pty-host,workspace-host,plugin-host,connections-host}/**/*.test.ts',
+            'src/{shared,main,pty-host,workspace-host,plugin-host,connections-host,code-map-host}/**/*.test.ts',
             'plugins/*/src/host/**/*.test.ts',
             'packages/*/src/**/*.test.ts',
             'scripts/**/*.test.ts',

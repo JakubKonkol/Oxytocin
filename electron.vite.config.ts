@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import type { Plugin } from 'vite';
 import { buildShellCsp } from './src/shared/security/csp';
+import { copyCodeMapAssets } from './scripts/code-map-assets';
 
 const alias = { '@shared': resolve('src/shared') };
 
@@ -63,7 +64,9 @@ function cspMetaPlugin(): Plugin {
 
 export default defineConfig({
   main: {
-    resolve: { alias },
+    plugins: [{ name: 'code-map-assets', buildStart: () => copyCodeMapAssets(resolve('out/code-map'), resolve('.')) }],
+    // web-tree-sitter's ESM entry uses import.meta.url; hosts are emitted as CommonJS.
+    resolve: { alias: { ...alias, 'web-tree-sitter': resolve('node_modules/web-tree-sitter/web-tree-sitter.cjs') } },
     // `app.getVersion()` returns Electron's version when the app runs from out/ (dev, E2E).
     define: { __OXYTOCIN_VERSION__: JSON.stringify(version) },
     build: {
@@ -77,6 +80,7 @@ export default defineConfig({
           workspaceHost: resolve('src/workspace-host/index.ts'),
           pluginHost: resolve('src/plugin-host/index.ts'),
           connectionsHost: resolve('src/connections-host/index.ts'),
+          codeMapHost: resolve('src/code-map-host/index.ts'),
         },
       },
     },
