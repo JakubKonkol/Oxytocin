@@ -304,7 +304,8 @@ function bootstrap(): void {
   const agentPrompts = new AgentPromptService({
     agents,
     pty: {
-      paste: (id, text, submit) => hosts.pty.call('paste', { id, text, submit }),
+      // A long paste into a slow reader takes a while before its Enter (PTY Host `paste`).
+      paste: (id, text, submit) => hosts.pty.call('paste', { id, text, submit }, { timeoutMs: 90_000 }),
       write: (id, data) => hosts.pty.call('write', { id, data }),
       text: (id) => hosts.pty.call('getText', { id }),
       onActivity: (listener) => hosts.pty.onEvent('terminal:activity', listener),
@@ -925,7 +926,8 @@ function bootstrap(): void {
     terminals,
     agents,
     pty: {
-      paste: (id, text, submit) => hosts.pty.call('paste', { id, text, submit }),
+      // A long paste into a slow reader takes a while before its Enter (PTY Host `paste`).
+      paste: (id, text, submit) => hosts.pty.call('paste', { id, text, submit }, { timeoutMs: 90_000 }),
       write: (id, data) => hosts.pty.call('write', { id, data }),
       text: (id) => hosts.pty.call('getText', { id }),
       onActivity: (listener) => hosts.pty.onEvent('terminal:activity', listener),

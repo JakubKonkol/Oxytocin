@@ -3,6 +3,15 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Fixed
+
+- Prompts typed into agents by Task, Changes → Send to review, Ensemble, Scratchpad and plugins are submitted
+  reliably. Long prompts, such as an approved plan, sometimes stayed in the agent's input box until Enter was pressed:
+  Codex CLI on Windows reads a long paste slowly and took the Enter as part of it. Enter now follows once the agent has
+  taken the paste in, and is sent again after a few seconds when the agent did not start.
+
 ## [0.9.9] - 2026-10-17
 
 ### Changed

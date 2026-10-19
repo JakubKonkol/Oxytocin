@@ -51,6 +51,8 @@ describe('AgentPromptService', () => {
     };
     expect(await error('working', 'x')).toMatch(/working/);
     expect(await error('idle', 'x', 'Do you trust the files in this folder?')).toMatch(/question/);
+    // Claude Code's first start with bypass permissions available.
+    expect(await error('idle', 'x', 'Bypass Permissions mode\n❯ 1. No, exit\n  2. Yes, I accept')).toMatch(/question/);
     expect(await error('idle', '/clear')).toMatch(/slash commands/);
     expect(await error('idle', 'x', undefined, 't2')).toMatch(/No AI agent/);
     expect(await error('idle', '   ')).toMatch(/empty/);

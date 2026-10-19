@@ -10,17 +10,18 @@ const logger = { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() };
 function fakePty() {
   let onData: (data: string) => void = () => undefined;
   let onExit: (e: { exitCode: number; signal?: number }) => void = () => undefined;
+  const write = vi.fn();
   const pty = {
     pid: 42,
     onData: (l: (data: string) => void) => ((onData = l), { dispose: () => undefined }),
     onExit: (l: (e: { exitCode: number; signal?: number }) => void) => ((onExit = l), { dispose: () => undefined }),
-    write: vi.fn(),
+    write,
     resize: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
     kill: vi.fn(),
   } as unknown as IPty;
-  return { pty, output: (data: string) => onData(data), exit: (exitCode: number) => onExit({ exitCode }) };
+  return { pty, write, output: (data: string) => onData(data), exit: (exitCode: number) => onExit({ exitCode }) };
 }
 
 const opts = (extra: Partial<SpawnOptions> = {}): SpawnOptions => ({
@@ -90,5 +91,61 @@ describe('TerminalSession restore', () => {
     expect(await session.getText()).toContain('bye');
     expect(emit).toHaveBeenCalledWith('terminal:exit', { id: 't1', exitCode: 0 });
     session.dispose();
+  });
+});
+
+describe('TerminalSession paste', () => {
+  it('presses Enter only after the program drew the paste and went quiet', async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakePty();
+      const session = new TerminalSession(opts(), {
+        spawnPty: () => fake.pty,
+        emit: vi.fn(),
+        logger,
+        platform: 'linux',
+      });
+      fake.output('\x1b[?2004h> ');
+      await vi.advanceTimersByTimeAsync(10);
+      const done = session.paste('a long plan', true);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(fake.write).toHaveBeenCalledWith('\x1b[200~a long plan\x1b[201~');
+      // A slow reader (Codex CLI on Windows) draws nothing for a while: no Enter yet.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(fake.write).not.toHaveBeenCalledWith('\r');
+      fake.output('> a long plan');
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fake.write).not.toHaveBeenCalledWith('\r');
+      await vi.advanceTimersByTimeAsync(300);
+      expect(fake.write).toHaveBeenLastCalledWith('\r');
+      await expect(done).resolves.toEqual({ bracketed: true });
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('presses Enter after the deadline when the program never draws the paste', async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = fakePty();
+      const session = new TerminalSession(opts(), {
+        spawnPty: () => fake.pty,
+        emit: vi.fn(),
+        logger,
+        platform: 'linux',
+      });
+      fake.output('> ');
+      await vi.advanceTimersByTimeAsync(10);
+      const done = session.paste('x'.repeat(1000), true);
+      await vi.advanceTimersByTimeAsync(1900);
+      expect(fake.write).not.toHaveBeenCalledWith('\r');
+      await vi.advanceTimersByTimeAsync(200);
+      expect(fake.write).toHaveBeenLastCalledWith('\r');
+      await expect(done).resolves.toEqual({ bracketed: false });
+      session.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

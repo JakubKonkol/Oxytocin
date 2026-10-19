@@ -76,4 +76,42 @@ describe('deliver', () => {
     const f = fake({ precise: false, reactAfterPaste: true });
     expect(await deliver('[Ensemble] go', f.deps)).toEqual({ ok: true });
   });
+
+  it('heuristic agents: drawing the pasted text is not a start, so Enter follows once more', async () => {
+    const f = fake({ precise: false, reactAfterEnter: true });
+    let t = 0;
+    let lastOutputAt = 0;
+    const deps = {
+      ...f.deps,
+      // The paste is drawn right after Enter (an Enter taken as part of the paste), then the screen stays quiet.
+      paste: (text: string) => {
+        f.calls.push(`paste:${text}`);
+        lastOutputAt = t + 100;
+        return Promise.resolve();
+      },
+      lastOutputAt: () => Math.max(lastOutputAt, f.deps.lastOutputAt()),
+      now: () => t,
+      sleep: (ms: number) => {
+        t += ms;
+        return Promise.resolve();
+      },
+    };
+    expect(await deliver('[Ensemble] go', deps)).toEqual({ ok: true });
+    expect(f.calls).toEqual(['paste:[Ensemble] go', 'enter']);
+  });
+
+  it('sends the second Enter after a few seconds, not after the whole confirmation window', async () => {
+    const f = fake({ precise: true, reactAfterEnter: true });
+    let enteredAt = -1;
+    const deps = {
+      ...f.deps,
+      enter: () => {
+        enteredAt = f.deps.now();
+        return f.deps.enter();
+      },
+    };
+    expect(await deliver('[Ensemble] go', deps)).toEqual({ ok: true });
+    expect(enteredAt).toBeGreaterThanOrEqual(3000);
+    expect(enteredAt).toBeLessThan(4000);
+  });
 });

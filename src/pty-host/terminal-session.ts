@@ -3,6 +3,7 @@ import type { PtyHostEvents } from '@shared/rpc/contracts/pty-host';
 import type { PtyToRenderer } from '@shared/rpc/contracts/pty-channel';
 import type { SpawnOptions, TerminalSnapshot } from '@shared/domain/terminal';
 import type { Logger } from '@shared/logging/logger';
+import { pasteSubmitDue } from '@shared/utils/paste-submit';
 import { DataBatcher } from './data-batcher';
 import { FlowController } from './flow-control';
 import { HeadlessMirror } from './headless-mirror';
@@ -12,6 +13,7 @@ import { isAlive, killProcessTree } from './process-tree';
 /** Ensemble pastes: slice size and the pause between slices. */
 const PASTE_CHUNK = 2048;
 const PASTE_CHUNK_PAUSE_MS = 8;
+const PASTE_POLL_MS = 25;
 
 export type SpawnPty = (file: string, args: string[], options: IPtyForkOptions | IWindowsPtyForkOptions) => IPty;
 
@@ -317,9 +319,8 @@ export class TerminalSession {
 
   /**
    * Types a message into the program (Ensemble): with bracketed paste when the program turned it on (the text
-   * arrives as one paste, newlines included), otherwise as one line. With `submit`, Enter follows after a short
-   * pause (TUIs such as Claude Code treat an Enter inside the paste burst as a newline). Control characters are
-   * removed so a message can never act as keys.
+   * arrives as one paste, newlines included), otherwise as one line. With `submit`, Enter follows once the program
+   * has taken the paste in (`pasteSubmitDue`). Control characters are removed so a message can never act as keys.
    */
   paste(text: string, submit: boolean, submitDelayMs = 150): Promise<{ bracketed: boolean }> {
     return new Promise((resolve) => {
@@ -342,13 +343,24 @@ export class TerminalSession {
             return;
           }
           if (!submit) return resolve({ bracketed });
-          setTimeout(
-            () => {
-              this.write('\r');
-              resolve({ bracketed });
-            },
-            submitDelayMs + Math.min(1500, Math.floor(data.length / 50)),
-          );
+          const writtenAt = Date.now();
+          const waitForQuiet = () => {
+            if (!this._alive) return resolve({ bracketed });
+            const due = pasteSubmitDue({
+              writtenAt,
+              lastOutputAt: this.lastOutputAt,
+              now: Date.now(),
+              length: data.length,
+              minDelayMs: submitDelayMs,
+            });
+            if (!due) {
+              setTimeout(waitForQuiet, PASTE_POLL_MS);
+              return;
+            }
+            this.write('\r');
+            resolve({ bracketed });
+          };
+          setTimeout(waitForQuiet, PASTE_POLL_MS);
         };
         next(0);
       });

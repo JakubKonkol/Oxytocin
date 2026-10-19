@@ -19,8 +19,11 @@ export interface AgentPromptDeps {
   confirmMs?: number;
 }
 
-/** Sources that report an agent's state exactly: a delivery waits for "working" instead of new output. */
-const PRECISE_SOURCES = new Set(['hook', 'claude-registry', 'program-status']);
+/**
+ * Sources that report an agent's state exactly: a delivery waits for "working" instead of new output. Codex CLI's
+ * spinner in the title and OSC 9;4 progress also say "working" outright.
+ */
+const PRECISE_SOURCES = new Set(['hook', 'claude-registry', 'program-status', 'title', 'osc-progress']);
 
 export const MAX_PROMPT_LENGTH = 200_000;
 
@@ -70,7 +73,7 @@ export class AgentPromptService implements Disposable {
         enter: async () => {
           await this.deps.pty.write(terminalId, '\r');
         },
-        ...(this.deps.confirmMs !== undefined ? { confirmMs: this.deps.confirmMs } : {}),
+        ...(this.deps.confirmMs !== undefined ? { confirmMs: this.deps.confirmMs, retryMs: this.deps.confirmMs } : {}),
       });
     } finally {
       this.delivering.delete(terminalId);

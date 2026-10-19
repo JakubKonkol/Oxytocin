@@ -1,4 +1,5 @@
 import { scratchpadText, withScratchpadText } from '@shared/domain/ui-state';
+import { pasteSubmitDue } from '@shared/utils/paste-submit';
 import { useProjectsStore } from '../../stores/projects-store';
 import { useUiStore } from '../../stores/ui-store';
 import { useTerminalsStore } from '../../stores/terminals-store';
@@ -49,12 +50,20 @@ export async function sendToAgent(
     notify('error', 'The agent terminal is not available');
     return false;
   }
+  let lastOutputAt = 0;
+  const output = entry.term.onWriteParsed(() => (lastOutputAt = performance.now()));
   entry.term.paste(safe);
   entry.focus();
-  if (opts.submit) {
-    // Agents read a paste as a whole before Enter submits it.
-    await new Promise((r) => setTimeout(r, 150));
-    entry.sendRaw('\r');
+  try {
+    if (opts.submit) {
+      // Agents read a paste as a whole before Enter submits it; a slow reader takes a while (pasteSubmitDue).
+      const writtenAt = performance.now();
+      while (!pasteSubmitDue({ writtenAt, lastOutputAt, now: performance.now(), length: safe.length }))
+        await new Promise((r) => setTimeout(r, 25));
+      entry.sendRaw('\r');
+    }
+  } finally {
+    output.dispose();
   }
   return true;
 }
