@@ -23,6 +23,7 @@ const BUNDLED_DEPS = [
   'oracledb',
   'node-sql-parser',
   'yaml',
+  'web-tree-sitter',
 ];
 /** Optional modules the drivers try to load (compression, Kerberos, cloud auth): absent, so they stay external. */
 const OPTIONAL_DRIVER_DEPS = [
@@ -81,6 +82,7 @@ export default defineConfig({
           pluginHost: resolve('src/plugin-host/index.ts'),
           connectionsHost: resolve('src/connections-host/index.ts'),
           codeMapHost: resolve('src/code-map-host/index.ts'),
+          codeMapParserWorker: resolve('src/code-map-host/parse/worker.ts'),
         },
       },
     },

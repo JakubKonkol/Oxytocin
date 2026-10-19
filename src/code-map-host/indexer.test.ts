@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { CheckoutIndexer, type InventorySnapshot } from './indexer';
 import { CodeMapScheduler } from './scheduler';
+import type { WatchSubscribe } from './watch';
 
 const mocks = vi.hoisted(() => ({ enumerate: vi.fn() }));
 vi.mock('./enumerate', async (original) => ({
@@ -35,6 +36,7 @@ it('registers observation before scanning, reconciles by activity and audits has
     });
   });
   scheduler = new CodeMapScheduler();
+  let receive: Parameters<WatchSubscribe>[1] | undefined;
   indexer = new CheckoutIndexer({
     checkoutId: 'c',
     projectId: 'p',
@@ -42,7 +44,8 @@ it('registers observation before scanning, reconciles by activity and audits has
     gitPath: 'git',
     excludedPaths: [],
     scheduler,
-    subscribe: () => {
+    subscribe: (_, callback) => {
+      receive = callback;
       order.push('watch');
       return Promise.resolve({ unsubscribe: () => Promise.resolve() });
     },
@@ -72,12 +75,15 @@ it('registers observation before scanning, reconciles by activity and audits has
   await vi.advanceTimersByTimeAsync(1_680_000);
   expect(snapshots.filter((snapshot) => snapshot.fullHash)).toHaveLength(2);
   indexer.pause();
+  receive!(null, [{ path: '/virtual/dirty.ts', type: 'update' }]);
+  expect(indexer.pendingFiles).toBe(1);
   const before = snapshots.length;
   await vi.advanceTimersByTimeAsync(600_000);
   expect(snapshots).toHaveLength(before);
   indexer.resume();
   await vi.advanceTimersByTimeAsync(1);
   expect(snapshots.at(-1)!.fullHash).toBe(true);
+  expect(indexer.pendingFiles).toBe(0);
   await indexer.dispose();
   scheduler.dispose();
   expect(vi.getTimerCount()).toBe(0);

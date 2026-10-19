@@ -34,6 +34,8 @@ export default tseslint.config(
       'packages/create-oxytocin-plugin/vendor/**',
       // Generated copies of the view SDK used by E2E fixture plugins.
       'tests/fixtures/plugins/*/oxy-sdk.js',
+      // Parser fixtures can contain deliberately invalid syntax and independent module layouts.
+      'tests/fixtures/code-map/**',
     ],
   },
   js.configs.recommended,

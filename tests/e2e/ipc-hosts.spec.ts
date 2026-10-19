@@ -1,4 +1,7 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { CodeMapGraphSchema } from '../../src/shared/domain/code-map';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 
@@ -46,6 +49,66 @@ test('the Code Map Host starts on demand, validates RPC and recovers after a cra
     await app.evaluate(() => (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.hosts.codeMap.stop());
   } finally {
     await app.close();
+  }
+});
+
+test('the Code Map Host parses in a worker and publishes fresh graph artifacts', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oxy-map-e2e-'));
+  await writeFile(join(root, 'library.ts'), 'export function sample() { return 1; }');
+  await writeFile(
+    join(root, 'main.ts'),
+    "import {sample} from './library'; export function run() { return sample(); }",
+  );
+  const { app } = await launchApp();
+  try {
+    await app.evaluate(async (_, root) => {
+      const hosts = (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.hosts;
+      hosts.ensureCodeMap();
+      await hosts.codeMap.call('checkout:configure', {
+        checkoutId: 'fixture',
+        projectId: 'fixture',
+        root,
+        mode: 'project',
+        gitPath: 'git',
+        ignoreInGit: false,
+      });
+    }, root);
+    await expect
+      .poll(
+        () =>
+          app.evaluate(async () =>
+            (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.hosts.codeMap.call('checkout:status', {
+              checkoutId: 'fixture',
+            }),
+          ),
+        { timeout: 15_000 },
+      )
+      .toMatchObject({ state: 'ready', counts: { files: 2, symbols: 2 } });
+    const graph = CodeMapGraphSchema.parse(JSON.parse(await readFile(join(root, '.oxy/code-map/graph.json'), 'utf8')));
+    const sample = graph.symbols.find((symbol) => symbol.name === 'sample')!,
+      run = graph.symbols.find((symbol) => symbol.name === 'run')!;
+    expect(graph.edges).toContainEqual(expect.objectContaining({ from: run.id, to: sample.id, rel: 'calls' }));
+    expect(await readFile(join(root, '.oxy/code-map/MAP.md'), 'utf8')).toContain('function sample(');
+    await writeFile(join(root, 'library.ts'), 'export function renamed() { return 2; }');
+    await expect
+      .poll(
+        async () => {
+          const current = CodeMapGraphSchema.parse(
+            JSON.parse(await readFile(join(root, '.oxy/code-map/graph.json'), 'utf8')),
+          );
+          return current.unresolved.some((entry) => entry.target === 'sample' && entry.rel === 'calls');
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    await app.evaluate(async () => {
+      const hosts = (globalThis as unknown as { __oxyMain: MainHooks }).__oxyMain.hosts;
+      await hosts.codeMap.call('checkout:remove', { checkoutId: 'fixture' });
+      await hosts.codeMap.stop();
+    });
+  } finally {
+    await app.close();
+    await rm(root, { recursive: true, force: true });
   }
 });
 

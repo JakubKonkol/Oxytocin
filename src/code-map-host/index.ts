@@ -10,20 +10,27 @@ import { CodeMapCheckouts } from './checkouts';
 declare const __OXYTOCIN_VERSION__: string;
 const pending = new Map<string, CodeMapStatus>();
 let timer: ReturnType<typeof setTimeout> | undefined;
-const checkouts = new CodeMapCheckouts(`Oxytocin ${__OXYTOCIN_VERSION__}`, (status) => {
-  pending.set(status.checkoutId, status);
-  if (timer) return;
-  // Bound status traffic to four events per second, including many simultaneous checkouts.
-  const emitNext = () => {
-    timer = undefined;
-    const first = pending.entries().next();
-    if (first.done) return;
-    pending.delete(first.value[0]);
-    runtime.rpc.emit('checkout:status', CodeMapStatusSchema.parse(first.value[1]));
-    if (pending.size) timer = setTimeout(emitNext, 250);
-  };
-  timer = setTimeout(emitNext, 250);
-});
+const checkouts = new CodeMapCheckouts(
+  `Oxytocin ${__OXYTOCIN_VERSION__}`,
+  (status) => {
+    pending.set(status.checkoutId, status);
+    if (timer) return;
+    // Bound status traffic to four events per second, including many simultaneous checkouts.
+    const emitNext = () => {
+      timer = undefined;
+      const first = pending.entries().next();
+      if (first.done) return;
+      pending.delete(first.value[0]);
+      runtime.rpc.emit('checkout:status', CodeMapStatusSchema.parse(first.value[1]));
+      if (pending.size) timer = setTimeout(emitNext, 250);
+    };
+    timer = setTimeout(emitNext, 250);
+  },
+  {
+    assets: process.env['OXYTOCIN_CODE_MAP_ASSETS'] ?? resolve(__dirname, '../code-map'),
+    parserEntry: join(__dirname, 'codeMapParserWorker.js'),
+  },
+);
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
 const impl: Impl = {
@@ -61,3 +68,4 @@ const runtime = startHostRuntime<CodeMapHostEvents>({
   exit: (code) => process.exit(code),
 });
 runtime.log.info('Code Map Host started');
+import { join, resolve } from 'node:path';

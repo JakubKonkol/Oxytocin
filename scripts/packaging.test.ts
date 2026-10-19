@@ -76,6 +76,7 @@ describe('packaging', () => {
     const vite = readFileSync(join(root, 'electron.vite.config.ts'), 'utf8');
     const builder = readFileSync(join(root, 'electron-builder.yml'), 'utf8');
     expect(vite).toContain("codeMapHost: resolve('src/code-map-host/index.ts')");
+    expect(vite).toContain("codeMapParserWorker: resolve('src/code-map-host/parse/worker.ts')");
     expect(vite).toContain("copyCodeMapAssets(resolve('out/code-map'), resolve('.'))");
     expect(builder).toContain('from: out/code-map, to: code-map');
     expect(builder).toContain('node_modules/web-tree-sitter/**');

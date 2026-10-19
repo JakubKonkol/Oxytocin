@@ -15,7 +15,12 @@ export interface InventorySnapshot {
 }
 export interface IndexerHooks {
   start(total: number): void;
-  file(path: string, fingerprint: Fingerprint, source: string): Promise<void> | void;
+  file(
+    path: string,
+    fingerprint: Fingerprint,
+    source: string,
+    signal: AbortSignal,
+  ): Promise<void | boolean> | void | boolean;
   removed(path: string): void;
   failed(path: string, reason: string): void;
   complete(snapshot: InventorySnapshot, signal: AbortSignal): Promise<void> | void;
@@ -34,6 +39,8 @@ export class CheckoutIndexer {
   private closed = false;
   private rebuildVersion = 0;
   private appliedRebuild = 0;
+  private readonly failedPaths = new Set<string>();
+  private activeSequence = 0;
   constructor(
     private readonly options: {
       checkoutId: string;
@@ -106,6 +113,7 @@ export class CheckoutIndexer {
     const rebuildVersion = this.rebuildVersion;
     const reextract = rebuildVersion !== this.appliedRebuild;
     const checkpoint = this.watcher.checkpoint();
+    this.activeSequence = checkpoint.sequence;
     const started = performance.now();
     const enumeration: Enumeration = await enumerate({ ...this.options, signal });
     const enumerateMs = performance.now() - started;
@@ -123,7 +131,13 @@ export class CheckoutIndexer {
       const batch = await Promise.all(
         enumeration.files.slice(offset, offset + 32).map(async (file) => {
           const previous = this.files.get(file.path);
-          if (!fullHash && !dirty.has(file.path) && previous && sameMetadata(previous.metadata, file.metadata))
+          if (
+            !fullHash &&
+            !dirty.has(file.path) &&
+            !this.failedPaths.has(file.path) &&
+            previous &&
+            sameMetadata(previous.metadata, file.metadata)
+          )
             return { path: file.path, fingerprint: previous };
           try {
             return { path: file.path, ...(await fingerprint(enumeration.root, file.path, signal)) };
@@ -131,6 +145,7 @@ export class CheckoutIndexer {
             signal.throwIfAborted();
             const reason = error instanceof Error ? error.message : String(error);
             hooks.failed(file.path, reason);
+            this.failedPaths.add(file.path);
             if (enumeration.diagnostics.failed.length < 200)
               enumeration.diagnostics.failed.push({ path: file.path, reason });
             else enumeration.diagnostics.truncated = true;
@@ -145,9 +160,14 @@ export class CheckoutIndexer {
         if (
           'source' in file &&
           file.source !== undefined &&
-          (reextract || file.fingerprint.sha256 !== this.files.get(file.path)?.sha256)
-        )
-          await hooks.file(file.path, file.fingerprint, file.source);
+          (reextract ||
+            this.failedPaths.has(file.path) ||
+            file.fingerprint.sha256 !== this.files.get(file.path)?.sha256)
+        ) {
+          const successful = await hooks.file(file.path, file.fingerprint, file.source, signal);
+          if (successful === false) this.failedPaths.add(file.path);
+          else this.failedPaths.delete(file.path);
+        }
       }
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
@@ -181,8 +201,15 @@ export class CheckoutIndexer {
     await this.watcher.close();
     await this.running?.catch(() => undefined);
     this.files.clear();
+    this.failedPaths.clear();
   }
   get isClosed(): boolean {
     return this.closed;
+  }
+  get pendingFiles(): number {
+    const checkpoint = this.watcher.checkpoint();
+    return checkpoint.sequence > this.activeSequence
+      ? Math.max(1, checkpoint.changes.filter((change) => change.sequence > this.activeSequence).length)
+      : 0;
   }
 }

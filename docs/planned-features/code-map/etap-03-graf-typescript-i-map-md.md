@@ -75,10 +75,10 @@ ranking).
 
 ## Kryteria ukończenia
 
-- [ ] Wszystkie fixture TS/JS zielone; liczby precision/recall policzone.
-- [ ] Testy determinizmu zielone na Windows i Linux.
-- [ ] Limity ochronne dają stan `limit` (test z fixture blisko limitu — limity można obniżyć w teście).
-- [ ] Brak zmian widocznych dla użytkownika.
+- [x] Wszystkie fixture TS/JS zielone; liczby precision/recall policzone.
+- [x] Testy determinizmu zielone na Windows i Linux.
+- [x] Limity ochronne dają stan `limit` (test z fixture blisko limitu — limity można obniżyć w teście).
+- [x] Brak zmian widocznych dla użytkownika.
 
 ## Commity i CHANGELOG
 
@@ -95,6 +95,6 @@ Bez wpisu w CHANGELOG (nic widocznego).
 ## Pułapki
 
 - Nie polegaj na kolejności `Map`/listingu katalogu — sortuj jawnie.
-- Kolumny parsera są bajtowe, konsumenci potrzebują UTF-16; nie utożsamiaj ich z kolumnami Monaco/LSP.
+- `web-tree-sitter` 0.27.1 exposes string indices and columns in UTF-16 units (verified with an astral Unicode character before a declaration). Preserve these positions; do not apply a second byte-to-UTF-16 conversion. Native Tree-sitter byte offsets are a separate API.
 - `tsconfig.json` to JSONC (komentarze, przecinki na końcu) — parsuj tolerancyjnie, nigdy nie wykonuj.
 - Klucz cache musi zawierać wersję ekstraktora.

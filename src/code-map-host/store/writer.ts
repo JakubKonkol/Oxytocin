@@ -11,6 +11,7 @@ import {
   type CodeMapManifest,
 } from '@shared/domain/code-map';
 import { hasCode, rejectLink, safeDirectory } from './paths';
+import { CodeMapLimitError } from '../enumerate';
 
 export function sha256(data: string | Uint8Array): string {
   return createHash('sha256').update(data).digest('hex');
@@ -45,14 +46,24 @@ export async function atomicWrite(path: string, content: string | Uint8Array): P
 
 async function dataFiles(directory: string): Promise<{ path: string; bytes: number; modified: number }[]> {
   const files: { path: string; bytes: number; modified: number }[] = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isSymbolicLink()) throw new Error('Unexpected link in Code Map data');
-    if (entry.isDirectory()) files.push(...(await dataFiles(path)));
-    else {
-      const info = await stat(path);
-      files.push({ path, bytes: info.size, modified: info.mtimeMs });
-    }
+  const entries = await readdir(directory, { withFileTypes: true }).catch((error: unknown) => {
+    if (hasCode(error, 'ENOENT')) return [];
+    throw error;
+  });
+  for (let offset = 0; offset < entries.length; offset += 32) {
+    const batch = await Promise.all(
+      entries.slice(offset, offset + 32).map(async (entry) => {
+        const path = join(directory, entry.name);
+        if (entry.isSymbolicLink()) throw new Error('Unexpected link in Code Map data');
+        if (entry.isDirectory()) return dataFiles(path);
+        const info = await stat(path).catch((error: unknown) => {
+          if (hasCode(error, 'ENOENT')) return null;
+          throw error;
+        });
+        return info ? [{ path, bytes: info.size, modified: info.mtimeMs }] : [];
+      }),
+    );
+    for (const filesInEntry of batch) files.push(...filesInEntry);
   }
   return files;
 }
@@ -70,6 +81,8 @@ export async function loadSnapshot(
 ): Promise<{ graph: CodeMapGraph; manifest: CodeMapManifest } | null> {
   try {
     await Promise.all(['graph.json', 'manifest.json'].map((file) => rejectLink(join(directory, file))));
+    const sizes = await Promise.all(['graph.json', 'manifest.json'].map((file) => stat(join(directory, file))));
+    if (sizes[0]!.size > CODE_MAP_LIMITS.bytes || sizes[1]!.size > 1024 * 1024) return null;
     const [graphText, manifestText] = await Promise.all([
       readFile(join(directory, 'graph.json'), 'utf8'),
       readFile(join(directory, 'manifest.json'), 'utf8'),
@@ -84,21 +97,44 @@ export async function loadSnapshot(
 
 export async function publishSnapshot(
   root: string,
-  snapshot: { graph: CodeMapGraph; map: string; manifest: CodeMapManifest; cache?: ReadonlyMap<string, string> },
+  snapshot: {
+    graph: CodeMapGraph;
+    map: string;
+    manifest: CodeMapManifest;
+    cache?: ReadonlyMap<string, string>;
+    liveCacheKeys?: ReadonlySet<string>;
+  },
   assertOwned: () => Promise<void>,
-): Promise<void> {
+): Promise<CodeMapManifest> {
+  const writeStart = performance.now();
   const directory = await safeDirectory(root, ['.oxy', 'code-map']);
   const graph = `${JSON.stringify(CodeMapGraphSchema.parse(snapshot.graph))}\n`;
   const manifest = CodeMapManifestSchema.parse({ ...snapshot.manifest, graphSha256: sha256(graph) });
   let plannedBytes =
     Buffer.byteLength(graph) + Buffer.byteLength(snapshot.map) + Buffer.byteLength(JSON.stringify(manifest));
   for (const value of snapshot.cache?.values() ?? []) plannedBytes += Buffer.byteLength(value);
-  if (plannedBytes > CODE_MAP_LIMITS.bytes) throw new Error('Code Map limit reached — add exclusions');
+  const dirtyKeys = new Set(snapshot.cache?.keys());
+  for (const file of await dataFiles(directory)) {
+    if (['graph.json', 'MAP.md', 'manifest.json'].some((name) => file.path === join(directory, name))) continue;
+    const hash = /([a-f0-9]{64})\.json$/.exec(file.path)?.[1];
+    if (hash && (dirtyKeys.has(hash) || (snapshot.liveCacheKeys && !snapshot.liveCacheKeys.has(hash)))) continue;
+    plannedBytes += file.bytes;
+  }
+  if (plannedBytes > CODE_MAP_LIMITS.bytes) throw new CodeMapLimitError();
   await assertOwned();
-  for (const [hash, value] of snapshot.cache ?? []) {
-    CodeMapHashSchema.parse(hash);
-    const cache = await safeDirectory(root, ['.oxy', 'code-map', 'cache', hash.slice(0, 2)]);
-    await atomicWrite(join(cache, `${hash}.json`), value);
+  const pendingCache = [...(snapshot.cache ?? [])];
+  for (let offset = 0; offset < pendingCache.length; offset += 32) {
+    await assertOwned();
+    const outcomes = await Promise.allSettled(
+      pendingCache.slice(offset, offset + 32).map(async ([hash, value]) => {
+        CodeMapHashSchema.parse(hash);
+        const cache = await safeDirectory(root, ['.oxy', 'code-map', 'cache', hash.slice(0, 2)]);
+        await atomicWrite(join(cache, `${hash}.json`), value);
+      }),
+    );
+    const failure = outcomes.find((outcome) => outcome.status === 'rejected');
+    if (failure?.status === 'rejected')
+      throw failure.reason instanceof Error ? failure.reason : new Error(String(failure.reason));
   }
   for (const [file, value] of [
     ['graph.json', graph],
@@ -106,14 +142,18 @@ export async function publishSnapshot(
     ['manifest.json', `${JSON.stringify(manifest)}\n`],
   ] as const) {
     await assertOwned();
-    await atomicWrite(join(directory, file), value);
+    if (file === 'manifest.json') {
+      manifest.durationsMs.write = performance.now() - writeStart;
+      await atomicWrite(join(directory, file), `${JSON.stringify(manifest)}\n`);
+    } else await atomicWrite(join(directory, file), value);
   }
   if (snapshot.cache) {
     const cache = await safeDirectory(root, ['.oxy', 'code-map', 'cache']);
     for (const file of await dataFiles(cache)) {
       const match = /([a-f0-9]{64})\.json$/.exec(file.path);
-      if (match && !snapshot.cache.has(match[1]!)) await rm(file.path);
+      if (match && !(snapshot.liveCacheKeys ?? snapshot.cache).has(match[1]!)) await rm(file.path);
     }
   }
-  if ((await dataSize(directory)) > CODE_MAP_LIMITS.bytes) throw new Error('Code Map limit reached — add exclusions');
+  if ((await dataSize(directory)) > CODE_MAP_LIMITS.bytes) throw new CodeMapLimitError();
+  return manifest;
 }

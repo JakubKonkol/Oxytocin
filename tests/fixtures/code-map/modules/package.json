@@ -1,0 +1,9 @@
+{
+  "name": "code-map-fixture",
+  "license": "MIT",
+  "private": true,
+  "main": "src/main.ts",
+  "workspaces": [
+    "packages/*"
+  ]
+}

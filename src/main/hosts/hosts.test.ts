@@ -10,7 +10,9 @@ vi.mock('node:os', async (original) => ({
   ...(await original<typeof Os>()),
   setPriority: mocks.priority,
 }));
-vi.mock('../app/paths', () => ({ appPaths: { hostEntry: (name: string) => `/out/${name}.js` } }));
+vi.mock('../app/paths', () => ({
+  appPaths: { hostEntry: (name: string) => `/out/${name}.js`, codeMapAssets: () => '/assets/code-map' },
+}));
 vi.mock('../logging/log', () => ({ writeForwardedLog: vi.fn() }));
 afterEach(() => {
   vi.useRealTimers();

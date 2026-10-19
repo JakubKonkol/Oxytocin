@@ -8,11 +8,12 @@ import {
 } from '@shared/domain/code-map';
 import { ConfigureCodeMapCheckoutSchema, type ConfigureCodeMapCheckout } from '@shared/rpc/contracts/code-map-host';
 import { deleteMapData, prepareOxyDirectory } from './store/oxy-dir';
-import { loadSnapshot } from './store/writer';
 import type { OwnerLock } from './store/owner-lock';
 import { CheckoutIndexer } from './indexer';
 import { CodeMapScheduler } from './scheduler';
 import { CodeMapLimitError } from './enumerate';
+import { GraphEngine } from './graph/engine';
+import { ParserClient } from './parse/client';
 
 interface Checkout {
   config: ConfigureCodeMapCheckout;
@@ -20,6 +21,8 @@ interface Checkout {
   lease: OwnerLock | null;
   indexer?: CheckoutIndexer;
   diagnostics: CodeMapDiagnostics;
+  graph?: GraphEngine;
+  warning: string | null;
 }
 
 export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
@@ -46,10 +49,14 @@ export class CodeMapCheckouts {
   private readonly checkouts = new Map<string, Checkout>();
   private mutation: Promise<unknown> = Promise.resolve();
   private readonly scheduler = new CodeMapScheduler();
+  private readonly parser: Pick<ParserClient, 'parse' | 'dispose'>;
   constructor(
     private readonly app: string,
     private readonly onStatus: (status: CodeMapStatus) => void,
-  ) {}
+    private readonly runtime: { assets: string; parserEntry: string; parser?: Pick<ParserClient, 'parse' | 'dispose'> },
+  ) {
+    this.parser = runtime.parser ?? new ParserClient(runtime.parserEntry, runtime.assets);
+  }
 
   async configure(input: unknown): Promise<CodeMapStatus> {
     return this.serialize(() => this.configureNow(input));
@@ -64,6 +71,7 @@ export class CodeMapCheckouts {
       status,
       lease: null,
       diagnostics: { skipped: [], failed: [], unresolved: [], truncated: false },
+      warning: null,
     };
     this.checkouts.set(config.checkoutId, checkout);
     try {
@@ -72,7 +80,20 @@ export class CodeMapCheckouts {
       status.owner = prepared.owner;
       status.readOnly = !prepared.lease;
       status.error = prepared.warning;
-      const snapshot = await loadSnapshot(prepared.directory);
+      checkout.warning = prepared.warning;
+      checkout.graph = new GraphEngine({
+        root: config.root,
+        assets: this.runtime.assets,
+        version: this.app.replace(/^Oxytocin /, ''),
+        excludedPaths: config.excludedPaths,
+        parser: this.parser,
+        assertOwned: async () => {
+          if (!checkout.lease) throw new Error('Updated by another Oxytocin instance');
+          await checkout.lease.assertOwned();
+        },
+      });
+      await checkout.graph.initialize();
+      const snapshot = checkout.graph.snapshot();
       if (snapshot) {
         status.generation = snapshot.manifest.generation;
         status.counts = snapshot.manifest.counts;
@@ -86,32 +107,46 @@ export class CodeMapCheckouts {
           scheduler: this.scheduler,
           hooks: {
             start: (total) => {
+              checkout.graph!.start();
+              status.error = checkout.warning;
               status.progress = { completed: 0, total };
               if (!status.error) status.state = status.generation ? 'updating' : 'indexing';
               this.changed(checkout);
             },
-            file: () => {
+            file: async (path, _, source, signal) => {
               if (status.progress) status.progress.completed++;
+              return checkout.graph!.file(path, source, signal);
             },
-            removed: () => undefined,
-            failed: () => undefined,
+            removed: (path) => checkout.graph!.removed(path),
+            failed: (path, reason) => checkout.graph!.failed(path, reason),
             pending: (count) => {
               status.pendingFiles = count;
               if (status.state === 'ready') status.state = 'updating';
               this.changed(checkout);
             },
-            complete: (inventory) => {
-              checkout.diagnostics = inventory.diagnostics;
-              status.counts.files = inventory.files.size;
-              status.coverage.files = {
-                indexed: inventory.files.size,
-                unsupported: 0,
-                skipped: inventory.skippedCount,
-                failed: inventory.diagnostics.failed.length,
-              };
+            complete: async (inventory, signal) => {
+              const published = await checkout.graph!.complete(inventory, signal);
+              signal.throwIfAborted();
+              checkout.diagnostics = published.diagnostics;
+              status.counts = published.manifest.counts;
+              status.coverage = published.graph.coverage;
+              status.generation = published.manifest.generation;
+              status.updatedAt = published.manifest.builtAt;
+              status.bytes = published.bytes;
+              status.languages = Object.fromEntries(
+                Object.keys(status.coverage.byLanguage).map((language) => [
+                  language,
+                  {
+                    level: ['typescript', 'javascript'].includes(language) ? 'Calls' : 'Files',
+                    description: ['typescript', 'javascript'].includes(language)
+                      ? 'Syntax and lexical bindings; unknown receiver types remain unresolved.'
+                      : 'File metadata only.',
+                  },
+                ]),
+              );
               status.progress = null;
-              status.pendingFiles = 0;
-              status.state = status.error ? 'error' : 'ready';
+              status.pendingFiles = checkout.indexer?.pendingFiles ?? 0;
+              status.state = status.error ? 'error' : status.pendingFiles ? 'updating' : published.manifest.state;
               this.changed(checkout);
             },
             error: (error) => {
@@ -150,6 +185,7 @@ export class CodeMapCheckouts {
     return this.changed(checkout);
   }
   rebuild(checkoutId: string): CodeMapStatus {
+    this.get(checkoutId).graph?.rebuild();
     this.get(checkoutId).indexer?.rebuild();
     return this.resume(checkoutId);
   }
@@ -160,6 +196,7 @@ export class CodeMapCheckouts {
     const checkout = this.checkouts.get(checkoutId);
     if (!checkout) return;
     await checkout.indexer?.dispose();
+    checkout.graph?.dispose();
     await checkout.lease?.dispose();
     this.checkouts.delete(checkoutId);
   }
@@ -180,6 +217,7 @@ export class CodeMapCheckouts {
     await this.serialize(async () => {
       for (const id of this.checkouts.keys()) await this.removeNow(id);
       this.scheduler.dispose();
+      await this.parser.dispose();
     });
   }
   hints(hints: { activeProjectId: string | null; terminalProjectIds: string[]; reconcile: boolean }): void {

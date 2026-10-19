@@ -7,7 +7,8 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 00 complete: reproducible parser and Windows ASAR packaging benchmark, grammar integrity manifest and deterministic 10,000-file fixture. Decision: Tree-sitter WASM, lazy grammars, explicit CommonJS runtime entry.
 - Stage 01 complete: contracts, lazy host supervision and build assets, safe storage and Git ignores.
 - Stage 02 complete: enumeration, live observation, fingerprints, global scheduling and activity hints.
-- Stages 03–14 pending. No user-facing Code Map functionality is available yet.
+- Stage 03 complete: isolated parser with watchdog, syntax records, lexical/module resolution, deterministic graph, incremental cache and bounded MAP.md publication. See results/2026-10-19-typescript-graph.md for measured fixture accuracy and deliberate resolution limits.
+- Stage 04 next: main service, validated renderer IPC and Project settings UI. Stages 05–14 pending.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
@@ -49,3 +50,11 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Validation: Windows `npm run check` passed; real watcher integration passed on Windows and Linux. Linux focused unit suite: 53 passed; final bounded-reader regression: 5 passed. Docker/Xvfb full app build and host/smoke E2E: 5 passed. No desktop windows were created.
 - Dependency notices regenerated in Docker; retain its optional-package lock entries when later running Windows npm.
 - Next: stage 03, using `CheckoutIndexer` hooks to extract only changed files and assemble/publish a fresh graph. Preserve `InventorySnapshot` checkpoints and ownership checks. Investigated spike TSX errors: both involve bare `&` in JSX text; add an explicit regression fixture rather than treating every valid declaration in those files as absent.
+
+### Stage 03 — TypeScript graph and MAP.md
+
+- Tree-sitter runs in one reusable worker thread with a 2.5 s watchdog and memory limits. Grammar hashes are verified; source normalization preserves canonical hashes and UTF-16 positions. Syntax failures retain visibly stale prior declarations.
+- Resolution uses lexical scopes, module exports, paths/baseUrl/extends and indexed workspace packages. Unknown receivers remain unresolved; no project scripts or type inference run. Reviewed fixture: imports 2 TP / 0 FP / 0 FN, calls 5 TP / 0 FP / 0 FN; these figures do not claim repository-wide accuracy.
+- Graph/cache publication is atomic, bounded and pruned. Cold/incremental/rebuild equality, corruption recovery, privacy, Unicode and Markdown budget are covered. The small fixture has a reviewed MAP.md golden on both platforms.
+- Validation: Windows full check passed (1,327 unit tests, 65 integration, 3 latency). Docker focused suite: 57 passed. Docker/Xvfb host/smoke E2E: 6 passed in the preceding verification; final repeat is recorded in the next log entry if needed. No desktop windows.
+- Next: stage 04. Keep renderer imports within shared/renderer; initial status and agent instruction text currently live in host and should move to shared. Disabled-data deletion needs an authorized project root RPC without starting an indexer. Performance gates and multi-day dogfooding remain unmeasured; do not claim release readiness.

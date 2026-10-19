@@ -29,7 +29,12 @@ function forkHost(
   inspectPort: number,
 ): HostProcess {
   const execArgv = process.env['OXYTOCIN_INSPECT_HOSTS'] === '1' ? [`--inspect=${inspectPort}`] : [];
-  const child = utilityProcess.fork(appPaths.hostEntry(entry), [], { serviceName, stdio: 'pipe', env, execArgv });
+  const child = utilityProcess.fork(appPaths.hostEntry(entry), [], {
+    serviceName,
+    stdio: 'pipe',
+    env: entry === 'codeMapHost' ? { ...env, OXYTOCIN_CODE_MAP_ASSETS: appPaths.codeMapAssets() } : env,
+    execArgv,
+  });
   if (entry === 'codeMapHost')
     child.once('spawn', () => {
       try {

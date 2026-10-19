@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CodeMapCheckouts } from './checkouts';
 
@@ -14,7 +14,11 @@ describe('Code Map checkout lifetimes', () => {
   it('serializes repeated configuration without leaking ownership and rejects invalid RPC data', async () => {
     root = await mkdtemp(join(tmpdir(), 'oxy-map-checkout-'));
     const changed = vi.fn();
-    checkouts = new CodeMapCheckouts('Oxytocin test', changed);
+    checkouts = new CodeMapCheckouts('Oxytocin test', changed, {
+      assets: resolve('resources/code-map'),
+      parserEntry: '/unused',
+      parser: { parse: () => Promise.reject(new Error('Unexpected parser call')), dispose: () => Promise.resolve() },
+    });
     await expect(checkouts.configure({ checkoutId: 123 })).rejects.toThrow();
     const config = {
       checkoutId: 'checkout',

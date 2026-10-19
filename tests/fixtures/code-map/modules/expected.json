@@ -1,0 +1,15 @@
+{
+  "imports": [
+    ["src/main.ts", "src/lib/index.ts"],
+    ["src/main.ts", "packages/math/src/index.ts"]
+  ],
+  "calls": [
+    ["src/main.ts", "run", "src/lib/math.ts", "create"],
+    ["src/main.ts", "run", "src/lib/math.ts", "calculate"],
+    ["src/main.ts", "run", "packages/math/src/index.ts", "twice"],
+    ["src/lib/math.ts", "create", "src/lib/math.ts", "Calculator"],
+    ["src/lib/math.ts", "run", "src/lib/math.ts", "calculate"]
+  ],
+  "shadowedCaller": "shadow",
+  "note": "The two run callers belong to different files/classes. Unknown receiver values are never matched globally."
+}

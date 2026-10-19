@@ -1,0 +1,9 @@
+{
+  "name": "@fixture/math",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts"
+    }
+  }
+}
