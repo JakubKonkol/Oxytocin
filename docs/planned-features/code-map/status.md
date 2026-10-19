@@ -60,7 +60,7 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Validation: Windows full check passed (1,327 unit tests, 65 integration, 3 latency). Docker focused suite: 57 passed. Docker/Xvfb final host/smoke E2E: 6 passed. No desktop windows.
 - Next: stage 04. Keep renderer imports within shared/renderer; initial status and agent instruction text currently live in host and should move to shared. Disabled-data deletion needs an authorized project root RPC without starting an indexer. Performance gates and multi-day dogfooding remain unmeasured; do not claim release readiness.
 
-### Stage 04 — main orchestration and settings UI
+### Stage 04 — main orchestration and settings UI (`c08d205`)
 
 - Main service owns project authorization, serializes configuration/options/actions/deletion, starts lazily and stops with zero enabled projects. Settings/root/removal changes and host restart reconcile configuration. The existing compact activity-hint service remains separate.
 - Shared validated IPC/preload channels expose status, enable/options, rebuild, pause/resume, deletion and bounded diagnostics. Renderer payloads cannot supply arbitrary roots. Host deletion accepts an optional root from main so disabled data can be deleted without starting an indexer or changing Git ignores; repeated deletion is harmless.
@@ -70,3 +70,9 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Packaged Windows full-index benchmark completed headlessly from `scripts/code-map-benchmark.ts`, using the actual controller, worker, grammars and native watcher, empty compiler PATH and blocked utility sockets/fetch. Results and raw machine/run data are committed as `results/2026-10-19-phase-1.md` / `.json`. The benchmark baseline predates the cold-cache probe optimization; do not claim its effect has been measured.
 - 10k fixture: empty-map median 37.56 s, edit p95 4.94 s, peak RSS 1,453.90 MiB, five-minute inactive idle 0.291% of a core with no generation loop. Oxytocin snapshot: build median 7.58 s, edit p95 1.52 s, peak 899.85 MiB, known 2 TSX recovery failures. Disk ratios are 28.80× / 9.31× source size, below the hard cap but far above the 5% aspiration. Throughput/memory/disk targets are not met; the report lists phase timings and optimization targets.
 - Continue with stage 05 (`etap-05-csharp.md`) when the user resumes. First address/retain the open release gates: optimize and repeat the large-fixture profile, active-checkout idle scans, controlled terminal/Git p95 comparison, actual production-installer smoke, hosted Windows CI and multi-day dogfooding. The packaged benchmark harness passes offline; it does not replace a full installer smoke. No production release was published. Do not mark these gates complete or claim release readiness/token savings.
+
+## Resume checkpoint
+
+- Implementation commits pushed to origin/main: stage 03 dd91d6a; stage 04 c08d205. Working tree is clean after the accompanying documentation checkpoint.
+- No stage 05 source changes exist. Its plan was read for preparation only. Resume with the open stage 04 release gates, then C# stage 05; stages 06–14 remain entirely pending.
+- Benchmark processes exited; the Docker validation container is stopped. All measurement artifacts needed for review are committed. Ignored test-results also retain packaged harnesses, fixtures and complete logs for profiling.
