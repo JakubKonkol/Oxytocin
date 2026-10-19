@@ -69,11 +69,17 @@ describe('AI agents model', () => {
   it('lists the + menu entries: agents with their account, then profiles, minus hidden ones', () => {
     expect(menuEntries(null)).toEqual([]);
     expect(menuEntries(state())).toEqual([
-      { launchId: 'ai:claude', name: 'Claude Code', detail: 'me@firma.pl', kind: 'agent' },
-      { launchId: 'ai:codex', name: 'Codex CLI', detail: 'codex@firma.pl +1', kind: 'agent' },
-      { launchId: 'ai:account:a1', name: 'Claude Code · Work', detail: 'praca@firma.pl', kind: 'account' },
-      { launchId: 'ai:account:a2', name: 'Codex CLI · Side', detail: 'not signed in', kind: 'account' },
-      { launchId: 'ai:profile:p1', name: 'Claude Code · GLM', detail: 'GLM (Z.ai)', kind: 'profile' },
+      { launchId: 'ai:claude', name: 'Claude Code', detail: 'me@firma.pl', kind: 'agent', agent: 'claude' },
+      { launchId: 'ai:codex', name: 'Codex CLI', detail: 'codex@firma.pl +1', kind: 'agent', agent: 'codex' },
+      {
+        launchId: 'ai:account:a1',
+        name: 'Claude Code · Work',
+        detail: 'praca@firma.pl',
+        kind: 'account',
+        agent: 'claude',
+      },
+      { launchId: 'ai:account:a2', name: 'Codex CLI · Side', detail: 'not signed in', kind: 'account', agent: 'codex' },
+      { launchId: 'ai:profile:p1', name: 'Claude Code · GLM', detail: 'GLM (Z.ai)', kind: 'profile', agent: 'claude' },
     ]);
     expect(
       menuEntries(state({ hidden: ['ai:profile:p1', 'ai:claude', 'ai:codex', 'ai:account:a1'] })).map(

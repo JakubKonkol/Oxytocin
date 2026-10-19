@@ -8,11 +8,17 @@ export interface AgentLauncherDeps {
   profile(id: string): Promise<TerminalProfile | undefined>;
   agents(): AgentInfoWithTerminal[];
   terminals(projectId: string): TerminalInfo[];
-  create(projectId: string, profileId: string, command?: string): Promise<TerminalInfo>;
+  /** `launch`: the command typed into the new terminal (its arguments quoted for the shell) and extra variables. */
+  create(projectId: string, profileId: string, launch?: NewSessionLaunch): Promise<TerminalInfo>;
   show(terminalId: string, projectId: string): void;
   send(terminalId: string, prompt: string): Promise<{ ok: true } | { ok: false; error: string }>;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+}
+
+export interface NewSessionLaunch {
+  command?: { head: string; args: string[] };
+  env?: Record<string, string>;
 }
 
 /** Launches ordinary workspace terminals. Serializes requests so two clicks cannot spawn duplicates. */
@@ -46,11 +52,12 @@ export class AgentLauncherService {
     terminal ??= matching[0];
     const reused = !!terminal;
     if (!terminal) {
-      const command =
-        o.planMode && profile.icon === 'agent-claude'
-          ? `${profile.command ?? 'claude'} --permission-mode plan`
-          : undefined;
-      terminal = await this.deps.create(o.projectId, o.launchId, command);
+      const claude = profile.icon === 'agent-claude';
+      const args = claude ? [...(o.planMode ? ['--permission-mode', 'plan'] : []), ...(o.claudeArgs ?? [])] : [];
+      terminal = await this.deps.create(o.projectId, o.launchId, {
+        ...(args.length > 0 ? { command: { head: profile.command ?? 'claude', args } } : {}),
+        ...(o.env && Object.keys(o.env).length > 0 ? { env: o.env } : {}),
+      });
     }
     this.deps.show(terminal.id, o.projectId);
     if (!o.prompt) return { terminalId: terminal.id, reused, sent: false };

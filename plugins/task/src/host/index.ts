@@ -1,18 +1,26 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentSnapshot, PluginContext, PluginView, ProjectInfo } from '@oxytocin/plugin-api';
 import { z } from 'zod';
 import {
+  addVersion,
   implementationPrompt,
+  MAX_PLAN,
   plannerPrompt,
   reviewPrompt,
+  revisionPrompt,
   TaskInputSchema,
   TaskSchema,
   type Task,
   type Role,
 } from '../shared/task';
+import { handedOver, HOOK_PATH, PlanHookServer, plannerSettings, TASK_VAR } from './hook';
 import { captureClaudePlan, readPlan } from './plans';
+
+const HookStateSchema = z.object({ port: z.number().int().min(0).max(65535), token: z.string().min(32).max(128) });
+/** New Claude planning sessions: Opus with high effort, unless an API profile chooses its own model. */
+const PLANNER_MODEL = ['--model', 'opus', '--effort', 'high'];
 
 export async function activate(ctx: PluginContext): Promise<void> {
   const { oxy } = ctx;
@@ -30,6 +38,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
   let disposed = false;
   const taskDir = (t: Task) => join(ctx.storage.projectDir(t.projectId), t.id);
   const document = (t: Task) => join(taskDir(t), 'plan.md');
+  const hooked = (t: Task) => !!t.hookTerminalId && t.planner.terminalId === t.hookTerminalId;
   let writes = Promise.resolve();
   const persist = () => {
     const snapshot = JSON.stringify(tasks);
@@ -90,9 +99,82 @@ export async function activate(ctx: PluginContext): Promise<void> {
     if (!task) throw new Error('Task not found in this project.');
     return task;
   };
+  const awaitingPlan = (t: Task) => !t.approvedPlan && (t.phase === 'planning' || t.phase === 'ready');
+
+  // Claude Code hands its finished plan to Task through a PreToolUse hook (see ./hook). Port and token survive
+  // restarts so planning sessions that are still open keep reaching Task.
+  const hookFile = join(ctx.storage.globalDir, 'hook.json');
+  const savedHook = HookStateSchema.safeParse(
+    await readFile(hookFile, 'utf8')
+      .then((text) => JSON.parse(text) as unknown)
+      .catch(() => null),
+  );
+  const token = savedHook.success ? savedHook.data.token : randomBytes(24).toString('hex');
+  const server = new PlanHookServer(token, async (taskId, input) => {
+    const t = tasks.find((task) => task.id === taskId);
+    if (!t || !awaitingPlan(t)) return undefined;
+    const plan = input.tool_input.plan;
+    if (!plan.trim() || plan.length > MAX_PLAN) return undefined;
+    addVersion(t, {
+      plan,
+      at: Date.now(),
+      origin: 'hook',
+      ...(input.tool_input.planFilePath ? { source: input.tool_input.planFilePath } : {}),
+    });
+    t.phase = 'ready';
+    delete t.error;
+    await save(t);
+    // Someone looking at the task sees the plan arrive; anyone else is told where it is.
+    if ([...views.keys()].some((view) => view.visible && projectOf(view) === t.projectId)) return handedOver();
+    void oxy.ui
+      .showNotification({
+        level: 'info',
+        message: 'A plan is ready for your approval in Task.',
+        detail: t.description.slice(0, 120),
+        actions: [{ id: 'open', title: 'Open Task' }],
+      })
+      .then((action) => (action === 'open' ? oxy.ui.openPanel('task.panel', { placement: 'sidebar' }) : undefined))
+      .catch(() => undefined);
+    return handedOver();
+  });
+  let hookUrl: string | undefined;
+  try {
+    const port = await server.start(savedHook.success ? savedHook.data.port : 0);
+    hookUrl = `http://127.0.0.1:${port}${HOOK_PATH}`;
+    await mkdir(ctx.storage.globalDir, { recursive: true });
+    await writeFile(hookFile, JSON.stringify({ port, token }), { mode: 0o600 });
+  } catch (e) {
+    ctx.log.warn('Plans finished in Claude Code cannot reach Task; they are read from the plan files.', String(e));
+  }
+  ctx.subscriptions.push({ dispose: () => void server.stop() });
+
+  /** A new Claude planning session: plan mode with bypass available, Task's hook and deny rules (`--settings`). */
+  const plannerLaunch = async (t: Task, launchId: string) => {
+    if (!hookUrl || !t.planMode) return undefined;
+    const launcher = (await oxy.agents.listLaunchers()).find((l) => l.launchId === launchId);
+    if (launcher?.agent !== 'claude') return undefined;
+    const project = (await oxy.projects.list()).find((p) => p.id === t.projectId);
+    if (!project) return undefined;
+    const file = join(taskDir(t), 'claude-settings.json');
+    await mkdir(taskDir(t), { recursive: true });
+    await writeFile(
+      file,
+      `${JSON.stringify(plannerSettings({ projectRoot: project.rootPath, url: hookUrl, token }), null, 2)}\n`,
+      { mode: 0o600 },
+    );
+    return {
+      claudeArgs: [
+        ...(launcher.kind === 'profile' ? [] : PLANNER_MODEL),
+        '--allow-dangerously-skip-permissions',
+        '--settings',
+        file,
+      ],
+      env: { [TASK_VAR]: t.id },
+    };
+  };
+
   const capture = async (t: Task, agents: AgentSnapshot[]) => {
-    if (t.approvedPlan) return;
-    if (t.phase !== 'planning' && t.phase !== 'ready') return;
+    if (!awaitingPlan(t) || hooked(t)) return;
     if (busy.has(t.id)) return;
     busy.add(t.id);
     try {
@@ -106,8 +188,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
         if (home) found = await captureClaudePlan(home, agent.sessionId, t.startedAt);
       }
       if (found && found.text !== t.plan) {
-        t.plan = found.text;
-        t.source = found.path;
+        addVersion(t, { plan: found.text, at: Date.now(), origin: 'capture', source: found.path });
         t.phase = 'ready';
         await save(t);
       }
@@ -115,7 +196,8 @@ export async function activate(ctx: PluginContext): Promise<void> {
       busy.delete(t.id);
     }
   };
-  const send = async (t: Task, role: Role, prompt: string, planMode = false) => {
+  /** `prompt` gets whether the planner's session hands its plan over through Task's hook. */
+  const send = async (t: Task, role: Role, prompt: string | ((hooked: boolean) => string), planMode = false) => {
     // Saved terminal ids may no longer exist after a restart or after the user closed a terminal.
     if (
       role.terminalId &&
@@ -129,16 +211,22 @@ export async function activate(ctx: PluginContext): Promise<void> {
       throw new Error(
         'Choose a separate terminal for each role so planning and implementation keep separate contexts.',
       );
-    const reuse = !role.newSession && !previousRoles.some((r) => r.launchId === role.launchId);
+    // A Claude planner opens its own session with Task's hook, unless the user chose a particular one: only a session
+    // started with the hook hands its plan over.
+    const planner = role === t.planner && !role.terminalId ? await plannerLaunch(t, role.launchId) : undefined;
+    const reuse = !planner && !role.newSession && !previousRoles.some((r) => r.launchId === role.launchId);
+    const viaHook = !!planner || (!!role.terminalId && role.terminalId === t.hookTerminalId);
     const result = await oxy.agents.launch({
       projectId: t.projectId,
       launchId: role.launchId,
       reuse,
       ...(role.terminalId ? { terminalId: role.terminalId } : {}),
-      prompt,
+      prompt: typeof prompt === 'string' ? prompt : prompt(viaHook),
       planMode,
+      ...(planner ?? {}),
     });
     role.terminalId = result.terminalId;
+    if (planner) t.hookTerminalId = result.terminalId;
     if (result.sent) delete t.error;
     else t.error = result.error ?? 'Open the agent terminal and retry when it is ready.';
     return result.sent;
@@ -199,6 +287,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
             projectId,
             phase: 'planning',
             plan: '',
+            versions: [],
             startedAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -208,7 +297,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           await persist();
           await locked(t.id, async () => {
             try {
-              await send(t, t.planner, plannerPrompt(t, document(t)), t.planMode);
+              await send(t, t.planner, (viaHook) => plannerPrompt(t, document(t), viaHook), t.planMode);
             } catch (e) {
               t.error = String(e);
             }
@@ -219,18 +308,66 @@ export async function activate(ctx: PluginContext): Promise<void> {
         view.onRequest('retryPlan', async (raw: unknown) => {
           const projectId = await currentProject();
           const t = requireTask(projectId, raw);
-          if (t.approvedPlan) throw new Error('This plan has already been approved.');
+          if (!awaitingPlan(t)) throw new Error('This task is no longer waiting for a plan.');
           await locked(t.id, async () => {
-            await send(t, t.planner, plannerPrompt(t, document(t)), t.planMode);
+            await send(t, t.planner, (viaHook) => plannerPrompt(t, document(t), viaHook), t.planMode);
+            await save(t);
+          });
+        });
+        view.onRequest('revise', async (raw: unknown) => {
+          const projectId = await currentProject();
+          const input = z.object({ id: z.uuid(), feedback: z.string().trim().min(1).max(8000) }).parse(raw);
+          const t = requireTask(projectId, input.id);
+          await locked(t.id, async () => {
+            if (t.phase !== 'ready' || t.approvedPlan) throw new Error('There is no plan waiting for feedback.');
+            const terminalId = t.planner.terminalId;
+            const running = (await oxy.terminals.list({ projectId: t.projectId })).some(
+              (terminal) => terminal.id === terminalId && terminal.status === 'running',
+            );
+            if (!terminalId || !running)
+              throw new Error('The planner terminal is closed. Retry the planning prompt to open a new session.');
+            const result = await oxy.agents.sendPrompt(
+              terminalId,
+              revisionPrompt(input.feedback, document(t), hooked(t)),
+            );
+            if (!result.ok) {
+              t.error = result.error;
+              await save(t);
+              return;
+            }
+            const current = t.versions.findLast((v) => v.status === 'pending');
+            if (current) {
+              current.status = 'revised';
+              current.feedback = input.feedback;
+            }
+            t.phase = 'planning';
+            delete t.error;
+            await save(t);
+            await oxy.terminals.show(terminalId, { placement: 'right' });
+          });
+        });
+        view.onRequest('reject', async (raw: unknown) => {
+          const projectId = await currentProject();
+          const t = requireTask(projectId, raw);
+          await locked(t.id, async () => {
+            if (!awaitingPlan(t)) throw new Error('This plan can no longer be rejected.');
+            const current = t.versions.findLast((v) => v.status === 'pending');
+            if (current) current.status = 'rejected';
+            t.phase = 'rejected';
+            delete t.error;
             await save(t);
           });
         });
         view.onRequest('approve', async (raw: unknown) => {
           const projectId = await currentProject();
-          const input = z.object({ id: z.uuid(), plan: z.string().trim().min(1).max(180_000) }).parse(raw);
+          const input = z.object({ id: z.uuid(), plan: z.string().trim().min(1).max(MAX_PLAN) }).parse(raw);
           const t = requireTask(projectId, input.id);
           await locked(t.id, async () => {
             if (t.approvedPlan) throw new Error('This plan has already been approved.');
+            if (!awaitingPlan(t)) throw new Error('This task is no longer waiting for a plan.');
+            const current = t.versions.at(-1);
+            if (current?.status === 'pending' && current.plan.trim() === input.plan) current.status = 'approved';
+            else addVersion(t, { plan: input.plan, at: Date.now(), origin: 'edit' }, 'approved');
             t.plan = input.plan;
             t.approvedPlan = input.plan;
             t.approvedAt = Date.now();
@@ -296,11 +433,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
   let polling = false;
   const timer = setInterval(() => {
     if (polling || disposed) return;
-    if (
-      !tasks.some((t) => !t.approvedPlan && (t.phase === 'planning' || t.phase === 'ready')) &&
-      ![...views.keys()].some((view) => view.visible)
-    )
-      return;
+    if (!tasks.some((t) => awaitingPlan(t) && !hooked(t)) && ![...views.keys()].some((view) => view.visible)) return;
     polling = true;
     void (async () => {
       const agents = await oxy.agents.list();

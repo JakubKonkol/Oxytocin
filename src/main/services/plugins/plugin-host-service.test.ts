@@ -179,12 +179,12 @@ describe('PluginHostService', () => {
         descriptor('readonly.one', { permissions: ['agents.read'] }),
       ],
     });
-    s.core.agents.launchers = () => [{ launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent' }];
+    s.core.agents.launchers = () => [{ launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent', agent: 'codex' }];
     s.core.projects.get = (id) => (id === 'p' ? s.core.projects.list()[0] : undefined);
     const launch = vi.fn(() => Promise.resolve({ terminalId: 't1', reused: true, sent: true }));
     s.core.agents.launch = launch;
     expect(await s.api('readonly.one', 'agents.listLaunchers')).toEqual([
-      { launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent' },
+      { launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent', agent: 'codex' },
     ]);
     await expect(s.api('readonly.one', 'agents.launch', { projectId: 'p', launchId: 'ai:codex' })).rejects.toThrow();
     await expect(s.api('task.one', 'agents.launch', { projectId: 'missing', launchId: 'ai:codex' })).rejects.toThrow(

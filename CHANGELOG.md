@@ -5,12 +5,27 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+### Changed
+
+- **Task:** a Claude Code planner starts in a new session in plan mode (Opus, high effort) with bypass permissions in
+  its Shift+Tab cycle, so exploring asks no permission questions. Its finished plan goes straight to Task instead of an
+  approval question in the terminal, shown as Markdown with the status **Plan awaiting approval**. **Approve &
+  implement**, **Revise** (your feedback is pasted into the planner's terminal and the revised plan arrives the same
+  way) or **Reject**; every version is kept. While planning, edits inside the project and `git commit`, `push`,
+  `checkout` and `reset` are denied for that session only; your Claude Code settings files are not changed. When
+  Oxytocin does not answer, Claude Code asks in the terminal as usual.
+
 ### Fixed
 
 - Prompts typed into agents by Task, Changes → Send to review, Ensemble, Scratchpad and plugins are submitted
   reliably. Long prompts, such as an approved plan, sometimes stayed in the agent's input box until Enter was pressed:
   Codex CLI on Windows reads a long paste slowly and took the Enter as part of it. Enter now follows once the agent has
   taken the paste in, and is sent again after a few seconds when the agent did not start.
+
+### Added
+
+- Plugin API 0.1.10: `oxy.agents.launch({ claudeArgs, env })` adds arguments and environment variables to a new agent
+  session; `AgentLauncher.agent` names the CLI a launch choice starts.
 
 ## [0.9.9] - 2026-10-17
 

@@ -232,6 +232,8 @@ export interface AgentLauncher {
   name: string;
   detail?: string;
   kind: 'agent' | 'profile' | 'account';
+  /** The CLI it starts: `claude`, `codex`, `gemini`… (API profiles run Claude Code). Since API 0.1.10. */
+  agent: string;
 }
 export interface AgentLaunchRequest {
   projectId: string;
@@ -242,6 +244,13 @@ export interface AgentLaunchRequest {
   reuse?: boolean;
   /** Claude Code only, for new sessions. Existing sessions keep their current mode. */
   planMode?: boolean;
+  /**
+   * Claude Code only, for new sessions: arguments added to the configured launch command, quoted for the terminal's
+   * shell (e.g. `['--settings', file]`). At most 16, no control characters. Since API 0.1.10.
+   */
+  claudeArgs?: string[];
+  /** Environment variables of a new session's terminal (at most 16). Reused sessions keep theirs. Since API 0.1.10. */
+  env?: Record<string, string>;
 }
 export interface AgentLaunchResult {
   terminalId: string;

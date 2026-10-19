@@ -14,8 +14,8 @@ async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boo
   const postMessage = vi.fn(() => Promise.resolve(true));
   const list = vi.fn(() =>
     Promise.resolve([
-      { id: 'p', name: 'First' },
-      { id: 'q', name: 'Second' },
+      { id: 'p', name: 'First', rootPath: join(dir, 'repo') },
+      { id: 'q', name: 'Second', rootPath: join(dir, 'other') },
     ]),
   );
   const requests = new Map<string, (p: unknown) => unknown>();
@@ -27,6 +27,13 @@ async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boo
         sent: true,
       }),
   );
+  const launchers = [
+    { launchId: 'ai:claude', name: 'Claude Code', kind: 'agent', agent: 'claude' },
+    { launchId: 'ai:codex', name: 'Codex CLI', kind: 'agent', agent: 'codex' },
+    { launchId: 'ai:profile:glm', name: 'GLM', kind: 'profile', agent: 'claude' },
+  ];
+  const showNotification = vi.fn((_o: unknown) => Promise.resolve(undefined));
+  const sendPrompt = vi.fn((_id: string, _text: string) => Promise.resolve({ ok: true as const }));
   const ctx = {
     subscriptions: [],
     storage: { globalDir: dir, projectDir: (id: string) => join(dir, id) },
@@ -41,13 +48,22 @@ async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boo
         },
       },
       agents: {
-        listLaunchers: () => Promise.resolve([]),
+        listLaunchers: () => Promise.resolve(launchers),
         list: () => Promise.resolve([]),
         launch,
         listAccounts: () => Promise.resolve([]),
+        sendPrompt,
       },
-      terminals: { list: () => Promise.resolve([{ id: 'busy', status: 'running' }]), show: vi.fn() },
+      terminals: {
+        list: () =>
+          Promise.resolve(
+            ['busy', ...launch.mock.results.map((_r, i) => `t${i + 1}`)].map((id) => ({ id, status: 'running' })),
+          ),
+        show: vi.fn(),
+      },
       ui: {
+        showNotification,
+        openPanel: vi.fn(() => Promise.resolve()),
         registerPanelProvider: (_id: string, p: ViewProvider) => {
           provider = p;
           return { dispose: vi.fn() };
@@ -74,6 +90,8 @@ async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boo
     request,
     task,
     launch,
+    sendPrompt,
+    showNotification,
     dir,
     dispose,
     postMessage,
@@ -188,6 +206,164 @@ describe('Task workflow', () => {
       await s.request('implement', id);
       expect((await s.task()).phase).toBe('implementing');
       expect(s.launch.mock.calls.at(-1)?.[0]).toMatchObject({ terminalId: 'busy' });
+    } finally {
+      s.dispose();
+    }
+  });
+});
+
+describe('Task plan hook', () => {
+  const hook = async (dir: string, taskId: string, body: unknown, token?: string) => {
+    const state = JSON.parse(await readFile(join(dir, 'hook.json'), 'utf8')) as { port: number; token: string };
+    const res = await fetch(`http://127.0.0.1:${state.port}/task/exit-plan`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token ?? state.token}`,
+        'x-oxytocin-task': taskId,
+      },
+      body: JSON.stringify(body),
+    });
+    return { status: res.status, body: res.status === 200 ? ((await res.json()) as Record<string, unknown>) : null };
+  };
+  const exitPlan = (plan: string) => ({
+    session_id: 's1',
+    hook_event_name: 'PreToolUse',
+    tool_name: 'ExitPlanMode',
+    tool_input: { plan, planFilePath: '/home/me/.claude/plans/search.md' },
+  });
+  const input = {
+    description: 'Add search',
+    planner: { launchId: 'ai:claude' },
+    implementer: { launchId: 'ai:codex' },
+  };
+
+  it('starts a fresh Claude planner in plan mode with bypass available, its hook and deny rules', async () => {
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      const request = s.launch.mock.calls[0]![0];
+      const file = join(s.dir, 'p', id, 'claude-settings.json');
+      expect(request).toMatchObject({
+        launchId: 'ai:claude',
+        planMode: true,
+        reuse: false,
+        claudeArgs: ['--model', 'opus', '--effort', 'high', '--allow-dangerously-skip-permissions', '--settings', file],
+        env: { OXYTOCIN_TASK_ID: id },
+      });
+      expect(request.prompt).toContain('finish it with ExitPlanMode');
+      const settings = JSON.parse(await readFile(file, 'utf8')) as {
+        permissions: { deny: string[] };
+        hooks: { PreToolUse: { matcher: string; hooks: { url: string }[] }[] };
+      };
+      expect(settings.permissions.deny).toContain('Bash(git commit *)');
+      expect(settings.permissions.deny[0]).toMatch(/^Edit\(\/\/.*\/repo\/\*\*\)$/);
+      expect(settings.hooks.PreToolUse[0]).toMatchObject({ matcher: 'ExitPlanMode' });
+      expect((await s.task()).hookTerminalId).toBe('t1');
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('gives other planners the plan document and API profiles their own model', async () => {
+    const s = await setup();
+    try {
+      await s.request('create', { ...input, planner: { launchId: 'ai:codex' } });
+      expect(s.launch.mock.calls[0]![0]).not.toHaveProperty('claudeArgs');
+      expect(s.launch.mock.calls[0]![0].prompt).toContain('plan.md');
+      await s.request('create', { ...input, planner: { launchId: 'ai:profile:glm' } });
+      expect(s.launch.mock.calls[1]![0].claudeArgs?.slice(0, 1)).toEqual(['--allow-dangerously-skip-permissions']);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('takes the finished plan, revises it with feedback, keeps the versions and approves the latest', async () => {
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      expect(await hook(s.dir, id, exitPlan('# Plan\nOne'), 'wrong')).toMatchObject({ status: 401 });
+      expect(await hook(s.dir, 'not-a-task', exitPlan('# Plan'))).toMatchObject({ status: 204 });
+      expect(await hook(s.dir, '', exitPlan('# Plan'))).toMatchObject({ status: 204 });
+      const taken = await hook(s.dir, id, exitPlan('# Plan\nOne'));
+      expect(taken.body).toMatchObject({
+        hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' },
+      });
+      expect(JSON.stringify(taken.body)).toContain('do not call ExitPlanMode');
+      // The task is on screen: no notification on top of it.
+      expect(s.showNotification).not.toHaveBeenCalled();
+      expect(await s.task()).toMatchObject({
+        phase: 'ready',
+        plan: '# Plan\nOne',
+        source: '/home/me/.claude/plans/search.md',
+        versions: [{ status: 'pending', origin: 'hook' }],
+      });
+      await s.request('revise', { id, feedback: 'Add tests.' });
+      expect(s.sendPrompt).toHaveBeenCalledWith('t1', 'Add tests.');
+      expect(await s.task()).toMatchObject({
+        phase: 'planning',
+        versions: [{ status: 'revised', feedback: 'Add tests.' }],
+      });
+      await hook(s.dir, id, exitPlan('# Plan\nOne\nTests'));
+      const t = await s.task();
+      expect(t.versions.map((v) => v.status)).toEqual(['revised', 'pending']);
+      await s.request('approve', { id, plan: '# Plan\nOne\nTests' });
+      expect((await s.task()).versions.map((v) => v.status)).toEqual(['revised', 'approved']);
+      expect(s.launch.mock.calls.at(-1)?.[0].prompt).toContain('Tests');
+      // An approved task takes no more plans: Claude Code asks in the terminal as usual.
+      expect(await hook(s.dir, id, exitPlan('# Later'))).toMatchObject({ status: 204 });
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('rejects a plan and records an edited approval as its own version', async () => {
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      await hook(s.dir, id, exitPlan('# Plan'));
+      await s.request('reject', id);
+      expect(s.showNotification).not.toHaveBeenCalled();
+      expect(await s.task()).toMatchObject({ phase: 'rejected', versions: [{ status: 'rejected' }] });
+      await expect(s.request('approve', { id, plan: '# Plan' })).rejects.toThrow(/no longer waiting/);
+      const second = await s.request<string>('create', { ...input, description: 'Second' });
+      await hook(s.dir, second, exitPlan('# Draft'));
+      await s.request('approve', { id: second, plan: '# Draft, edited' });
+      expect((await s.task()).versions).toMatchObject([
+        { status: 'superseded', origin: 'hook' },
+        { status: 'approved', origin: 'edit', plan: '# Draft, edited' },
+      ]);
+    } finally {
+      s.dispose();
+    }
+  });
+});
+
+describe('Task plan notification', () => {
+  it('tells the user where a plan is when Task is not on screen', async () => {
+    const s = await setup(undefined, { sidebar: true });
+    try {
+      const id = await s.request<string>('create', {
+        description: 'Add search',
+        planner: { launchId: 'ai:claude' },
+        implementer: { launchId: 'ai:codex' },
+      });
+      s.changeProject('q');
+      const state = JSON.parse(await readFile(join(s.dir, 'hook.json'), 'utf8')) as { port: number; token: string };
+      await fetch(`http://127.0.0.1:${state.port}/task/exit-plan`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${state.token}`, 'x-oxytocin-task': id },
+        body: JSON.stringify({
+          hook_event_name: 'PreToolUse',
+          tool_name: 'ExitPlanMode',
+          tool_input: { plan: '# Plan' },
+        }),
+      });
+      await vi.waitFor(() =>
+        expect(s.showNotification).toHaveBeenCalledWith(
+          expect.objectContaining({ message: 'A plan is ready for your approval in Task.' }),
+        ),
+      );
     } finally {
       s.dispose();
     }

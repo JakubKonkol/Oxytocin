@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
 import type { AgentSnapshot, AgentLaunchResult } from '@oxytocin/plugin-api';
 import { launchApp, repoRoot } from './helpers/launch';
-import { oxyTest, waitForTerminal } from './helpers/terminal';
+import { oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 async function taskFrame(win: Page): Promise<Frame> {
   await win.evaluate(() => window.oxy.invoke('plugins:executeCommand', { id: 'task.show' }));
@@ -87,6 +87,8 @@ test('Task captures a native plan, reuses a planner, hands the approved document
     const frame = await taskFrame(win);
     await frame.getByTestId('task-description').fill('Improve the search field');
     await frame.getByTestId('task-planner').selectOption('ai:claude');
+    // A chosen existing session keeps its context; its native plan document is captured.
+    await frame.getByLabel('Planner session').selectOption(planner.terminalId);
     await frame.getByTestId('task-implementer').selectOption('ai:codex');
     await frame.getByTestId('task-reviewer').selectOption('ai:claude');
     await frame.getByTestId('task-start').click();
@@ -110,7 +112,9 @@ test('Task captures a native plan, reuses a planner, hands the approved document
         message: { content: [{ type: 'text', text: 'PRIVATE PLANNER CONVERSATION' }] },
       }),
     );
-    await expect(frame.getByTestId('task-plan')).toHaveValue(/Add a keyboard shortcut/, { timeout: 15_000 });
+    await expect(frame.getByTestId('task-plan-view')).toContainText('Add a keyboard shortcut', { timeout: 15_000 });
+    await expect(frame.getByTestId('task-plan-view').locator('h1')).toHaveText('Search plan');
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan awaiting approval');
     await win.screenshot({ path: test.info().outputPath('task-plan.png') });
     await frame.getByTestId('task-approve').click();
     let codex = '';
@@ -130,7 +134,8 @@ test('Task captures a native plan, reuses a planner, hands the approved document
     expect((await oxyTest(win).workspace())?.panels.find((p) => p.terminalId === codex)?.group).not.toBe(plannerGroup);
     expect(await oxyTest(win).text(codex)).not.toContain('PRIVATE PLANNER CONVERSATION');
     await taskFrame(win);
-    await expect(frame.getByTestId('task-plan')).toHaveAttribute('readonly', '');
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan approved');
+    await expect(frame.getByTestId('task-plan')).toHaveCount(0);
     await frame.getByTestId('task-review').click();
     await expect
       .poll(
@@ -179,7 +184,7 @@ test('Task captures a native plan, reuses a planner, hands the approved document
     await mkdir(otherRepo);
     execFileSync('git', ['--no-optional-locks', 'init', '-q'], { cwd: otherRepo });
     await win.evaluate((path) => window.oxy.invoke('projects:add', { path }), otherRepo);
-    await win.getByText('second-project', { exact: true }).first().click();
+    await win.getByTestId('sidebar').getByText('second-project', { exact: true }).first().click();
     await expect(moved.locator('.toolbar .eyebrow')).toContainText('second-project');
     await expect(moved.getByTestId('task-description')).toBeVisible();
     await expect(moved.getByLabel('Saved task')).toHaveCount(0);
@@ -213,6 +218,133 @@ test('Task captures a native plan, reuses a planner, hands the approved document
     await expect(win.getByTestId('changes-send-review-dialog')).toHaveCount(0, { timeout: 20_000 });
     await expect.poll(() => oxyTest(win).text(codex)).toContain('List bugs');
     expect((await oxyTest(win).terminalIds()).length).toBe(count);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a Claude planner hands its finished plan to Task: approve, revise with feedback or reject', async () => {
+  test.setTimeout(120_000);
+  const root = await mkdtemp(join(tmpdir(), 'oxy-e2e-task-hook-'));
+  const repo = join(root, 'repo');
+  const userData = join(root, 'data');
+  const claudeHome = join(root, 'claude');
+  await mkdir(repo);
+  await mkdir(userData);
+  await mkdir(claudeHome);
+  execFileSync('git', ['--no-optional-locks', 'init', '-q'], { cwd: repo });
+  const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js');
+  const fakeCodex = join(repoRoot, 'tests/fixtures/agents/node_modules/@openai/codex/bin/codex.js');
+  await writeFile(
+    join(userData, 'settings.json'),
+    JSON.stringify({
+      'usage.pricing.autoUpdate': false,
+      'aiAgents.commands': { claude: `node "${fakeClaude}"`, codex: `node "${fakeCodex}" --status` },
+    }),
+  );
+  await writeFile(
+    join(userData, 'ai-agents.json'),
+    JSON.stringify({
+      version: 1,
+      detectedAt: Date.now(),
+      agents: [
+        { id: 'claude', name: 'Claude Code', command: 'claude', category: 'agent', accounts: [] },
+        { id: 'codex', name: 'Codex CLI', command: 'codex', category: 'agent', accounts: [] },
+      ],
+    }),
+  );
+  const { app, win } = await launchApp({ project: repo, userData, env: { CLAUDE_CONFIG_DIR: claudeHome } });
+  try {
+    await waitForTerminal(win);
+    const frame = await taskFrame(win);
+    await frame.getByTestId('task-description').fill('Add a search field');
+    await frame.getByTestId('task-planner').selectOption('ai:claude');
+    await frame.getByTestId('task-implementer').selectOption('ai:codex');
+    await frame.getByTestId('task-start').click();
+    let planner = '';
+    await expect
+      .poll(
+        async () =>
+          (planner =
+            ((await win.evaluate(() => window.oxy.invoke('agents:list'))) as AgentSnapshot[]).find(
+              (a) => a.agentId === 'claude-code',
+            )?.terminalId ?? ''),
+        { timeout: 20_000 },
+      )
+      .not.toBe('');
+    // A fresh session in plan mode with bypass available and Task's settings (hook + deny rules).
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan this task');
+    const started = await oxyTest(win).text(planner);
+    expect(started).toMatch(
+      /ARGS: --permission-mode plan --model opus --effort high --allow-dangerously-skip-permissions --settings \S+claude-settings\.json/,
+    );
+
+    // Claude finishes the plan: no question in the terminal, the plan appears in Task.
+    await win.getByTestId(`terminal-view-${planner}`).click();
+    await run(win, 'exitplan # Search plan | - Add the field | - Test it');
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PLAN HANDED OVER');
+    expect(await oxyTest(win).text(planner)).not.toContain('Would you like to proceed?');
+    await taskFrame(win);
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan awaiting approval', { timeout: 15_000 });
+    await expect(frame.getByTestId('task-plan-view').locator('h1')).toHaveText('Search plan');
+    await expect(frame.getByTestId('task-plan-view').locator('li')).toHaveCount(2);
+    await win.screenshot({ path: test.info().outputPath('task-plan-hook.png') });
+
+    // Feedback goes to the planner's terminal; the revised plan arrives through the same hook.
+    await frame.getByTestId('task-feedback').fill('Also handle an empty query.');
+    await frame.getByTestId('task-revise').click();
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Also handle an empty query.');
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('The planner is revising the plan');
+    await win.getByTestId(`terminal-view-${planner}`).click();
+    await run(win, 'exitplan # Search plan | - Add the field | - Handle an empty query | - Test it');
+    await taskFrame(win);
+    await expect(frame.getByTestId('task-plan-view').locator('li')).toHaveCount(3, { timeout: 15_000 });
+    await frame.getByTestId('task-versions').locator('summary').click();
+    await expect(frame.getByTestId('task-versions').locator('li')).toHaveCount(2);
+    await expect(frame.getByTestId('task-versions').locator('li').first()).toContainText('feedback sent');
+    await expect(frame.getByTestId('task-versions').locator('blockquote')).toHaveText('Also handle an empty query.');
+
+    await frame.getByTestId('task-approve').click();
+    let codex = '';
+    await expect
+      .poll(
+        async () =>
+          (codex =
+            ((await win.evaluate(() => window.oxy.invoke('agents:list'))) as AgentSnapshot[]).find(
+              (a) => a.agentId === 'codex',
+            )?.terminalId ?? ''),
+        { timeout: 20_000 },
+      )
+      .not.toBe('');
+    await expect.poll(() => oxyTest(win).text(codex)).toContain('Handle an empty query');
+    await taskFrame(win);
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan approved');
+
+    // A second task: its plan is rejected and nothing reaches the implementer.
+    await frame.getByTestId('task-new').click();
+    await frame.getByTestId('task-description').fill('Rename the module');
+    await frame.getByTestId('task-planner').selectOption('ai:claude');
+    await frame.getByTestId('task-implementer').selectOption('ai:codex');
+    await frame.getByTestId('task-start').click();
+    await expect
+      .poll(async () =>
+        ((await win.evaluate(() => window.oxy.invoke('agents:list'))) as AgentSnapshot[]).filter(
+          (a) => a.agentId === 'claude-code',
+        ),
+      )
+      .toHaveLength(2);
+    const second = ((await win.evaluate(() => window.oxy.invoke('agents:list'))) as AgentSnapshot[]).find(
+      (a) => a.agentId === 'claude-code' && a.terminalId !== planner,
+    )!.terminalId;
+    await expect.poll(() => oxyTest(win).text(second)).toMatch(/PROMPT: .*Rename the module/);
+    await win.getByTestId(`terminal-view-${second}`).click();
+    await run(win, 'exitplan # Rename plan');
+    await taskFrame(win);
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan awaiting approval', { timeout: 15_000 });
+    await frame.getByTestId('task-reject').click();
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan rejected');
+    await expect(frame.getByText('REJECTED', { exact: true })).toBeVisible();
+    expect(await oxyTest(win).text(codex)).not.toContain('Rename plan');
   } finally {
     await app.close();
   }

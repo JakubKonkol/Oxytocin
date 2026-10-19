@@ -1,9 +1,10 @@
 import { useOxyView } from '@oxytocin/plugin-sdk/react';
 import '@oxytocin/plugin-sdk/theme.css';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AgentLauncher, AgentSnapshot, TerminalMeta } from '@oxytocin/plugin-api';
-import type { Role, Task, TaskInput } from '../shared/task';
+import type { PlanVersion, Role, Task, TaskInput } from '../shared/task';
+import { renderPlan } from './markdown';
 import './task.css';
 
 interface Model {
@@ -16,8 +17,43 @@ interface Model {
 }
 const phases = ['Plan', 'Approve', 'Implement', 'Review'] as const;
 const phaseIndex = (t: Task) =>
-  t.phase === 'done' ? 4 : t.phase === 'reviewing' ? 3 : t.phase === 'implementing' ? 2 : t.phase === 'ready' ? 1 : 0;
+  t.phase === 'done'
+    ? 4
+    : t.phase === 'reviewing'
+      ? 3
+      : t.phase === 'implementing'
+        ? 2
+        : t.phase === 'ready' || t.phase === 'rejected'
+          ? 1
+          : 0;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const statusLabel: Record<PlanVersion['status'], string> = {
+  pending: 'awaiting approval',
+  revised: 'feedback sent',
+  superseded: 'replaced',
+  approved: 'approved',
+  rejected: 'rejected',
+};
+const originLabel: Record<PlanVersion['origin'], string> = {
+  hook: 'from Claude Code',
+  capture: 'from the plan document',
+  edit: 'edited in Task',
+};
+
+function PlanView({ plan, testId }: { plan: string; testId: string }) {
+  const html = useMemo(() => renderPlan(plan), [plan]);
+  return (
+    <div
+      className="plan-view markdown"
+      data-testid={testId}
+      // Links would navigate the panel away from Task.
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest('a')) e.preventDefault();
+      }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
 
 function RolePicker({
   label,
@@ -93,10 +129,14 @@ function TaskPanel() {
   const [reviewer, setReviewer] = useState<Role>();
   const [planMode, setPlanMode] = useState(true);
   const [draft, setDraft] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [shownVersion, setShownVersion] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const [deleteArmed, setDeleteArmed] = useState(false);
   const [error, setError] = useState('');
   const shownProject = useRef<string | undefined>(undefined);
+  const shownTask = useRef<string | undefined>(undefined);
   const receiveModel = useCallback((next: Model) => {
     if (shownProject.current !== next.project?.id) {
       shownProject.current = next.project?.id;
@@ -104,9 +144,15 @@ function TaskPanel() {
       setPlanner(reset);
       setImplementer(reset);
       setReviewer(reset);
-      setDraft(null);
       setDeleteArmed(false);
       setCreating(false);
+    }
+    if (shownTask.current !== next.task?.id) {
+      shownTask.current = next.task?.id;
+      setDraft(null);
+      setEditing(false);
+      setFeedback('');
+      setShownVersion(null);
     }
     setModel(next);
   }, []);
@@ -123,18 +169,20 @@ function TaskPanel() {
     return off;
   }, [view, receiveModel]);
   const action = async (method: string, params: unknown) => {
-    if (!view || pending) return;
+    if (!view || pending) return false;
     setPending(true);
     setError('');
     try {
-      await view.request(method, params, { timeoutMs: 60_000 });
+      await view.request(method, params, { timeoutMs: 120_000 });
       receiveModel(await view.request<Model>('model'));
       if (method === 'create') {
         setCreating(false);
         setDraft(null);
       }
+      return true;
     } catch (e) {
       setError(message(e));
+      return false;
     } finally {
       setPending(false);
     }
@@ -148,6 +196,23 @@ function TaskPanel() {
   const task = creating ? null : model.task;
   const plan = draft ?? task?.plan ?? '';
   const index = task ? phaseIndex(task) : 0;
+  const awaiting = !!task && !task.approvedPlan && (task.phase === 'planning' || task.phase === 'ready');
+  const hooked = !!task?.hookTerminalId && task.planner.terminalId === task.hookTerminalId;
+  const versions = task?.versions ?? [];
+  const viewed = shownVersion !== null ? versions[shownVersion] : undefined;
+  const heading = !task
+    ? ''
+    : task.approvedPlan
+      ? 'Plan approved'
+      : task.phase === 'rejected'
+        ? 'Plan rejected'
+        : task.phase === 'ready' && plan
+          ? 'Plan awaiting approval'
+          : versions.some((v) => v.status === 'revised')
+            ? 'The planner is revising the plan'
+            : 'Waiting for the planner';
+  // Without a plan yet, a planner that is not Claude Code may need one pasted.
+  const showEditor = awaiting && (editing || (!plan && !hooked));
   return (
     <main className="task-panel" data-testid="task-panel" aria-busy={pending}>
       <header className="toolbar">
@@ -231,8 +296,9 @@ function TaskPanel() {
             Start new Claude sessions in plan mode
           </label>
           <p className="muted hint">
-            Existing sessions keep their context and mode. Enable /plan in an existing Claude terminal before starting.
-            Choose a fresh session from + → AI Agents when you want an empty context.
+            A Claude planner opens a new session in plan mode (Opus, high effort) with bypass permissions available,
+            edits in the project blocked and its finished plan sent here instead of a question in the terminal. A chosen
+            existing session keeps its context and mode.
           </p>
           {model.launchers.length === 0 && (
             <p className="muted">No agents available. Detect or configure them in Settings → AI Agents.</p>
@@ -261,7 +327,9 @@ function TaskPanel() {
       ) : (
         <>
           <section className="summary">
-            <span className="eyebrow">{task.phase === 'done' ? 'COMPLETED' : 'CURRENT TASK'}</span>
+            <span className="eyebrow">
+              {task.phase === 'done' ? 'COMPLETED' : task.phase === 'rejected' ? 'REJECTED' : 'CURRENT TASK'}
+            </span>
             <h2>{task.description}</h2>
             <div className="sessions">
               {(['planner', 'implementer', 'reviewer'] as const).map((role) => {
@@ -287,32 +355,79 @@ function TaskPanel() {
             <div className="plan-heading">
               <div>
                 <span className="eyebrow">{task.approvedPlan ? 'APPROVED DOCUMENT' : 'PLAN DOCUMENT'}</span>
-                <h2>
-                  {task.approvedPlan ? 'Plan approved' : plan ? 'Ready for your approval' : 'Waiting for the planner'}
-                </h2>
+                <h2 data-testid="task-plan-status">{heading}</h2>
               </div>
-              {task.approvedAt && <span className="muted">{new Date(task.approvedAt).toLocaleString()}</span>}
+              <div className="toolbar-actions">
+                {task.approvedAt && <span className="muted">{new Date(task.approvedAt).toLocaleString()}</span>}
+                {awaiting && plan && !viewed && (
+                  <button
+                    className="subtle"
+                    data-testid="task-edit"
+                    disabled={pending}
+                    onClick={() => {
+                      if (editing) setDraft(null);
+                      setEditing(!editing);
+                    }}
+                  >
+                    {editing ? 'Discard edits' : 'Edit'}
+                  </button>
+                )}
+              </div>
             </div>
             <p className="muted hint">
               {task.approvedPlan
                 ? 'The implementer received this exact plan. Conversations stay in their own terminals.'
-                : 'Claude’s native plan document is captured automatically. You can also paste or refine a plan below before approving it.'}
+                : hooked
+                  ? 'Claude Code sends its finished plan here instead of asking in the terminal. Approve it, send feedback to revise it, or reject it.'
+                  : 'Claude’s native plan document is captured automatically. You can also paste or refine a plan below before approving it.'}
             </p>
-            {task.source && (
-              <p className="document-path" title={task.source}>
-                {task.source}
+            {(viewed?.source ?? task.source) && (
+              <p className="document-path" title={viewed?.source ?? task.source}>
+                {viewed?.source ?? task.source}
               </p>
             )}
-            <textarea
-              aria-label="Plan document"
-              data-testid="task-plan"
-              className="plan-document"
-              value={task.approvedPlan ?? plan}
-              readOnly={!!task.approvedPlan || pending}
-              maxLength={90000}
-              placeholder="The plan will appear here. You can also paste a Markdown plan."
-              onChange={(e) => setDraft(e.target.value)}
-            />
+            {viewed ? (
+              <div className="version-banner" role="status">
+                <span>
+                  Version {shownVersion! + 1} · {statusLabel[viewed.status]}
+                </span>
+                <button className="subtle" onClick={() => setShownVersion(null)}>
+                  Back to the current plan
+                </button>
+              </div>
+            ) : null}
+            {viewed ? (
+              <PlanView plan={viewed.plan} testId="task-version-view" />
+            ) : showEditor ? (
+              <textarea
+                aria-label="Plan document"
+                data-testid="task-plan"
+                className="plan-document"
+                value={plan}
+                readOnly={pending}
+                maxLength={90000}
+                placeholder="The plan will appear here. You can also paste a Markdown plan."
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            ) : (task.approvedPlan ?? plan) ? (
+              <PlanView plan={task.approvedPlan ?? plan} testId="task-plan-view" />
+            ) : (
+              <p className="muted plan-empty">The plan will appear here when the planner finishes it.</p>
+            )}
+            {awaiting && task.phase === 'ready' && plan && !viewed && (
+              <div className="feedback">
+                <textarea
+                  aria-label="Feedback for the planner"
+                  data-testid="task-feedback"
+                  placeholder="What should the planner change? Your feedback is pasted into its terminal."
+                  maxLength={8000}
+                  rows={3}
+                  value={feedback}
+                  disabled={pending}
+                  onChange={(e) => setFeedback(e.target.value)}
+                />
+              </div>
+            )}
             <div className="footer">
               <button
                 className="subtle"
@@ -327,16 +442,34 @@ function TaskPanel() {
                 {deleteArmed ? 'Confirm deletion' : 'Delete task'}
               </button>
               <div className="toolbar-actions">
-                {!task.approvedPlan && (
+                {awaiting && !(task.phase === 'ready' && plan) && (
                   <button disabled={pending} onClick={() => void action('retryPlan', task.id)}>
                     Retry planning prompt
                   </button>
                 )}
-                {!task.approvedPlan && (
+                {awaiting && plan && (
+                  <button data-testid="task-reject" disabled={pending} onClick={() => void action('reject', task.id)}>
+                    Reject
+                  </button>
+                )}
+                {awaiting && task.phase === 'ready' && plan && (
+                  <button
+                    data-testid="task-revise"
+                    disabled={pending || !feedback.trim() || !!viewed}
+                    onClick={() => {
+                      void action('revise', { id: task.id, feedback }).then((ok) => {
+                        if (ok) setFeedback('');
+                      });
+                    }}
+                  >
+                    Revise
+                  </button>
+                )}
+                {awaiting && (
                   <button
                     className="primary"
                     data-testid="task-approve"
-                    disabled={pending || !plan.trim()}
+                    disabled={pending || !plan.trim() || !!viewed}
                     onClick={() => void action('approve', { id: task.id, plan })}
                   >
                     Approve & implement →
@@ -369,6 +502,26 @@ function TaskPanel() {
                 )}
               </div>
             </div>
+            {versions.length > 0 && (
+              <details className="versions" data-testid="task-versions">
+                <summary>
+                  Plan versions <span className="muted">({versions.length})</span>
+                </summary>
+                <ol>
+                  {versions.map((v, i) => (
+                    <li key={`${v.at}-${i}`} data-status={v.status}>
+                      <button className="subtle" onClick={() => setShownVersion(shownVersion === i ? null : i)}>
+                        Version {i + 1}
+                      </button>
+                      <span className="muted">
+                        {new Date(v.at).toLocaleString()} · {originLabel[v.origin]} · {statusLabel[v.status]}
+                      </span>
+                      {v.feedback && <blockquote>{v.feedback}</blockquote>}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
           </section>
         </>
       )}

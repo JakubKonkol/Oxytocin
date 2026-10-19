@@ -33,9 +33,38 @@ describe('AgentLauncherService', () => {
     expect(
       await s.service.launch({ projectId: 'p', launchId: 'ai:claude', planMode: true, prompt: 'Plan this' }),
     ).toEqual({ terminalId: 't0', reused: false, sent: true });
-    expect(s.create).toHaveBeenCalledWith('p', 'ai:claude', 'claude --model opusplan --permission-mode plan');
+    expect(s.create).toHaveBeenCalledWith('p', 'ai:claude', {
+      command: { head: 'claude --model opusplan', args: ['--permission-mode', 'plan'] },
+    });
     expect(s.show).toHaveBeenCalledWith('t0', 'p');
     expect(s.send).toHaveBeenCalledWith('t0', 'Plan this');
+  });
+  it('adds Claude arguments and variables to a new session only', async () => {
+    const s = setup();
+    const request = {
+      projectId: 'p',
+      launchId: 'ai:claude',
+      planMode: true,
+      claudeArgs: ['--allow-dangerously-skip-permissions', '--settings', 'C:\\Users\\Jane Doe\\task.json'],
+      env: { OXYTOCIN_TASK_ID: 'task-1' },
+    };
+    await s.service.launch(request);
+    expect(s.create).toHaveBeenCalledWith('p', 'ai:claude', {
+      command: {
+        head: 'claude --model opusplan',
+        args: [
+          '--permission-mode',
+          'plan',
+          '--allow-dangerously-skip-permissions',
+          '--settings',
+          'C:\\Users\\Jane Doe\\task.json',
+        ],
+      },
+      env: { OXYTOCIN_TASK_ID: 'task-1' },
+    });
+    // A reused session keeps its own command line and environment.
+    expect((await s.service.launch(request)).reused).toBe(true);
+    expect(s.create).toHaveBeenCalledTimes(1);
   });
   it('reuses an idle profile session and does not spawn or type over a busy agent', async () => {
     const s = setup();

@@ -89,6 +89,7 @@ import { AiAgentsService } from './services/ai-agents/ai-agents-service';
 import { AgentLimitsStore } from './services/agents/agent-limits-store';
 import { AgentLauncherService } from './services/agents/agent-launcher';
 import { agentLaunchers } from '@shared/domain/agent-launch';
+import { commandLine } from '@shared/utils/shell-command';
 import { AgentPromptService } from './services/agents/agent-prompts';
 import { deleteKeychainEntry, nodeProvisionFs } from './services/ai-agents/accounts/node-fs';
 import { nodeAiDetectDeps } from './services/ai-agents/detect-node';
@@ -317,12 +318,13 @@ function bootstrap(): void {
     profile: (id) => aiAgents.prepareLaunch(id),
     agents: () => agents.list(),
     terminals: (id) => terminals.list(id),
-    create: (projectId, profileId, initialCommand) =>
-      terminals.create({
-        projectId,
-        profileId,
-        ...(initialCommand ? { initialCommand } : {}),
-      }),
+    create: (projectId, profileId, launch) =>
+      terminals.create(
+        { projectId, profileId, ...(launch?.env ? { env: launch.env } : {}) },
+        launch?.command
+          ? { initialCommandFor: (shell) => commandLine(launch.command!.head, launch.command!.args, shell) }
+          : {},
+      ),
     show: (terminalId, projectId) => {
       terminals.markShown(terminalId);
       if (mainWindow && !mainWindow.isDestroyed())

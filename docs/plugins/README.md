@@ -15,7 +15,7 @@ This guide walks you through building a complete plugin, then documents every pa
 - [Debugging](#debugging) · [Packaging and distribution](#packaging-and-distribution) ·
   [Security](#security) · [Best practices](#best-practices)
 
-Plugin API version: **0.1.8** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
+Plugin API version: **0.1.10** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
 contain breaking changes; declare the versions your plugin supports with `engine`.
 
 ## How a plugin works
@@ -617,7 +617,9 @@ if (!result.sent) ctx.log.warn(result.error ?? 'No prompt requested');
 Use `terminalId` to choose a particular running session of the same project and profile, or `reuse: false` for a fresh
 session. Busy sessions and open questions receive no prompt; show the error and let the user retry explicitly.
 `planMode: true` starts **new Claude Code sessions** in plan mode; reused sessions retain their current mode.
-Launch commands from **Settings → AI Agents → Launch commands** apply to these terminals too.
+Launch commands from **Settings → AI Agents → Launch commands** apply to these terminals too. Since API **0.1.10**,
+`claudeArgs` adds arguments to a new Claude Code session's command (quoted for the terminal's shell, e.g.
+`['--settings', file]`) and `env` sets variables of a new session's terminal; reused sessions keep their own.
 
 #### Status bar items, commands and settings
 

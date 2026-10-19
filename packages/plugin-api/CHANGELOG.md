@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10
+
+- `oxy.agents.launch({ claudeArgs, env })`: arguments added to a new Claude Code session's launch command (quoted for
+  the terminal's shell) and environment variables of a new session's terminal. Reused sessions keep theirs.
+- `AgentLauncher.agent`: the CLI a launch choice starts (`claude`, `codex`, `gemini`…).
+
 ## 0.1.9
 
 - `oxy.ui.openPanel(…, { placement: 'sidebar' })` opens a right-sidebar tool without requiring a project. It follows

@@ -173,6 +173,98 @@ textarea:focus-visible {
   border-top: 1px solid var(--border-subtle);
   padding-top: 14px;
 }
+.plan-view {
+  padding: 4px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card, 8px);
+  background: var(--bg-elevated);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.plan-view h1,
+.plan-view h2,
+.plan-view h3,
+.plan-view p,
+.plan-view ul,
+.plan-view ol,
+.plan-view pre {
+  margin: 12px 0;
+}
+.plan-view h1 {
+  font-size: var(--font-size-heading, 20px);
+}
+.plan-view h2 {
+  font-size: var(--font-size-ui);
+}
+.plan-view code {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+  background: var(--bg-input);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.plan-view pre {
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border-radius: var(--radius-control, 6px);
+  overflow-x: auto;
+}
+.plan-view pre code {
+  padding: 0;
+  background: transparent;
+}
+.plan-view table {
+  border-collapse: collapse;
+}
+.plan-view th,
+.plan-view td {
+  border: 1px solid var(--border-subtle);
+  padding: 4px 8px;
+}
+.plan-view blockquote,
+.versions blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-default);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+.plan-empty {
+  padding: 24px 0;
+}
+.version-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control, 6px);
+  background: var(--accent-muted);
+}
+.versions summary {
+  cursor: pointer;
+}
+.versions ol {
+  margin: 8px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.versions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+.versions li blockquote {
+  flex-basis: 100%;
+}
 .subtle {
   color: var(--text-muted);
   background: transparent;
