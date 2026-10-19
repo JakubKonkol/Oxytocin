@@ -71,6 +71,7 @@ import { statMany } from './services/fs/stat-many';
 import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
 import { CodeMapActivityHints } from './services/code-map/activity-hints';
+import { CodeMapService } from './services/code-map/code-map-service';
 import { projectPathsFromArgv } from './app/argv';
 import { WorkspaceStateService } from './services/workspace-state/workspace-state-service';
 import { sessionRestoredLabel } from './services/terminals/scrollback-format';
@@ -367,6 +368,15 @@ function bootstrap(): void {
   terminals.onDidRemove((id) => accountTerminalStates.delete(id));
 
   const activity = new ActivityService(terminals, () => projects.list().map((p) => p.id));
+  const codeMap = new CodeMapService({
+    host: hosts.codeMap,
+    projects,
+    gitPath: () => settings.get()['git.path'] ?? 'git',
+    logger: createLogger('map'),
+  });
+  void projectsReady
+    .then(() => codeMap.start())
+    .catch((error: unknown) => log.warn('Could not initialize Code Map', error));
   const codeMapHints = new CodeMapActivityHints({
     host: hosts.codeMap,
     current: () => ({
@@ -1046,6 +1056,16 @@ function bootstrap(): void {
         await resources.removeProject(id);
       },
       'projects:update': (patch) => projects.update(patch),
+      'codeMap:getStatus': ({ projectId }) => codeMap.status(projectId),
+      'codeMap:setEnabled': ({ projectId, enabled, ignoreInGit }) =>
+        codeMap.setEnabled(projectId, enabled, ignoreInGit),
+      'codeMap:setOptions': ({ projectId, excludedPaths, ignoreInGit, removeGitignoreEntry }) =>
+        codeMap.setOptions(projectId, { excludedPaths, ignoreInGit }, removeGitignoreEntry),
+      'codeMap:rebuild': ({ projectId }) => codeMap.action(projectId, 'rebuild'),
+      'codeMap:pause': ({ projectId }) => codeMap.action(projectId, 'pause'),
+      'codeMap:resume': ({ projectId }) => codeMap.action(projectId, 'resume'),
+      'codeMap:deleteData': ({ projectId }) => codeMap.deleteData(projectId),
+      'codeMap:getDiagnostics': ({ projectId }) => codeMap.diagnostics(projectId),
       'projects:reorder': ({ ids }) => projects.reorder(ids),
       'projects:setActive': ({ id }) => projects.setActive(id),
       'projects:pickFolder': async () => {
@@ -1385,6 +1405,7 @@ function bootstrap(): void {
   });
   keybindings.onDidChange((state) => sendEvent(wc, 'keybindings:changed', state));
   hosts.onDidChangeStatus((status) => sendEvent(wc, 'hosts:status', status));
+  codeMap.onDidChangeStatus((status) => sendEvent(wc, 'codeMap:status', status));
   terminals.onDidUpdate((info) => sendEvent(wc, 'terminals:updated', info));
   agents.onDidUpdate((list) => sendEvent(wc, 'agents:updated', list));
   activity.onDidChange((list) => sendEvent(wc, 'projects:activity', list));
@@ -1726,6 +1747,7 @@ function bootstrap(): void {
         await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
         resourcesController.dispose();
         codeMapHints.dispose();
+        await codeMap.dispose();
         app.off('browser-window-focus', reconcileCodeMap);
         powerMonitor.off('resume', reconcileCodeMap);
         await withTimeout(ensemble.flush(), 3000).catch(() => undefined);

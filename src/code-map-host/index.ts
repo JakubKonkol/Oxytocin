@@ -48,8 +48,10 @@ const impl: Impl = {
   'checkout:pause': (input) => checkouts.pause(CodeMapHostContracts['checkout:pause'].params.parse(input).checkoutId),
   'checkout:resume': (input) =>
     checkouts.resume(CodeMapHostContracts['checkout:resume'].params.parse(input).checkoutId),
-  'checkout:deleteData': (input) =>
-    checkouts.deleteData(CodeMapHostContracts['checkout:deleteData'].params.parse(input).checkoutId),
+  'checkout:deleteData': (input) => {
+    const params = CodeMapHostContracts['checkout:deleteData'].params.parse(input);
+    return checkouts.deleteData(params.checkoutId, params.root);
+  },
   'checkout:status': (input) =>
     checkouts.status(CodeMapHostContracts['checkout:status'].params.parse(input).checkoutId),
   'checkout:diagnostics': (input) =>

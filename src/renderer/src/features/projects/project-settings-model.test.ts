@@ -23,6 +23,15 @@ const project: Project = {
 };
 
 describe('project settings draft', () => {
+  it('preserves Code Map when saving another tab, including exclusion order and Git preference', () => {
+    const codeMap = { enabled: true, excludedPaths: ['generated/**', 'vendor/**'], ignoreInGit: false };
+    const p = { ...project, settings: { ...project.settings, codeMap } };
+    const d = draftOf(p);
+    d.name = 'renamed';
+    d.gitEnabled = true;
+    expect(patchFromDraft(p, d).settings?.codeMap).toEqual(codeMap);
+    expect(d.codeMap).not.toBe(codeMap);
+  });
   it('round-trips a project through the draft unchanged', () => {
     const d = draftOf(project);
     expect(d.env).toEqual([

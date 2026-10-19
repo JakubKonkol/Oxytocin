@@ -40,6 +40,7 @@ export class GraphEngine {
   private symbolCount = 0;
   private relationCount = 0;
   private runtimeVersion = '';
+  private cacheAvailable = false;
   constructor(
     private readonly options: {
       root: string;
@@ -52,6 +53,12 @@ export class GraphEngine {
   ) {}
   async initialize(): Promise<void> {
     this.directory = await safeDirectory(this.options.root, ['.oxy', 'code-map']);
+    try {
+      await safeDirectory(this.options.root, ['.oxy', 'code-map', 'cache'], false);
+      this.cacheAvailable = true;
+    } catch {
+      /* No records exist on a first build. */
+    }
     const grammars = GrammarManifestSchema.parse(
       JSON.parse(await readFile(join(this.options.assets, 'grammars.json'), 'utf8')),
     );
@@ -107,6 +114,7 @@ export class GraphEngine {
     );
   }
   private async cached(path: string, hash: string): Promise<FileRecord | null> {
+    if (!this.cacheAvailable) return null;
     try {
       const key = this.cacheKey(path, hash);
       const directory = await safeDirectory(this.options.root, ['.oxy', 'code-map', 'cache', key.slice(0, 2)], false);
@@ -252,6 +260,7 @@ export class GraphEngine {
       );
     }
     this.graph = graph;
+    this.cacheAvailable = true;
     this.appliedRebuild = this.activeRebuild;
     this.dirtyCache.clear();
     const failed = [

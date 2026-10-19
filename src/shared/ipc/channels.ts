@@ -3,6 +3,14 @@
  * events.ts must cover exactly these channels (enforced by the type checker).
  */
 export const INVOKE_CHANNELS = [
+  'codeMap:getStatus',
+  'codeMap:setEnabled',
+  'codeMap:setOptions',
+  'codeMap:rebuild',
+  'codeMap:pause',
+  'codeMap:resume',
+  'codeMap:deleteData',
+  'codeMap:getDiagnostics',
   'app:getInfo',
   'app:getHostStatus',
   'app:readLegal',
@@ -128,6 +136,7 @@ export const INVOKE_CHANNELS = [
 ] as const;
 
 export const EVENT_CHANNELS = [
+  'codeMap:status',
   'settings:changed',
   'hosts:status',
   'terminals:updated',

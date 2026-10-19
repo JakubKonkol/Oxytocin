@@ -33,7 +33,10 @@ export const CodeMapHostContracts = {
   'checkout:rebuild': { params: CodeMapCheckoutSchema, result: CodeMapStatusSchema },
   'checkout:pause': { params: CodeMapCheckoutSchema, result: CodeMapStatusSchema },
   'checkout:resume': { params: CodeMapCheckoutSchema, result: CodeMapStatusSchema },
-  'checkout:deleteData': { params: CodeMapCheckoutSchema, result: CodeMapStatusSchema },
+  'checkout:deleteData': {
+    params: CodeMapCheckoutSchema.extend({ root: z.string().min(1).max(32768).optional() }),
+    result: CodeMapStatusSchema,
+  },
   'checkout:status': { params: CodeMapCheckoutSchema, result: CodeMapStatusSchema },
   'checkout:diagnostics': { params: CodeMapCheckoutSchema, result: CodeMapDiagnosticsSchema },
 } as const;

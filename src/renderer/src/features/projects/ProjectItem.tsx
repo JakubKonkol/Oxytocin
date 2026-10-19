@@ -1,5 +1,5 @@
 import { ContextMenu } from 'radix-ui';
-import { AlertTriangle, Link2, Pin } from 'lucide-react';
+import { AlertTriangle, Link2, Pin, Network } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { Project } from '@shared/domain/project';
 import type { LinkResource } from '@shared/domain/project-resources';
@@ -38,6 +38,7 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
   const renameAfterMenu = useRef(false);
   const [dropHint, setDropHint] = useState<'before' | 'after' | null>(null);
   const status = useProjectsStore((s) => s.activity[project.id]);
+  const codeMap = useProjectsStore((s) => s.codeMaps[project.id]);
   const dot = status?.activity ?? 'none';
   const waiting = status?.agents.waiting ?? 0;
   const reveal = currentPlatform() === 'darwin' ? 'Reveal in Finder' : 'Reveal in Explorer';
@@ -149,6 +150,30 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
             >
               {project.name}
             </span>
+          )}
+          {project.settings.codeMap?.enabled && (
+            <button
+              type="button"
+              aria-label="Code Map status"
+              title={`Code Map: ${codeMap?.readOnly ? 'Updated by another Oxytocin instance' : (codeMap?.state ?? 'indexing')} · ${codeMap?.counts.files ?? 0} files · ${codeMap?.counts.symbols ?? 0} symbols`}
+              className={cn(
+                'flex-none rounded-control p-0.5 hover:bg-focus-tint',
+                codeMap?.state === 'error' || codeMap?.state === 'limit'
+                  ? 'text-danger'
+                  : codeMap?.state === 'degraded'
+                    ? 'text-warning'
+                    : codeMap?.state === 'ready'
+                      ? 'text-success'
+                      : 'text-fg-muted',
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                openProjectSettings(project.id, 'code-map');
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <Network size={12} />
+            </button>
           )}
           {project.pinned && <Pin aria-label="Pinned" size={11} className="flex-none text-fg-muted" />}
           {project.missing ? (

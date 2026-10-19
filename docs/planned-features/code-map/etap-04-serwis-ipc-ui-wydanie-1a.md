@@ -113,12 +113,12 @@ Macierz poprawności i odzyskiwania (pokryj testami unit/integration/E2E, zanim 
 
 ## Kryteria ukończenia
 
-- [ ] FR-EN, FR-DIR, FR-BLD-1…12 i 14, FR-UPD-1…7, FR-AG-1, FR-AG-6, FR-ST zaimplementowane i pokryte testami.
+- [x] FR-EN, FR-DIR, FR-BLD-1…12 i 14, FR-UPD-1…7, FR-AG-1, FR-AG-6, FR-ST zaimplementowane i pokryte testami.
 - [ ] Macierz `.oxy` i determinizmu zielona na Windows CI i w `full-tests`.
-- [ ] Eksperyment wydajności zapisany; NFR-1…6 spełnione albo udokumentowane z decyzją.
+- [x] Eksperyment wydajności zapisany; NFR-1…6 spełnione albo udokumentowane z decyzją.
 - [ ] Spakowany build Windows działa offline z dołączonymi parserami, bez toolchainu.
 - [ ] Dogfooding na repozytorium Oxytocin; wpis w CHANGELOG bez deklaracji oszczędności.
-- [ ] `npm run check` + E2E (`code-map.spec.ts`, ustawienia projektu) zielone; aplikacja buduje się i startuje.
+- [x] `npm run check` + E2E (`code-map.spec.ts`, ustawienia projektu) zielone; aplikacja buduje się i startuje.
 
 ## Commity i CHANGELOG
 
@@ -139,3 +139,7 @@ CHANGELOG (`### Added`):
 - Status przychodzi zdarzeniami (maks. 4/s) — nie trzymaj go w stanie per tick, nie renderuj listy diagnostyki na każdy
   status.
 - „MCP on/off” w statusie: do czasu etapu 06 pokaż, że narzędzia agentów jeszcze nie są dostępne — nie obiecuj ich.
+
+## Implementation checkpoint (2026-10-19)
+
+The main service, IPC and user interface are implemented. Validation and measured failures are recorded in [results/2026-10-19-phase-1.md](results/2026-10-19-phase-1.md). The packaged headless benchmark passes offline, but hosted Windows CI, a production-installer smoke, active-idle/terminal-Git comparisons and multi-day dogfooding remain open. This is an implementation checkpoint, not a production-release readiness claim. See [status.md](status.md) before continuing.

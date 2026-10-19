@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CodeMapDiagnosticsSchema, CodeMapSettingsSchema, CodeMapStatusSchema } from '../domain/code-map';
 import { AgentLaunchRequestSchema, AgentLaunchResultSchema } from '../domain/agent-launch';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
@@ -90,6 +91,27 @@ interface InvokeSpec {
 
 /** Source of truth for request/response IPC (renderer → main). Requests are validated in main. */
 export const invokeContract = {
+  'codeMap:getStatus': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
+  'codeMap:setEnabled': {
+    req: z.object({ projectId: ProjectIdSchema, enabled: z.boolean(), ignoreInGit: z.boolean().optional() }).strict(),
+    res: CodeMapStatusSchema,
+  },
+  'codeMap:setOptions': {
+    req: z
+      .object({
+        projectId: ProjectIdSchema,
+        excludedPaths: CodeMapSettingsSchema.shape.excludedPaths,
+        ignoreInGit: z.boolean(),
+        removeGitignoreEntry: z.boolean().default(false),
+      })
+      .strict(),
+    res: CodeMapStatusSchema,
+  },
+  'codeMap:rebuild': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
+  'codeMap:pause': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
+  'codeMap:resume': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
+  'codeMap:deleteData': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
+  'codeMap:getDiagnostics': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapDiagnosticsSchema },
   'app:getInfo': { req: z.null().optional(), res: AppInfoSchema },
   'app:getHostStatus': { req: z.null().optional(), res: z.array(HostStatusSchema) },
   /** LICENSE (MIT) or THIRD_PARTY_NOTICES.md shipped with the app (About / Help → Third-Party Notices). */

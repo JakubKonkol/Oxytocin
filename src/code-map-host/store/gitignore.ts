@@ -7,6 +7,18 @@ import { atomicWrite } from './writer';
 import { hasCode, rejectLink } from './paths';
 
 const comment = '# Oxytocin local data (Code Map)';
+export async function isMapGitIgnored(root: string, gitPath: string): Promise<boolean> {
+  try {
+    await promisify(execFile)(gitPath, ['--no-optional-locks', 'check-ignore', '-q', '.oxy/code-map/MAP.md'], {
+      cwd: root,
+      windowsHide: true,
+      timeout: 10_000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 export function ensureOxyIgnored(text: string): string | null {
   if (text.split(/\r?\n/).some((line) => ['.oxy', '.oxy/', '/.oxy', '/.oxy/'].includes(line.trim()))) return null;
   const eol = text.includes('\r\n') ? '\r\n' : '\n';

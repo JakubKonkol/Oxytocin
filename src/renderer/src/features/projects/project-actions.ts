@@ -40,7 +40,7 @@ export async function removeProject(project: Project): Promise<void> {
   const running = terminals.filter((t) => t.state === 'running');
   const result = await confirmDialogEx({
     title: `Remove ‘${project.name}’ from Oxytocin?`,
-    description: 'The folder on disk is not touched.',
+    description: 'The folder on disk is not touched. Any .oxy/ data stays in the project folder.',
     confirmLabel: 'Remove',
     destructive: true,
     ...(terminals.length > 0

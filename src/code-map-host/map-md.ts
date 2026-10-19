@@ -4,8 +4,8 @@ import { comparePaths } from './enumerate';
 import type { ProjectConfig } from './resolve/config';
 import { sha256 } from './store/writer';
 
-export const CODE_MAP_AGENT_INSTRUCTIONS =
-  'This project has an Oxytocin Code Map. Start by reading `.oxy/code-map/MAP.md` for the layout, entry points and key APIs. Use `.oxy/code-map/graph.json` (or the `oxy_*` Code Map tools when available) to find symbols, imports and potential dependents. Check freshness, read current source before editing, and fall back to normal text search when the map is unavailable or incomplete. Missing edges do not prove that code is unused.';
+import { CODE_MAP_AGENT_INSTRUCTIONS } from '@shared/domain/code-map';
+export { CODE_MAP_AGENT_INSTRUCTIONS } from '@shared/domain/code-map';
 export function entryPoints(graph: CodeMapGraph, configs: ReadonlyMap<string, ProjectConfig>): string[] {
   const paths = new Set(graph.files.map((file) => file.path));
   const entries = new Set<string>();

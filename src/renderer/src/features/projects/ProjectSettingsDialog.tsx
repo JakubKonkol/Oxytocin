@@ -18,6 +18,7 @@ import { resourceProblems, secretChanges, type SecretEdits } from './resources-m
 import { Field, input, Section } from './settings/controls';
 import { ApisTab } from './settings/ApisTab';
 import { DatabasesTab } from './settings/DatabasesTab';
+import { CodeMapTab } from './settings/CodeMapTab';
 import { AgentsTab, LinksLogsTab, RelatedTab } from './settings/OtherTabs';
 import {
   draftOf,
@@ -31,18 +32,20 @@ import {
 
 interface ProjectSettingsStore {
   projectId: string | null;
-  open: (projectId: string) => void;
+  tab: TabId;
+  open: (projectId: string, tab?: TabId) => void;
   close: () => void;
 }
 
 export const useProjectSettingsStore = create<ProjectSettingsStore>((set) => ({
   projectId: null,
-  open: (projectId) => set({ projectId }),
+  tab: 'general',
+  open: (projectId, tab = 'general') => set({ projectId, tab }),
   close: () => set({ projectId: null }),
 }));
 
-export function openProjectSettings(projectId: string): void {
-  useProjectSettingsStore.getState().open(projectId);
+export function openProjectSettings(projectId: string, tab?: TabId): void {
+  useProjectSettingsStore.getState().open(projectId, tab);
 }
 
 export function registerProjectSettingsCommands(): void {
@@ -208,13 +211,15 @@ function StartupList({
   );
 }
 
-type TabId = 'general' | 'terminals' | 'environment' | 'git' | 'databases' | 'apis' | 'links' | 'related' | 'agents';
+type TabId =
+  'general' | 'terminals' | 'environment' | 'git' | 'code-map' | 'databases' | 'apis' | 'links' | 'related' | 'agents';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'terminals', label: 'Terminals' },
   { id: 'environment', label: 'Environment' },
   { id: 'git', label: 'Git' },
+  { id: 'code-map', label: 'Code Map' },
   { id: 'databases', label: 'Databases' },
   { id: 'apis', label: 'APIs' },
   { id: 'links', label: 'Links & logs' },
@@ -265,7 +270,10 @@ function SettingsForm({
   const initialDraft = useMemo(() => JSON.stringify(draftOf(project)), [project]);
   const [profiles, setProfiles] = useState<TerminalProfile[]>([]);
   const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<TabId>('general');
+  const requestedTab = useProjectSettingsStore((s) => s.tab);
+  const [tab, setTab] = useState<TabId>(requestedTab);
+  // Code Map commands persist immediately; preserve them when another tab's draft is saved.
+  const currentDraft = { ...draft, codeMap: project.settings.codeMap };
   const res = useResources(project.id);
   const [edits, setEdits] = useState<SecretEdits>({});
   useEffect(() => {
@@ -283,7 +291,7 @@ function SettingsForm({
   );
   const resourcesDirty =
     !!res.state && (JSON.stringify(res.state.resources) !== res.state.initial || Object.keys(edits).length > 0);
-  const dirty = JSON.stringify(draft) !== initialDraft || resourcesDirty;
+  const dirty = JSON.stringify(currentDraft) !== initialDraft || resourcesDirty;
   const problems = [...validateDraft(draft), ...(res.state ? resourceProblems(res.state.resources) : [])];
   const envChanged =
     JSON.stringify(project.settings.env ?? {}) !== JSON.stringify(patchFromDraft(project, draft).settings?.env ?? {});
@@ -302,7 +310,8 @@ function SettingsForm({
   const save = async () => {
     setSaving(true);
     try {
-      if (JSON.stringify(draft) !== initialDraft) await ipc.invoke('projects:update', patchFromDraft(project, draft));
+      if (JSON.stringify(currentDraft) !== initialDraft)
+        await ipc.invoke('projects:update', patchFromDraft(project, currentDraft));
       if (res.state && resourcesDirty)
         await ipc.invoke('resources:save', {
           projectId: project.id,
@@ -479,6 +488,9 @@ function SettingsForm({
             </Section>
           </Tabs.Content>
 
+          <Tabs.Content value="code-map" className="outline-none">
+            <CodeMapTab project={project} close={close} />
+          </Tabs.Content>
           <Tabs.Content value="git" className="flex flex-col gap-3 outline-none">
             <label className="flex items-center gap-2 text-fg-secondary">
               <input

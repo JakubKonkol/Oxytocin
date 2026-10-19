@@ -1,4 +1,5 @@
 import type { Project, ProjectPatch, StartupTerminal } from '@shared/domain/project';
+import type { CodeMapSettings } from '@shared/domain/code-map';
 
 export interface EnvRow {
   key: string;
@@ -17,6 +18,7 @@ export interface StartupRow {
 
 /** Editable copy of a project's settings. */
 export interface ProjectDraft {
+  codeMap?: CodeMapSettings;
   name: string;
   color: number;
   /** Empty = the first letter of the name. */
@@ -33,6 +35,7 @@ export interface ProjectDraft {
 export function draftOf(project: Project): ProjectDraft {
   const s = project.settings;
   return {
+    ...(s.codeMap ? { codeMap: structuredClone(s.codeMap) } : {}),
     name: project.name,
     color: project.color,
     icon: project.icon?.value ?? '',
@@ -100,6 +103,7 @@ export function patchFromDraft(project: Project, d: ProjectDraft): ProjectPatch 
     color: d.color,
     icon: icon ? { kind: /^[A-Za-z0-9]$/.test(icon) ? 'letter' : 'emoji', value: icon } : null,
     settings: {
+      ...(d.codeMap ? { codeMap: d.codeMap } : {}),
       ...(d.defaultProfileId ? { defaultProfileId: d.defaultProfileId } : {}),
       ...(Object.keys(env).length ? { env } : {}),
       ...(startupTerminals.length ? { startupTerminals } : {}),

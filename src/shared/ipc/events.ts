@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CodeMapStatusSchema } from '../domain/code-map';
 import { AgentInfoWithTerminalSchema } from '../domain/agent';
 import {
   ContributionsSchema,
@@ -43,6 +44,7 @@ export type NotificationPayload = z.infer<typeof NotificationPayloadSchema>;
 
 /** Push events main → renderer. */
 export const eventContract = {
+  'codeMap:status': CodeMapStatusSchema,
   'settings:changed': SettingsSchema,
   'hosts:status': z.array(HostStatusSchema),
   'terminals:updated': TerminalInfoSchema,

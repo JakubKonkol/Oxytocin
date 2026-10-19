@@ -2,7 +2,23 @@ import { z } from 'zod';
 
 export const CodeMapSettingsSchema = z.object({
   enabled: z.boolean().default(false),
-  excludedPaths: z.array(z.string().min(1).max(4096)).max(200).default([]),
+  excludedPaths: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(4096)
+        .refine(
+          (value) =>
+            !/[\\:]/.test(value) &&
+            !Array.from(value).some((character) => character.charCodeAt(0) < 32) &&
+            !value.startsWith('/') &&
+            !value.split('/').includes('..'),
+          'Use relative globs with forward slashes',
+        ),
+    )
+    .max(200)
+    .default([]),
   ignoreInGit: z.boolean().default(true),
 });
 export type CodeMapSettings = z.infer<typeof CodeMapSettingsSchema>;
@@ -184,6 +200,7 @@ export const CodeMapStatusSchema = z.object({
   error: z.string().max(4000).nullable(),
   owner: CodeMapOwnerSchema.nullable(),
   readOnly: z.boolean(),
+  gitIgnored: z.boolean().optional(),
   limits: CodeMapLimitsSchema,
 });
 export type CodeMapStatus = z.infer<typeof CodeMapStatusSchema>;
@@ -202,3 +219,25 @@ export function emptyCodeMapCoverage(): CodeMapCoverage {
     unresolved: { imports: 0, calls: 0 },
   };
 }
+
+export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
+  return {
+    checkoutId,
+    state: 'disabled',
+    generation: 0,
+    progress: null,
+    counts: { files: 0, symbols: 0, edges: 0 },
+    coverage: emptyCodeMapCoverage(),
+    languages: {},
+    updatedAt: null,
+    bytes: 0,
+    pendingFiles: 0,
+    error: null,
+    owner: null,
+    readOnly: false,
+    limits: { ...CODE_MAP_LIMITS },
+  };
+}
+
+export const CODE_MAP_AGENT_INSTRUCTIONS =
+  'This project has an Oxytocin Code Map. Start by reading `.oxy/code-map/MAP.md` for the layout, entry points and key APIs. Use `.oxy/code-map/graph.json` (or the `oxy_*` Code Map tools when available) to find symbols, imports and potential dependents. Check freshness, read current source before editing, and fall back to normal text search when the map is unavailable or incomplete. Missing edges do not prove that code is unused.';

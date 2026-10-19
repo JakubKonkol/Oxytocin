@@ -137,9 +137,15 @@ describe('Graph publication pipeline', () => {
   it('rebuilds corrupt graph/cache artifacts instead of trusting them', async () => {
     const root = await temporary(),
       target = await engine(root),
-      sources = new Map([['a.ts', 'export function good() {}']]);
+      sources = new Map([['a.ts', 'export function good() {} export function entry() { good(); }']]);
     const first = await publish(target, sources);
     const expected = await readFile(join(root, '.oxy/code-map/graph.json'), 'utf8');
+    await writeFile((await cacheFiles(root))[0]!, '{');
+    const missingRecord = await engine(root);
+    parse.mockClear();
+    await publish(missingRecord, sources);
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(await readFile(join(root, '.oxy/code-map/graph.json'), 'utf8')).toBe(expected);
     await writeFile((await cacheFiles(root))[0]!, '{');
     await writeFile(join(root, '.oxy/code-map/graph.json'), '{}');
     const repaired = await engine(root);

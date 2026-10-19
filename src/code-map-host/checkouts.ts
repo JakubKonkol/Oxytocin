@@ -1,8 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import {
-  CODE_MAP_LIMITS,
+  initialCodeMapStatus,
   CodeMapStatusSchema,
-  emptyCodeMapCoverage,
   type CodeMapDiagnostics,
   type CodeMapStatus,
 } from '@shared/domain/code-map';
@@ -14,6 +13,11 @@ import { CodeMapScheduler } from './scheduler';
 import { CodeMapLimitError } from './enumerate';
 import { GraphEngine } from './graph/engine';
 import { ParserClient } from './parse/client';
+import { hasCode } from './store/paths';
+import { isMapGitIgnored } from './store/gitignore';
+import { dataSize } from './store/writer';
+
+export { initialCodeMapStatus } from '@shared/domain/code-map';
 
 interface Checkout {
   config: ConfigureCodeMapCheckout;
@@ -23,25 +27,6 @@ interface Checkout {
   diagnostics: CodeMapDiagnostics;
   graph?: GraphEngine;
   warning: string | null;
-}
-
-export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
-  return {
-    checkoutId,
-    state: 'disabled',
-    generation: 0,
-    progress: null,
-    counts: { files: 0, symbols: 0, edges: 0 },
-    coverage: emptyCodeMapCoverage(),
-    languages: {},
-    updatedAt: null,
-    bytes: 0,
-    pendingFiles: 0,
-    error: null,
-    owner: null,
-    readOnly: false,
-    limits: { ...CODE_MAP_LIMITS },
-  };
 }
 
 /** Host-owned checkout lifetimes. Parsing and scheduling are added in subsequent internal stages. */
@@ -79,6 +64,7 @@ export class CodeMapCheckouts {
       checkout.lease = prepared.lease;
       status.owner = prepared.owner;
       status.readOnly = !prepared.lease;
+      status.gitIgnored = await isMapGitIgnored(config.root, config.gitPath);
       status.error = prepared.warning;
       checkout.warning = prepared.warning;
       checkout.graph = new GraphEngine({
@@ -99,6 +85,8 @@ export class CodeMapCheckouts {
         status.counts = snapshot.manifest.counts;
         status.coverage = snapshot.graph.coverage;
         status.updatedAt = snapshot.manifest.builtAt;
+        status.bytes = await dataSize(prepared.directory);
+        status.languages = languageSupport(status.coverage.byLanguage);
       }
       status.state = prepared.warning && !status.readOnly ? 'error' : 'paused';
       if (prepared.lease) {
@@ -115,6 +103,7 @@ export class CodeMapCheckouts {
             },
             file: async (path, _, source, signal) => {
               if (status.progress) status.progress.completed++;
+              this.changed(checkout);
               return checkout.graph!.file(path, source, signal);
             },
             removed: (path) => checkout.graph!.removed(path),
@@ -133,17 +122,7 @@ export class CodeMapCheckouts {
               status.generation = published.manifest.generation;
               status.updatedAt = published.manifest.builtAt;
               status.bytes = published.bytes;
-              status.languages = Object.fromEntries(
-                Object.keys(status.coverage.byLanguage).map((language) => [
-                  language,
-                  {
-                    level: ['typescript', 'javascript'].includes(language) ? 'Calls' : 'Files',
-                    description: ['typescript', 'javascript'].includes(language)
-                      ? 'Syntax and lexical bindings; unknown receiver types remain unresolved.'
-                      : 'File metadata only.',
-                  },
-                ]),
-              );
+              status.languages = languageSupport(status.coverage.byLanguage);
               status.progress = null;
               status.pendingFiles = checkout.indexer?.pendingFiles ?? 0;
               status.state = status.error ? 'error' : status.pendingFiles ? 'updating' : published.manifest.state;
@@ -200,11 +179,21 @@ export class CodeMapCheckouts {
     await checkout.lease?.dispose();
     this.checkouts.delete(checkoutId);
   }
-  async deleteData(checkoutId: string): Promise<CodeMapStatus> {
-    return this.serialize(() => this.deleteDataNow(checkoutId));
+  async deleteData(checkoutId: string, root?: string): Promise<CodeMapStatus> {
+    return this.serialize(() => this.deleteDataNow(checkoutId, root));
   }
-  private async deleteDataNow(checkoutId: string): Promise<CodeMapStatus> {
-    const checkout = this.get(checkoutId);
+  private async deleteDataNow(checkoutId: string, root?: string): Promise<CodeMapStatus> {
+    const checkout = this.checkouts.get(checkoutId);
+    if (!checkout) {
+      if (!root) throw new Error('Unknown Code Map checkout');
+      await deleteMapData(root).catch((error: unknown) => {
+        if (!hasCode(error, 'ENOENT')) throw error;
+      });
+      const status = initialCodeMapStatus(checkoutId);
+      this.onStatus(status);
+      return status;
+    }
+    if (root && (await realpath(root)) !== checkout.config.root) throw new Error('Checkout root changed');
     if (checkout.status.readOnly) throw new Error('Updated by another Oxytocin instance');
     await checkout.indexer?.dispose();
     await deleteMapData(checkout.config.root, checkout.lease ?? undefined);
@@ -239,4 +228,18 @@ export class CodeMapCheckouts {
     this.onStatus(status);
     return status;
   }
+}
+
+function languageSupport(languages: Record<string, number>): CodeMapStatus['languages'] {
+  return Object.fromEntries(
+    Object.keys(languages).map((language) => [
+      language,
+      {
+        level: ['typescript', 'javascript'].includes(language) ? 'Calls' : 'Files',
+        description: ['typescript', 'javascript'].includes(language)
+          ? 'Syntax and lexical bindings; unknown receiver types remain unresolved.'
+          : 'File metadata only.',
+      },
+    ]),
+  );
 }
