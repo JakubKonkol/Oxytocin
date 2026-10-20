@@ -49,9 +49,9 @@ Poza zakresem: selektor checkoutu w wizualizatorze (etap 10).
 
 ## Kryteria ukończenia
 
-- [ ] Ensemble pyta o swój uwierzytelniony checkout; brak fallbacku między worktree.
-- [ ] Worktree nie dostają edycji `.gitignore`; diffy agentów nie zawierają plików mapy.
-- [ ] Blok instrukcji wstawiany/usuwany wyłącznie na żądanie.
+- [x] Ensemble pyta o swój uwierzytelniony checkout; brak fallbacku między worktree.
+- [x] Worktree nie dostają edycji `.gitignore`; diffy agentów nie zawierają plików mapy.
+- [x] Blok instrukcji wstawiany/usuwany wyłącznie na żądanie.
 - [ ] `npm run check` + E2E (code-map, ensemble) zielone.
 
 ## Commity i CHANGELOG
@@ -68,3 +68,12 @@ CHANGELOG (`### Added`):
 
 - Edycja `.gitignore` w worktree pojawiłaby się jako zmiana agenta — w trybie `worktree` jest wyłączona bez wyjątków.
 - Selektor z wywołania nie może przekierować roli Ensemble do innego checkoutu.
+
+## Implementation notes (2026-10-20)
+
+The core normal endpoint resolves registered worktree paths and terminal cwd; the Ensemble endpoint uses the role's
+server-selected checkout and discards selectors. Registration is restored after restart and after a failed finish.
+Instruction blocks include a comment recording the original EOF/missing-file convention so removal can restore exact
+bytes; edited blocks are refused. Symlinks are conservatively refused even if they remain inside the project.
+Ensemble Git pathspecs exclude `.oxy` in diffs and checkpoint commits, including already tracked/staged map artifacts.
+See `results/2026-10-20-worktrees-instructions.md` for validation and the user-authorized app E2E exception.

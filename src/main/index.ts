@@ -772,8 +772,16 @@ function bootstrap(): void {
   const callerDeps = {
     terminal: (id: string) => {
       const t = terminals.get(id);
-      return t ? { id: t.id, projectId: t.projectId, ...(t.agent ? { agentId: t.agent.agentId } : {}) } : undefined;
+      return t
+        ? {
+            id: t.id,
+            projectId: t.projectId,
+            ...(t.cwd ? { cwd: t.cwd } : {}),
+            ...(t.agent ? { agentId: t.agent.agentId } : {}),
+          }
+        : undefined;
     },
+    checkouts: () => codeMap.registeredCheckouts(),
     projects: () => projects.list().map((p) => ({ id: p.id, name: p.name, rootPath: p.rootPath })),
     activeProjectId: () => projects.activeProjectId,
     findByPath: (path: string) => {
@@ -958,6 +966,10 @@ function bootstrap(): void {
       }) => void)
     | null = null;
   const ensemble = new EnsembleService({
+    codeMap: {
+      ready: (projectId, taskId, root) => codeMap.registerWorktree(projectId, taskId, root),
+      remove: (taskId) => codeMap.removeWorktree(taskId),
+    },
     dir: join(app.getPath('userData'), 'ensemble'),
     logger: createLogger('ensemble'),
     settings: () => settings.get(),
@@ -1072,6 +1084,7 @@ function bootstrap(): void {
       'codeMap:resume': ({ projectId }) => codeMap.action(projectId, 'resume'),
       'codeMap:deleteData': ({ projectId }) => codeMap.deleteData(projectId),
       'codeMap:getDiagnostics': ({ projectId }) => codeMap.diagnostics(projectId),
+      'codeMap:editInstructions': ({ projectId, file, action }) => codeMap.editInstructions(projectId, file, action),
       'projects:reorder': ({ ids }) => projects.reorder(ids),
       'projects:setActive': ({ id }) => projects.setActive(id),
       'projects:pickFolder': async () => {

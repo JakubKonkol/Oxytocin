@@ -11,7 +11,8 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 04 implementation complete: main service, validated renderer IPC, Project settings UI and reproducible packaged full-index benchmark. Release-validation gates remain open (see below).
 - Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met.
 - Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md.
-- Stage 06 implemented: bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. Manual CLI validation and app E2E remain open; see results/2026-10-20-mcp-tools.md. Stages 07–14 pending.
+- Stage 06 implemented (`92ee704`): bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. Manual CLI validation and app E2E remain open; see results/2026-10-20-mcp-tools.md.
+- Stage 07 implemented: isolated worktree registrations, role-authenticated MCP bridge, explicit instruction-file blocks and `.oxy` exclusions from Ensemble diffs/checkpoints. See results/2026-10-20-worktrees-instructions.md. Stages 08–14 pending.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
@@ -117,8 +118,17 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Small-fixture warm HTTP search p95 71.28 ms (50 samples), deterministic ranking fixture recall@8 1.0.
 - App E2E and interactive Claude Code/Codex CLI checks remain unexecuted; see the stage results report.
 
-- Continue through stages 07–14 in order, with a separate commit after each stage. The user will push all commits;
+### Stage 07 validation
+
+- Full check green: 1,360 unit tests / 4 skips, 67 integration tests / 66 platform/resource skips, 3 latency tests.
+  Build green. Logs: `test-results/code-map-stage07-check.log` and `code-map-stage07-build.log`.
+- Live worktree and role HTTP tests passed. Added app E2E remains unexecuted under the user's documented exception.
+
+- Continue through stages 08–14 in order, with a separate commit after each stage. The user will push all commits;
   do not push from this session (explicit 2026-10-20 instruction).
+- For stages 10/14, the user chose an evaluation harness and corpus only; they will run paid model measurements later.
+  Do not spend paid tokens or claim measured benefits. The Automatic learnings release gate remains unverified until
+  those results exist, so it must not be offered as a product mode before that gate passes.
 - Current machine: Windows, Node 24.16.0; dependencies installed with npm ci. Docker is absent and WSL has no installed
   distribution. The user explicitly authorized committing after available checks while recording missing E2E.
 - For Windows checks, set command-local `TEMP`/`TMP` to `C:\Users\Public\oxy-code-map-validation-20261020-6c2d` and

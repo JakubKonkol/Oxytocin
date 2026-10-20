@@ -15,6 +15,7 @@ import { OxyError } from '@shared/errors';
 import { DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { randomUUID } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
 import {
   CodeMapQueryResultSchema,
   CodeMapQuerySchema,
@@ -36,6 +37,7 @@ export class CodeMapService {
   readonly onDidChangeStatus = this.changed.event;
   private readonly statuses = new Map<string, CodeMapStatus>();
   private readonly configured = new Map<string, string>();
+  private readonly worktrees = new Map<string, { projectId: string; root: string; projectRoot: string }>();
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
 
@@ -60,7 +62,8 @@ export class CodeMapService {
     this.subscriptions.add(
       deps.host.onEvent('checkout:status', (raw) => {
         const status = CodeMapStatusSchema.parse(raw);
-        if (this.deps.projects.get(status.checkoutId)?.settings.codeMap?.enabled) this.publish(status);
+        const projectId = this.worktrees.get(status.checkoutId)?.projectId ?? status.checkoutId;
+        if (this.deps.projects.get(projectId)?.settings.codeMap?.enabled) this.publish(status);
       }),
     );
     this.subscriptions.add(
@@ -102,15 +105,16 @@ export class CodeMapService {
     return project;
   }
   private config(id: string): ConfigureCodeMapCheckout {
-    const project = this.project(id);
+    const worktree = this.worktrees.get(id);
+    const project = this.project(worktree?.projectId ?? id);
     const settings = CodeMapSettingsSchema.parse(project.settings.codeMap ?? {});
     return {
       checkoutId: id,
-      projectId: id,
-      root: project.rootPath,
-      mode: 'project',
+      projectId: project.id,
+      root: worktree?.root ?? project.rootPath,
+      mode: worktree ? 'worktree' : 'project',
       excludedPaths: settings.excludedPaths,
-      ignoreInGit: settings.ignoreInGit,
+      ignoreInGit: worktree ? true : settings.ignoreInGit,
       gitPath: this.deps.gitPath(),
       removeGitignoreEntry: false,
     };
@@ -118,6 +122,9 @@ export class CodeMapService {
   private async sync(): Promise<void> {
     const enabled = this.deps.projects.list().filter((p) => p.settings.codeMap?.enabled && !p.missing);
     const ids = new Set(enabled.map((p) => p.id));
+    for (const [id, tree] of this.worktrees) {
+      if (ids.has(tree.projectId) && this.deps.projects.get(tree.projectId)?.rootPath === tree.projectRoot) ids.add(id);
+    }
     for (const id of this.configured.keys())
       if (!ids.has(id)) {
         if (this.deps.host.state === 'running') await this.deps.host.call('checkout:remove', { checkoutId: id });
@@ -133,17 +140,17 @@ export class CodeMapService {
       return;
     }
     if (this.deps.host.state === 'stopped' || this.deps.host.state === 'failed') this.deps.host.start();
-    for (const project of enabled) {
-      const config = this.config(project.id),
+    for (const id of ids) {
+      const config = this.config(id),
         signature = JSON.stringify(config);
-      if (this.configured.get(project.id) === signature) continue;
-      this.publish({ ...initialCodeMapStatus(project.id), state: 'indexing' });
+      if (this.configured.get(id) === signature) continue;
+      this.publish({ ...initialCodeMapStatus(id), state: 'indexing' });
       try {
         this.publish(await this.deps.host.call('checkout:configure', config, { timeoutMs: 60_000 }));
-        this.configured.set(project.id, signature);
+        this.configured.set(id, signature);
       } catch (error) {
         this.publish({
-          ...this.status(project.id),
+          ...(this.statuses.get(id) ?? initialCodeMapStatus(id)),
           state: 'error',
           error: error instanceof Error ? error.message : String(error),
         });
@@ -154,6 +161,59 @@ export class CodeMapService {
   status(id: string): CodeMapStatus {
     this.project(id);
     return structuredClone(this.statuses.get(id) ?? initialCodeMapStatus(id));
+  }
+  async registerWorktree(projectId: string, taskId: string, root: string): Promise<string> {
+    const checkoutId = `worktree:${taskId}`;
+    await this.enqueue(async () => {
+      const project = this.project(projectId);
+      this.worktrees.set(checkoutId, { projectId, root: await realpath(root), projectRoot: project.rootPath });
+      await this.sync();
+    });
+    return checkoutId;
+  }
+  removeWorktree(taskId: string): Promise<void> {
+    // Revoke immediately, before any queued host operation or filesystem deletion.
+    this.worktrees.delete(`worktree:${taskId}`);
+    return this.enqueue(() => this.sync());
+  }
+  registeredCheckouts(): { id: string; projectId: string; name: string; rootPath: string }[] {
+    return [
+      ...this.deps.projects
+        .list()
+        .filter((p) => !p.missing)
+        .map((p) => ({ id: p.id, projectId: p.id, name: p.name, rootPath: p.rootPath })),
+      ...[...this.worktrees].flatMap(([id, tree]) => {
+        const p = this.deps.projects.get(tree.projectId);
+        return p && !p.missing && p.rootPath === tree.projectRoot
+          ? [{ id, projectId: p.id, name: `${p.name} worktree`, rootPath: tree.root }]
+          : [];
+      }),
+    ];
+  }
+  checkoutRoot(projectId: string, checkoutId = projectId): string {
+    const project = this.project(projectId);
+    if (!project.settings.codeMap?.enabled || project.missing)
+      throw new OxyError('UNAVAILABLE', 'Code Map is disabled or the project is unavailable');
+    if (checkoutId === projectId) return project.rootPath;
+    const tree = this.worktrees.get(checkoutId);
+    if (!tree || tree.projectId !== projectId || tree.projectRoot !== project.rootPath)
+      throw new OxyError('UNAVAILABLE', 'Code Map checkout is no longer registered');
+    return tree.root;
+  }
+  editInstructions(
+    id: string,
+    file: 'CLAUDE.md' | 'AGENTS.md',
+    action: 'add' | 'remove',
+  ): Promise<{ changed: boolean }> {
+    return this.enqueue(async () => {
+      const project = this.project(id);
+      if (this.deps.host.state === 'stopped' || this.deps.host.state === 'failed') this.deps.host.start();
+      try {
+        return await this.deps.host.call('instructions:edit', { root: project.rootPath, file, action });
+      } finally {
+        await this.sync();
+      }
+    });
   }
   private publish(status: CodeMapStatus): CodeMapStatus {
     this.statuses.set(status.checkoutId, status);
@@ -214,13 +274,10 @@ export class CodeMapService {
       return this.deps.host.call('checkout:diagnostics', { checkoutId: id });
     });
   }
-  async query(id: string, input: CodeMapQueryInput, signal: AbortSignal): Promise<CodeMapQueryResult> {
+  async query(id: string, input: CodeMapQueryInput, signal: AbortSignal, checkoutId = id): Promise<CodeMapQueryResult> {
     const query = CodeMapQuerySchema.parse(input);
     const authorize = () => {
-      const project = this.project(id);
-      if (!project.settings.codeMap?.enabled || project.missing)
-        throw new OxyError('UNAVAILABLE', 'Code Map is disabled or the project is unavailable');
-      return project.rootPath;
+      return this.checkoutRoot(id, checkoutId);
     };
     const root = authorize();
     signal.throwIfAborted();
@@ -235,10 +292,10 @@ export class CodeMapService {
     signal.addEventListener('abort', abort, { once: true });
     try {
       const result = CodeMapQueryResultSchema.parse(
-        await this.deps.host.call('query:run', { checkoutId: id, requestId, query }, { timeoutMs: 10_000 }),
+        await this.deps.host.call('query:run', { checkoutId, requestId, query }, { timeoutMs: 10_000 }),
       );
       signal.throwIfAborted();
-      if (authorize() !== root || result.checkoutId !== id)
+      if (authorize() !== root || result.checkoutId !== checkoutId)
         throw new OxyError('UNAVAILABLE', 'Code Map checkout changed');
       if (JSON.stringify(result).length > query.maxChars)
         throw new OxyError('INVALID', 'Code Map response exceeds the character budget');

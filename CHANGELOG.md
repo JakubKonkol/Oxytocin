@@ -7,6 +7,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map:** Ensemble worktrees get separate maps and authenticated agents query their own checkout. Add or remove
+  the agent guidance in `CLAUDE.md` or `AGENTS.md` from Code Map settings. Ensemble diffs and checkpoint commits exclude
+  `.oxy` data, including files already tracked by a worktree's base commit.
 - **Code Map for agents:** `oxy_find_code`, `oxy_file_outline`, `oxy_code_relations`, `oxy_repo_map` and
   `oxy_code_map_status` are available through Oxytocin's MCP server for enabled projects. Answers are bounded, report
   freshness and coverage, and use an explicit checkout selection. Configure MCP access from the Code Map settings tab.

@@ -13,6 +13,7 @@ import {
   waitForStatus,
 } from './helpers/ensemble';
 import { launchApp } from './helpers/launch';
+import { activeProjectId } from './helpers/terminal';
 
 test('Ensemble: a feature task runs plan → gate → implement ⇄ review → tests → gate in its worktree and is merged', async () => {
   test.setTimeout(180_000);
@@ -39,6 +40,23 @@ test('Ensemble: a feature task runs plan → gate → implement ⇄ review → t
   });
   try {
     await useFakeClaude(win);
+    const projectId = await activeProjectId(win);
+    await win.evaluate(
+      (projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true, ignoreInGit: true }),
+      projectId,
+    );
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), projectId)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    gitIn(repo, 'add', '.gitignore');
+    gitIn(repo, 'commit', '-qm', 'ignore local Code Map');
     // The "+" menu of the workspace group opens Ensemble.
     await win.getByTestId('group-add').first().click();
     await win.getByTestId('add-tool-ensemble').click();
@@ -76,6 +94,12 @@ test('Ensemble: a feature task runs plan → gate → implement ⇄ review → t
     await win.getByTestId('ensemble-gate-dialog').getByTestId('ensemble-gate-approve').click();
 
     const done = await waitForStatus(win, mid.task.id, 'done');
+    const worktree = done.run.worktree!.path;
+    await expect
+      .poll(() => readFile(join(worktree, '.oxy/code-map/graph.json'), 'utf8').catch(() => ''))
+      .toContain('oxytocin.code-map');
+    expect(await readFile(join(worktree, '.oxy/.gitignore'), 'utf8')).toBe('*\n');
+    expect(gitIn(worktree, 'status', '--porcelain')).not.toContain('.oxy');
     expect(done.run.checkpoints.length).toBeGreaterThan(0);
     // The planner and the reviewer never got a slash command; models and efforts are per agent.
     const starts = (await readLog(log)).filter((e) => e.event === 'start');

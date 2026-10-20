@@ -19,6 +19,16 @@ export const ConfigureCodeMapCheckoutSchema = z
 export type ConfigureCodeMapCheckout = z.infer<typeof ConfigureCodeMapCheckoutSchema>;
 
 export const CodeMapHostContracts = {
+  'instructions:edit': {
+    params: z
+      .object({
+        root: z.string().min(1).max(32768),
+        file: z.enum(['CLAUDE.md', 'AGENTS.md']),
+        action: z.enum(['add', 'remove']),
+      })
+      .strict(),
+    result: z.object({ changed: z.boolean() }),
+  },
   'query:run': {
     params: CodeMapCheckoutSchema.extend({ requestId: z.string().min(1).max(200), query: CodeMapQuerySchema }),
     result: CodeMapQueryResultSchema,

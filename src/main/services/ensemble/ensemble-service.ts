@@ -100,6 +100,10 @@ export interface EnsembleServiceDeps {
   now?: () => number;
   /** How long the first delivery waits for the agent's MCP connection (default 20 s). */
   mcpWaitMs?: number;
+  codeMap?: {
+    ready(projectId: string, taskId: string, root: string): Promise<unknown>;
+    remove(taskId: string): Promise<void>;
+  };
   /** Background timer period (ms); 0 disables it (tests call `tick()`). */
   tickMs?: number;
 }
@@ -189,6 +193,10 @@ export class EnsembleService implements Disposable {
       this.records.set(record.task.id, record);
       // Runs that were active when Oxytocin closed are interrupted (never resumed automatically).
       if (isActiveStatus(record.run.status)) this.dispatch(record.task.id, { type: 'interrupted' });
+      if (record.run.worktree?.mode === 'worktree' && !record.run.finished)
+        await this.deps.codeMap
+          ?.ready(record.task.projectId, record.task.id, record.run.worktree.path)
+          .catch((error: unknown) => this.deps.logger.warn('Restoring a worktree Code Map failed', error));
     }
   }
 
@@ -337,6 +345,7 @@ export class EnsembleService implements Disposable {
     for (const [id, c] of this.commands)
       if (c.taskId === taskId) await this.deps.terminals.close(id).catch(() => undefined);
     const ws = r.run.worktree;
+    await this.deps.codeMap?.remove(taskId);
     if (ws?.mode === 'worktree' && ws.repoRoot && !r.run.finished)
       await this.deps
         .workspace('ensemble:removeWorktree', {
@@ -519,6 +528,7 @@ export class EnsembleService implements Disposable {
       }
       const current = this.records.get(taskId);
       if (current?.run.status !== 'preparing') return;
+      if (worktree.mode === 'worktree') await this.deps.codeMap?.ready(task.projectId, taskId, worktree.path);
       this.dispatch(taskId, { type: 'workspace-ready', worktree });
     } catch (e) {
       this.dispatch(taskId, { type: 'workspace-failed', error: e instanceof Error ? e.message : String(e) });
@@ -952,14 +962,21 @@ export class EnsembleService implements Disposable {
 
   // ── MCP (oxy_ensemble_*) ─────────────────────────────────────────────────────────────────────────────────
 
-  describe(token: string): { label: string; projectId: string; terminalId: string } | null {
+  describe(token: string): { label: string; projectId: string; terminalId: string; checkoutId?: string } | null {
     const a = this.tokens.get(token);
     if (!a) return null;
     a.mcpSeenAt ??= this.now();
     const r = this.records.get(a.taskId);
     const agent = r?.task.agents.find((x) => x.id === a.agentId);
     if (!r || !agent) return null;
-    return { label: `${agent.name} · ${r.task.title}`, projectId: r.task.projectId, terminalId: a.terminalId };
+    return {
+      label: `${agent.name} · ${r.task.title}`,
+      projectId: r.task.projectId,
+      terminalId: a.terminalId,
+      ...(r.run.worktree && !r.run.finished
+        ? { checkoutId: r.run.worktree.mode === 'worktree' ? `worktree:${r.task.id}` : r.task.projectId }
+        : {}),
+    };
   }
 
   tools() {
@@ -1147,20 +1164,30 @@ export class EnsembleService implements Disposable {
     if (!ws || ws.mode !== 'worktree' || !ws.repoRoot || !ws.branch || !ws.baseRef)
       throw new OxyError('INVALID', 'This task worked in your checkout: there is no branch to finish.');
     await this.stopAll(taskId, false);
-    const result = await this.deps.workspace(
-      'ensemble:finish',
-      {
-        gitPath: this.gitPath(),
-        action,
-        repoRoot: ws.repoRoot,
-        worktreePath: ws.path,
-        branch: ws.branch,
-        baseRef: ws.baseRef,
-        message: `${r.task.title}\n\nBuilt by an Oxytocin Ensemble.`,
-        removeWorktree: true,
-      },
-      { timeoutMs: 320_000 },
-    );
+    await this.deps.codeMap?.remove(taskId);
+    const result = await this.deps
+      .workspace(
+        'ensemble:finish',
+        {
+          gitPath: this.gitPath(),
+          action,
+          repoRoot: ws.repoRoot,
+          worktreePath: ws.path,
+          branch: ws.branch,
+          baseRef: ws.baseRef,
+          message: `${r.task.title}\n\nBuilt by an Oxytocin Ensemble.`,
+          removeWorktree: true,
+        },
+        { timeoutMs: 320_000 },
+      )
+      .catch(async (error: unknown) => {
+        await this.deps.codeMap
+          ?.ready(r.task.projectId, taskId, ws.path)
+          .catch((restoreError: unknown) =>
+            this.deps.logger.warn('Restoring the worktree Code Map after a failed finish failed', restoreError),
+          );
+        throw error;
+      });
     this.dispatch(taskId, { type: 'finished', action, detail: result.detail });
     return result;
   }

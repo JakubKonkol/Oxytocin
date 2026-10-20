@@ -65,7 +65,7 @@ export interface AskPolicyRequest {
  */
 export interface EnsembleMcp {
   /** The call log label of the agent a role token belongs to (null: not a live Ensemble agent). */
-  describe(token: string): { label: string; projectId?: string; terminalId?: string } | null;
+  describe(token: string): { label: string; projectId?: string; terminalId?: string; checkoutId?: string } | null;
   tools(): McpToolDefinition[];
   call(
     name: string,
@@ -443,6 +443,7 @@ export class McpHub implements Disposable {
     const controller = new AbortController();
     const abort = () => controller.abort();
     call.signal.addEventListener('abort', abort, { once: true });
+    if (call.signal.aborted) abort();
     const timer = setTimeout(abort, timeoutMs);
     try {
       if (entry.policy === 'ask') {
@@ -530,10 +531,15 @@ export class McpHub implements Disposable {
       path: ENSEMBLE_MCP_PATH,
       authorize: (bearer) => ensemble.describe(bearer) !== null,
       handler: {
-        info: () => ({
+        info: (_terminal, principal) => ({
           name: 'oxytocin-ensemble',
           version: this.deps.appVersion,
-          instructions: ensemble.instructions(undefined),
+          instructions: [
+            ensemble.instructions(principal),
+            ...(principal && this.deps.codeMap?.enabled(ensemble.describe(principal)?.projectId)
+              ? [CODE_MAP_MCP_INSTRUCTIONS]
+              : []),
+          ].join('\n\n'),
         }),
         listTools: () =>
           listed().map((t) => ({
@@ -551,6 +557,7 @@ export class McpHub implements Disposable {
 
   private ensembleBridgeTools(): McpToolDefinition[] {
     const names = new Set((this.deps.resources?.tools ?? []).map((t) => t.definition.name));
+    for (const name of this.coreTools.keys()) if (isCodeMapTool(name)) names.add(name);
     return this.registry
       .listed()
       .filter((e) => names.has(e.name))
@@ -588,11 +595,13 @@ export class McpHub implements Disposable {
     const token = call.principal ?? '';
     const who = ensemble?.describe(token) ?? null;
     if (who && this.ensembleBridgeTools().some((t) => t.name === name)) {
+      if (isCodeMapTool(name) && !who.checkoutId) return toolError('This role has no registered Code Map checkout.');
       const { cwd: _cwd, project: _project, ...rest } = args;
       return this.callToolAs(name, rest, call, {
         context: {
           ...(who.projectId ? { projectId: who.projectId } : {}),
           ...(who.terminalId ? { terminalId: who.terminalId } : {}),
+          ...(isCodeMapTool(name) && who.checkoutId ? { checkoutId: who.checkoutId } : {}),
         },
         label: who.label,
       });

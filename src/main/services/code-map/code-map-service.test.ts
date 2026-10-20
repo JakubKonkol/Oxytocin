@@ -109,6 +109,14 @@ it('starts lazily, reconciles settings/root/restart/removal and deletes disabled
 });
 
 it('rejects renderer-supplied roots, invalid options and malformed operation payloads', () => {
+  expect(
+    invokeContract['codeMap:editInstructions'].req.safeParse({
+      projectId: 'p',
+      root: '/foreign',
+      file: 'CLAUDE.md',
+      action: 'add',
+    }).success,
+  ).toBe(false);
   expect(invokeContract['codeMap:deleteData'].req.safeParse({ projectId: 'p', root: '/foreign' }).success).toBe(false);
   expect(invokeContract['codeMap:setEnabled'].req.safeParse({ projectId: 'p', enabled: 'yes' }).success).toBe(false);
   expect(

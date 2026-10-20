@@ -1,5 +1,6 @@
 import type { McpCallContext } from '@shared/domain/mcp';
 import { fromShellPath, isAbsolutePath } from '@shared/utils/shell-path';
+import { isWithin } from '../projects/path-utils';
 
 export interface CallerProject {
   id: string;
@@ -8,7 +9,9 @@ export interface CallerProject {
 }
 
 export interface CallerDeps {
-  terminal(id: string): { id: string; projectId: string; agentId?: string } | undefined;
+  terminal(id: string): { id: string; projectId: string; agentId?: string; cwd?: string } | undefined;
+  /** Registered main/worktree checkouts; used only by Code Map. */
+  checkouts?(): (CallerProject & { projectId: string })[];
   projects(): CallerProject[];
   activeProjectId(): string | null;
   /** The project containing a path (longest root wins). */
@@ -111,12 +114,20 @@ export async function resolveCodeMapCaller(deps: CallerDeps, input: CallerInput)
     const path = fromShellPath(value.trim(), deps.platform);
     if (!isAbsolutePath(path, deps.platform)) return undefined;
     const real = await deps.realpath(path);
-    return real ? deps.findByPath(real) : undefined;
+    if (!real) return undefined;
+    return deps.checkouts
+      ? deps
+          .checkouts()
+          .filter((c) => isWithin(real, c.rootPath, deps.platform as NodeJS.Platform))
+          .sort((a, b) => b.rootPath.length - a.rootPath.length)[0]
+      : deps.findByPath(real);
   };
-  const selected: CallerProject[] = [];
+  const selected: (CallerProject & { projectId?: string })[] = [];
   if (terminal) {
-    const project = projects.find((p) => p.id === terminal.projectId);
+    const project = terminal.cwd ? await canonical(terminal.cwd) : projects.find((p) => p.id === terminal.projectId);
     if (!project) return fail('The terminal project is no longer registered.');
+    if (('projectId' in project ? project.projectId : project.id) !== terminal.projectId)
+      return fail('Terminal cwd does not belong to its registered project.');
     selected.push(project);
   }
   if (input.args['cwd'] !== undefined) {
@@ -137,5 +148,10 @@ export async function resolveCodeMapCaller(deps: CallerDeps, input: CallerInput)
   if (!selected.length) return fail(NO_PROJECT_MESSAGE);
   if (selected.some((p) => p.id !== selected[0]!.id))
     return fail('Conflicting Code Map selectors: terminal, cwd and project must choose the same checkout.');
-  return { context: { ...part, projectId: selected[0]!.id }, label: selected[0]!.name };
+  const first = selected[0]!;
+  const projectId = first.projectId ?? first.id;
+  return {
+    context: { ...part, projectId, ...(first.id !== projectId ? { checkoutId: first.id } : {}) },
+    label: first.name,
+  };
 }

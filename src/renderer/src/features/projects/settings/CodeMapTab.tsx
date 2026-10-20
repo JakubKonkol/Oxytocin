@@ -277,6 +277,31 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
         </Button>
       </Section>
       <Section title="Agents and diagnostics">
+        <p className="text-small text-fg-muted">
+          Add the Code Map guidance to an agent instruction file only when you choose. Existing content is preserved.
+        </p>
+        {(['CLAUDE.md', 'AGENTS.md'] as const).map((file) => (
+          <div key={file} className="flex flex-wrap gap-2">
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void run(() => ipc.invoke('codeMap:editInstructions', { projectId: project.id, file, action: 'add' }))
+              }
+            >
+              Add to {file}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void run(() =>
+                  ipc.invoke('codeMap:editInstructions', { projectId: project.id, file, action: 'remove' }),
+                )
+              }
+            >
+              Remove from {file}
+            </Button>
+          </div>
+        ))}
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() =>

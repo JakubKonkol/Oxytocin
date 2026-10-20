@@ -246,3 +246,39 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
     await app.close();
   }
 });
+
+test('instruction buttons preserve CLAUDE.md and remove a newly created AGENTS.md without enabling indexing', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'oxy-map-instructions-'));
+  const original = '\ufeff# Project rules\r\n';
+  await writeFile(join(project, 'CLAUDE.md'), original);
+  const { app, win } = await launchApp({ project });
+  try {
+    const id = await activeProjectId(win);
+    await win.locator(`[data-project-id="${id}"]`).click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    await win.getByTestId('project-settings-tab-code-map').click();
+    const add = win.getByRole('button', { name: 'Add to CLAUDE.md', exact: true });
+    await add.click();
+    await expect(add).toBeEnabled();
+    await add.click();
+    await expect.poll(() => readFile(join(project, 'CLAUDE.md'), 'utf8')).toContain('oxy_find_code');
+    expect((await readFile(join(project, 'CLAUDE.md'), 'utf8')).match(/oxytocin:code-map:start/g)).toHaveLength(1);
+    await win.getByRole('button', { name: 'Remove from CLAUDE.md', exact: true }).click();
+    await expect.poll(() => readFile(join(project, 'CLAUDE.md'), 'utf8')).toBe(original);
+    await win.getByRole('button', { name: 'Add to AGENTS.md', exact: true }).click();
+    await expect.poll(() => readFile(join(project, 'AGENTS.md'), 'utf8').catch(() => '')).toContain('oxy_find_code');
+    await win.getByRole('button', { name: 'Remove from AGENTS.md', exact: true }).click();
+    await expect
+      .poll(() =>
+        stat(join(project, 'AGENTS.md')).then(
+          () => true,
+          () => false,
+        ),
+      )
+      .toBe(false);
+    await expect(win.getByTestId('code-map-state')).toHaveText('Disabled');
+    await expect(stat(join(project, '.oxy'))).rejects.toMatchObject({ code: 'ENOENT' });
+  } finally {
+    await app.close();
+  }
+});

@@ -47,7 +47,12 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
           throw new Error(caller.projectError ?? NO_PROJECT_MESSAGE);
         const { cwd: _cwd, project: _project, ...options } = parsed.data;
         return JSON.stringify(
-          await service.query(caller.context.projectId, { ...options, kind } as CodeMapQueryInput, signal),
+          await service.query(
+            caller.context.projectId,
+            { ...options, kind } as CodeMapQueryInput,
+            signal,
+            caller.context.checkoutId,
+          ),
         );
       },
     } satisfies CoreTool;

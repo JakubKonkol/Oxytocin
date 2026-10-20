@@ -11,6 +11,7 @@ export const INVOKE_CHANNELS = [
   'codeMap:resume',
   'codeMap:deleteData',
   'codeMap:getDiagnostics',
+  'codeMap:editInstructions',
   'app:getInfo',
   'app:getHostStatus',
   'app:readLegal',

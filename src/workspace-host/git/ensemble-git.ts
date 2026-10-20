@@ -148,19 +148,32 @@ export async function copyLocalFiles(o: { from: string; to: string; files: strin
   return copied;
 }
 
-/** Commits everything in the worktree (a checkpoint); null when nothing changed. */
+const CODE_PATHS = [':/', ':(exclude,glob)**/.oxy/**'];
+const isOxyPath = (path: string) => path.split('/').includes('.oxy');
+
+/** Commits code in the worktree (a checkpoint); local Oxytocin data is excluded even when tracked by the base. */
 export function commitAll(o: {
   gitPath: string;
   cwd: string;
   message: string;
 }): Promise<{ commit: string | null; files: number }> {
   return serialized(o.cwd, async () => {
-    await gitOk(o.gitPath, o.cwd, ['add', '-A']);
-    const staged = await git(o.gitPath, o.cwd, ['diff', '--cached', '--name-only']);
+    await gitOk(o.gitPath, o.cwd, ['add', '-A', '--', ...CODE_PATHS]);
+    const staged = await git(o.gitPath, o.cwd, ['diff', '--cached', '--name-only', '--', ...CODE_PATHS]);
     const files = staged.out.split('\n').filter((l) => l.trim()).length;
     if (files === 0) return { commit: null, files: 0 };
     const identity = await identityArgs(o.gitPath, o.cwd);
-    await gitOk(o.gitPath, o.cwd, [...identity, 'commit', '--no-verify', '-q', '-m', o.message]);
+    await gitOk(o.gitPath, o.cwd, [
+      ...identity,
+      'commit',
+      '--only',
+      '--no-verify',
+      '-q',
+      '-m',
+      o.message,
+      '--',
+      ...CODE_PATHS,
+    ]);
     const commit = (await gitOk(o.gitPath, o.cwd, ['rev-parse', 'HEAD'])).trim();
     return { commit, files };
   });
@@ -220,7 +233,9 @@ export async function changes(o: {
     for (const path of untracked.split('\0').filter(Boolean))
       if (!byPath.has(path)) out.push({ path, status: 'untracked' });
   }
-  return out.sort((a, b) => a.path.localeCompare(b.path));
+  return out
+    .filter((change) => !isOxyPath(change.path) && (!change.oldPath || !isOxyPath(change.oldPath)))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /** A file's text at a commit (null: missing, binary or larger than `maxBytes`). */

@@ -112,6 +112,16 @@ export const invokeContract = {
   'codeMap:resume': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
   'codeMap:deleteData': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
   'codeMap:getDiagnostics': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapDiagnosticsSchema },
+  'codeMap:editInstructions': {
+    req: z
+      .object({
+        projectId: ProjectIdSchema,
+        file: z.enum(['CLAUDE.md', 'AGENTS.md']),
+        action: z.enum(['add', 'remove']),
+      })
+      .strict(),
+    res: z.object({ changed: z.boolean() }),
+  },
   'app:getInfo': { req: z.null().optional(), res: AppInfoSchema },
   'app:getHostStatus': { req: z.null().optional(), res: z.array(HostStatusSchema) },
   /** LICENSE (MIT) or THIRD_PARTY_NOTICES.md shipped with the app (About / Help → Third-Party Notices). */

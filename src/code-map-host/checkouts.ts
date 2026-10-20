@@ -24,6 +24,7 @@ import { fileOutline } from './query/outline';
 import { repoMap } from './query/repo-map';
 import { boundResult } from './query/budget';
 import { waitForCheckpoint } from './query/freshness';
+import { editAgentInstructions } from './store/agent-instructions';
 
 export { initialCodeMapStatus } from '@shared/domain/code-map';
 
@@ -58,6 +59,13 @@ export class CodeMapCheckouts {
 
   async configure(input: unknown): Promise<CodeMapStatus> {
     return this.serialize(() => this.configureNow(input));
+  }
+  editInstructions(
+    root: string,
+    file: 'CLAUDE.md' | 'AGENTS.md',
+    action: 'add' | 'remove',
+  ): Promise<{ changed: boolean }> {
+    return this.serialize(() => editAgentInstructions(root, file, action));
   }
   private async configureNow(input: unknown): Promise<CodeMapStatus> {
     const config = ConfigureCodeMapCheckoutSchema.parse(input);

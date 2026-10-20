@@ -19,7 +19,12 @@ afterEach(async () => {
 });
 
 function setup(
-  o: { answer?: AskPolicyAnswer; call?: () => Promise<McpToolResult>; resources?: McpHubDeps['resources'] } = {},
+  o: {
+    answer?: AskPolicyAnswer;
+    call?: () => Promise<McpToolResult>;
+    resources?: McpHubDeps['resources'];
+    codeMap?: McpHubDeps['codeMap'];
+  } = {},
 ) {
   let settings: Settings = { ...defaultSettings('linux'), 'mcp.port': 0 };
   const settingsChanged = new Emitter<Settings>();
@@ -96,6 +101,7 @@ function setup(
     codex: { home: () => codexHome, platform: 'linux', fs: codexFs },
     logger,
     ...(o.resources ? { resources: o.resources } : {}),
+    ...(o.codeMap ? { codeMap: o.codeMap } : {}),
   };
   const hub = new McpHub(deps);
   hubs.push(hub);
@@ -287,6 +293,53 @@ describe('McpHub resource tools', () => {
 });
 
 describe('McpHub Ensemble endpoint', () => {
+  it('uses only the authenticated role checkout, ignores selectors/header and cancels revoked roles', async () => {
+    let live = true;
+    const seen: string[] = [];
+    const query = vi.fn((_id: string, _input: unknown, signal: AbortSignal, checkoutId?: string) => {
+      seen.push(checkoutId ?? 'missing');
+      return new Promise<never>((_, reject) =>
+        signal.addEventListener('abort', () => reject(new Error('revoked')), { once: true }),
+      );
+    });
+    const { hub } = setup({
+      codeMap: { enabled: () => true, onDidChange: () => ({ dispose() {} }), service: { query } },
+    });
+    hub.setEnsemble({
+      describe: () =>
+        live ? { label: 'Role A', projectId: 'p1', terminalId: 'role-terminal', checkoutId: 'worktree:a' } : null,
+      tools: () => [],
+      call: () => Promise.resolve(''),
+      instructions: () => 'Ensemble',
+    });
+    await hub.start();
+    let session: string | null = null;
+    const rpc = async (method: string, params: unknown = {}) => {
+      const res = await fetch(hub.ensembleUrl()!, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer role-a',
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Oxytocin-Terminal': 'foreign',
+          ...(session ? { 'Mcp-Session-Id': session } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      });
+      session ??= res.headers.get('mcp-session-id');
+      return (await res.json()) as { result: McpToolResult };
+    };
+    await rpc('initialize', { protocolVersion: '2025-06-18' });
+    const pending = rpc('tools/call', {
+      name: 'oxy_find_code',
+      arguments: { query: 'x', cwd: '/foreign', project: 'p2' },
+    });
+    await vi.waitFor(() => expect(seen).toEqual(['worktree:a']));
+    live = false;
+    hub.endEnsembleSessions('role-a');
+    expect((await pending).result.isError).toBe(true);
+    expect(query.mock.calls[0]![2].aborted).toBe(true);
+  });
   it("serves the resource bridge to Ensemble agents for their task's project, without cwd/project arguments", async () => {
     const seen: unknown[] = [];
     const apiTool: ResourceTool = {

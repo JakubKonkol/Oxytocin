@@ -78,6 +78,7 @@ export type McpToolResult = z.infer<typeof McpToolResultSchema>;
 /** Who is calling a tool, as far as Oxytocin can tell. */
 export const McpCallContextSchema = z.object({
   projectId: z.string().optional(),
+  checkoutId: z.string().optional(),
   terminalId: z.string().optional(),
   agentId: z.string().optional(),
 });

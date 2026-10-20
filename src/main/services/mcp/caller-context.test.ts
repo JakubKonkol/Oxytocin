@@ -17,6 +17,31 @@ const deps = (over: Partial<CallerDeps> = {}): CallerDeps => ({
 });
 
 describe('strict Code Map caller', () => {
+  it('maps registered worktree paths and terminal cwd without falling back to the main checkout', async () => {
+    const d = deps({
+      platform: 'linux',
+      realpath: (p) => Promise.resolve(p),
+      projects: () => [{ id: 'p', name: 'App', rootPath: '/app' }],
+      terminal: () => ({ id: 't', projectId: 'p', cwd: '/trees/a/src' }),
+      checkouts: () => [
+        { id: 'p', projectId: 'p', name: 'App', rootPath: '/app' },
+        { id: 'worktree:a', projectId: 'p', name: 'A', rootPath: '/trees/a' },
+      ],
+    });
+    expect((await resolveCodeMapCaller(d, { terminalHeader: 't', args: {} })).context).toMatchObject({
+      projectId: 'p',
+      checkoutId: 'worktree:a',
+    });
+    expect((await resolveCodeMapCaller(d, { args: { cwd: '/trees/a/src' } })).context).toEqual({
+      projectId: 'p',
+      checkoutId: 'worktree:a',
+    });
+    expect((await resolveCodeMapCaller(d, { terminalHeader: 't', args: { project: 'p' } })).projectError).toContain(
+      'Conflicting',
+    );
+    d.checkouts = () => [];
+    expect((await resolveCodeMapCaller(d, { terminalHeader: 't', args: {} })).context.projectId).toBeUndefined();
+  });
   const strict = () => deps({ realpath: (path) => Promise.resolve(path) });
   it('never falls back to the active or only project, rejects conflicting and unknown selectors', async () => {
     expect((await resolveCodeMapCaller(strict(), { args: {} })).context.projectId).toBeUndefined();
