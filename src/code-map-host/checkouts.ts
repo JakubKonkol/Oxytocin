@@ -51,6 +51,11 @@ interface Checkout {
 
 /** Host-owned checkout lifetimes. Parsing and scheduling are added in subsequent internal stages. */
 export class CodeMapCheckouts {
+  memorySnapshot(checkoutId: string) {
+    const checkout = this.checkouts.get(checkoutId);
+    const snapshot = checkout?.graph?.snapshot();
+    return snapshot ? { graph: snapshot.graph, generation: snapshot.manifest.generation } : undefined;
+  }
   private readonly checkouts = new Map<string, Checkout>();
   private mutation: Promise<unknown> = Promise.resolve();
   private readonly scheduler = new CodeMapScheduler();

@@ -19,6 +19,12 @@ import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
+  LearningOperationSchema,
+  LearningResultSchema,
+  type LearningOperation,
+  type MemoryAuthority,
+} from '@shared/domain/code-map-memory';
+import {
   CodeMapHostQuerySchema,
   CodeMapHostQueryResultSchema,
   CodeMapPluginRequestSchema,
@@ -104,6 +110,57 @@ export class CodeMapService {
   }
 
   private readonly log = (error: unknown) => this.deps.logger.warn('Code Map operation failed', error);
+  async setMemoryMode(id: string, mode: 'off' | 'review'): Promise<null> {
+    return this.enqueue(async () => {
+      const project = this.project(id);
+      await this.deps.projects.update({
+        id,
+        settings: {
+          ...project.settings,
+          codeMap: { ...CodeMapSettingsSchema.parse(project.settings.codeMap ?? {}), memory: { mode } },
+        },
+      });
+      return null;
+    });
+  }
+  memory(
+    id: string,
+    input: LearningOperation,
+    checkoutId = id,
+    origin: MemoryAuthority['origin'] = { source: 'user' },
+  ) {
+    const operation = LearningOperationSchema.parse(input);
+    return this.enqueue(async () => {
+      const project = this.project(id);
+      const checkout = this.registeredCheckouts().find((c) => c.id === checkoutId && c.projectId === id);
+      if (!checkout) throw new OxyError('UNAVAILABLE', 'Learning checkout is no longer registered');
+      if (checkoutId !== id || origin.source !== 'user')
+        throw new OxyError('UNAVAILABLE', 'Learning worktree lifecycle and agent tools are not implemented yet');
+      if (this.deps.host.state === 'stopped' || this.deps.host.state === 'failed') this.deps.host.start();
+      try {
+        return LearningResultSchema.parse(
+          await this.deps.host.call(
+            'memory:run',
+            {
+              authority: {
+                projectId: id,
+                checkoutId,
+                root: checkout.rootPath,
+                projectRoot: project.rootPath,
+                checkouts: [{ checkoutId: id, root: project.rootPath }],
+                excludedPaths: project.settings.codeMap?.excludedPaths ?? [],
+                origin,
+              },
+              operation,
+            },
+            { timeoutMs: 30000 },
+          ),
+        );
+      } finally {
+        await this.sync();
+      }
+    });
+  }
   start(): Promise<void> {
     return this.enqueue(() => this.sync());
   }

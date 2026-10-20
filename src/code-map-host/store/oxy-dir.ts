@@ -27,7 +27,7 @@ export async function prepareOxyDirectory(options: {
     await atomicWrite(join(oxy, '.gitignore'), ignored ? '*\n' : LOCAL_IGNORES);
     await atomicWrite(
       join(oxy, 'README.md'),
-      `This folder is created by Oxytocin. It holds local, regenerable data such as the Code Map. ${ignored ? 'It is ignored by Git. ' : ''}You can delete it at any time; disable Code Map in Project settings to stop it from being recreated.\n`,
+      `This folder is created by Oxytocin. The Code Map is regenerable; learnings are durable findings. ${ignored ? 'It is ignored by Git. ' : ''}Rebuild and Delete map data preserve learnings. Use Forget all learnings to remove them.\n`,
     );
     let warning: string | null;
     try {

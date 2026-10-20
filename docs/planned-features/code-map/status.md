@@ -25,8 +25,14 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
   `results/2026-10-20-java.md`.
 - Stage 11c Python implemented: src/configured roots, relative imports/re-exports, declarations/decorator names and
   conservative simple calls. Fixture calls 13/0/0; packaged Windows 10k cold 47.02 s, edit p95 1.547 s, peak 856.27 MiB.
-  See `results/2026-10-20-python.md`. Continue with stages 12–14, separate commits and no push. Automatic remains
+  See `results/2026-10-20-python.md`. Automatic remains
   unavailable while the paid evaluation gates are unverified.
+- Stage 12 **in progress**: durable storage and core user manager for the **main checkout only**. Main rejects agent
+  writes and worktree memory operations until their authorization/lifecycle is implemented. Do not mark stage 12
+  complete or start stage 13 before finishing its remaining requirements. Read
+  `results/2026-10-20-learnings-handoff.md` for implementation details, limitations and validation.
+- Latest owner instruction (2026-10-20): stop further implementation, save the handoff and **push the changes**.
+  This supersedes the older no-push instructions in the historical stage log below. Future work remains on `main`.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation

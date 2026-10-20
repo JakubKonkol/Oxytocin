@@ -17,6 +17,7 @@ import { useMcpStore } from '../../agent-tools/mcp-store';
 import { useSettingsStore } from '../../../stores/settings-store';
 import { executeCommand } from '../../../lib/commands';
 import { usePluginsStore } from '../../../stores/plugins-store';
+import { LearningsManager } from './LearningsManager';
 
 export const CODE_MAP_STATE_LABELS: Record<CodeMapStatus['state'], string> = {
   disabled: 'Disabled',
@@ -254,6 +255,31 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
           </Button>
         </div>
       </Section>
+      <Section title="Memory mode">
+        <Field
+          label="Agent learnings"
+          hint="Review keeps agent proposals pending until you accept them. Off preserves findings and the manager, and gives agents code context only."
+        >
+          <select
+            aria-label="Memory mode"
+            className={input}
+            value={settings.memory?.mode ?? 'review'}
+            disabled={busy}
+            onChange={(e) =>
+              void run(() =>
+                ipc.invoke('codeMap:setMemoryMode', {
+                  projectId: project.id,
+                  mode: e.target.value as 'off' | 'review',
+                }),
+              )
+            }
+          >
+            <option value="review">Review</option>
+            <option value="off">Off</option>
+          </select>
+        </Field>
+      </Section>
+      <LearningsManager projectId={project.id} />
       <Section title="Exclusions">
         <Field
           label="Excluded paths"

@@ -20,6 +20,7 @@ export const CodeMapSettingsSchema = z.object({
     .max(200)
     .default([]),
   ignoreInGit: z.boolean().default(true),
+  memory: z.object({ mode: z.enum(['off', 'review']).default('review') }).optional(),
 });
 export type CodeMapSettings = z.infer<typeof CodeMapSettingsSchema>;
 

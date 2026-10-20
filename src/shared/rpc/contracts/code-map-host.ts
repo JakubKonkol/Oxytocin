@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MemoryAuthoritySchema, LearningOperationSchema, LearningResultSchema } from '../../domain/code-map-memory';
 import { CodeMapDiagnosticsSchema, CodeMapSettingsSchema, CodeMapStatusSchema } from '../../domain/code-map';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
 import {
@@ -24,6 +25,10 @@ export const ConfigureCodeMapCheckoutSchema = z
 export type ConfigureCodeMapCheckout = z.infer<typeof ConfigureCodeMapCheckoutSchema>;
 
 export const CodeMapHostContracts = {
+  'memory:run': {
+    params: z.object({ authority: MemoryAuthoritySchema, operation: LearningOperationSchema }).strict(),
+    result: LearningResultSchema,
+  },
   'instructions:edit': {
     params: z
       .object({

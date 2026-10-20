@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map learnings:** a core settings manager for user findings in the main checkout, with evidence hashes,
+  review, revision history, search, export and confirmed deletion. Changed evidence requires explicit revalidation;
+  rebuilding or deleting the map preserves findings. Worktree lifecycle, agent learning tools and the knowledge
+  visualizer remain under development. Memory settings offer Review and Off; Automatic is unavailable.
 - **Code Map:** Python support — package roots, declarations, decorators, relative imports/re-exports and simple
   calls, including self methods. Unknown instance attributes and dynamic imports remain unresolved; support is shown
   as Imports with simple calls.

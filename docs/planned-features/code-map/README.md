@@ -1,8 +1,10 @@
 # Code Map — finalny plan funkcjonalności
 
 > Implementation progress (2026-10-20): stages 00–11 implemented; release-validation gates remain open. Resume at
-> stage 12 using [status.md](status.md). Stage 10 includes an offline harness and frozen corpus; paid evaluation
-> remains deferred to the user and the benefit gate is unverified. Stages 12–14 remain.
+> stage 12 using [status.md](status.md) and [the current handoff](results/2026-10-20-learnings-handoff.md).
+> Stage 12 has a working main-checkout user manager and storage foundation, but is incomplete. Stage 10 includes an
+> offline harness and frozen corpus; paid evaluation remains deferred and the benefit gate is unverified. Stages
+> 13–14 have not started. The owner explicitly requested a checkpoint and push on 2026-10-20.
 
 > **Planning baseline (historical):** plan gotowy do realizacji, implementacja nierozpoczęta. Wersja planu: 2026-10-19 (stan kodu: Oxytocin
 > 0.9.10, plugin API 0.1.10). Ten dokument zastępuje wcześniejsze trzy rundy researchu (są w historii Gita, commit

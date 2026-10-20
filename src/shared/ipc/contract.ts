@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LearningOperationSchema, LearningResultSchema } from '../domain/code-map-memory';
 import { CodeMapDiagnosticsSchema, CodeMapSettingsSchema, CodeMapStatusSchema } from '../domain/code-map';
 import { AgentLaunchRequestSchema, AgentLaunchResultSchema } from '../domain/agent-launch';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
@@ -91,6 +92,20 @@ interface InvokeSpec {
 
 /** Source of truth for request/response IPC (renderer → main). Requests are validated in main. */
 export const invokeContract = {
+  'codeMap:memory': {
+    req: z
+      .object({
+        projectId: ProjectIdSchema,
+        checkoutId: z.string().min(1).max(200).optional(),
+        operation: LearningOperationSchema,
+      })
+      .strict(),
+    res: LearningResultSchema,
+  },
+  'codeMap:setMemoryMode': {
+    req: z.object({ projectId: ProjectIdSchema, mode: z.enum(['off', 'review']) }).strict(),
+    res: z.null(),
+  },
   'codeMap:getStatus': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
   'codeMap:setEnabled': {
     req: z.object({ projectId: ProjectIdSchema, enabled: z.boolean(), ignoreInGit: z.boolean().optional() }).strict(),

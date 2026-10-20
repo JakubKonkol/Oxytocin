@@ -6,6 +6,7 @@ import {
   type CodeMapHostMethods,
 } from '@shared/rpc/contracts/code-map-host';
 import { CodeMapCheckouts } from './checkouts';
+import { LearningMemory } from './memory/admission';
 
 declare const __OXYTOCIN_VERSION__: string;
 const pending = new Map<string, CodeMapStatus>();
@@ -33,7 +34,12 @@ const checkouts = new CodeMapCheckouts(
 );
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
+const memory = new LearningMemory((checkoutId) => checkouts.memorySnapshot(checkoutId));
 const impl: Impl = {
+  'memory:run': (input) => {
+    const { authority, operation } = CodeMapHostContracts['memory:run'].params.parse(input);
+    return memory.run(authority, operation);
+  },
   'source:locate': (input) => checkouts.locateSource(CodeMapHostContracts['source:locate'].params.parse(input)),
   'instructions:edit': (input) => {
     const params = CodeMapHostContracts['instructions:edit'].params.parse(input);

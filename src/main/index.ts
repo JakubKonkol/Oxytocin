@@ -1115,6 +1115,8 @@ function bootstrap(): void {
       },
       'projects:update': (patch) => projects.update(patch),
       'codeMap:getStatus': ({ projectId }) => codeMap.status(projectId),
+      'codeMap:memory': ({ projectId, checkoutId, operation }) => codeMap.memory(projectId, operation, checkoutId),
+      'codeMap:setMemoryMode': ({ projectId, mode }) => codeMap.setMemoryMode(projectId, mode),
       'codeMap:setEnabled': ({ projectId, enabled, ignoreInGit }) =>
         codeMap.setEnabled(projectId, enabled, ignoreInGit),
       'codeMap:setOptions': ({ projectId, excludedPaths, ignoreInGit, removeGitignoreEntry }) =>

@@ -1,5 +1,9 @@
 # Etap 12 — learnings: magazyn, walidacja dowodów i menedżer
 
+> Checkpoint 2026-10-20: **in progress**. Main-checkout user manager and storage foundation implemented and tested;
+> worktree lifecycle, full project budgets and watcher invalidation remain. See
+> [the handoff](results/2026-10-20-learnings-handoff.md). No completion criteria below are marked complete yet.
+
 > Część planu [Code Map](README.md). Przeczytaj `README.md` (sekcje 5.9, 8.2, 8.3, 8.10).
 
 ## Cel

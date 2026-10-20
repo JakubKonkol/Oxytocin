@@ -10,6 +10,53 @@ import { connect, freePort } from './helpers/mcp';
 import { userDataWithPlugins } from './helpers/plugins';
 import { CodeMapPluginResultSchema } from '../../src/shared/domain/code-map-plugin';
 
+test('Learnings manager reviews evidence, preserves findings when map data is deleted and forgets revisions', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'oxy-learning-ui-'));
+  await writeFile(join(project, 'rules.md'), 'Use the supported protocol.\n');
+  const { app, win } = await launchApp({ project });
+  try {
+    const id = await activeProjectId(win);
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), id);
+    await win.getByRole('button', { name: 'Code Map status' }).click();
+    const dialog = win.getByTestId('project-settings');
+    await dialog.getByLabel('Memory mode').selectOption('off');
+    await expect(dialog.getByLabel('Memory mode')).toHaveValue('off');
+    await dialog.getByLabel('Learning title', { exact: true }).fill('Protocol requirement');
+    await dialog.getByLabel('Learning body', { exact: true }).fill('Keep the supported protocol.');
+    await dialog.getByLabel('Learning evidence', { exact: true }).fill('rules.md');
+    await dialog.getByRole('button', { name: 'Save learning revision' }).click();
+    const list = dialog.getByTestId('learnings-list');
+    await expect(list).toContainText('proposed');
+    await dialog.getByRole('button', { name: 'Accept and revalidate' }).click();
+    await expect(list).toContainText('accepted');
+    await expect(list).toContainText('current');
+    await writeFile(join(project, 'rules.md'), 'Protocol changed.\n');
+    await dialog.getByRole('button', { name: 'Refresh learnings' }).click();
+    await expect(list).toContainText('needs-review');
+    await list.getByRole('button').click();
+    await dialog.getByRole('button', { name: 'Accept and revalidate' }).click();
+    await expect(list).toContainText('current');
+    await dialog.getByLabel('Memory mode').selectOption('review');
+    await expect(dialog.getByLabel('Memory mode')).toHaveValue('review');
+    await dialog.getByRole('button', { name: 'Rebuild', exact: true }).click();
+    await expect(dialog.getByTestId('code-map-state')).toHaveText('Ready', { timeout: 20000 });
+    await dialog.getByRole('button', { name: 'Delete map data', exact: true }).click();
+    await win.getByRole('alertdialog').getByRole('button', { name: 'Delete map data', exact: true }).click();
+    await expect(dialog.getByTestId('code-map-state')).toHaveText('Disabled');
+    await dialog.getByRole('button', { name: 'Refresh learnings' }).click();
+    await expect(list).toContainText('Protocol requirement');
+    await dialog.getByRole('button', { name: 'Forget all learnings', exact: true }).click();
+    await win.getByRole('alertdialog').getByRole('button', { name: 'Forget all learnings', exact: true }).click();
+    await expect(list.getByRole('button')).toHaveCount(0);
+    const stored = await readFile(join(project, '.oxy/learnings/learnings.json'), 'utf8');
+    const recovery = await readFile(join(project, '.oxy/learnings/local/recovery.json'), 'utf8');
+    expect(stored).not.toContain('Keep the supported protocol.');
+    expect(recovery).not.toContain('Keep the supported protocol.');
+  } finally {
+    await app.close();
+  }
+});
+
 test('public Code Map plugin API opens verified source and rejects disabled projects', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-map-plugin-ui-'));
   await writeFile(join(project, 'api.ts'), 'export function pluginSource() {}\n');
