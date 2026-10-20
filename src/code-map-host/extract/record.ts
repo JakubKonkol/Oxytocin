@@ -7,7 +7,42 @@ import {
 } from '@shared/domain/code-map';
 
 /** Bump on every change of extracted records: cached records of another version are reparsed. */
-export const EXTRACTOR_VERSION = 3;
+export const EXTRACTOR_VERSION = 4;
+export const GoRecordSchema = z.object({
+  package: z.string().max(1024),
+  buildTags: z.array(z.string().max(1000)).max(100),
+  imports: z
+    .array(
+      z.object({ module: z.string().max(4096), alias: z.string().max(1024).nullable(), at: CodeMapPositionSchema }),
+    )
+    .max(50_000),
+  declarations: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        name: z.string(),
+        scope: z.string(),
+        receiver: z.string().optional(),
+        typeKind: z.enum(['struct', 'interface', 'alias', 'type']).optional(),
+        target: z.string().optional(),
+        parameters: z.number().int().nonnegative().optional(),
+      }),
+    )
+    .max(50_000),
+  locals: z.array(z.object({ scope: z.string(), name: z.string(), type: z.string().nullable() })).max(100_000),
+  calls: z
+    .array(
+      z.object({
+        from: z.string(),
+        scope: z.string(),
+        target: z.array(z.string()).max(20).nullable(),
+        args: z.number().int().nonnegative(),
+        at: CodeMapPositionSchema,
+      }),
+    )
+    .max(100_000),
+});
+export type GoRecord = z.infer<typeof GoRecordSchema>;
 /** A dotted C# name: each segment is `Name` or `Name/arity` for generic names. */
 const CSharpNameSchema = z.array(z.string().min(1).max(1024)).min(1).max(32);
 export const CSharpTypeRefSchema = z.object({ name: CSharpNameSchema, scope: z.string() });
@@ -170,6 +205,7 @@ export const FileRecordSchema = z.object({
     .max(100_000),
   syntaxErrors: z.number().int().nonnegative(),
   csharp: CSharpRecordSchema.optional(),
+  go: GoRecordSchema.optional(),
 });
 export type FileRecord = z.infer<typeof FileRecordSchema>;
 export type Scope = FileRecord['scopes'][number];

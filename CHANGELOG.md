@@ -7,6 +7,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map:** Go support — modules and workspace packages, declarations, imports and calls resolved from declared
+  receiver types. Interface dispatch and unknown receivers remain unresolved; build tags are recorded, not evaluated.
 - **Code Map Visualizer:** Changes highlights uncommitted files and their potential indexed dependents. Impact
   follows incoming dependencies up to three steps. Switch between the main folder and Ensemble worktrees; task
   changes compare with their recorded base, including committed edits.

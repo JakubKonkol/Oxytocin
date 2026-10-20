@@ -17,7 +17,9 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
 - Stages 05–08 verified on Linux after the stage 09 handoff: app E2E for stages 06–09 now passes; fixes and remaining findings are under "Verification of stages 05–08".
 - Stage 09 implemented: built-in visualizer, local Cytoscape renderer, keyboard list, settings/menu entry points and reproducible Chromium iframe measurements/smoke. App E2E now passes; terminal-regression measurements remain open.
 - Stage 10 implemented: host-owned impact/dependents, Changes and Impact views, strict checkout selection, authorized worktree/base Git comparison and verified source navigation. Export deliberately deferred. Offline evaluation corpus/harness prepared (26 tasks, 20 held-out); no paid sessions, benefit gate unverified. See `results/2026-10-20-insights.md` and `results/2026-10-20-agent-evaluation.md`.
-- Stages 11–14 are not implemented. Resume at stage 11a (Go), then 11b Java, 11c Python and 12–14, with separate commits and no push.
+- Stage 11a Go implemented: modules/workspaces, declarations, declared receiver calls and explicit unresolved interface
+  dispatch; reviewed fixture and packaged Windows 10k benchmark recorded in `results/2026-10-20-go.md`. Cold 31.35 s,
+  edit p95 0.893 s, peak 684.71 MiB; memory target unmet. Continue at 11b Java, 11c Python and 12–14, with separate commits and no push.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation

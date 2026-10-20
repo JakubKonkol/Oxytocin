@@ -62,6 +62,16 @@ kolejności: Go → Java → Python. Rust i PHP później, na żądanie, według
 
 ## Kryteria ukończenia (per wydanie języka)
 
+### 11a Go — implemented 2026-10-20
+
+- [x] Grammar already bundled and verified; no dependency/license change. Extractor, workspace/module resolver,
+  vendor exclusion, support levels, build-tag metadata and explicit limitations implemented.
+- [x] Reviewed fixture (calls 7/0/0 TP/FP/FN), deterministic extraction and packaged offline 10k benchmark recorded in
+  [results/2026-10-20-go.md](results/2026-10-20-go.md). Memory target remains unmet.
+- [x] Full checks and Go app E2E; broader Code Map/visualizer/host/startup E2E 16/16.
+
+Java and Python remain to implement.
+
 - [ ] Checklista języka spełniona; liczby w `results/<data>-<język>.md`.
 - [ ] `npm run check` + E2E (`code-map.spec.ts` z fixture języka) zielone.
 

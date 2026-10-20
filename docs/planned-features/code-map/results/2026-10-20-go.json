@@ -1,0 +1,157 @@
+{
+  "recordedAt": "2026-10-20T15:50:50.267Z",
+  "machine": {
+    "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+    "threads": 16,
+    "memoryGiB": 31.92010498046875
+  },
+  "revision": "44ccf7bca0eecebf35362aadfb302c93bdb8ca02",
+  "runs": {
+    "packaged": true,
+    "results": [
+      {
+        "name": "go-10000",
+        "result": {
+          "coldMs": [
+            31351.054900000003
+          ],
+          "editMs": [
+            892.7868999999992,
+            855.2460999999967,
+            888.7988999999943,
+            853.6754000000001,
+            800.785100000001,
+            772.8214999999982,
+            836.275999999998,
+            810.4423999999999,
+            800.6641999999993,
+            813.1308999999965
+          ],
+          "phases": [
+            {
+              "format": "oxytocin.code-map.manifest",
+              "schemaVersion": 1,
+              "state": "ready",
+              "graphSha256": "5ad46cbf2428099f8690f6f5afd9851810fbabce1fd1d705808d553dd1bedad5",
+              "generation": 1,
+              "builtAt": "2026-10-20T15:50:31.111Z",
+              "lastReconciledAt": "2026-10-20T15:50:31.111Z",
+              "lastFullHashAt": "2026-10-20T15:50:31.111Z",
+              "durationsMs": {
+                "enumerate": 15935.722700000002,
+                "parse": 4556.5049,
+                "resolve": 341.42419999999765,
+                "write": 9509.9392
+              },
+              "counts": {
+                "files": 10001,
+                "symbols": 40000,
+                "edges": 99999
+              },
+              "limits": {
+                "files": 50000,
+                "symbols": 500000,
+                "edges": 2000000,
+                "bytes": 536870912
+              },
+              "warnings": []
+            }
+          ],
+          "idleMs": 7.171099999999569,
+          "idleCpuPercentOfCore": 0,
+          "idleGenerationChanged": false,
+          "status": {
+            "checkoutId": "benchmark",
+            "state": "ready",
+            "generation": 12,
+            "progress": null,
+            "counts": {
+              "files": 10001,
+              "symbols": 40000,
+              "edges": 99999
+            },
+            "coverage": {
+              "files": {
+                "indexed": 10000,
+                "unsupported": 1,
+                "skipped": 2,
+                "failed": 0
+              },
+              "byLanguage": {
+                "go": 10000,
+                "plaintext": 1
+              },
+              "unresolved": {
+                "imports": 0,
+                "calls": 0
+              }
+            },
+            "languages": {
+              "go": {
+                "level": "Calls",
+                "description": "Modules, workspace packages and declared receiver types. Interface dispatch, dot imports, generics and unknown receivers remain unresolved; build tags are recorded, not evaluated."
+              },
+              "plaintext": {
+                "level": "Files",
+                "description": "File metadata only."
+              }
+            },
+            "updatedAt": "2026-10-20T15:50:49.788Z",
+            "bytes": 32125578,
+            "pendingFiles": 0,
+            "error": null,
+            "owner": {
+              "instanceId": "364a38f9-e6bc-4410-acf1-d5c0c9dd92a1",
+              "pid": 27660,
+              "app": "Oxytocin benchmark",
+              "heartbeatAt": "2026-10-20T15:50:09.691Z"
+            },
+            "readOnly": false,
+            "gitIgnored": false,
+            "limits": {
+              "files": 50000,
+              "symbols": 500000,
+              "edges": 2000000,
+              "bytes": 536870912
+            }
+          },
+          "peakRssMiB": 684.7109375,
+          "retainedRssMiB": 654,
+          "versions": {
+            "node": "24.21.0",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.8",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "149",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.7",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2025c",
+            "undici": "7.29.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.2.124.28-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "44.4.5",
+            "chrome": "152.0.7977.130"
+          }
+        }
+      }
+    ]
+  }
+}

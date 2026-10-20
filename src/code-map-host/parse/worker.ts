@@ -5,6 +5,7 @@ import { ParseJobSchema, ParseResultSchema } from '../extract/record';
 import { normalizedSource } from '../extract/files';
 import { extractTypeScript } from '../extract/typescript';
 import { extractCSharp } from '../extract/csharp';
+import { extractGo } from '../extract/go';
 import { parserLanguage } from '../extract/languages';
 import { CodeMapLimitError } from '../enumerate';
 
@@ -22,7 +23,11 @@ port.on('message', (input: unknown) => {
       const tree = await runtime.parse(source, language);
       try {
         const record =
-          language === 'csharp' ? extractCSharp(job.path, source, tree) : extractTypeScript(job.path, source, tree);
+          language === 'go'
+            ? extractGo(job.path, source, tree)
+            : language === 'csharp'
+              ? extractCSharp(job.path, source, tree)
+              : extractTypeScript(job.path, source, tree);
         port.postMessage(ParseResultSchema.parse({ id: job.id, record }));
       } finally {
         tree.delete();

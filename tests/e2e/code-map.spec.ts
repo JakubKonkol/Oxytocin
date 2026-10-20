@@ -263,6 +263,44 @@ test('a C# solution shows Calls coverage for C# and its types, projects and call
   }
 });
 
+test('Go workspace indexes package aliases, declared receivers and conservative interface calls', async () => {
+  const project = join(await mkdtemp(join(tmpdir(), 'oxy-map-go-')), 'go-project');
+  await cp(resolve('tests/fixtures/code-map/go-workspace'), project, { recursive: true });
+  const { app, win } = await launchApp({ project });
+  try {
+    const id = await activeProjectId(win);
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), id);
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), id)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    const graph = JSON.parse(await readFile(join(project, '.oxy/code-map/graph.json'), 'utf8')) as {
+      symbols: { id: string; name: string }[];
+      edges: { to: string; rel: string }[];
+      unresolved: { target: string; reason: string }[];
+    };
+    const save = graph.symbols.find((s) => s.name === 'Save' && s.id.includes('method:Save@Store'))!;
+    expect(graph.edges.filter((e) => e.to === save.id && e.rel === 'calls')).toHaveLength(2);
+    expect(graph.unresolved).toContainEqual(
+      expect.objectContaining({ target: 'w.Save', reason: 'interface-dispatch' }),
+    );
+    await win.locator(`[data-project-id="${id}"]`).click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    await win.getByTestId('project-settings-tab-code-map').click();
+    await expect(win.getByTestId('code-map-language-go')).toContainText('go: Calls');
+    await expect(win.getByTestId('code-map-language-go')).toContainText('Interface dispatch');
+    expect(await readFile(join(project, '.oxy/code-map/MAP.md'), 'utf8')).toContain('build tags');
+  } finally {
+    await app.close();
+  }
+});
+
 test('MCP Code Map tools see edits, report access and disappear after disabling', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-map-mcp-'));
   await writeFile(join(project, 'api.ts'), 'export function beforeEdit() {}\n');

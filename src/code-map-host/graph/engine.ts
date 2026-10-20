@@ -26,6 +26,11 @@ export interface PublishedGraph {
   bytes: number;
   diagnostics: CodeMapDiagnostics;
 }
+const intents = (record: FileRecord) =>
+  record.relations.length +
+  record.imports.length +
+  (record.csharp?.relations.length ?? 0) +
+  (record.go ? record.go.calls.length + record.go.imports.length : 0);
 export class GraphEngine {
   readonly records = new Map<string, FileRecord>();
   readonly configs = new Map<string, ProjectConfig>();
@@ -68,7 +73,7 @@ export class GraphEngine {
       [
         ...new Map(
           grammars.grammars
-            .filter((entry) => ['javascript', 'typescript', 'tsx', 'csharp'].includes(entry.language))
+            .filter((entry) => ['javascript', 'typescript', 'tsx', 'csharp', 'go'].includes(entry.language))
             .map((entry) => [entry.package, entry.version]),
         ).entries(),
       ].sort(([a], [b]) => comparePaths(a, b)),
@@ -188,7 +193,7 @@ export class GraphEngine {
     if (record) {
       this.revision++;
       this.symbolCount -= record.symbols.length;
-      this.relationCount -= record.relations.length + record.imports.length;
+      this.relationCount -= intents(record);
     }
     this.records.delete(path);
     this.configs.delete(path);
@@ -231,7 +236,7 @@ export class GraphEngine {
       this.configs,
       {
         oxytocin: this.options.version,
-        extractors: { csharp: EXTRACTOR_VERSION, files: 1, typescript: EXTRACTOR_VERSION },
+        extractors: { csharp: EXTRACTOR_VERSION, files: 1, go: EXTRACTOR_VERSION, typescript: EXTRACTOR_VERSION },
         grammars: this.grammarVersions,
         settingsHash: `sha256:${sha256(JSON.stringify([...new Set(this.options.excludedPaths)].sort(comparePaths)))}`,
       },
@@ -329,11 +334,7 @@ export class GraphEngine {
   private store(path: string, record: FileRecord): void {
     const old = this.records.get(path);
     const symbols = this.symbolCount - (old?.symbols.length ?? 0) + record.symbols.length;
-    const relations =
-      this.relationCount -
-      (old ? old.relations.length + old.imports.length : 0) +
-      record.relations.length +
-      record.imports.length;
+    const relations = this.relationCount - (old ? intents(old) : 0) + intents(record);
     if (symbols > CODE_MAP_LIMITS.symbols || relations > CODE_MAP_LIMITS.edges) throw new CodeMapLimitError();
     this.symbolCount = symbols;
     this.relationCount = relations;

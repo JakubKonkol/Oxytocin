@@ -121,6 +121,7 @@ export interface CodeMapSymbol {
   span: CodeMapSpan;
   stale?: boolean;
   visibility?: string;
+  buildTags?: string[];
   parts?: { file: string; span: CodeMapSpan }[];
 }
 export interface CodeMapEdge {

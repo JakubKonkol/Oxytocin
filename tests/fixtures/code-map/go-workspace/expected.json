@@ -1,0 +1,13 @@
+{
+  "calls": [
+    ["app/main.go", "run", "core/store.go", "Save"],
+    ["app/main.go", "run", "core/store.go", "Save"],
+    ["app/main.go", "run", "core/store.go", "New"],
+    ["app/main.go", "main", "app/main.go", "run"],
+    ["core/store.go", "Save", "core/store.go", "helper"],
+    ["core/store.go", "New", "core/store.go", "helper"],
+    ["core/store_test.go", "TestStore", "core/store.go", "New"]
+  ],
+  "unresolved": ["w.Save", "unknown.Save", "fmt.Println", "run"],
+  "note": "Reviewed against source. Interface/unknown receivers and a shadowing function parameter do not bind to implementations or package functions. Build tags are recorded, not evaluated."
+}

@@ -49,6 +49,25 @@ export async function makeCodeMapFixture(root: string, count = 10_000): Promise<
     );
   }
 }
+export async function makeCodeMapGoFixture(root: string, count = 10_000): Promise<void> {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 50_000) throw new Error('Invalid fixture file count');
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, 'go.mod'), 'module example.test/fixture\ngo 1.24\n');
+  for (let start = 0; start < count; start += 100) {
+    const pkg = Math.floor(start / 100),
+      directory = join(root, `pkg${pkg}`);
+    await mkdir(directory, { recursive: true });
+    await Promise.all(
+      Array.from({ length: Math.min(100, count - start) }, (_, offset) => {
+        const index = start + offset;
+        return writeFile(
+          join(directory, `service${index}.go`),
+          `package pkg${pkg}\n${offset === 0 && pkg ? `import prev "example.test/fixture/pkg${pkg - 1}"\n` : ''}type Service${index} struct { Value int }\nfunc (s *Service${index}) Run() { Work${index}() }\nfunc Work${index}() { ${index ? `${offset ? '' : 'prev.'}Work${index - 1}()` : ''} }\n`,
+        );
+      }),
+    );
+  }
+}
 
 const CSHARP_FILES_PER_PROJECT = 500;
 /** Deterministic C# solution: file-scoped namespaces, records, interfaces, partial types and cross-project calls. */

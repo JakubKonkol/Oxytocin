@@ -6,6 +6,7 @@ import type { ProjectConfig } from '../resolve/config';
 import { ModuleResolver } from '../resolve/modules';
 import { BindingResolver } from '../resolve/bindings';
 import { CSharpResolver } from '../resolve/csharp';
+import { GoResolver } from '../resolve/go';
 
 export function buildGraph(
   records: ReadonlyMap<string, FileRecord>,
@@ -107,6 +108,8 @@ export function buildGraph(
       }
   }
   graph.groups = [...graph.groups, ...groups.values()].sort((left, right) => comparePaths(left.id, right.id));
+  if ([...records.values()].some((r) => r.go))
+    new GoResolver(records, configs).append(graph, packageNodes, limits.edges);
   for (const symbol of graph.symbols) if (resolver.exportedSymbols.has(symbol.id)) symbol.exported = true;
   const children = new Map<string, typeof graph.symbols>();
   const namespaceMembers = new Set(

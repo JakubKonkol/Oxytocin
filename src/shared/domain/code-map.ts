@@ -121,6 +121,7 @@ export const CodeMapSymbolSchema = z.object({
   signature: z.string().max(4000),
   span: CodeMapSpanSchema,
   stale: z.boolean().optional(),
+  buildTags: z.array(z.string().max(1000)).max(100).optional(),
   /** Declared or default accessibility for languages without module exports (C#). */
   visibility: CodeMapVisibilitySchema.optional(),
   /** Further declarations of a merged partial type, outside the primary span. */
@@ -265,6 +266,11 @@ export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
 const LANGUAGE_SUPPORT: Record<string, { level: z.infer<typeof CodeMapSupportLevelSchema>; description: string }> = {
   typescript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
   javascript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
+  go: {
+    level: 'Calls',
+    description:
+      'Modules, workspace packages and declared receiver types. Interface dispatch, dot imports, generics and unknown receivers remain unresolved; build tags are recorded, not evaluated.',
+  },
   csharp: {
     level: 'Calls',
     description:

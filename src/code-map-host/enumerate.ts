@@ -8,7 +8,7 @@ import { DEFAULT_IGNORED_FOLDERS } from '@shared/domain/settings';
 import { hasCode, isInside } from './store/paths';
 
 export const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
-export const BUILTIN_FOLDERS = new Set(['.git', '.oxy', ...DEFAULT_IGNORED_FOLDERS]);
+export const BUILTIN_FOLDERS = new Set(['.git', '.oxy', 'vendor', ...DEFAULT_IGNORED_FOLDERS]);
 export class CodeMapLimitError extends Error {
   constructor(message = 'Code Map limit reached — add exclusions') {
     super(message);

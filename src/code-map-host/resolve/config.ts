@@ -2,6 +2,7 @@ import { posix } from 'node:path';
 import { parse, type ParseError } from 'jsonc-parser';
 import { z } from 'zod';
 import { parseDotnetProject, parseDotnetSolution, type DotnetProject, type DotnetSolution } from './dotnet-projects';
+import { parseGoConfig } from './go';
 
 const path = z.string().max(4096);
 const PackageSchema = z.object({
@@ -25,12 +26,15 @@ export type TypeScriptConfig = z.infer<typeof TypeScriptSchema>;
 export type ProjectConfig =
   | { kind: 'package'; data: PackageConfig }
   | { kind: 'typescript'; data: TypeScriptConfig }
+  | { kind: 'go-module'; data: { module: string } }
+  | { kind: 'go-work'; data: { uses: string[] } }
   | { kind: 'dotnet-project'; data: DotnetProject }
   | { kind: 'dotnet-props'; data: DotnetProject }
   | { kind: 'dotnet-solution'; data: DotnetSolution };
 
 /** Keep selected configuration as runtime data; scripts, credentials and raw config text never enter the cache. */
 export function parseProjectConfig(path: string, source: string): ProjectConfig | null {
+  if (['go.mod', 'go.work'].includes(posix.basename(path))) return parseGoConfig(path, source);
   const name = posix.basename(path).toLowerCase();
   if (name.endsWith('.csproj')) return { kind: 'dotnet-project', data: parseDotnetProject(path, source) };
   if (name === 'directory.build.props') return { kind: 'dotnet-props', data: parseDotnetProject(path, source) };

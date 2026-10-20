@@ -4,7 +4,7 @@ import { comparePaths } from './enumerate';
 import type { ProjectConfig } from './resolve/config';
 import { sha256 } from './store/writer';
 
-import { CODE_MAP_AGENT_INSTRUCTIONS } from '@shared/domain/code-map';
+import { CODE_MAP_AGENT_INSTRUCTIONS, codeMapLanguageSupport } from '@shared/domain/code-map';
 export { CODE_MAP_AGENT_INSTRUCTIONS } from '@shared/domain/code-map';
 export function entryPoints(graph: CodeMapGraph, configs: ReadonlyMap<string, ProjectConfig>): string[] {
   const paths = new Set(graph.files.map((file) => file.path));
@@ -208,7 +208,9 @@ export function renderMapMarkdown(
           ? 'Calls (syntax and lexical bindings; unknown receivers remain unresolved)'
           : language === 'csharp'
             ? 'Calls (projects, namespaces and declared types; extension methods, dynamic, delegates and dependency injection remain unresolved)'
-            : 'Files'
+            : codeMapLanguageSupport(language).level === 'Files'
+              ? 'Files'
+              : `${codeMapLanguageSupport(language).level} (${codeMapLanguageSupport(language).description})`
       }.`,
     );
   lines.push(
