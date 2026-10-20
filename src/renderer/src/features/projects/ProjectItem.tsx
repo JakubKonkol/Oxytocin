@@ -15,6 +15,7 @@ import { useProjectsStore } from '../../stores/projects-store';
 import { activateProject, removeProject, renameProject } from './project-actions';
 import { openProjectSettings } from './ProjectSettingsDialog';
 import { ProjectAvatar } from './ProjectAvatar';
+import { usePluginsStore } from '../../stores/plugins-store';
 
 export const PROJECT_DRAG_TYPE = 'application/x-oxytocin-project';
 
@@ -31,6 +32,7 @@ const menuItem =
 
 /** One row of the PROJECTS list. */
 export function ProjectItem({ project, active, terminals, onDragStart, onDropOn }: ProjectItemProps) {
+  const visualizer = usePluginsStore((s) => s.contributions.commands.some((c) => c.id === 'codeMap.open'));
   const [renaming, setRenaming] = useState(false);
   const [links, setLinks] = useState<LinkResource[]>([]);
   // Rename chosen from the context menu: start it once the menu has closed and handed focus back, otherwise the
@@ -253,6 +255,15 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
           >
             Project settings…
           </ContextMenu.Item>
+          {visualizer && (
+            <ContextMenu.Item
+              className={menuItem}
+              data-testid="project-menu-code-map"
+              onSelect={() => void ipc.invoke('plugins:executeCommand', { id: 'codeMap.open', args: [project.id] })}
+            >
+              Open Code Map
+            </ContextMenu.Item>
+          )}
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
           <ContextMenu.Item className={cn(menuItem, 'text-danger')} onSelect={() => void removeProject(project)}>
             Remove from Oxytocin…

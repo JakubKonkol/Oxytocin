@@ -16,6 +16,7 @@ import { Check, Field, Section, input } from './controls';
 import { useMcpStore } from '../../agent-tools/mcp-store';
 import { useSettingsStore } from '../../../stores/settings-store';
 import { executeCommand } from '../../../lib/commands';
+import { usePluginsStore } from '../../../stores/plugins-store';
 
 export const CODE_MAP_STATE_LABELS: Record<CodeMapStatus['state'], string> = {
   disabled: 'Disabled',
@@ -30,6 +31,7 @@ export const CODE_MAP_STATE_LABELS: Record<CodeMapStatus['state'], string> = {
 
 /** Commands apply immediately; the rest of the settings dialog keeps its own draft. */
 export function CodeMapTab({ project, close }: { project: Project; close: () => void }) {
+  const visualizer = usePluginsStore((s) => s.contributions.commands.some((c) => c.id === 'codeMap.open'));
   const mcp = useMcpStore((s) => s.state?.status);
   const mcpEnabled = useSettingsStore((s) => s.settings?.['mcp.enabled']);
   const status = useProjectsStore((s) => s.codeMaps[project.id]);
@@ -209,6 +211,16 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
           Configure Agent Tools
         </Button>
         <div className="flex flex-wrap gap-2">
+          {visualizer && (
+            <Button
+              onClick={() => {
+                close();
+                void ipc.invoke('plugins:executeCommand', { id: 'codeMap.open', args: [project.id] });
+              }}
+            >
+              Open Code Map
+            </Button>
+          )}
           <Button disabled={!canWrite} onClick={() => void action(status?.state === 'paused' ? 'resume' : 'pause')}>
             {status?.state === 'paused' ? 'Resume updates' : 'Pause updates'}
           </Button>

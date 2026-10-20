@@ -1,0 +1,107 @@
+@import '@oxytocin/plugin-sdk/theme.css';
+#root {
+  height: 100%;
+}
+.map {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 8px);
+  padding: var(--space-2, 8px);
+}
+header,
+nav,
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+header {
+  justify-content: space-between;
+}
+h1 {
+  font-size: var(--font-size-ui);
+  margin: 0;
+}
+nav button[aria-current='page'] {
+  border-color: var(--accent);
+  font-weight: bold;
+}
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 28%);
+  flex: 1;
+  min-height: 0;
+  gap: var(--space-2, 8px);
+}
+.content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.graph {
+  min-height: 180px;
+  flex: 1;
+  border: 1px solid var(--border-default);
+}
+.list {
+  overflow: auto;
+  max-height: 45%;
+  min-height: 80px;
+}
+.list.full {
+  max-height: 100%;
+  flex: 1;
+}
+aside {
+  overflow: auto;
+  border-left: 1px solid var(--border-default);
+  padding-left: var(--space-2, 8px);
+}
+aside pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+footer,
+.muted {
+  color: var(--text-muted);
+}
+footer {
+  font-size: var(--font-size-small, 12px);
+}
+.error {
+  color: var(--danger);
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+}
+.path {
+  overflow-wrap: anywhere;
+}
+td,
+th {
+  vertical-align: top;
+}
+.controls input {
+  min-width: 100px;
+  flex: 1;
+}
+@media (max-width: 650px) {
+  .body {
+    grid-template-columns: 1fr;
+  }
+  aside {
+    max-height: 180px;
+    border-left: 0;
+    border-top: 1px solid var(--border-default);
+  }
+}

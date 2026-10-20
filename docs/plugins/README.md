@@ -55,6 +55,10 @@ source hash and range before delegating to the configured editor. Paths are chec
 lines and zero-based UTF-16 columns, converted by the editor adapter. Refresh after a stale-locator error. No arbitrary
 filesystem roots, excluded sources or fallback to the main checkout are accepted.
 
+Views can call the documented core command `view.executeCommand('oxytocin.codeMap.openSettings', projectId)` to open
+the Code Map settings tab. It is allowlisted in the shell and main process. The built-in
+[Code Map Visualizer](../../plugins/code-map-visualizer/README.md) is an example using only this public API.
+
 A plugin is a folder with a `package.json`. Its `oxytocin` section — the **manifest** — declares what the plugin
 contributes and which parts of the API it may use. Two optional parts do the work:
 

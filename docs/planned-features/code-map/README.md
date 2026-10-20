@@ -1,6 +1,9 @@
 # Code Map — finalny plan funkcjonalności
 
-> **Status:** plan gotowy do realizacji, implementacja nierozpoczęta. Wersja planu: 2026-10-19 (stan kodu: Oxytocin
+> Implementation progress (2026-10-20): stages 00–09 implemented; release-validation gates remain open. Resume at
+> stage 10 using [status.md](status.md). Stages 10–14 remain. Paid evaluation is deferred to the user; prepare harnesses.
+
+> **Planning baseline (historical):** plan gotowy do realizacji, implementacja nierozpoczęta. Wersja planu: 2026-10-19 (stan kodu: Oxytocin
 > 0.9.10, plugin API 0.1.10). Ten dokument zastępuje wcześniejsze trzy rundy researchu (są w historii Gita, commit
 > `eaa222d` i wcześniejsze) i jest jedynym źródłem prawdy dla Code Map.
 
@@ -1024,7 +1027,7 @@ flowchart LR
 | 06   | [etap-06-narzedzia-mcp.md](etap-06-narzedzia-mcp.md)                                     | Silnik zapytań, kontrakt świeżości, pięć narzędzi MCP, ścisły wybór checkoutu.                          | **tak — wydanie**              | 04        | M       | implemented; app E2E/manual CLI gates open |
 | 07   | [etap-07-worktree-i-instrukcje-agentow.md](etap-07-worktree-i-instrukcje-agentow.md)     | Mapy worktree Ensemble, most Ensemble, blok w `CLAUDE.md`/`AGENTS.md`.                                  | **tak — wydanie**              | 06        | M       | implemented; app E2E gate open |
 | 08   | [etap-08-api-pluginow-code-map.md](etap-08-api-pluginow-code-map.md)                     | Wycinki grafu w hoście, `oxy.codeMap` i `code-map.read` (plugin API 0.2.0).                             | tak (API dla pluginów)         | 06        | M       | implemented; app E2E pending |
-| 09   | [etap-09-wizualizator.md](etap-09-wizualizator.md)                                       | Spike renderera i plugin Code Map Visualizer.                                                           | **tak — wydanie**              | 08        | L       | do zrobienia |
+| 09   | [etap-09-wizualizator.md](etap-09-wizualizator.md)                                       | Spike renderera i plugin Code Map Visualizer.                                                           | **tak — wydanie**              | 08        | L       | implemented; release-validation gates open |
 | 10   | [etap-10-wglady-i-ewaluacja-agentow.md](etap-10-wglady-i-ewaluacja-agentow.md)           | Changes overlay, Impact, selektor checkoutu, eksport, ewaluacja agentów.                                | **tak — wydanie**              | 07, 09    | M       | do zrobienia |
 | 11   | [etap-11-go-java-python.md](etap-11-go-java-python.md)                                   | Go, Java, Python (osobne wydanie na język).                                                             | **tak — 3 wydania**            | 04        | S–M/język | do zrobienia |
 | 12   | [etap-12-learnings-magazyn-i-menedzer.md](etap-12-learnings-magazyn-i-menedzer.md)       | Magazyn learnings, walidacja dowodów, menedżer Learnings.                                               | **tak — wydanie**              | 10        | L       | do zrobienia |

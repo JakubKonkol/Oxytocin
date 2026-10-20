@@ -63,9 +63,9 @@ Poza zakresem: Changes/Impact/selektor checkoutu/eksport (etap 10), Knowledge/Ta
 
 ## Kryteria ukończenia
 
-- [ ] Overview, File, Neighborhood i Search kompletne; widoki z etapów 10/14 nie pojawiają się jako martwe kontrolki.
-- [ ] Wszystkie widoki respektują limity węzłów/krawędzi/bajtów i pokazują checkout, generację, pokrycie i pominięcia.
-- [ ] Wyłączenie/zamknięcie i szybkie zmiany kontekstu działają poprawnie; agenci działają bez pluginu.
+- [x] Overview, File, Neighborhood i Search kompletne; widoki z etapów 10/14 nie pojawiają się jako martwe kontrolki.
+- [x] Wszystkie widoki respektują limity węzłów/krawędzi/bajtów i pokazują checkout, generację, pokrycie i pominięcia.
+- [x] Wyłączenie/zamknięcie i szybkie zmiany kontekstu działają poprawnie; agenci działają bez pluginu.
 - [ ] Alternatywa klawiatura/lista i sprawdzenia spakowanego renderera offline zaliczone.
 - [ ] Zależności renderera i licencje oraz zmierzony wpływ na terminal zapisane (≤ NFR-4).
 - [ ] `npm run check` + E2E zielone; `THIRD_PARTY_NOTICES.md` zaktualizowane.

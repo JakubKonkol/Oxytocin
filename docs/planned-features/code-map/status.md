@@ -12,10 +12,19 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met.
 - Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md.
 - Stage 06 implemented (`92ee704`): bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. Manual CLI validation and app E2E remain open; see results/2026-10-20-mcp-tools.md.
-- Stage 07 implemented: isolated worktree registrations, role-authenticated MCP bridge, explicit instruction-file blocks and `.oxy` exclusions from Ensemble diffs/checkpoints. See results/2026-10-20-worktrees-instructions.md. Stages 08–14 pending.
+- Stage 07 implemented (`f8fec0a`): isolated worktree registrations, role-authenticated MCP bridge, explicit instruction-file blocks and `.oxy` exclusions from Ensemble diffs/checkpoints. See results/2026-10-20-worktrees-instructions.md.
+- Stage 08 implemented (`6e20c52`): Plugin API 0.2.0, bounded slices, permission checks, cancellation, invalidations and verified worktree-aware source navigation. Full check/build passed; app E2E pending.
+- Stage 09 implemented in the handoff commit: built-in visualizer, local Cytoscape renderer, keyboard list, settings/menu entry points and reproducible Chromium iframe measurements/smoke. See results/2026-10-20-renderer.md. App E2E and terminal-regression measurements remain open.
+- Stages 10–14 are not implemented. Resume at stage 10; the user requested stopping after the current stage and handing off to another agent.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
+
+- Current handoff environment: Windows, Node 24.16.0. Docker is absent; WSL has no installed distribution. The user
+  explicitly authorized commits after available checks with Electron E2E recorded as unexecuted. Do not open desktop
+  Electron windows. Playwright Chromium Headless Shell 153.0.8010.12 is installed for standalone iframe checks.
+- The following environment notes describe earlier sessions; verify availability rather than assuming those tools
+  or containers still exist.
 
 - 2026-10-20 sessions run in a Linux cloud container (no Docker, no Windows): Node 24 installed to `/opt/node24`
   (`export PATH=/opt/node24/bin:$PATH`), Electron binary installed with `node node_modules/electron/install.js`. Run E2E
@@ -110,6 +119,38 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Validation: `npm run check` green (1,346 unit, 71 integration, 3 latency); E2E code-map/ipc-hosts/smoke 10/10.
 
 ## Resume checkpoint
+
+### Handoff after stage 09 (user requested stopping)
+
+- Work directly on `main`, commit each remaining stage separately, never push: the user will push all local commits.
+  Stages 06–09 are implemented. Stage 10 is next; stages 11a Go, 11b Java, 11c Python then 12–14 remain.
+- Stage 09 files: `plugins/code-map-visualizer/src/host/index.ts` proxies public API calls; `src/shared/model.ts`
+  validates view requests; `src/views/map.tsx` renders controls/details/list and imperatively updates Cytoscape.
+  `src/views/state.ts` guards request identity and preserves surviving positions. Main has no graph rendering logic.
+- Core `oxytocin.codeMap.openSettings` is allowlisted in main and renderer. Project menu and settings show the
+  visualizer entry only when its command contribution exists. Disabling the plugin does not disable core MCP/indexing.
+- Metadata audits can publish progress without changing a generation. The backend deliberately ignores in-progress
+  invalidations and deduplicates identical generation/state checkpoints to avoid query → audit → refresh loops.
+- Run `npx.cmd tsx scripts/code-map-renderer-benchmark.ts` for renderer timings and
+  `npx.cmd tsx scripts/code-map-visualizer-smoke.ts` for the shipped iframe's offline/CSP/SDK behavior after building
+  plugins. These launch headless Chromium, not desktop Electron. Reports/raw results are under `results/`.
+- Stage 10 must add host-owned impact/dependents queries, Changes overlay and checkout selection. The existing public
+  Git API currently accepts a project ID; worktree changes/base comparison need an authorized extension rather than
+  reading arbitrary filesystem roots in the plugin. Export is optional; record the decision.
+- For stages 10/14 the user explicitly chose harness/corpus preparation only. No paid agent sessions are authorized;
+  the user will measure them later. Do not claim token/cost benefits or enable Automatic learnings before the gate.
+- Follow the existing host ownership, bounds, strict checkout selection, project opt-in, plugin permissions and
+  stale-generation contracts. Keep knowledge permission separate in stage 14; no learnings in structural slices.
+- Full check/build and headless iframe logs: `test-results/code-map-stage09-*`. Added app E2E remains unexecuted.
+  Repeat it in Linux/Xvfb when that environment becomes available; it does not become passed through this exception.
+- Final stage 09 validation: `npm run check` passed (1,371 unit tests, 68 integration tests, 3 latency tests;
+  4 unit and 66 platform/resource integration skips). `npm run build` passed. Final shipped-asset iframe smoke passed.
+- Important Windows test setup: set `TEMP` and `TMP` to
+  `C:\Users\Public\oxy-code-map-validation-20261020-6c2d` and `VITEST_MAX_WORKERS=4` per command. The default 8.3 temp
+  path crashes existing native watchers; temporary non-Git fixtures must live outside this repository.
+- Existing release gates are still open: large-checkout performance, installer/Windows CI/determinism, actual CLI
+  clients, Electron E2E, terminal p95 during visualization, production accessibility review and dogfooding.
+
 
 ### Stage 08 implementation
 

@@ -1,0 +1,48 @@
+{
+  "time": "2026-10-20T13:13:49.355Z",
+  "platform": "win32",
+  "node": "v24.16.0",
+  "chromium": "153.0.8010.12",
+  "cytoscape": "3.34.4",
+  "license": "MIT",
+  "results": [
+    {
+      "nodes": 50,
+      "edges": 100,
+      "firstUsableMs": 68.30000001192093,
+      "inputP95Ms": 18.600000023841858,
+      "fps": 60.14434643215414,
+      "refreshBurstMs": 2,
+      "heapBytes": 8831498,
+      "renderer": "canvas",
+      "layout": "preset grid",
+      "errors": []
+    },
+    {
+      "nodes": 150,
+      "edges": 300,
+      "firstUsableMs": 112.39999997615814,
+      "inputP95Ms": 19.600000023841858,
+      "fps": 60.505218575465776,
+      "refreshBurstMs": 12.199999988079071,
+      "heapBytes": 12733030,
+      "renderer": "canvas",
+      "layout": "preset grid",
+      "errors": []
+    },
+    {
+      "nodes": 500,
+      "edges": 1000,
+      "firstUsableMs": 277.2000000476837,
+      "inputP95Ms": 36,
+      "fps": 60.22584692669305,
+      "refreshBurstMs": 25.200000047683716,
+      "heapBytes": 27499984,
+      "renderer": "canvas",
+      "layout": "preset grid",
+      "errors": []
+    }
+  ],
+  "terminalRegression": null,
+  "packagedElectron": null
+}

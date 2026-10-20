@@ -5,6 +5,7 @@ import { openDiff } from '../diff/diff-actions';
 import { activateProject } from '../projects/project-actions';
 import { addExistingTerminalPanel } from './workspace-actions';
 import { getWorkspaceApi } from './workspace-registry';
+import { openProjectSettings } from '../projects/ProjectSettingsDialog';
 
 /**
  * A terminal created or shown by a plugin (`oxy.terminals.create` / `show`): opens its panel in the project's
@@ -46,6 +47,9 @@ export function closePluginTerminalPanel(req: { terminalId: string; projectId: s
 /** Core commands plugins may run (`oxytocin.*`). */
 export function runCoreCommand(id: string, args: unknown[]): void {
   switch (id) {
+    case 'oxytocin.codeMap.openSettings':
+      if (typeof args[0] === 'string') openProjectSettings(args[0], 'code-map');
+      break;
     case 'oxytocin.terminal.new':
       void executeCommand('terminal.new');
       break;

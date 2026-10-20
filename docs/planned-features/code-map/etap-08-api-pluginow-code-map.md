@@ -55,9 +55,9 @@ Poza zakresem: sam plugin wizualizatora (etap 09), `code-map.knowledge.read` (et
 
 ## Kryteria ukończenia
 
-- [ ] API, wersja, sprawdzanie możliwości, uprawnienia, nawigacja do źródła i dostarczanie unieważnień udokumentowane i
+- [x] API, wersja, sprawdzanie możliwości, uprawnienia, nawigacja do źródła i dostarczanie unieważnień udokumentowane i
       przetestowane.
-- [ ] `npm run check` zielone.
+- [x] `npm run check` zielone.
 
 ## Commity i CHANGELOG
 

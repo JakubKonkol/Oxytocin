@@ -1,0 +1,474 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import cytoscape, { type Core, type NodeSingular } from 'cytoscape';
+import { useOxyView, useOxyTheme } from '@oxytocin/plugin-sdk/react';
+import type { CodeMapResponse, CodeMapSliceNode, CodeMapSliceEdge, CodeMapRelation } from '@oxytocin/plugin-api';
+import { SelectionSchema, type Selection, type Model, type Answer } from '../shared/model';
+import { stablePositions, ViewEpoch } from './state';
+import './map.css';
+
+const initial = () => SelectionSchema.parse({});
+const relationTypes: CodeMapRelation[] = [
+  'imports',
+  'references',
+  'calls',
+  'exports',
+  'extends',
+  'implements',
+  'contains',
+];
+function App() {
+  const view = useOxyView(),
+    theme = useOxyTheme();
+  const [model, setModel] = useState<Model>({ project: null, checkouts: [] }),
+    [response, setResponse] = useState<CodeMapResponse>();
+  const [selection, setSelection] = useState(initial),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false),
+    [selected, setSelected] = useState<string>();
+  const [listOnly, setListOnly] = useState(false),
+    [provenance, setProvenance] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const [history, setHistory] = useState<{ entries: Selection[]; at: number }>({ entries: [initial()], at: 0 });
+  const graph = useRef<HTMLDivElement>(null),
+    cy = useRef<Core | null>(null),
+    gate = useRef(new ViewEpoch()),
+    project = useRef('');
+  const positions = useRef(new Map<string, { x: number; y: number }>()),
+    current = useRef(selection),
+    refresh = useRef<() => void>(() => {});
+  useEffect(() => {
+    current.current = selection;
+  }, [selection]);
+  const load = useCallback(async () => {
+    if (!view || !view.visible) return;
+    let expected = project.current,
+      seq = gate.current.begin(expected);
+    setBusy(true);
+    setError('');
+    try {
+      const next = await view.request<Model>('model');
+      if (!gate.current.accepts(seq, expected)) return;
+      const id = next.project?.id ?? '';
+      if (project.current !== id) {
+        positions.current.clear();
+        cy.current?.elements().remove();
+        setResponse(undefined);
+        setSelected(undefined);
+        project.current = id;
+        current.current = initial();
+        setSelection(initial());
+        setHistory({ entries: [initial()], at: 0 });
+      }
+      setModel(next);
+      if (!id || !next.checkouts.length) {
+        setResponse(undefined);
+        return;
+      }
+      const request = gate.current.begin(id);
+      seq = request;
+      expected = id;
+      let answer = await view.request<Answer>('query', current.current);
+      if (!gate.current.accepts(request, answer.projectId)) return;
+      if (answer.response.code === 'SNAPSHOT_CHANGED') {
+        answer = await view.request<Answer>('query', { ...current.current, generation: undefined });
+        if (!gate.current.accepts(request, answer.projectId)) return;
+      }
+      setResponse(answer.response);
+    } catch (e) {
+      if (gate.current.accepts(seq, expected)) setError(String(e));
+    } finally {
+      if (gate.current.accepts(seq, expected)) setBusy(false);
+    }
+  }, [view]);
+  useEffect(() => {
+    refresh.current = () => {
+      void load();
+    };
+  }, [load]);
+  useEffect(() => {
+    if (!view) return;
+    const epoch = gate.current;
+    queueMicrotask(() => void load());
+    const unsubscribe = view.onMessage((raw) => {
+      const m = raw as { type?: string; projectId?: string };
+      if (m.type === 'reset') {
+        gate.current.invalidate();
+        project.current = '';
+        positions.current.clear();
+        cy.current?.elements().remove();
+        setResponse(undefined);
+        setSelected(undefined);
+        setModel({ project: null, checkouts: [] });
+      }
+      if (m.type === 'reset' || m.type === 'invalidate') refresh.current();
+    });
+    const visible = view.onVisibilityChange((shown) => {
+      gate.current.invalidate();
+      if (shown) {
+        cy.current?.resize();
+        refresh.current();
+      } else {
+        cy.current?.stop();
+        void view.request('cancel');
+      }
+    });
+    return () => {
+      epoch.invalidate();
+      unsubscribe();
+      visible();
+      void view.request('cancel').catch(() => undefined);
+    };
+  }, [view, load]);
+  useEffect(() => {
+    if (view) queueMicrotask(() => void load());
+  }, [selection, view, load]);
+  const nodes: CodeMapSliceNode[] =
+    response?.data?.kind === 'slice'
+      ? response.data.nodes
+      : response?.data?.kind === 'search'
+        ? response.data.matches.map((m) => ({
+            id: m.id,
+            kind: m.id.startsWith('f:') ? 'file' : 'symbol',
+            label: m.name,
+            path: m.path,
+            signature: m.signature,
+            span: m.span,
+            whyIncluded: m.whyIncluded.join('; '),
+            stale: m.stale,
+          }))
+        : [];
+  const edges: CodeMapSliceEdge[] = (response?.data?.kind === 'slice' ? response.data.edges : []).filter(
+    (e) => provenance === 'all' || e.prov === provenance,
+  );
+  const nodesKey = JSON.stringify(nodes),
+    edgesKey = JSON.stringify(edges),
+    available = model.checkouts.length > 0;
+  useEffect(() => {
+    if (!graph.current || listOnly) return;
+    try {
+      const styles = getComputedStyle(document.documentElement),
+        color = (token: string) => styles.getPropertyValue(token).trim();
+      const instance = cytoscape({
+        container: graph.current,
+        elements: [],
+        layout: { name: 'preset' },
+        pixelRatio: 1,
+        hideEdgesOnViewport: true,
+        textureOnViewport: true,
+        style: [
+          {
+            selector: 'node',
+            style: {
+              label: 'data(label)',
+              'background-color': color('--accent'),
+              color: color('--text-primary'),
+              'font-size': 11,
+              'text-max-width': '140px',
+              'text-wrap': 'ellipsis',
+            },
+          },
+          {
+            selector: 'edge',
+            style: {
+              label: 'data(rel)',
+              width: 1,
+              'line-color': color('--text-muted'),
+              'target-arrow-color': color('--text-muted'),
+              'target-arrow-shape': 'triangle',
+              'curve-style': 'bezier',
+              'font-size': 9,
+              color: color('--text-muted'),
+            },
+          },
+          { selector: 'edge[rel = "contains"]', style: { 'line-style': 'dotted', 'target-arrow-shape': 'none' } },
+          { selector: 'edge[prov = "heuristic"]', style: { 'line-style': 'dashed' } },
+          { selector: ':selected', style: { 'border-width': 3, 'border-color': color('--text-primary') } },
+        ],
+      });
+      cy.current = instance;
+      instance.on('tap', 'node', (e) => setSelected((e.target as NodeSingular).id()));
+      return () => {
+        for (const node of instance.nodes()) positions.current.set(node.id(), { ...node.position() });
+        instance.destroy();
+        cy.current = null;
+      };
+    } catch (e) {
+      queueMicrotask(() => {
+        setError(`Graph unavailable; use the list. ${String(e)}`);
+        setListOnly(true);
+      });
+    }
+  }, [listOnly, theme, available]);
+  useEffect(() => {
+    const instance = cy.current;
+    if (!instance) return;
+    const visibleNodes = JSON.parse(nodesKey) as CodeMapSliceNode[],
+      visibleEdges = JSON.parse(edgesKey) as CodeMapSliceEdge[];
+    for (const node of instance.nodes()) positions.current.set(node.id(), { ...node.position() });
+    const next = stablePositions(
+        visibleNodes.map((n) => n.id),
+        positions.current,
+      ),
+      first = instance.nodes().length === 0;
+    instance.batch(() => {
+      instance.elements().remove();
+      instance.add(visibleNodes.map((n) => ({ data: { ...n }, position: next.get(n.id) })));
+      instance.add(visibleEdges.map((e, i) => ({ data: { ...e, id: `edge:${i}`, source: e.from, target: e.to } })));
+    });
+    positions.current = next;
+    if (first) instance.fit(undefined, 40);
+  }, [nodesKey, edgesKey, listOnly, theme, available]);
+  const navigate = (next: Selection) => {
+    gate.current.invalidate();
+    setSelected(undefined);
+    setError('');
+    setSelection(next);
+    setHistory((h) => ({ entries: [...h.entries.slice(0, h.at + 1), next].slice(-50), at: Math.min(h.at + 1, 49) }));
+  };
+  const expand = (node: CodeMapSliceNode) => {
+    if (node.kind === 'group' && node.path)
+      navigate({
+        ...selection,
+        view: 'overview',
+        root: { path: node.path },
+        generation: response?.freshness.generation,
+      });
+    else
+      navigate({
+        ...selection,
+        view: node.kind === 'file' ? 'file' : 'neighborhood',
+        root: node.kind === 'file' ? { path: node.path! } : { symbolId: node.id },
+        generation: response?.freshness.generation,
+      });
+  };
+  const chosen = nodes.find((n) => n.id === selected);
+  const travel = (delta: number) => {
+    gate.current.invalidate();
+    const at = history.at + delta;
+    setHistory({ ...history, at });
+    setSelection(history.entries[at]!);
+  };
+  const open = async () => {
+    if (!chosen?.path || !chosen.sha256 || !response) return;
+    try {
+      await view?.request('open', {
+        checkoutId: response.checkoutId,
+        path: chosen.path,
+        sha256: chosen.sha256,
+        generation: response.freshness.generation,
+        ...(chosen.kind === 'symbol' ? { symbolId: chosen.id, span: chosen.span } : {}),
+      });
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+  return (
+    <main className="map">
+      <header>
+        <h1>Code Map · {model.project?.name ?? 'No project'}</h1>
+        <span>
+          {model.checkouts.find((c) => c.checkoutId === response?.checkoutId)?.label ?? 'Main checkout'} ·{' '}
+          {response?.freshness.state ?? 'Unavailable'} · Generation {response?.freshness.generation ?? '—'}
+        </span>
+      </header>
+      {!model.checkouts.length ? (
+        <section>
+          <p>Enable Code Map to explore this project.</p>
+          <button onClick={() => void view?.executeCommand('oxytocin.codeMap.openSettings', model.project?.id)}>
+            Code Map settings
+          </button>
+        </section>
+      ) : (
+        <>
+          <nav aria-label="Code Map views">
+            {(['overview', 'file', 'neighborhood', 'search'] as const).map((mode) => (
+              <button
+                key={mode}
+                aria-current={selection.view === mode ? 'page' : undefined}
+                disabled={(mode === 'file' || mode === 'neighborhood') && !selection.root}
+                onClick={() => navigate({ ...selection, view: mode, generation: undefined })}
+              >
+                {mode[0]!.toUpperCase() + mode.slice(1)}
+              </button>
+            ))}
+            <button disabled={history.at === 0} onClick={() => travel(-1)}>
+              Back
+            </button>
+            <button disabled={history.at >= history.entries.length - 1} onClick={() => travel(1)}>
+              Forward
+            </button>
+            <button onClick={() => refresh.current()}>Refresh</button>
+            <label>
+              <input type="checkbox" checked={listOnly} onChange={(e) => setListOnly(e.target.checked)} />
+              List only
+            </label>
+          </nav>
+          <div className="controls">
+            <input
+              aria-label="Search code"
+              placeholder="Symbol or path"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter')
+                  navigate({ ...selection, view: 'search', query: searchText, generation: undefined });
+              }}
+            />
+            <button
+              onClick={() => navigate({ ...selection, view: 'search', query: searchText, generation: undefined })}
+            >
+              Find
+            </button>
+          </div>
+          <div className="controls">
+            <label>
+              Direction
+              <select
+                value={selection.direction}
+                onChange={(e) => navigate({ ...selection, direction: e.target.value as Selection['direction'] })}
+              >
+                {['both', 'incoming', 'outgoing'].map((v) => (
+                  <option key={v}>{v}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Depth
+              <select
+                value={selection.depth}
+                onChange={(e) => navigate({ ...selection, depth: Number(e.target.value) })}
+              >
+                {[1, 2, 3].map((n) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Evidence
+              <select value={provenance} onChange={(e) => setProvenance(e.target.value)}>
+                {['all', 'syntax', 'binding', 'heuristic'].map((p) => (
+                  <option key={p}>{p}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={selection.includeHeuristic}
+                onChange={(e) => navigate({ ...selection, includeHeuristic: e.target.checked })}
+              />
+              Include heuristic edges
+            </label>
+          </div>
+          <div className="controls" aria-label="Relation filters">
+            {relationTypes.map((rel) => (
+              <label key={rel}>
+                <input
+                  type="checkbox"
+                  checked={selection.relations.includes(rel)}
+                  onChange={(e) => {
+                    const relations = e.target.checked
+                      ? [...selection.relations, rel]
+                      : selection.relations.filter((r) => r !== rel);
+                    if (relations.length) navigate({ ...selection, relations });
+                  }}
+                />
+                {rel}
+              </label>
+            ))}
+          </div>
+          <div className="controls">
+            <button onClick={() => cy.current?.zoom(cy.current.zoom() * 1.2)}>Zoom in</button>
+            <button onClick={() => cy.current?.zoom(cy.current.zoom() / 1.2)}>Zoom out</button>
+            <button onClick={() => cy.current?.fit(undefined, 40)}>Fit</button>
+          </div>
+          <div className="body">
+            <section className="content">
+              {!listOnly && <div className="graph" ref={graph} aria-label="Code dependency graph" />}
+              <div className={`list ${listOnly ? 'full' : ''}`}>
+                <table aria-label="Code Map nodes">
+                  <thead>
+                    <tr>
+                      <th>Node</th>
+                      <th>Kind</th>
+                      <th>Relations / direction / evidence</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nodes.map((n) => (
+                      <tr key={n.id}>
+                        <td>
+                          <button onClick={() => setSelected(n.id)} onDoubleClick={() => expand(n)}>
+                            {n.label}
+                          </button>
+                        </td>
+                        <td>{n.kind}</td>
+                        <td>
+                          {edges
+                            .filter((e) => e.from === n.id || e.to === n.id)
+                            .map((e, i) => (
+                              <div key={i}>
+                                {e.rel} {e.from === n.id ? 'outgoing' : 'incoming'} · {e.prov}
+                                {e.count ? ` ×${e.count}` : ''}
+                              </div>
+                            ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <aside aria-label="Node details">
+              {chosen ? (
+                <>
+                  <h2>{chosen.label}</h2>
+                  <p className="path">{chosen.path}</p>
+                  <p>
+                    {chosen.kind} {chosen.symbolKind}
+                  </p>
+                  <pre>{chosen.signature}</pre>
+                  <p>{chosen.span ? `Lines ${chosen.span[0]}–${chosen.span[2]}` : ''}</p>
+                  <p>
+                    Incoming: {edges.filter((e) => e.to === chosen.id).length} · Outgoing:{' '}
+                    {edges.filter((e) => e.from === chosen.id).length}
+                  </p>
+                  <p>{chosen.whyIncluded}</p>
+                  <button onClick={() => expand(chosen)}>Explore one step</button>
+                  <button disabled={!chosen.sha256 || chosen.stale} onClick={() => void open()}>
+                    Open in editor
+                  </button>
+                </>
+              ) : (
+                <p>Select a node for source, relations and evidence.</p>
+              )}
+            </aside>
+          </div>
+        </>
+      )}
+      {busy && <p role="status">Loading map…</p>}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <footer>
+        {response ? (
+          <>
+            {response.truncated ? `Truncated: ${response.reasons.join(', ')}. ` : ''}
+            {response.freshness.stale ? 'Snapshot may be stale. ' : ''}Coverage:{' '}
+            {response.freshness.coverage.files.indexed} indexed · {response.freshness.coverage.files.unsupported}{' '}
+            unsupported · {response.freshness.coverage.files.skipped} skipped ·{' '}
+            {response.freshness.coverage.files.failed} failed. Unresolved:{' '}
+            {response.freshness.coverage.unresolved.imports} imports · {response.freshness.coverage.unresolved.calls}{' '}
+            calls. {response.hint} {response.freshness.warnings.join(' ')}
+          </>
+        ) : (
+          'Code Map is a partial index. Missing edges do not prove code is unused.'
+        )}
+      </footer>
+    </main>
+  );
+}
+createRoot(document.getElementById('root')!).render(<App />);

@@ -1,0 +1,29 @@
+{
+  "chromium": "153.0.8010.12",
+  "errors": [],
+  "remote": [],
+  "opened": {
+    "checkoutId": "p",
+    "path": "api.ts",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "generation": 1,
+    "symbolId": "s:api",
+    "span": [
+      2,
+      7,
+      2,
+      30
+    ]
+  },
+  "checks": [
+    "shipped opaque iframe",
+    "CSP offline",
+    "keyboard list",
+    "search",
+    "neighborhood",
+    "source locator",
+    "invalidation",
+    "visibility cancellation",
+    "project switch"
+  ]
+}

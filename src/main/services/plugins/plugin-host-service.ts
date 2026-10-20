@@ -166,6 +166,7 @@ const CORE_COMMANDS = new Set([
   'oxytocin.changes.refresh',
   'oxytocin.panel.focus',
   'oxytocin.mcp.openSettings',
+  'oxytocin.codeMap.openSettings',
   'oxytocin.resources.agentBrief',
 ]);
 
