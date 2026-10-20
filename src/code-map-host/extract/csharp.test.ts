@@ -141,23 +141,28 @@ describe('C# extraction and binding', () => {
     expect(markdown).not.toContain('Comments are never copied');
     await expect(markdown).toMatchFileSnapshot(join(fixture, 'MAP.expected.md'));
   });
-  it('binds every call of the generated multi-project fixture across project references', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'oxy-csharp-fixture-'));
-    try {
-      await makeCodeMapCSharpFixture(root, 1001);
-      const { records, configs } = await load(root);
-      const graph = buildGraph(records, configs, generator);
-      expect(graph.unresolved.filter((entry) => entry.rel === 'calls')).toEqual([]);
-      expect(graph.edges.filter((edge) => edge.rel === 'implements')).toHaveLength(1001);
-      expect(graph.symbols.filter((symbol) => symbol.parts?.length)).toHaveLength(1001);
-      expect(graph.edges.filter((edge) => edge.rel === 'imports' && edge.from.startsWith('c:'))).toHaveLength(2);
-      // Each service after the first calls its predecessor's Run across files (and projects at boundaries).
-      const runs = graph.edges.filter((edge) => edge.rel === 'calls' && edge.to.endsWith('.method:Run(Input0)'));
-      expect(runs).toHaveLength(1);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
+  // Generating and parsing 1001 files can exceed the default timeout under parallel Windows CI load.
+  it(
+    'binds every call of the generated multi-project fixture across project references',
+    { timeout: 30_000 },
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), 'oxy-csharp-fixture-'));
+      try {
+        await makeCodeMapCSharpFixture(root, 1001);
+        const { records, configs } = await load(root);
+        const graph = buildGraph(records, configs, generator);
+        expect(graph.unresolved.filter((entry) => entry.rel === 'calls')).toEqual([]);
+        expect(graph.edges.filter((edge) => edge.rel === 'implements')).toHaveLength(1001);
+        expect(graph.symbols.filter((symbol) => symbol.parts?.length)).toHaveLength(1001);
+        expect(graph.edges.filter((edge) => edge.rel === 'imports' && edge.from.startsWith('c:'))).toHaveLength(2);
+        // Each service after the first calls its predecessor's Run across files (and projects at boundaries).
+        const runs = graph.edges.filter((edge) => edge.rel === 'calls' && edge.to.endsWith('.method:Run(Input0)'));
+        expect(runs).toHaveLength(1);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
   it('indexes enum members in every branch of #if directives', async () => {
     // The pinned grammar cannot recover a member that follows `#endif` after a trailing comma.
     const record = await extract('E.cs', 'enum E { A, C,\n#if X\n B,\n#elif Y\n D,\n#else\n F,\n#endif\n}\n');

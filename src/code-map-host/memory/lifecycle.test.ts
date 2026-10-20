@@ -302,11 +302,11 @@ it('replays a crash between archive and source publication, then forgets every r
     checkouts: [...authority.checkouts, { checkoutId: 'worktree:crash', root: tree }],
   };
   await memory.run(checkout, save);
+  // The writer uses canonical paths, whose casing can differ from tmpdir() on Windows.
+  const sourcePath = join(await safeDirectory(tree, ['.oxy', 'learnings'], false), 'learnings.json');
   const original = writer.atomicWrite;
   vi.spyOn(writer, 'atomicWrite').mockImplementation((path, ...args) =>
-    path === join(tree, '.oxy/learnings/learnings.json')
-      ? Promise.reject(new Error('archive crash'))
-      : original(path, ...args),
+    path === sourcePath ? Promise.reject(new Error('archive crash')) : original(path, ...args),
   );
   await expect(memory.archive(checkout)).rejects.toThrow('archive crash');
   vi.restoreAllMocks();

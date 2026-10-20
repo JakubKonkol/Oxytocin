@@ -53,6 +53,12 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   references, and calls resolved from declared types. Partial types appear once with all their declarations; `bin/` and
   `obj/` next to a project file are skipped.
 
+### Fixed
+
+- **Windows release tests:** the learning archive recovery test uses canonical paths so differences in temporary
+  directory casing do not prevent its simulated write failure. The C# test that generates and parses 1001 files has
+  a dedicated 30-second timeout to tolerate parallel test load.
+
 ## [0.9.10] - 2026-10-19
 
 ### Changed
