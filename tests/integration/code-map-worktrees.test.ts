@@ -88,6 +88,12 @@ it('excludes .oxy data anywhere in the worktree from checkpoints of a project in
     await git('add', '-A');
     await git('commit', '-qm', 'fixture', '--allow-empty');
     await writeFile(join(repo, 'app/api.ts'), 'changed');
+    await writeFile(join(repo, 'app/new.ts'), 'new');
+    await writeFile(join(repo, 'outside.ts'), 'outside');
+    const relativeChanges = await changes({ gitPath: 'git', cwd: join(repo, 'app'), base: 'HEAD' });
+    expect(relativeChanges.map((c) => c.path)).toEqual(['api.ts', 'new.ts']);
+    await rm(join(repo, 'app/new.ts'));
+    await rm(join(repo, 'outside.ts'));
     for (const dir of ['.oxy', 'app/.oxy', 'other/.oxy']) await writeFile(join(repo, dir, 'map.json'), 'map');
     const checkpoint = await commitAll({ gitPath: 'git', cwd: join(repo, 'app'), message: 'checkpoint' });
     expect(checkpoint.files).toBe(1);

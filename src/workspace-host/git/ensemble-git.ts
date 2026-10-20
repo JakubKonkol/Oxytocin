@@ -211,8 +211,8 @@ export async function changes(o: {
 }): Promise<EnsembleChange[]> {
   const range = o.head ? [o.base, o.head] : [o.base];
   const [names, nums] = await Promise.all([
-    gitOk(o.gitPath, o.cwd, ['diff', '-z', '--name-status', '-M', ...range]),
-    gitOk(o.gitPath, o.cwd, ['diff', '-z', '--numstat', '-M', ...range]),
+    gitOk(o.gitPath, o.cwd, ['diff', '--relative', '-z', '--name-status', '-M', ...range]),
+    gitOk(o.gitPath, o.cwd, ['diff', '--relative', '-z', '--numstat', '-M', ...range]),
   ]);
   const byPath = parseNameStatus(names);
   const counts = new Map<string, { additions?: number; deletions?: number; binary?: boolean }>();

@@ -48,6 +48,28 @@ function setup(
 const actions = [{ id: 'yes', title: 'Yes' }];
 
 describe('Code Map API facade', () => {
+  it('guards checkout Git access and validates the returned bounded comparison', async () => {
+    const ref = { projectId: 'p', checkoutId: 'worktree:t' };
+    for (const permissions of [[], ['git.read'], ['code-map.read']]) {
+      const s = setup(() => Promise.resolve(null), { permissions });
+      await expect(s.api.git.getCheckoutChanges(ref)).rejects.toThrow();
+      expect(s.call).not.toHaveBeenCalled();
+    }
+    const result = {
+      ...ref,
+      comparison: 'worktree-base',
+      baseCommit: 'a'.repeat(40),
+      files: [],
+      total: 0,
+      truncated: false,
+    };
+    const s = setup(() => Promise.resolve(null), {
+      permissions: ['git.read', 'code-map.read'],
+      call: () => Promise.resolve(result),
+    });
+    expect(await s.api.git.getCheckoutChanges(ref)).toEqual(result);
+    await expect(s.api.git.getCheckoutChanges({ ...ref, projectId: '' })).rejects.toThrow();
+  });
   it('delivers only targeted, validated compact invalidations', () => {
     const s = setup(() => Promise.resolve(null), { permissions: ['code-map.read'] });
     const listener = vi.fn();

@@ -1,7 +1,8 @@
 # Code Map — finalny plan funkcjonalności
 
-> Implementation progress (2026-10-20): stages 00–09 implemented; release-validation gates remain open. Resume at
-> stage 10 using [status.md](status.md). Stages 10–14 remain. Paid evaluation is deferred to the user; prepare harnesses.
+> Implementation progress (2026-10-20): stages 00–10 implemented; release-validation gates remain open. Resume at
+> stage 11a using [status.md](status.md). Stage 10 includes an offline harness and frozen corpus; paid evaluation
+> remains deferred to the user and the benefit gate is unverified. Stages 11–14 remain.
 
 > **Planning baseline (historical):** plan gotowy do realizacji, implementacja nierozpoczęta. Wersja planu: 2026-10-19 (stan kodu: Oxytocin
 > 0.9.10, plugin API 0.1.10). Ten dokument zastępuje wcześniejsze trzy rundy researchu (są w historii Gita, commit
@@ -1024,11 +1025,11 @@ flowchart LR
 | 03   | [etap-03-graf-typescript-i-map-md.md](etap-03-graf-typescript-i-map-md.md)               | Ekstrakcja i rozwiązywanie TS/JS, `graph.json`, `MAP.md`, determinizm.                                 | nie (commity wewnętrzne)       | 02        | XL      | done (`dd91d6a`) |
 | 04   | [etap-04-serwis-ipc-ui-wydanie-1a.md](etap-04-serwis-ipc-ui-wydanie-1a.md)               | Serwis w main, IPC, zakładka Code Map, wskaźnik, E2E, pomiary.                                          | **tak — wydanie 1a**           | 03        | L       | implemented (`c08d205`); release gates open |
 | 05   | [etap-05-csharp.md](etap-05-csharp.md)                                                   | C#: projekty, przestrzenie nazw, typy partial, wywołania z zadeklarowanych typów.                       | **tak — wydanie 1b**           | 04        | L       | zrobione (`82e37a5`); Windows do potwierdzenia |
-| 06   | [etap-06-narzedzia-mcp.md](etap-06-narzedzia-mcp.md)                                     | Silnik zapytań, kontrakt świeżości, pięć narzędzi MCP, ścisły wybór checkoutu.                          | **tak — wydanie**              | 04        | M       | implemented; app E2E/manual CLI gates open |
-| 07   | [etap-07-worktree-i-instrukcje-agentow.md](etap-07-worktree-i-instrukcje-agentow.md)     | Mapy worktree Ensemble, most Ensemble, blok w `CLAUDE.md`/`AGENTS.md`.                                  | **tak — wydanie**              | 06        | M       | implemented; app E2E gate open |
-| 08   | [etap-08-api-pluginow-code-map.md](etap-08-api-pluginow-code-map.md)                     | Wycinki grafu w hoście, `oxy.codeMap` i `code-map.read` (plugin API 0.2.0).                             | tak (API dla pluginów)         | 06        | M       | implemented; app E2E pending |
+| 06   | [etap-06-narzedzia-mcp.md](etap-06-narzedzia-mcp.md)                                     | Silnik zapytań, kontrakt świeżości, pięć narzędzi MCP, ścisły wybór checkoutu.                          | **tak — wydanie**              | 04        | M       | implemented; app E2E passed, manual CLI gate open |
+| 07   | [etap-07-worktree-i-instrukcje-agentow.md](etap-07-worktree-i-instrukcje-agentow.md)     | Mapy worktree Ensemble, most Ensemble, blok w `CLAUDE.md`/`AGENTS.md`.                                  | **tak — wydanie**              | 06        | M       | implemented; app E2E passed |
+| 08   | [etap-08-api-pluginow-code-map.md](etap-08-api-pluginow-code-map.md)                     | Wycinki grafu w hoście, `oxy.codeMap` i `code-map.read` (plugin API 0.2.0).                             | tak (API dla pluginów)         | 06        | M       | implemented; app E2E passed |
 | 09   | [etap-09-wizualizator.md](etap-09-wizualizator.md)                                       | Spike renderera i plugin Code Map Visualizer.                                                           | **tak — wydanie**              | 08        | L       | implemented; release-validation gates open |
-| 10   | [etap-10-wglady-i-ewaluacja-agentow.md](etap-10-wglady-i-ewaluacja-agentow.md)           | Changes overlay, Impact, selektor checkoutu, eksport, ewaluacja agentów.                                | **tak — wydanie**              | 07, 09    | M       | do zrobienia |
+| 10   | [etap-10-wglady-i-ewaluacja-agentow.md](etap-10-wglady-i-ewaluacja-agentow.md)           | Changes overlay, Impact, selektor checkoutu, eksport, ewaluacja agentów.                                | **tak — wydanie**              | 07, 09    | M       | implemented; corpus/harness ready, paid evaluation gate open |
 | 11   | [etap-11-go-java-python.md](etap-11-go-java-python.md)                                   | Go, Java, Python (osobne wydanie na język).                                                             | **tak — 3 wydania**            | 04        | S–M/język | do zrobienia |
 | 12   | [etap-12-learnings-magazyn-i-menedzer.md](etap-12-learnings-magazyn-i-menedzer.md)       | Magazyn learnings, walidacja dowodów, menedżer Learnings.                                               | **tak — wydanie**              | 10        | L       | do zrobienia |
 | 13   | [etap-13-learnings-narzedzia-agentow.md](etap-13-learnings-narzedzia-agentow.md)         | `oxy_task_context`, `oxy_propose_learning`, `oxy_learning_feedback`.                                    | **tak — wydanie**              | 12        | L       | do zrobienia |

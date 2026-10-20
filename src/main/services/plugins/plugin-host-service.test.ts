@@ -165,6 +165,41 @@ function setup(
 }
 
 describe('PluginHostService', () => {
+  it('requires both Git and Code Map permissions for validated checkout comparisons', async () => {
+    const s = setup({
+      list: [
+        descriptor('git.only', { permissions: ['git.read'] }),
+        descriptor('map.only', { permissions: ['code-map.read'] }),
+        descriptor('both.read', { permissions: ['git.read', 'code-map.read'] }),
+      ],
+    });
+    const result = {
+      projectId: 'p',
+      checkoutId: 'p',
+      comparison: 'head' as const,
+      total: 0,
+      truncated: false,
+      files: [],
+    };
+    s.core.git.checkoutChanges = vi.fn(() => Promise.resolve(result));
+    const ref = { projectId: 'p', checkoutId: 'p' };
+    await expect(s.api('git.only', 'git.getCheckoutChanges', ref)).rejects.toThrow('code-map.read');
+    await expect(s.api('map.only', 'git.getCheckoutChanges', ref)).rejects.toThrow('git.read');
+    expect(await s.api('both.read', 'git.getCheckoutChanges', ref)).toEqual(result);
+    await expect(s.api('both.read', 'git.getCheckoutChanges', { ...ref, root: '/arbitrary' })).rejects.toThrow();
+    let finish!: (value: typeof result) => void;
+    s.core.git.checkoutChanges = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    const pending = s.api('both.read', 'git.getCheckoutChanges', ref);
+    const current = s.plugins.get('both.read');
+    if (!current?.manifest) throw new Error('Missing test plugin');
+    current.manifest.permissions = ['git.read'];
+    finish(result);
+    await expect(pending).rejects.toThrow('code-map.read');
+    s.service.dispose();
+  });
   it('guards Code Map dispatch and cancels pending reads when permission is revoked', async () => {
     const list = [descriptor('map.reader', { permissions: ['code-map.read'] }), descriptor('map.denied')];
     let waiting: AbortSignal | undefined;

@@ -56,10 +56,11 @@ W zakresie: FR-VIS-10, 11, 12, FR-WT-3, metryki sukcesu (sekcja 11).
 
 ## Kryteria ukończenia
 
-- [ ] Changes, Impact i selektor checkoutu działają; eksport zrobiony albo świadomie pominięty (decyzja zapisana).
-- [ ] Ewaluacja opublikowana z przypadkami negatywnymi; bramka korzyści oceniona uczciwie.
-- [ ] Teksty README/CHANGELOG o korzyściach tylko w zakresie wspartym wynikami.
-- [ ] `npm run check` + E2E zielone.
+- [x] Changes, Impact i selektor checkoutu działają; eksport świadomie pominięty (decyzja poniżej).
+- [x] Owner-authorized scope: frozen corpus, offline harness and protocol published, including negative cases.
+- [ ] Paid evaluation results and benefit gate — explicitly deferred to the owner; currently unverified.
+- [x] Teksty README/CHANGELOG o korzyściach tylko w zakresie wspartym wynikami (no savings claims).
+- [x] `npm run check` green on Windows and Linux; relevant app E2E 22/22 under Docker/Xvfb.
 
 ## Commity i CHANGELOG
 
@@ -76,3 +77,27 @@ CHANGELOG (`### Added`):
 
 - Nigdy nie nazywaj wyniku „blast radius” ani „all callers”.
 - Ewaluacja kosztuje realne tokeny — uzgodnij z właścicielem budżet i konta przed uruchomieniem.
+
+## Implementation decisions (2026-10-20)
+
+- Public `slice` gains `view: 'impact'`, with either a file/symbol root or up to 500 `paths`. The host owns incoming
+  traversal, cycles and visit/output limits. File queries project cross-file symbol relations onto their files,
+  without consuming `contains` as a hop; symbol queries preserve symbol evidence. Membership is always excluded.
+- `oxy.git.getCheckoutChanges(ref)` requires both `git.read` and `code-map.read`, checked again after asynchronous
+  work. Main resolves only registered identities and the task's stored base; Workspace Host performs Git I/O. Main
+  checkout status remains the existing Git checkpoint. Task comparison uses `baseCommit`, including committed edits;
+  `--relative` keeps tracked and untracked paths consistent for projects in repository subfolders.
+- Git metadata has independent 500-file / 512 KiB caps; rename old paths participate in impact roots, with visible
+  truncation if the combined root set exceeds 500. Git and index checkpoints are separate, not a transactional diff.
+  Deleted/unindexed files stay in the Git list; the graph never invents dependents for absent nodes.
+- Checkout changes clear history, selection and positions. Removed worktrees fail explicitly, without falling back
+  to the main map. Changes use shapes, text labels and folder grouping as well as colors.
+- Export is omitted (Could): the current iframe/public API has no export/save flow. Adding and validating that flow
+  is deferred; no filesystem permission or external renderer was added just for export.
+- The owner's recorded scope for stages 10/14 is harness/corpus preparation only. There were no paid sessions.
+  `scripts/code-map-agent-evaluation.ts` validates 26 tasks (6 training, 20 held-out), preregisters randomized paired
+  schedules (at least three repetitions), pins corpus/configuration/revision and analyzes normalized results. Missing
+  results/metrics, failed/timeout runs and negative outcomes remain explicit. Default material median time regression
+  is preregistered at 10%, configurable only downward. Benefits remain unverified.
+- Protocol and measurement boundary: [agent-evaluation report](results/2026-10-20-agent-evaluation.md).
+  Implementation and validation: [insights report](results/2026-10-20-insights.md).

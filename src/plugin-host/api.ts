@@ -27,6 +27,7 @@ import type { HostApiEnv, HostPluginInfo } from '@shared/rpc/contracts/plugin-ho
 import { toDisposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { z } from 'zod';
+import { GitCheckoutChangesSchema } from '@shared/domain/git-checkout';
 import {
   CodeMapRefSchema,
   CodeMapCheckoutInfoSchema,
@@ -313,6 +314,11 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       },
     },
     git: {
+      getCheckoutChanges: async (ref) => {
+        require('git.read');
+        require('code-map.read');
+        return GitCheckoutChangesSchema.parse(await call('git.getCheckoutChanges', CodeMapRefSchema.parse(ref)));
+      },
       getStatus: async (projectId) => {
         require('git.read');
         return (await call<RepoStatusLite | null>('git.getStatus', { projectId })) ?? undefined;

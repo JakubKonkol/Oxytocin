@@ -278,6 +278,9 @@ export class CodeMapCheckouts {
           );
           result.data = slice.data ?? undefined;
           result.reasons.push(...slice.reasons);
+          if (query.view === 'impact')
+            result.hint =
+              'Potential dependents in indexed code, not exhaustive. File impact projects symbol dependencies to their files. Deleted or excluded files have no current indexed dependents; use normal search and review the Git diff.';
         } else if (query.kind === 'search') {
           const found = (index.search ??= new CodeSearch(graph)).search(query.query, query.pathPrefix, query.limit);
           result.data = { kind: 'search', matches: found.matches };

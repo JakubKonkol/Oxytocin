@@ -1,6 +1,6 @@
 # Code Map implementation status
 
-Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
+Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
 
 ## Current work
 
@@ -11,19 +11,25 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 04 implementation complete: main service, validated renderer IPC, Project settings UI and reproducible packaged full-index benchmark. Release-validation gates remain open (see below).
 - Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met.
 - Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md.
-- Stage 06 implemented (`92ee704`): bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. Manual CLI validation and app E2E remain open; see results/2026-10-20-mcp-tools.md.
+- Stage 06 implemented (`92ee704`): bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. App E2E passes; manual CLI validation remains open. See results/2026-10-20-mcp-tools.md for the original measurements.
 - Stage 07 implemented (`f8fec0a`): isolated worktree registrations, role-authenticated MCP bridge, explicit instruction-file blocks and `.oxy` exclusions from Ensemble diffs/checkpoints. See results/2026-10-20-worktrees-instructions.md.
 - Stage 08 implemented (`6e20c52`): Plugin API 0.2.0, bounded slices, permission checks, cancellation, invalidations and verified worktree-aware source navigation. Full check/build passed.
 - Stages 05–08 verified on Linux after the stage 09 handoff: app E2E for stages 06–09 now passes; fixes and remaining findings are under "Verification of stages 05–08".
-- Stage 09 implemented in the handoff commit: built-in visualizer, local Cytoscape renderer, keyboard list, settings/menu entry points and reproducible Chromium iframe measurements/smoke. See results/2026-10-20-renderer.md. App E2E and terminal-regression measurements remain open.
-- Stages 10–14 are not implemented. Resume at stage 10; the user requested stopping after the current stage and handing off to another agent.
+- Stage 09 implemented: built-in visualizer, local Cytoscape renderer, keyboard list, settings/menu entry points and reproducible Chromium iframe measurements/smoke. App E2E now passes; terminal-regression measurements remain open.
+- Stage 10 implemented: host-owned impact/dependents, Changes and Impact views, strict checkout selection, authorized worktree/base Git comparison and verified source navigation. Export deliberately deferred. Offline evaluation corpus/harness prepared (26 tasks, 20 held-out); no paid sessions, benefit gate unverified. See `results/2026-10-20-insights.md` and `results/2026-10-20-agent-evaluation.md`.
+- Stages 11–14 are not implemented. Resume at stage 11a (Go), then 11b Java, 11c Python and 12–14, with separate commits and no push.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
 
-- Current handoff environment: Windows, Node 24.16.0. Docker is absent; WSL has no installed distribution. The user
-  explicitly authorized commits after available checks with Electron E2E recorded as unexecuted. Do not open desktop
-  Electron windows. Playwright Chromium Headless Shell 153.0.8010.12 is installed for standalone iframe checks.
+- Stage 10 environment: Windows, Node 24.11.1; Docker Desktop is running (the user confirmed availability). The
+  existing `oxy-code-map-work` container uses Linux Node 24.21.0 and `oxy-e2e:latest`. Electron E2E runs under Xvfb;
+  never open desktop Electron windows. Playwright Chromium Headless Shell is installed for standalone iframe checks.
+- For source sync, exclude the root dependency/build directories, but explicitly copy the tracked fake CLIs under
+  `tests/fixtures/agents/node_modules/`; a blanket `--exclude=node_modules` silently omits them. Linux dependencies
+  were refreshed with `npm ci`. The container's PID 1 is `sleep infinity`, so process-tree tests need a child subreaper
+  (or a new container with `--init`) to reap killed grandchildren; the stage 10 validation helper is in
+  `test-results/code-map-stage10-reaper.py` and `/tmp/code-map-stage10-reaper.py` in the container.
 - The following environment notes describe earlier sessions; verify availability rather than assuming those tools
   or containers still exist.
 
@@ -154,6 +160,27 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
   3 latency). E2E `code-map`, `code-map-visualizer`, `ensemble`, `file-preview`, `ipc-hosts`, `smoke`: 21/21 passed.
 
 ## Resume checkpoint
+
+### Handoff after stage 10
+
+- The plan explicitly scopes each implementation session to one stage; stage 10 is implemented. Continue at
+  `etap-11-go-java-python.md` (Go first). Work on `main`, commit per stage, never push; the owner pushes local commits.
+- Changes uses `oxy.git.getCheckoutChanges(ref)`, with `git.read` plus `code-map.read`. Worktree comparison derives
+  task/base from authorized registration; it never accepts a plugin-supplied root/base. Strict selection applies to
+  queries, history resets and source locators. Never substitute the main checkout after removal.
+- `impact` slices use `paths` or `root` (mutually exclusive), incoming-only depth 1–3, no `contains` and no heuristic
+  edges by default. Visit caps 2,000/5,000, slice caps 500/1,000/512 KiB; Git metadata separately caps 500 files/512 KiB.
+  File dependency adjacency is lazy per generation and keeps original edge references; no second graph copy.
+- Git and map snapshots are independent checkpoints. Deleted/excluded/renamed-away files remain in Changes metadata
+  but cannot have current indexed dependents. Their absence is never evidence that the change is safe.
+- Evaluation: `scripts/code-map-agent-evaluation.ts` has `validate`, `prepare` and `report`; it never invokes an agent.
+  The frozen corpus is revision-specific, with 6 training and 20 held-out tasks. See the evaluation report for the
+  paired protocol and required metrics. Actual sessions are deferred to the owner. No savings claims or Automatic
+  learnings before measured gates. Future language stages must version/refreeze the corpus's unsupported answers.
+- Stage 10 E2E: 22/22 passed in Docker/Xvfb, including Code Map, visualizer Changes/Impact/worktree source navigation,
+  Ensemble, file preview, IPC hosts and startup. Full check passes on Windows (1,387 unit, 69 integration, 3 latency)
+  and Linux with a child subreaper (1,391 unit, 77 integration, 3 latency). Windows build and headless shipped-iframe smoke pass.
+  Full details and remaining release gates are recorded in `results/2026-10-20-insights.md`.
 
 ### Handoff after stage 09 (user requested stopping)
 

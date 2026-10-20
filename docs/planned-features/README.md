@@ -4,6 +4,6 @@ Research and implementation briefs for future Oxytocin features. These documents
 
 | Feature  | Status                                                                                        | Entry point                    |
 | -------- | --------------------------------------------------------------------------------------------- | ------------------------------ |
-| Code Map | Final plan ready (written in Polish at the owner's request: one main document plus stage files `etap-00`…`etap-14`); implementation not started | [Overview](code-map/README.md) |
+| Code Map | Stages 00–10 implemented; stages 11–14 remain. Release/performance gates and paid agent evaluation remain open. | [Overview](code-map/README.md) |
 
 Each feature should record the problem, inspected source revisions, decisions and alternatives, integration points, implementation steps, acceptance tests, and unresolved questions. Separate observed behavior from proposed behavior and measured results from targets. Update the source baseline before implementing an older plan.

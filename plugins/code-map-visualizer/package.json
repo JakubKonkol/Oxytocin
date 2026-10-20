@@ -18,6 +18,7 @@
     ],
     "permissions": [
       "projects.read",
+      "git.read",
       "code-map.read"
     ],
     "contributes": {

@@ -29,7 +29,8 @@ export const CodeMapCheckoutInfoSchema = CodeMapRefSchema.extend({
 export const CodeMapSliceQuerySchema = z
   .object({
     kind: z.literal('slice'),
-    view: z.enum(['overview', 'file', 'neighborhood']),
+    view: z.enum(['overview', 'file', 'neighborhood', 'impact']),
+    paths: z.array(CodeMapRelativePathSchema).max(500).optional(),
     root: z
       .union([
         z.object({ path: CodeMapRelativePathSchema }).strict(),
@@ -51,7 +52,14 @@ export const CodeMapSliceQuerySchema = z
     freshness: CodeMapFreshnessModeSchema.default('latest'),
   })
   .strict()
-  .refine((v) => v.view === 'overview' || !!v.root, 'File and neighborhood slices need a root');
+  .refine(
+    (v) => v.view === 'overview' || !!v.root || (v.view === 'impact' && v.paths !== undefined),
+    'This slice needs a root or impact paths',
+  )
+  .refine(
+    (v) => v.paths === undefined || (v.view === 'impact' && !v.root),
+    'Paths are only valid for impact without a root',
+  );
 export type CodeMapSliceQuery = z.infer<typeof CodeMapSliceQuerySchema>;
 const ref = CodeMapRefSchema.shape;
 export const CodeMapPluginRequestSchema = z.discriminatedUnion('kind', [

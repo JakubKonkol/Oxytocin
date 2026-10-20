@@ -8,7 +8,8 @@ export class CodeRelations {
   private readonly nodes = new Map<string, Data['nodes'][number]>();
   private readonly incoming = new Map<string, CodeMapEdge[]>();
   private readonly outgoing = new Map<string, CodeMapEdge[]>();
-  constructor(graph: CodeMapGraph) {
+  private fileIncoming?: Map<string, CodeMapEdge[]>;
+  constructor(private readonly graph: CodeMapGraph) {
     for (const value of graph.files) this.nodes.set(value.id, { kind: 'file', value, whyIncluded: '' });
     for (const value of graph.symbols) this.nodes.set(value.id, { kind: 'symbol', value, whyIncluded: '' });
     for (const value of graph.groups) this.nodes.set(value.id, { kind: 'group', value, whyIncluded: '' });
@@ -21,6 +22,80 @@ export class CodeRelations {
       this.incoming.set(edge.to, incoming);
       this.outgoing.set(edge.from, outgoing);
     }
+  }
+  private fileDependencies(): Map<string, CodeMapEdge[]> {
+    if (this.fileIncoming) return this.fileIncoming;
+    const incoming = new Map<string, CodeMapEdge[]>();
+    for (const edge of this.graph.edges) {
+      const from = this.fileId(edge.from),
+        to = this.fileId(edge.to);
+      if (from && to && from !== to && edge.rel !== 'contains') {
+        const projected = incoming.get(to) ?? [];
+        projected.push(edge);
+        incoming.set(to, projected);
+      }
+    }
+    return (this.fileIncoming = incoming);
+  }
+  private fileId(id: string): string | undefined {
+    const node = this.nodes.get(id);
+    return node?.kind === 'file' ? node.value.id : node?.kind === 'symbol' ? node.value.file : undefined;
+  }
+  /** File membership is projected without consuming a dependency hop. Deleted/unindexed roots stay absent. */
+  dependents(
+    paths: string[],
+    request: Pick<Request, 'depth' | 'relations' | 'includeHeuristic'>,
+  ): { data: Data; truncated: boolean } {
+    const incoming = this.fileDependencies();
+    const nodes: Data['nodes'] = [],
+      edges: Data['edges'] = [];
+    const queue: { id: string; depth: number }[] = [],
+      seen = new Set<string>(),
+      seenEdges = new Set<CodeMapEdge>();
+    for (const path of [...new Set(paths)].sort()) {
+      const id = `f:${path}`,
+        node = this.nodes.get(id);
+      if (!node || node.kind !== 'file') continue;
+      seen.add(id);
+      nodes.push({ ...node, whyIncluded: 'requested changed file' });
+      queue.push({ id, depth: 0 });
+    }
+    let visitedEdges = 0,
+      truncated = false;
+    outer: for (let offset = 0; offset < queue.length; offset++) {
+      const current = queue[offset]!;
+      if (current.depth === request.depth) continue;
+      for (const edge of incoming.get(current.id) ?? []) {
+        if (seenEdges.has(edge)) continue;
+        if (visitedEdges === 5000) {
+          truncated = true;
+          break outer;
+        }
+        seenEdges.add(edge);
+        visitedEdges++;
+        if (!request.relations.includes(edge.rel) || (!request.includeHeuristic && edge.prov === 'heuristic')) continue;
+        const from = this.fileId(edge.from)!;
+        if (!seen.has(from)) {
+          if (seen.size === 2000) {
+            truncated = true;
+            break outer;
+          }
+          seen.add(from);
+          nodes.push({ ...this.nodes.get(from)!, whyIncluded: `${edge.rel} to ${current.id}`.slice(0, 200) });
+          queue.push({ id: from, depth: current.depth + 1 });
+        }
+        edges.push({
+          ...edge,
+          from,
+          to: current.id,
+          whyIncluded: `${edge.prov} file dependency at depth ${current.depth + 1}`,
+        });
+      }
+    }
+    return {
+      data: { kind: 'relations', nodes, edges, visitedNodes: seen.size, visitedEdges, exhaustive: false },
+      truncated,
+    };
   }
   query(request: Request): { data: Data | null; truncated: boolean } {
     const root = request.symbolId ?? `f:${request.path!}`;

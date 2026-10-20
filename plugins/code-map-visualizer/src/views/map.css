@@ -87,6 +87,12 @@ label {
 .path {
   overflow-wrap: anywhere;
 }
+.changed-files {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  padding: var(--space-2, 8px);
+}
 td,
 th {
   vertical-align: top;

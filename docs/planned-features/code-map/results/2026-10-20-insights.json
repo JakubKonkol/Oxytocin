@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-20",
+  "baseRevision": "6b7b5de",
+  "electron": "44.4.5",
+  "windows": { "node": "24.11.1", "check": "passed", "unitPassed": 1387, "unitSkipped": 5, "integrationPassed": 69, "integrationSkipped": 66, "latencyPassed": 3, "build": "passed", "headlessIframeSmoke": "passed" },
+  "linux": { "node": "24.21.0", "check": "passed-with-child-subreaper", "unitPassed": 1391, "unitSkipped": 1, "integrationPassed": 77, "integrationSkipped": 58, "latencyPassed": 3, "initialPtyProcessTreeFailure": true, "e2ePassed": 22, "e2eFailed": 0, "display": "Xvfb" },
+  "evaluation": { "corpusTasks": 26, "trainingTasks": 6, "heldOutTasks": 20, "sessionsRun": 0, "benefitGate": "unverified" },
+  "export": "deferred",
+  "performanceMeasurements": null,
+  "releaseReady": false
+}

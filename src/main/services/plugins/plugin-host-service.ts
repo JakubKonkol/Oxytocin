@@ -8,6 +8,7 @@ import {
 import { type AgentInfoWithTerminal, type AgentStateReport, AgentStateReportSchema } from '@shared/domain/agent';
 import type { AgentAccountInfo, AgentLimits } from '@shared/domain/agent-limits';
 import type { RepoStatus } from '@shared/domain/git';
+import { GitCheckoutChangesSchema } from '@shared/domain/git-checkout';
 import { type PluginDescriptor, type PluginPermission } from '@shared/domain/plugin';
 import { type Project, PROJECT_COLOR_VALUES } from '@shared/domain/project';
 import type { Settings } from '@shared/domain/settings';
@@ -108,7 +109,10 @@ export interface PluginCorePort {
     reportLimits(limits: unknown): void;
     sendPrompt(terminalId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
   };
-  git: { status(projectId: string): RepoStatus | null };
+  git: {
+    status(projectId: string): RepoStatus | null;
+    checkoutChanges?(ref: { projectId: string; checkoutId: string }): Promise<z.infer<typeof GitCheckoutChangesSchema>>;
+  };
   settings(): Settings;
   updateSettings(patch: Record<string, unknown>): Promise<unknown>;
   openExternal(url: string): Promise<void>;
@@ -960,6 +964,18 @@ export class PluginHostService implements Disposable {
         this.permission(plugin, 'git.read');
         const status = core.git.status(String(p['projectId']));
         return status && status.state === 'ok' ? this.statusLite(status) : null;
+      }
+      case 'git.getCheckoutChanges': {
+        this.permission(plugin, 'git.read');
+        this.permission(plugin, 'code-map.read');
+        if (!core.git.checkoutChanges) throw new OxyError('UNAVAILABLE', 'Checkout changes are unavailable');
+        const result = await core.git.checkoutChanges(CodeMapRefSchema.parse(p));
+        const current = this.deps.plugins.get(pluginId);
+        if (!current || !this.deps.plugins.enabled().some((p) => p.id === pluginId))
+          throw new OxyError('UNAVAILABLE', 'Plugin is no longer enabled');
+        this.permission(current, 'git.read');
+        this.permission(current, 'code-map.read');
+        return GitCheckoutChangesSchema.parse(result);
       }
       case 'ui.showNotification': {
         const level = p['level'] === 'error' ? 'error' : p['level'] === 'warning' ? 'warning' : 'info';

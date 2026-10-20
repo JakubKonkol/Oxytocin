@@ -150,7 +150,7 @@ export interface CodeMapSliceEdge extends CodeMapEdge {
 }
 export interface CodeMapSlice {
   kind: 'slice';
-  view: 'overview' | 'file' | 'neighborhood';
+  view: 'overview' | 'file' | 'neighborhood' | 'impact';
   nodes: CodeMapSliceNode[];
   edges: CodeMapSliceEdge[];
   visitedNodes: number;
@@ -243,7 +243,9 @@ export type CodeMapRequest = CodeMapRef &
     | ({ kind: 'relations'; path?: string; symbolId?: string } & CodeMapTraversal & CodeMapQueryOptions)
     | ({
         kind: 'slice';
-        view: 'overview' | 'file' | 'neighborhood';
+        view: 'overview' | 'file' | 'neighborhood' | 'impact';
+        /** Multi-file impact, at most 500 checkout-relative paths. Mutually exclusive with root. */
+        paths?: string[];
         root?: { path: string } | { symbolId: string };
         pathPrefix?: string;
         generation?: number;
@@ -518,7 +520,16 @@ export interface RepoStatusLite {
 }
 export interface GitApi {
   getStatus(projectId: string): Promise<RepoStatusLite | undefined>;
+  /** Requires git.read and code-map.read. Worktrees compare with their recorded Ensemble base. */
+  getCheckoutChanges(ref: CodeMapRef): Promise<GitCheckoutChanges>;
   onDidChangeStatus: Event<RepoStatusLite>;
+}
+export interface GitCheckoutChanges extends CodeMapRef {
+  comparison: 'head' | 'worktree-base';
+  baseCommit?: string;
+  files: { path: string; oldPath?: string; status: string }[];
+  total: number;
+  truncated: boolean;
 }
 
 // ── UI ───────────────────────────────────────────────────

@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- Impact slices accept a symbol/file root or up to 500 changed paths and return bounded incoming dependencies.
+  `oxy.git.getCheckoutChanges(ref)` requires `git.read` and `code-map.read`; worktrees compare with their stored task
+  base. Git paths are checkout-relative; changes and impact remain explicitly non-exhaustive.
 - `oxy.codeMap` (`code-map.read`): list registered checkouts, read status, query search/outline/relations and bounded
   graph slices, subscribe to compact invalidations, and open verified source locations. Query cancellation uses
   `AbortSignal`; stale slice expansions return `SNAPSHOT_CHANGED`. Source spans use one-based lines and zero-based

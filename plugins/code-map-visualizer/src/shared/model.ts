@@ -1,9 +1,10 @@
 import { z } from 'zod';
-import type { CodeMapCheckout, CodeMapResponse } from '@oxytocin/plugin-api';
+import type { CodeMapCheckout, CodeMapResponse, GitCheckoutChanges } from '@oxytocin/plugin-api';
 
 export const SelectionSchema = z
   .object({
-    view: z.enum(['overview', 'file', 'neighborhood', 'search']).default('overview'),
+    view: z.enum(['overview', 'file', 'neighborhood', 'search', 'changes', 'impact']).default('overview'),
+    checkoutId: z.string().min(1).max(200).optional(),
     root: z
       .union([
         z.object({ path: z.string().min(1).max(4096) }).strict(),
@@ -30,4 +31,6 @@ export interface Model {
 export interface Answer {
   projectId: string;
   response: CodeMapResponse;
+  changes?: GitCheckoutChanges;
+  changeRootsTruncated?: boolean;
 }

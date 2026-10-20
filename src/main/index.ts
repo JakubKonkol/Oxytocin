@@ -72,6 +72,7 @@ import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
 import { CodeMapActivityHints } from './services/code-map/activity-hints';
 import { CodeMapService } from './services/code-map/code-map-service';
+import { checkoutChanges } from './services/code-map/checkout-changes';
 import { isWithin } from './services/projects/path-utils';
 import { projectPathsFromArgv } from './app/argv';
 import { WorkspaceStateService } from './services/workspace-state/workspace-state-service';
@@ -662,7 +663,25 @@ function bootstrap(): void {
         reportLimits: (limits) => agentLimits.report(limits),
         sendPrompt: (id, text) => agentPrompts.send(id, text),
       },
-      git: { status: (id) => git.status(id) },
+      git: {
+        status: (id) => git.status(id),
+        checkoutChanges: (ref) =>
+          checkoutChanges(ref, {
+            root: (projectId, checkoutId) => codeMap.checkoutRoot(projectId, checkoutId),
+            status: (id) => git.status(id),
+            task: (id) => {
+              const record = ensemble.get(id);
+              return record
+                ? {
+                    projectId: record.task.projectId,
+                    path: record.run.worktree?.path,
+                    baseCommit: record.run.worktree?.baseCommit,
+                  }
+                : undefined;
+            },
+            changes: (id) => ensemble.changes(id),
+          }),
+      },
       settings: () => settings.get(),
       updateSettings: (patch) => settings.update(patch),
       openExternal: (url) => shell.openExternal(url),

@@ -22,6 +22,8 @@ function App() {
     theme = useOxyTheme();
   const [model, setModel] = useState<Model>({ project: null, checkouts: [] }),
     [response, setResponse] = useState<CodeMapResponse>();
+  const [changes, setChanges] = useState<Answer['changes']>(),
+    [changeRootsTruncated, setChangeRootsTruncated] = useState(false);
   const [selection, setSelection] = useState(initial),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
@@ -54,6 +56,7 @@ function App() {
         positions.current.clear();
         cy.current?.elements().remove();
         setResponse(undefined);
+        setChanges(undefined);
         setSelected(undefined);
         project.current = id;
         current.current = initial();
@@ -75,8 +78,14 @@ function App() {
         if (!gate.current.accepts(request, answer.projectId)) return;
       }
       setResponse(answer.response);
+      setChanges(answer.changes);
+      setChangeRootsTruncated(!!answer.changeRootsTruncated);
     } catch (e) {
-      if (gate.current.accepts(seq, expected)) setError(String(e));
+      if (gate.current.accepts(seq, expected)) {
+        setError(String(e));
+        setResponse(undefined);
+        setChanges(undefined);
+      }
     } finally {
       if (gate.current.accepts(seq, expected)) setBusy(false);
     }
@@ -98,6 +107,7 @@ function App() {
         positions.current.clear();
         cy.current?.elements().remove();
         setResponse(undefined);
+        setChanges(undefined);
         setSelected(undefined);
         setModel({ project: null, checkouts: [] });
       }
@@ -123,7 +133,7 @@ function App() {
   useEffect(() => {
     if (view) queueMicrotask(() => void load());
   }, [selection, view, load]);
-  const nodes: CodeMapSliceNode[] =
+  const rawNodes: CodeMapSliceNode[] =
     response?.data?.kind === 'slice'
       ? response.data.nodes
       : response?.data?.kind === 'search'
@@ -138,6 +148,15 @@ function App() {
             stale: m.stale,
           }))
         : [];
+  const changedPaths = new Set(changes?.files.flatMap((f) => (f.oldPath ? [f.path, f.oldPath] : [f.path])));
+  const nodes = rawNodes.map((node) => ({
+    ...node,
+    changeKind: changes ? (changedPaths.has(node.path ?? '') ? 'changed' : 'dependent') : 'none',
+  }));
+  const grouped = selection.view === 'impact' || selection.view === 'changes';
+  const orderedNodes = grouped
+    ? [...nodes].sort((a, b) => (a.path ?? a.label).localeCompare(b.path ?? b.label))
+    : nodes;
   const edges: CodeMapSliceEdge[] = (response?.data?.kind === 'slice' ? response.data.edges : []).filter(
     (e) => provenance === 'all' || e.prov === provenance,
   );
@@ -183,6 +202,19 @@ function App() {
           },
           { selector: 'edge[rel = "contains"]', style: { 'line-style': 'dotted', 'target-arrow-shape': 'none' } },
           { selector: 'edge[prov = "heuristic"]', style: { 'line-style': 'dashed' } },
+          {
+            selector: 'node[changeKind = "changed"]',
+            style: {
+              'background-color': color('--warning'),
+              shape: 'diamond',
+              'border-width': 3,
+              'border-color': color('--text-primary'),
+            },
+          },
+          {
+            selector: 'node[changeKind = "dependent"]',
+            style: { 'background-color': color('--text-muted'), shape: 'round-rectangle' },
+          },
           { selector: ':selected', style: { 'border-width': 3, 'border-color': color('--text-primary') } },
         ],
       });
@@ -223,6 +255,8 @@ function App() {
     gate.current.invalidate();
     setSelected(undefined);
     setError('');
+    setResponse(undefined);
+    setChanges(undefined);
     setSelection(next);
     setHistory((h) => ({ entries: [...h.entries.slice(0, h.at + 1), next].slice(-50), at: Math.min(h.at + 1, 49) }));
   };
@@ -245,6 +279,9 @@ function App() {
   const chosen = nodes.find((n) => n.id === selected);
   const travel = (delta: number) => {
     gate.current.invalidate();
+    setResponse(undefined);
+    setChanges(undefined);
+    setSelected(undefined);
     const at = history.at + delta;
     setHistory({ ...history, at });
     setSelection(history.entries[at]!);
@@ -271,6 +308,32 @@ function App() {
           {model.checkouts.find((c) => c.checkoutId === response?.checkoutId)?.label ?? 'Main checkout'} ·{' '}
           {response?.freshness.state ?? 'Unavailable'} · Generation {response?.freshness.generation ?? '—'}
         </span>
+        {model.checkouts.length > 0 && (
+          <label>
+            Checkout
+            <select
+              aria-label="Checkout"
+              value={selection.checkoutId ?? model.checkouts.find((c) => c.mode === 'project')?.checkoutId ?? ''}
+              onChange={(e) => {
+                positions.current.clear();
+                cy.current?.elements().remove();
+                const next = { ...initial(), checkoutId: e.target.value };
+                navigate(next);
+                setHistory({ entries: [next], at: 0 });
+              }}
+            >
+              {selection.checkoutId && !model.checkouts.some((c) => c.checkoutId === selection.checkoutId) && (
+                <option value={selection.checkoutId}>Checkout removed</option>
+              )}
+              {model.checkouts.map((c) => (
+                <option key={c.checkoutId} value={c.checkoutId}>
+                  {c.label}
+                  {c.mode === 'worktree' ? ` · ${c.checkoutId}` : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </header>
       {!model.checkouts.length ? (
         <section>
@@ -282,12 +345,31 @@ function App() {
       ) : (
         <>
           <nav aria-label="Code Map views">
-            {(['overview', 'file', 'neighborhood', 'search'] as const).map((mode) => (
+            {(['overview', 'file', 'neighborhood', 'search', 'changes', 'impact'] as const).map((mode) => (
               <button
                 key={mode}
                 aria-current={selection.view === mode ? 'page' : undefined}
-                disabled={(mode === 'file' || mode === 'neighborhood') && !selection.root}
-                onClick={() => navigate({ ...selection, view: mode, generation: undefined })}
+                disabled={
+                  ((mode === 'file' || mode === 'neighborhood') && !selection.root) ||
+                  (mode === 'impact' && !selection.root && (!chosen?.path || chosen.kind === 'group'))
+                }
+                onClick={() =>
+                  navigate({
+                    ...selection,
+                    view: mode,
+                    generation: undefined,
+                    ...(mode === 'impact' && chosen
+                      ? {
+                          root:
+                            chosen.kind === 'symbol'
+                              ? { symbolId: chosen.id }
+                              : chosen.path
+                                ? { path: chosen.path }
+                                : selection.root,
+                        }
+                      : {}),
+                  })
+                }
               >
                 {mode[0]!.toUpperCase() + mode.slice(1)}
               </button>
@@ -325,7 +407,8 @@ function App() {
             <label>
               Direction
               <select
-                value={selection.direction}
+                value={selection.view === 'impact' || selection.view === 'changes' ? 'incoming' : selection.direction}
+                disabled={selection.view === 'impact' || selection.view === 'changes'}
                 onChange={(e) => navigate({ ...selection, direction: e.target.value as Selection['direction'] })}
               >
                 {['both', 'incoming', 'outgoing'].map((v) => (
@@ -383,6 +466,41 @@ function App() {
             <button onClick={() => cy.current?.zoom(cy.current.zoom() / 1.2)}>Zoom out</button>
             <button onClick={() => cy.current?.fit(undefined, 40)}>Fit</button>
           </div>
+          {grouped && (
+            <p role="note">
+              Potential dependents in indexed code. This list is not exhaustive; missing edges do not prove code is
+              unused.
+            </p>
+          )}
+          {changes && (
+            <section aria-label="Changed files" className="changed-files">
+              <p>
+                {changes.comparison === 'worktree-base'
+                  ? `Compared with worktree base ${changes.baseCommit?.slice(0, 12)}`
+                  : 'Uncommitted changes compared with HEAD'}{' '}
+                · {changes.total} changed files. ◆ Changed file · ▰ Potential dependent.
+                {changes.truncated || changeRootsTruncated
+                  ? ' Change paths truncated; narrow the change set before relying on this view.'
+                  : ''}
+              </p>
+              {!changes.files.length && <p>No changes reported by Git.</p>}
+              {changes.files.map((file, i) => {
+                const folder = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : '.';
+                const previous = changes.files[i - 1]?.path;
+                const previousFolder = previous?.includes('/') ? previous.slice(0, previous.lastIndexOf('/')) : '.';
+                return (
+                  <div key={file.path}>
+                    {(i === 0 || previousFolder !== folder) && <strong>{folder}/</strong>}
+                    <div>
+                      ◆ {file.path} · {file.status}
+                      {file.oldPath ? ` (from ${file.oldPath})` : ''}
+                      {!rawNodes.some((n) => n.path === file.path) && ' · not in this bounded indexed slice'}
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          )}
           <div className="body">
             <section className="content">
               {!listOnly && <div className="graph" ref={graph} aria-label="Code dependency graph" />}
@@ -396,25 +514,21 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {nodes.map((n) => (
-                      <tr key={n.id}>
-                        <td>
-                          <button onClick={() => setSelected(n.id)} onDoubleClick={() => expand(n)}>
-                            {n.label}
-                          </button>
-                        </td>
-                        <td>{n.kind}</td>
-                        <td>
-                          {edges
-                            .filter((e) => e.from === n.id || e.to === n.id)
-                            .map((e, i) => (
-                              <div key={i}>
-                                {e.rel} {e.from === n.id ? 'outgoing' : 'incoming'} · {e.prov}
-                                {e.count ? ` ×${e.count}` : ''}
-                              </div>
-                            ))}
-                        </td>
-                      </tr>
+                    {orderedNodes.map((n, i) => (
+                      <NodeRow
+                        key={n.id}
+                        node={n}
+                        edges={edges}
+                        setSelected={setSelected}
+                        expand={expand}
+                        folder={
+                          grouped
+                            ? n.path?.slice(0, n.path.lastIndexOf('/') < 0 ? 0 : n.path.lastIndexOf('/')) || '.'
+                            : undefined
+                        }
+                        previousPath={i ? orderedNodes[i - 1]?.path : undefined}
+                        first={i === 0}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -436,6 +550,19 @@ function App() {
                   </p>
                   <p>{chosen.whyIncluded}</p>
                   <button onClick={() => expand(chosen)}>Explore one step</button>
+                  <button
+                    onClick={() =>
+                      navigate({
+                        ...selection,
+                        view: 'impact',
+                        root: chosen.kind === 'symbol' ? { symbolId: chosen.id } : { path: chosen.path! },
+                        generation: response?.freshness.generation,
+                      })
+                    }
+                    disabled={!chosen.path || chosen.kind === 'group'}
+                  >
+                    Show potential dependents
+                  </button>
                   <button disabled={!chosen.sha256 || chosen.stale} onClick={() => void open()}>
                     Open in editor
                   </button>
@@ -469,6 +596,57 @@ function App() {
         )}
       </footer>
     </main>
+  );
+}
+function NodeRow({
+  node: n,
+  edges,
+  setSelected,
+  expand,
+  folder,
+  previousPath,
+  first,
+}: {
+  node: CodeMapSliceNode & { changeKind: string };
+  edges: CodeMapSliceEdge[];
+  setSelected: (id: string) => void;
+  expand: (node: CodeMapSliceNode) => void;
+  folder?: string;
+  previousPath?: string;
+  first: boolean;
+}) {
+  const previousFolder =
+    previousPath?.slice(0, previousPath.lastIndexOf('/') < 0 ? 0 : previousPath.lastIndexOf('/')) || '.';
+  return (
+    <>
+      {folder && (first || previousFolder !== folder) && (
+        <tr>
+          <th colSpan={3}>{folder}/</th>
+        </tr>
+      )}
+      <tr key={n.id}>
+        <td>
+          <button onClick={() => setSelected(n.id)} onDoubleClick={() => expand(n)}>
+            {n.changeKind === 'changed' ? '◆ ' : n.changeKind === 'dependent' ? '▰ ' : ''}
+            {n.label}
+          </button>
+        </td>
+        <td>
+          {n.kind}
+          {n.changeKind === 'changed' ? ' · Changed' : n.changeKind === 'dependent' ? ' · Potential dependent' : ''}
+        </td>
+        <td>
+          {edges
+            .filter((e) => e.from === n.id || e.to === n.id)
+            .map((e, i) => (
+              <div key={i}>
+                {e.rel} {e.from === n.id ? 'outgoing' : 'incoming'} · {e.prov}
+                {e.count ? ` ×${e.count}` : ''}
+              </div>
+            ))}
+        </td>
+      </tr>
+    </>
   );
 }
 createRoot(document.getElementById('root')!).render(<App />);

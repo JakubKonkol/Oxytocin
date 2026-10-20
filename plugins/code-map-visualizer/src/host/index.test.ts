@@ -2,6 +2,86 @@ import { expect, it, vi } from 'vitest';
 import type { PluginContext, PluginView, ViewProvider, CodeMapChange, Disposable } from '@oxytocin/plugin-api';
 import { activate } from './index';
 
+it('keeps Changes and Impact in the selected checkout and refuses a removed worktree without fallback', async () => {
+  let provider: ViewProvider | undefined;
+  const subscriptions: Disposable[] = [],
+    disposable = { dispose() {} };
+  const requests = new Map<string, (input: unknown) => unknown>();
+  let available = true;
+  const query = vi.fn((request: { checkoutId: string }) =>
+    Promise.resolve({ checkoutId: request.checkoutId, code: 'OK' }),
+  );
+  const getCheckoutChanges = vi.fn(() =>
+    Promise.resolve({
+      projectId: 'p',
+      checkoutId: 'worktree:t',
+      comparison: 'worktree-base',
+      baseCommit: 'a'.repeat(40),
+      files: [{ path: 'new.ts', oldPath: 'old.ts', status: 'renamed' }],
+      total: 1,
+      truncated: false,
+    }),
+  );
+  const ctx = {
+    subscriptions,
+    oxy: {
+      projects: { getActive: () => Promise.resolve({ id: 'p' }), onDidChangeActive: () => disposable },
+      commands: { register: () => disposable },
+      git: { onDidChangeStatus: () => disposable, getCheckoutChanges },
+      codeMap: {
+        onDidChange: () => disposable,
+        query,
+        listCheckouts: () =>
+          Promise.resolve([
+            { projectId: 'p', checkoutId: 'p', mode: 'project' },
+            ...(available ? [{ projectId: 'p', checkoutId: 'worktree:t', mode: 'worktree' }] : []),
+          ]),
+      },
+      ui: {
+        registerPanelProvider: (_id: string, p: ViewProvider) => {
+          provider = p;
+          return disposable;
+        },
+      },
+    },
+  } as unknown as PluginContext;
+  await activate(ctx);
+  await provider!.resolve({
+    projectId: 'p',
+    visible: true,
+    onRequest: (id: string, handler: (input: unknown) => unknown) => {
+      requests.set(id, handler);
+      return disposable;
+    },
+    onDidDispose: () => disposable,
+    onDidChangeVisibility: () => disposable,
+  } as unknown as PluginView);
+  const changes = await requests.get('query')!({ view: 'changes', checkoutId: 'worktree:t', depth: 3 });
+  expect(getCheckoutChanges).toHaveBeenCalledWith({ projectId: 'p', checkoutId: 'worktree:t' });
+  expect(query).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      checkoutId: 'worktree:t',
+      view: 'impact',
+      paths: ['new.ts', 'old.ts'],
+      depth: 3,
+      includeHeuristic: false,
+    }),
+    expect.anything(),
+  );
+  expect(changes).toMatchObject({ response: { checkoutId: 'worktree:t' }, changes: { comparison: 'worktree-base' } });
+  await requests.get('query')!({ view: 'impact', checkoutId: 'worktree:t', root: { symbolId: 's:run' } });
+  expect(query).toHaveBeenLastCalledWith(
+    expect.objectContaining({ checkoutId: 'worktree:t', view: 'impact', root: { symbolId: 's:run' } }),
+    expect.anything(),
+  );
+  available = false;
+  await expect(Promise.resolve(requests.get('query')!({ view: 'changes', checkoutId: 'worktree:t' }))).rejects.toThrow(
+    'no longer available',
+  );
+  expect(query).toHaveBeenCalledTimes(2);
+  for (const sub of subscriptions) sub.dispose();
+});
+
 it('cancels hidden views and deduplicates reader audit invalidations without an update loop', async () => {
   let provider: ViewProvider | undefined,
     changed: ((change: CodeMapChange) => void) | undefined,
@@ -16,6 +96,7 @@ it('cancels hidden views and deduplicates reader audit invalidations without an 
     oxy: {
       projects: { getActive: () => Promise.resolve({ id: 'p' }), onDidChangeActive: () => disposable },
       commands: { register: () => disposable },
+      git: { onDidChangeStatus: () => disposable },
       codeMap: {
         onDidChange: (listener: (c: CodeMapChange) => void) => {
           changed = listener;

@@ -34,6 +34,9 @@ export async function activate(ctx: PluginContext): Promise<void> {
           void view.postMessage({ type: 'reset', projectId: project?.id });
         }
     }),
+    oxy.git.onDidChangeStatus((status) => {
+      for (const view of views.keys()) if (projectOf(view) === status.projectId) invalidate(view);
+    }),
     oxy.codeMap.onDidChange((change) => {
       // Metadata audits requested by a reader also publish progress; they must not trigger a refresh loop.
       if (change.state === 'updating' || change.state === 'indexing') return;
@@ -73,18 +76,31 @@ export async function activate(ctx: PluginContext): Promise<void> {
           cancel(view);
           const controller = new AbortController();
           state.controller = controller;
-          const checkout = (await oxy.codeMap.listCheckouts(projectId)).find((c) => c.mode === 'project');
+          const checkout = (await oxy.codeMap.listCheckouts(projectId)).find((c) =>
+            selection.checkoutId ? c.checkoutId === selection.checkoutId : c.mode === 'project',
+          );
           controller.signal.throwIfAborted();
-          if (!checkout) throw new Error('Enable Code Map in project settings.');
+          if (!checkout)
+            throw new Error(
+              selection.checkoutId
+                ? 'The selected checkout is no longer available.'
+                : 'Enable Code Map in project settings.',
+            );
           const ref = { projectId, checkoutId: checkout.checkoutId };
+          const changes = selection.view === 'changes' ? await oxy.git.getCheckoutChanges(ref) : undefined;
+          controller.signal.throwIfAborted();
+          const paths = changes
+            ? [...new Set(changes.files.flatMap((f) => (f.oldPath ? [f.path, f.oldPath] : [f.path])))]
+            : [];
           const response = await oxy.codeMap.query(
             selection.view === 'search'
               ? { ...ref, kind: 'search', query: selection.query, limit: 50, maxChars: 24000 }
               : {
                   ...ref,
                   kind: 'slice',
-                  view: selection.view,
-                  root: selection.root,
+                  view: selection.view === 'changes' ? 'impact' : selection.view,
+                  root: selection.view === 'changes' ? undefined : selection.root,
+                  ...(changes ? { paths: paths.slice(0, 500) } : {}),
                   generation: selection.generation,
                   direction: selection.direction,
                   relations: selection.relations,
@@ -95,7 +111,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           );
           controller.signal.throwIfAborted();
           if (projectOf(view) !== projectId) throw new Error('Project changed.');
-          return { projectId, response };
+          return { projectId, response, changes, changeRootsTruncated: paths.length > 500 };
         });
         view.onRequest('open', async (raw: unknown) => {
           const input = z

@@ -1,0 +1,339 @@
+[
+  {
+    "id": "host-lifecycle",
+    "repository": "oxytocin",
+    "category": "subsystem",
+    "split": "training",
+    "prompt": "Locate the service that owns Code Map process lifetime. Explain when the host starts and stops, with file and symbol citations.",
+    "expectedFiles": ["src/main/services/code-map/code-map-service.ts"],
+    "acceptance": "Identify CodeMapService, sync, opt-in and zero-enabled-project stop; cite current source and do not edit.",
+    "checks": ["npx vitest run --project unit-node src/main/services/code-map/code-map-service.test.ts"]
+  },
+  {
+    "id": "module-alias",
+    "repository": "modules",
+    "category": "package",
+    "split": "training",
+    "prompt": "Explain how the @lib alias and @fixture/math package used by run resolve to source files. Give the intermediate re-export path.",
+    "expectedFiles": [
+      "src/main.ts",
+      "src/lib/index.ts",
+      "src/lib/math.ts",
+      "packages/math/src/index.ts",
+      "tsconfig.base.json"
+    ],
+    "acceptance": "Resolve compute to calculate through index.ts and math.twice to the workspace source; cite configuration.",
+    "checks": ["Compare against expected.json imports and calls; all named paths must exist."]
+  },
+  {
+    "id": "csharp-projects",
+    "repository": "csharp-solution",
+    "category": "subsystem",
+    "split": "training",
+    "prompt": "Describe the C# solution\u0027s project dependency direction and locate the app entry point. Do not run MSBuild or restore packages.",
+    "expectedFiles": ["Contoso.sln", "src/App/App.csproj", "src/Core/Core.csproj", "src/App/Program.cs"],
+    "acceptance": "Identify App to Core and Core.Tests to Core references and top-level Program.cs; no toolchain execution.",
+    "checks": ["Compare project references in csproj files and solution membership by source review."]
+  },
+  {
+    "id": "slice-bounds",
+    "repository": "oxytocin",
+    "category": "caller",
+    "split": "training",
+    "prompt": "Trace how a visualizer query reaches graphSlice and how node, edge and serialized-byte caps are enforced.",
+    "expectedFiles": [
+      "plugins/code-map-visualizer/src/host/index.ts",
+      "src/code-map-host/query/slice.ts",
+      "src/code-map-host/query/slice-budget.ts"
+    ],
+    "acceptance": "Include plugin facade, main service and host boundaries; distinguish visits from response caps.",
+    "checks": ["npx vitest run --project unit-node src/code-map-host/query/slice.test.ts"]
+  },
+  {
+    "id": "simple-coverage",
+    "repository": "oxytocin",
+    "category": "simple-search",
+    "split": "training",
+    "prompt": "Find the implementation and callers of emptyCodeMapCoverage. Report its initial file counters without editing anything.",
+    "expectedFiles": ["src/shared/domain/code-map.ts"],
+    "acceptance": "All initial counters are zero; cite definition and at least two real callers. Ordinary text search is sufficient.",
+    "checks": ["npx vitest run --project unit-node src/shared/domain/code-map.test.ts"]
+  },
+  {
+    "id": "shadowing",
+    "repository": "modules",
+    "category": "dynamic",
+    "split": "training",
+    "prompt": "Is shadow\u0027s compute call necessarily a call to calculate? Explain the lexical binding and why name matching alone would be wrong.",
+    "expectedFiles": ["src/main.ts", "src/lib/math.ts"],
+    "acceptance": "Identify parameter shadowing; refuse the false calculate dependency and cite both declarations.",
+    "checks": ["Compare shadowedCaller and its note in expected.json; inspect the compute parameter."]
+  },
+  {
+    "id": "freshness-barrier",
+    "repository": "oxytocin",
+    "category": "subsystem",
+    "split": "evaluation",
+    "prompt": "Trace a latest map query issued immediately after a saved edit. Explain the timeout and how it differs from an empty result.",
+    "expectedFiles": [
+      "src/code-map-host/checkouts.ts",
+      "src/code-map-host/query/freshness.ts",
+      "src/main/services/code-map/code-map-service.ts"
+    ],
+    "acceptance": "Explain metadata reconciliation, 2 second barrier, INDEX_UPDATING and independent cancellation; do not promise full semantic coverage.",
+    "checks": ["npx vitest run --project unit-node src/code-map-host/query/freshness.test.ts"]
+  },
+  {
+    "id": "source-navigation",
+    "repository": "oxytocin",
+    "category": "caller",
+    "split": "evaluation",
+    "prompt": "Trace Open in editor from the visualizer through validation to editor routing. Explain the checks that prevent opening a stale symbol span.",
+    "expectedFiles": [
+      "plugins/code-map-visualizer/src/host/index.ts",
+      "src/main/services/code-map/code-map-service.ts",
+      "src/code-map-host/checkouts.ts"
+    ],
+    "acceptance": "Identify generation, hash, containment, symbol span and worktree identity checks, and column conversion to editor coordinates.",
+    "checks": ["npx vitest run --project integration tests/integration/code-map-plugin.test.ts"]
+  },
+  {
+    "id": "rename-calculation",
+    "repository": "modules",
+    "category": "api-change",
+    "split": "evaluation",
+    "prompt": "Rename calculate to increment in its implementation while keeping the public compute alias compatible. Update direct internal calls, and explain external callers that remain unchanged.",
+    "expectedFiles": ["src/lib/math.ts", "src/lib/index.ts", "src/main.ts"],
+    "acceptance": "No calculate identifier remains in math.ts or index.ts; increment returns value+1; compute alias and run output stay compatible; main.ts need not change.",
+    "checks": [
+      "Review exported increment, Calculator.run and index.ts alias; execute run({value:2}) and require result 7 using a sandboxed external evaluator."
+    ]
+  },
+  {
+    "id": "workspace-api",
+    "repository": "modules",
+    "category": "api-change",
+    "split": "evaluation",
+    "prompt": "Add a defaulted factor argument to twice so twice(value, factor=2) multiplies by factor. Keep existing callers compatible and identify them.",
+    "expectedFiles": ["packages/math/src/index.ts", "src/main.ts"],
+    "acceptance": "twice(3) is 6, twice(3,4) is 12 and run({value:2}) remains 7; public function stays exported.",
+    "checks": [
+      "Evaluate twice(3), twice(3,4) and run({value:2}) in the fixed fixture runner; review all indexed and text-search callers."
+    ]
+  },
+  {
+    "id": "positive-id",
+    "repository": "csharp-solution",
+    "category": "bug",
+    "split": "evaluation",
+    "prompt": "Locate Order validation and explain how a negative ID is rejected, including calls through the partial class. Identify the tests to extend for zero and negative IDs.",
+    "expectedFiles": [
+      "src/Core/Models/Order.cs",
+      "src/Core/Models/Order.Validation.cs",
+      "tests/Core.Tests/OrderTests.cs"
+    ],
+    "acceptance": "Describe the actual validation expression and Process/Validate flow from source; identify zero and negative boundary expectations without inventing framework behavior.",
+    "checks": ["Review partial declarations and existing ValidatesPositiveIds test; compare expected.json calls."]
+  },
+  {
+    "id": "declared-receiver",
+    "repository": "csharp-solution",
+    "category": "caller",
+    "split": "evaluation",
+    "prompt": "Trace both Save calls from Program.cs, distinguish overloads by argument count, and follow Save to Validate and Process.",
+    "expectedFiles": [
+      "src/App/Program.cs",
+      "src/Core/Services/OrderRepository.cs",
+      "src/Core/Models/Order.Validation.cs",
+      "src/Core/Models/Order.cs"
+    ],
+    "acceptance": "Cite both Save declarations and receiver type; describe exact nested calls and do not claim dynamic dispatch completeness.",
+    "checks": ["Compare all matching Program.cs and OrderRepository.cs calls with expected.json."]
+  },
+  {
+    "id": "inheritance-scope",
+    "repository": "csharp-solution",
+    "category": "package",
+    "split": "evaluation",
+    "prompt": "Explain OrderRepository\u0027s base class and interface, including where inherited Log resolves and why framework calls may be absent from the map.",
+    "expectedFiles": [
+      "src/Core/Services/OrderRepository.cs",
+      "src/Core/Services/RepositoryBase.cs",
+      "src/Core/Abstractions/IRepository.cs"
+    ],
+    "acceptance": "Identify extends RepositoryBase, implements IRepository and Log to Write; distinguish external unresolved calls.",
+    "checks": ["Compare expected.json inheritance and calls; cite declared base and interface source."]
+  },
+  {
+    "id": "simple-ignore",
+    "repository": "oxytocin",
+    "category": "simple-search",
+    "split": "evaluation",
+    "prompt": "Find the exact setting label Keep .oxy out of Git and explain its default value. Cite the UI and schema definitions.",
+    "expectedFiles": ["src/shared/domain/code-map.ts"],
+    "acceptance": "Default is true; locate the real renderer label using text search; do not infer behavior from the label alone.",
+    "checks": ["npx vitest run --project unit-node src/shared/domain/code-map.test.ts"]
+  },
+  {
+    "id": "simple-entry",
+    "repository": "modules",
+    "category": "simple-search",
+    "split": "evaluation",
+    "prompt": "Find the exported run function in src/main.ts and give its declared parameter and return types. Do not change code.",
+    "expectedFiles": ["src/main.ts"],
+    "acceptance": "Report options: Options and number; cite the declaration. No graph traversal is needed.",
+    "checks": ["Inspect the exported run declaration in src/main.ts."]
+  },
+  {
+    "id": "dynamic-events",
+    "repository": "oxytocin",
+    "category": "dynamic",
+    "split": "evaluation",
+    "prompt": "Trace Code Map invalidation events into the visualizer. Explain where event subscriptions create runtime links that cannot be proven by a static call graph.",
+    "expectedFiles": [
+      "plugins/code-map-visualizer/src/host/index.ts",
+      "src/plugin-host/api.ts",
+      "src/main/services/plugins/plugin-host-service.ts"
+    ],
+    "acceptance": "Cite registration, dispatch and listener; identify updating/indexing suppression and deduplication; do not describe all runtime subscribers as known.",
+    "checks": [
+      "npx vitest run --project unit-node plugins/code-map-visualizer/src/host/index.test.ts src/plugin-host/api.test.ts"
+    ]
+  },
+  {
+    "id": "extension-method",
+    "repository": "csharp-solution",
+    "category": "dynamic",
+    "split": "evaluation",
+    "prompt": "Investigate order.IsNew in Program.cs. Find the source implementation and explain why missing static call edges do not prove it is unused.",
+    "expectedFiles": ["src/App/Program.cs", "src/Core/Extensions/OrderExtensions.cs"],
+    "acceptance": "Locate the extension method using ordinary source search when necessary; explicitly acknowledge member-not-found-or-extension-method and preprocessor uncertainty.",
+    "checks": ["Compare unresolvedCalls and heuristic Describe entries in expected.json with current source."]
+  },
+  {
+    "id": "unsupported-python",
+    "repository": "oxytocin",
+    "category": "unsupported",
+    "split": "evaluation",
+    "prompt": "Determine what Code Map currently knows about Python files and whether a Python call graph is available. Locate the support-level implementation and explain the fallback.",
+    "expectedFiles": ["src/code-map-host/extract/files.ts", "src/shared/domain/code-map.ts"],
+    "acceptance": "At this pinned stage Python is file-only; do not claim symbols or calls from the existence of a bundled grammar. Recommend text search and source reading.",
+    "checks": ["Review actual extractor dispatch and language support table at the pinned revision."]
+  },
+  {
+    "id": "unknown-receiver",
+    "repository": "modules",
+    "category": "dynamic",
+    "split": "evaluation",
+    "prompt": "Compare the imported compute call in run with the parameter call in shadow. Identify which can resolve statically and list the evidence for each conclusion.",
+    "expectedFiles": ["src/main.ts", "src/lib/index.ts", "src/lib/math.ts"],
+    "acceptance": "Only imported compute binds to calculate; parameter compute remains unknown; report the re-export alias and lexical scope.",
+    "checks": ["Compare expected.json calls and shadowedCaller; verify no global name-based false match."]
+  },
+  {
+    "id": "worktree-registration",
+    "repository": "oxytocin",
+    "category": "worktree",
+    "split": "evaluation",
+    "prompt": "Trace preparation and removal of an Ensemble worktree\u0027s map. Explain how a pending registration is revoked if the worktree is removed.",
+    "expectedFiles": [
+      "src/main/services/ensemble/ensemble-service.ts",
+      "src/main/services/code-map/code-map-service.ts",
+      "src/main/index.ts"
+    ],
+    "acceptance": "Identify ready/remove hooks, worktreeRequests token, isolated checkout ID and main/project root authorization; explain best-effort map failure handling.",
+    "checks": [
+      "npx vitest run --project unit-node src/main/services/code-map/code-map-service.test.ts src/main/services/ensemble/ensemble-service.test.ts"
+    ]
+  },
+  {
+    "id": "worktree-base",
+    "repository": "oxytocin",
+    "category": "worktree",
+    "split": "evaluation",
+    "prompt": "Explain why Changes in a task checkout still includes a committed task edit. Trace authorization and comparison against the stored base, including projects in repository subfolders.",
+    "expectedFiles": [
+      "src/main/services/code-map/checkout-changes.ts",
+      "src/main/services/ensemble/ensemble-service.ts",
+      "src/workspace-host/git/ensemble-git.ts"
+    ],
+    "acceptance": "Use registered checkout and task identity; compare baseCommit to working tree; describe --relative and refuse arbitrary root/base supplied by a plugin.",
+    "checks": [
+      "npx vitest run --project unit-node src/main/services/code-map/checkout-changes.test.ts",
+      "npx vitest run --project integration tests/integration/code-map-worktrees.test.ts"
+    ]
+  },
+  {
+    "id": "heuristic-impact",
+    "repository": "oxytocin",
+    "category": "bug",
+    "split": "evaluation",
+    "prompt": "Audit whether Impact can follow heuristic or membership edges by default and whether a cycle can run forever. Explain the actual filters and hard limits.",
+    "expectedFiles": [
+      "src/code-map-host/query/relations.ts",
+      "src/code-map-host/query/slice.ts",
+      "src/shared/domain/code-map-plugin.ts"
+    ],
+    "acceptance": "Identify default heuristic exclusion, contains exclusion, visited-node/edge sets, depth 1-3 and caps 2000/5000; missing edges remain non-exhaustive.",
+    "checks": ["npx vitest run --project unit-node src/code-map-host/query/slice.test.ts"]
+  },
+  {
+    "id": "cancellation-isolation",
+    "repository": "oxytocin",
+    "category": "bug",
+    "split": "evaluation",
+    "prompt": "Investigate whether hiding the visualizer can cancel another agent\u0027s indexing. Trace reader cancellation and state what is shared versus per request.",
+    "expectedFiles": [
+      "plugins/code-map-visualizer/src/host/index.ts",
+      "src/main/services/code-map/code-map-service.ts",
+      "src/code-map-host/query/freshness.ts"
+    ],
+    "acceptance": "Cancellation stops the reader wait; shared reconciliation continues; identify AbortController and query request identity without claiming the shared build is aborted.",
+    "checks": [
+      "npx vitest run --project unit-node src/code-map-host/query/freshness.test.ts plugins/code-map-visualizer/src/host/index.test.ts"
+    ]
+  },
+  {
+    "id": "grammar-does-not-imply-support",
+    "repository": "oxytocin",
+    "category": "unsupported",
+    "split": "evaluation",
+    "prompt": "A developer sees Java and Go WASM grammars in the installation and assumes Calls support. Verify that claim at this revision and explain where language coverage is reported.",
+    "expectedFiles": [
+      "src/shared/domain/code-map-grammars.ts",
+      "src/code-map-host/extract/files.ts",
+      "src/shared/domain/code-map.ts"
+    ],
+    "acceptance": "Distinguish bundled grammar from implemented extractor/resolver; both are file-only at stage 10; cite actual support reporting and fallback.",
+    "checks": ["Review grammar manifest, extractor dispatch and shared language support data at the pinned revision."]
+  },
+  {
+    "id": "checkout-permissions",
+    "repository": "oxytocin",
+    "category": "bug",
+    "prompt": "Audit the permission checks for getCheckoutChanges in both plugin API layers. Explain what happens if a plugin loses permission while Git is running.",
+    "expectedFiles": ["src/plugin-host/api.ts", "src/main/services/plugins/plugin-host-service.ts"],
+    "acceptance": "Identify git.read plus code-map.read on both boundaries, post-await revocation checks and strict project/checkout identity validation; do not claim Node plugins are sandboxed.",
+    "split": "evaluation",
+    "checks": [
+      "npx vitest run --project unit-node src/plugin-host/api.test.ts src/main/services/plugins/plugin-host-service.test.ts"
+    ]
+  },
+  {
+    "id": "partial-declaration",
+    "repository": "csharp-solution",
+    "category": "api-change",
+    "prompt": "Find every partial declaration of Order and identify the source edits and callers needed to rename Validate to ValidateOrder, without changing behavior.",
+    "expectedFiles": [
+      "src/Core/Models/Order.Validation.cs",
+      "src/Core/Models/Order.cs",
+      "src/Core/Services/OrderRepository.cs",
+      "tests/Core.Tests/OrderTests.cs"
+    ],
+    "acceptance": "List every declaration and textual call site from the pinned sources; distinguish Process from Validate, include tests and report any unresolved callers rather than claiming exhaustiveness.",
+    "split": "evaluation",
+    "checks": [
+      "Search all .cs files for Validate and compare the call entries in expected.json; source review verifies the proposed rename touches all matches."
+    ]
+  }
+]

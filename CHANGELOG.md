@@ -7,6 +7,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map Visualizer:** Changes highlights uncommitted files and their potential indexed dependents. Impact
+  follows incoming dependencies up to three steps. Switch between the main folder and Ensemble worktrees; task
+  changes compare with their recorded base, including committed edits.
 - **Code Map Visualizer:** explore folders, file dependencies and symbol neighborhoods, search the index and open
   verified source locations. Filter relations and evidence, keep node positions across updates, or use the keyboard
   through a list. Available from the project menu, Code Map settings and the Add menu; all assets work offline.

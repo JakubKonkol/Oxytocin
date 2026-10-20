@@ -767,10 +767,24 @@ subscription.dispose();
 ```
 
 Pass only `projectId` and `checkoutId` from the returned descriptor (omit `label`/`mode` in requests). Available queries
-are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`). `status(ref)` reports freshness and
+are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`, `impact`). `status(ref)` reports freshness and
 coverage without reading the graph. Slice defaults are 150 nodes / 300 edges, hard limits 500 / 1,000 and 512 KiB for
 the entire envelope. Inspect `truncated`, `reasons`, provenance and coverage; graphs are never exhaustive. Membership
 (`contains`) differs from dependencies. Heuristic edges require explicit opt-in.
+
+Impact always traverses incoming dependencies and omits membership edges. Supply `root: { symbolId }` for symbols,
+`root: { path }` for one file, or `paths: [...]` (up to 500, mutually exclusive with `root`) for multi-file dependents.
+File impact projects cross-file symbol dependencies onto their files; membership does not consume a hop. An empty
+paths array returns an empty slice. Removed/excluded paths have no current indexed dependents, which is not evidence
+that a deletion is safe. Depth is 1–3; heuristic edges are off by default.
+
+With **both** `git.read` and `code-map.read`, call `oxy.git.getCheckoutChanges(ref)`. Main authorizes the registered
+checkout; Workspace Host performs Git I/O. Main checkout changes compare with HEAD; worktree changes compare with the
+Ensemble task's stored base, including commits. Callers cannot supply a root or base ref. Results include `comparison`,
+optional `baseCommit`, checkout-relative `files` (with rename `oldPath`), `total` and `truncated`. Responses are bounded
+to 500 files and 512 KiB. `.oxy` paths are omitted. Missing Git status is an error, not a clean checkout.
+Git and graph checkpoints are independent; report truncation and refresh after edits. `oxy.git.onDidChangeStatus`
+invalidates main-checkout Changes; map invalidations also refresh worktree views after indexed content changes.
 
 Include the displayed `generation` on expansions. On `SNAPSHOT_CHANGED`, discard the old view and request a fresh
 slice. Invalidations carry only checkout identity, generation and state; query again for data. Disabled projects,

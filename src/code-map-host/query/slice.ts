@@ -94,18 +94,25 @@ export function graphSlice(
     data.edges = visibleEdges.slice(0, request.maxEdges);
     if (visibleEdges.length > data.edges.length) reasons.push('EDGE_LIMIT');
   } else {
-    const root = request.root!;
+    const root = request.root;
     const relations = CodeMapQuerySchema.parse({
       kind: 'relations',
       ...root,
-      direction: request.direction,
+      ...(request.paths ? { path: request.paths[0] ?? 'unused' } : {}),
+      direction: request.view === 'impact' ? 'incoming' : request.direction,
       relations: request.view === 'file' ? [...new Set([...request.relations, 'contains'])] : request.relations,
       depth: request.depth,
       includeHeuristic: request.includeHeuristic,
     });
     if (relations.kind !== 'relations') throw new Error('Invalid relation projection');
-    const neighborhood = (neighbors ?? new CodeRelations(graph)).query(relations);
+    if (request.view === 'impact') relations.relations = relations.relations.filter((rel) => rel !== 'contains');
+    const index = neighbors ?? new CodeRelations(graph);
+    const neighborhood =
+      request.view === 'impact' && (request.paths || (root && 'path' in root))
+        ? index.dependents(request.paths ?? [(root as { path: string }).path], relations)
+        : index.query(relations);
     if (!neighborhood.data) return { data: null, reasons };
+    if (request.root && !neighborhood.data.nodes.length) return { data: null, reasons };
     const files = new Map(graph.files.map((file) => [file.id, file]));
     data.nodes = neighborhood.data.nodes
       .map((node) => {
