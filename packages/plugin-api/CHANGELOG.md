@@ -6,7 +6,8 @@
   graph slices, subscribe to compact invalidations, and open verified source locations. Query cancellation uses
   `AbortSignal`; stale slice expansions return `SNAPSHOT_CHANGED`. Source spans use one-based lines and zero-based
   UTF-16 columns. Projects must explicitly enable Code Map; queries cannot enable indexing.
-- Update plugin manifests to `engine: "^0.2.0"` after checking compatibility.
+- Update plugin manifests to `engine: "^0.2.0"` after checking compatibility. A caret range of 0.x versions does not
+  include the next minor version, so plugins declaring `^0.1.x` are reported as incompatible and do not load.
 
 ## 0.1.10
 

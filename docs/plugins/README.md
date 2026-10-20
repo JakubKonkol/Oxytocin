@@ -11,7 +11,7 @@ This guide walks you through building a complete plugin, then documents every pa
 - [Tutorial: TODO Radar](#tutorial-todo-radar)
 - [Reference](#reference) — [manifest](#the-manifest), [activation events](#activation-events),
   [contributions](#contributions), [permissions](#permissions), [backend API](#the-backend-api), [views](#views),
-  [tools for AI agents](#tools-for-ai-agents)
+  [tools for AI agents](#tools-for-ai-agents), [Code Map](#code-map-api)
 - [Debugging](#debugging) · [Packaging and distribution](#packaging-and-distribution) ·
   [Security](#security) · [Best practices](#best-practices)
 
@@ -19,45 +19,6 @@ Plugin API version: **0.2.0** ([changelog](../../packages/plugin-api/CHANGELOG.m
 contain breaking changes; declare the versions your plugin supports with `engine`.
 
 ## How a plugin works
-
-### Code Map API (0.2.0)
-
-Declare `engine: "^0.2.0"` and permission `code-map.read`. This permission controls API calls; plugin backends still
-have Node.js access. Users enable indexing separately in project settings. Never construct checkout paths or fall
-back to another checkout after removal. Obtain identities from `listCheckouts(projectId)`.
-
-```ts
-const [checkout] = await oxy.codeMap.listCheckouts(projectId);
-if (!checkout) return; // Code Map is disabled.
-const ref = { projectId: checkout.projectId, checkoutId: checkout.checkoutId };
-const controller = new AbortController();
-const response = await oxy.codeMap.query({ ...ref, kind: 'slice', view: 'overview' }, { signal: controller.signal });
-const subscription = oxy.codeMap.onDidChange(change => {
-  if (change.checkoutId === ref.checkoutId) controller.abort();
-});
-// Dispose subscriptions and abort pending queries when a view closes.
-subscription.dispose();
-```
-
-Pass only `projectId` and `checkoutId` from the returned descriptor (omit `label`/`mode` in requests). Available queries
-are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`). `status(ref)` reports freshness and
-coverage without reading the graph. Slice defaults are 150 nodes / 300 edges, hard limits 500 / 1,000 and 512 KiB for
-the entire envelope. Inspect `truncated`, `reasons`, provenance and coverage; graphs are never exhaustive. Membership
-(`contains`) differs from dependencies. Heuristic edges require explicit opt-in.
-
-Include the displayed `generation` on expansions. On `SNAPSHOT_CHANGED`, discard the old view and request a fresh
-slice. Invalidations carry only checkout identity, generation and state; query again for data. Disabled projects,
-removed checkouts and revoked permissions invalidate access, including pending answers. `AbortSignal` cancels one
-reader without interrupting indexing or other readers.
-
-`openSource({ projectId, checkoutId, generation, path, sha256, span?, symbolId? })` checks the current indexed file,
-source hash and range before delegating to the configured editor. Paths are checkout-relative; ranges use one-based
-lines and zero-based UTF-16 columns, converted by the editor adapter. Refresh after a stale-locator error. No arbitrary
-filesystem roots, excluded sources or fallback to the main checkout are accepted.
-
-Views can call the documented core command `view.executeCommand('oxytocin.codeMap.openSettings', projectId)` to open
-the Code Map settings tab. It is allowlisted in the shell and main process. The built-in
-[Code Map Visualizer](../../plugins/code-map-visualizer/README.md) is an example using only this public API.
 
 A plugin is a folder with a `package.json`. Its `oxytocin` section — the **manifest** — declares what the plugin
 contributes and which parts of the API it may use. Two optional parts do the work:
@@ -154,7 +115,7 @@ Replace the `oxytocin` section of `package.json`:
     "displayName": "TODO Radar",
     "description": "Lists the TODO and FIXME comments of the active project.",
     "publisher": "acme",
-    "engine": "^0.1.7",
+    "engine": "^0.2.0",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup"
@@ -510,7 +471,7 @@ the publisher, the permissions and — because the plugin has a backend — that
     "displayName": "My Plugin",
     "description": "What it does.",
     "publisher": "acme",
-    "engine": "^0.1.7",                  // Oxytocin plugin API versions this plugin supports (semver range)
+    "engine": "^0.2.0",                  // Oxytocin plugin API versions this plugin supports (semver range)
     "main": "dist/host.js",              // backend entry; omit for view-only plugins
     "activationEvents": ["onStartup"],
     "permissions": ["projects.read"],
@@ -567,6 +528,7 @@ use.
 | `git.read` | `oxy.git.*` |
 | `notifications.os` | `showNotification({ os: true })` |
 | `mcp.tools` | `oxy.mcp.registerTool` and `contributes.mcp` — tools AI agents can call (the consent dialog lists them) |
+| `code-map.read` | `oxy.codeMap.*` — read the Code Map of projects where the user enabled it ([Code Map API](#code-map-api)) |
 | `fs.read-project`, `fs.read-home`, `net.listen-local`, `net.fetch` | Informational: declare what the backend does with Node APIs |
 
 ### The backend API
@@ -606,6 +568,7 @@ export function deactivate(): void {}
 | `oxy.commands` | Register commands, run core commands and other plugins' commands | — |
 | `oxy.settings` | Read your settings and follow their changes | — |
 | `oxy.mcp` | Tools for AI agents | `mcp.tools` |
+| `oxy.codeMap` | Checkouts, status, bounded graph slices, search, outlines and relations; invalidations; open verified source | `code-map.read` |
 
 The full, documented types are in [`@oxytocin/plugin-api`](../../packages/plugin-api/index.d.ts)
 (`vendor/plugin-api/index.d.ts` in generated projects).
@@ -783,6 +746,45 @@ ctx.subscriptions.push(
   allow*, *Deny*). Users can switch any tool off or change its policy in *Settings → Agent Tools*.
 - **Runtime tools.** `oxy.mcp.registerTool(definition, handler)` adds a tool that is not in the manifest (the name still
   starts with the prefix); it is offered while the returned `Disposable` lives.
+
+### Code Map API
+
+Declare `engine: "^0.2.0"` and permission `code-map.read`. This permission controls API calls; plugin backends still
+have Node.js access. Users enable indexing separately in project settings. Never construct checkout paths or fall
+back to another checkout after removal. Obtain identities from `listCheckouts(projectId)`.
+
+```ts
+const [checkout] = await oxy.codeMap.listCheckouts(projectId);
+if (!checkout) return; // Code Map is disabled.
+const ref = { projectId: checkout.projectId, checkoutId: checkout.checkoutId };
+const controller = new AbortController();
+const response = await oxy.codeMap.query({ ...ref, kind: 'slice', view: 'overview' }, { signal: controller.signal });
+const subscription = oxy.codeMap.onDidChange(change => {
+  if (change.checkoutId === ref.checkoutId) controller.abort();
+});
+// Dispose subscriptions and abort pending queries when a view closes.
+subscription.dispose();
+```
+
+Pass only `projectId` and `checkoutId` from the returned descriptor (omit `label`/`mode` in requests). Available queries
+are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`). `status(ref)` reports freshness and
+coverage without reading the graph. Slice defaults are 150 nodes / 300 edges, hard limits 500 / 1,000 and 512 KiB for
+the entire envelope. Inspect `truncated`, `reasons`, provenance and coverage; graphs are never exhaustive. Membership
+(`contains`) differs from dependencies. Heuristic edges require explicit opt-in.
+
+Include the displayed `generation` on expansions. On `SNAPSHOT_CHANGED`, discard the old view and request a fresh
+slice. Invalidations carry only checkout identity, generation and state; query again for data. Disabled projects,
+removed checkouts and revoked permissions invalidate access, including pending answers. `AbortSignal` cancels one
+reader without interrupting indexing or other readers.
+
+`openSource({ projectId, checkoutId, generation, path, sha256, span?, symbolId? })` checks the current indexed file,
+source hash and range before delegating to the configured editor. Paths are checkout-relative; ranges use one-based
+lines and zero-based UTF-16 columns, converted by the editor adapter. Refresh after a stale-locator error. No arbitrary
+filesystem roots, excluded sources or fallback to the main checkout are accepted.
+
+Views can call the documented core command `view.executeCommand('oxytocin.codeMap.openSettings', projectId)` to open
+the Code Map settings tab. It is allowlisted in the shell and main process. The built-in
+[Code Map Visualizer](../../plugins/code-map-visualizer/README.md) is an example using only this public API.
 
 ### Views
 

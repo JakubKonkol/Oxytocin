@@ -157,7 +157,7 @@ For example, a status bar item that counts the terminals of the active project:
 "oxytocin": {
   "id": "acme.terminal-count",
   "displayName": "Terminal Count",
-  "engine": "^0.1.6",
+  "engine": "^0.2.0",
   "main": "dist/host.js",
   "activationEvents": ["onStartup"],
   "permissions": ["projects.read", "terminals.read-metadata"],

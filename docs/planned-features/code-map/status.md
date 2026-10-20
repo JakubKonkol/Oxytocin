@@ -13,7 +13,8 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md.
 - Stage 06 implemented (`92ee704`): bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. Manual CLI validation and app E2E remain open; see results/2026-10-20-mcp-tools.md.
 - Stage 07 implemented (`f8fec0a`): isolated worktree registrations, role-authenticated MCP bridge, explicit instruction-file blocks and `.oxy` exclusions from Ensemble diffs/checkpoints. See results/2026-10-20-worktrees-instructions.md.
-- Stage 08 implemented (`6e20c52`): Plugin API 0.2.0, bounded slices, permission checks, cancellation, invalidations and verified worktree-aware source navigation. Full check/build passed; app E2E pending.
+- Stage 08 implemented (`6e20c52`): Plugin API 0.2.0, bounded slices, permission checks, cancellation, invalidations and verified worktree-aware source navigation. Full check/build passed.
+- Stages 05–08 verified on Linux after the stage 09 handoff: app E2E for stages 06–09 now passes; fixes and remaining findings are under "Verification of stages 05–08".
 - Stage 09 implemented in the handoff commit: built-in visualizer, local Cytoscape renderer, keyboard list, settings/menu entry points and reproducible Chromium iframe measurements/smoke. See results/2026-10-20-renderer.md. App E2E and terminal-regression measurements remain open.
 - Stages 10–14 are not implemented. Resume at stage 10; the user requested stopping after the current stage and handing off to another agent.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
@@ -117,6 +118,40 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
   C# 10k cold 45–54 s, edit p95 12.4 s (was 19.0 s), map 126 MiB (was 271). NFR-1/2/5/6 still not met — see the
   report for the next targets (whole-graph re-resolution per edit, C# resolver cost, `graph.json` size, memory).
 - Validation: `npm run check` green (1,346 unit, 71 integration, 3 latency); E2E code-map/ipc-hosts/smoke 10/10.
+
+### Verification of stages 05–08 (Linux, after the stage 09 handoff)
+
+- Code review of stages 05–08 against their stage documents. All tasks are implemented. Deliberate deviations stay
+  recorded in the stage documents (no source snippets in MCP answers, `generation` is a number).
+- First Linux/Xvfb run of the app E2E added in stages 06–09: 18 of 20 passed. Two tests were wrong and are fixed. The
+  MCP case expected `isError` after disabling, but the tool is already removed from the list, so the call fails as an
+  unknown tool. The visualizer case clicked inside the iframe after the source tab had covered it.
+- Fixed:
+  - Opening a file in an Ensemble worktree failed when Code Map was off, because editor routing asked the opt-in
+    checked `checkoutRoot`. It now uses the worktree registration.
+  - A worktree removed while its Code Map registration waited in the queue was registered anyway.
+  - Code Map failures no longer fail a task's preparation, deletion or finish.
+  - Ensemble checkpoint commits excluded `.oxy` only below the project's subfolder (missing `top` pathspec magic).
+  - Agents get the real message for invalid arguments and selectors instead of a generic failure.
+  - Adding the instruction block refuses files that are not UTF-8 instead of rewriting them lossily, and keeps the
+    file's permissions.
+  - C# project references and solution entries match a project file that differs only in case (MSBuild on Windows).
+    Enum members inside `#if`/`#elif`/`#else` are indexed. Extractor version 3 reparses older cache records.
+  - Plugin docs: Code Map section moved under Reference, permission and namespace rows added, examples and the
+    changelogs say that `^0.1.x` manifests no longer load.
+- Known and not fixed (recorded for later stages):
+  - C#: `ref`/`out`/`in` modifiers are not part of overload IDs.
+  - C#: MSBuild `Condition` values containing `>` are misparsed.
+  - C#: a base-class overload is not considered once the derived type has a member with the same name.
+  - C#: a member after `#endif` that follows a trailing comma is lost; this is a grammar limit.
+  - Stage 06: on large checkouts, search scoring runs on the host thread.
+  - Stage 06: Windows path case is not folded for `path` and `pathPrefix`.
+  - Stage 07: startup restoration of worktree registrations can race project loading.
+  - Stage 08: plugin and agent queries share the host's concurrency limit.
+  - Stage 08: invalidations are sent to every `code-map.read` plugin, for all projects.
+  - Still open: Windows runs, manual Claude Code/Codex CLI sessions, and performance gates.
+- Validation (Linux, Node 24.22.0, Xvfb): `npm run check` green (1,380 unit / 1 skip, 75 integration / 60 skips,
+  3 latency). E2E `code-map`, `code-map-visualizer`, `ensemble`, `file-preview`, `ipc-hosts`, `smoke`: 21/21 passed.
 
 ## Resume checkpoint
 

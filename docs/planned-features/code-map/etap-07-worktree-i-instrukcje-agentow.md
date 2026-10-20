@@ -52,7 +52,8 @@ Poza zakresem: selektor checkoutu w wizualizatorze (etap 10).
 - [x] Ensemble pyta o swój uwierzytelniony checkout; brak fallbacku między worktree.
 - [x] Worktree nie dostają edycji `.gitignore`; diffy agentów nie zawierają plików mapy.
 - [x] Blok instrukcji wstawiany/usuwany wyłącznie na żądanie.
-- [ ] `npm run check` + E2E (code-map, ensemble) zielone.
+- [x] `npm run check` + E2E (code-map, ensemble) zielone (Linux/Xvfb, weryfikacja po etapie 09; Windows do
+      potwierdzenia).
 
 ## Commity i CHANGELOG
 

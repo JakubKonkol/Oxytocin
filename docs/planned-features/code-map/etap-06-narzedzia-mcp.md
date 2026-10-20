@@ -68,7 +68,7 @@ Poza zakresem: worktree i most Ensemble (etap 07), blok w `CLAUDE.md` (etap 07),
 - [x] Ścieżki świeżości i stale/error są jawne; brak „no matches” z niepełnego indeksu.
 - [x] Ciepłe zapytania p95 < 200 ms (small fixture only; `results/2026-10-20-mcp-tools.md`).
 - [ ] Ręczny test z Claude Code i Codex CLI zapisany w pliku wyników (wersje klientów, czy znalazły i użyły narzędzi).
-- [ ] `npm run check` + integracja + E2E zielone.
+- [x] `npm run check` + integracja + E2E zielone (Linux/Xvfb, weryfikacja po etapie 09; Windows do potwierdzenia).
 
 ## Commity i CHANGELOG
 
