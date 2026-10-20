@@ -22,9 +22,9 @@ are tested and packaged in parallel; their packages are attached when they succe
 the release. Re-run their failed jobs from the Actions page later: that re-runs the release job, which adds the
 missing packages to the existing release.
 
-Pushes to `main` and pull requests only run the fast checks in `ci.yml` on Windows (typecheck, lint, licenses, unit
-tests). Start *Actions → Full tests → Run workflow* by hand to run the full suite without releasing (all platforms,
-Windows only, or Linux + macOS). E2E tests are retried up to twice on CI; retried tests are reported as flaky.
+Pushes to `main` and pull requests run the fast checks in `ci.yml` on Windows, Linux and macOS (typecheck, lint,
+licenses, unit tests). Start *Actions → Full tests → Run workflow* by hand to run the full suite without releasing
+(all platforms, Windows only, or Linux + macOS). E2E tests are retried up to twice on CI; retried tests are reported as flaky.
 
 ## Before releasing
 

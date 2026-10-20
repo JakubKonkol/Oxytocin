@@ -55,6 +55,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
+- **macOS release checks:** ESLint gets an explicit 4 GiB heap limit for type-aware linting instead of exhausting
+  Node's default heap. Regular CI now checks Windows, Linux and macOS before release workflows.
 - **Windows release tests:** the learning archive recovery test uses canonical paths so differences in temporary
   directory casing do not prevent its simulated write failure. The C# test that generates and parses 1001 files has
   a dedicated 30-second timeout to tolerate parallel test load.

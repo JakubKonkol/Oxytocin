@@ -1,7 +1,7 @@
 name: CI
 
-# Fast checks on every push to main and on pull requests, on Windows (the primary platform): typecheck, lint,
-# license allowlist and unit tests. Integration and E2E tests on Windows, Linux and macOS live in full-tests.yml
+# Fast checks on every push to main and on pull requests, on Windows, Linux and macOS: typecheck, lint,
+# license allowlist and unit tests. Integration and E2E tests live in full-tests.yml
 # (started by hand and before every release by release.yml).
 on:
   push:
@@ -14,7 +14,12 @@ concurrency:
 
 jobs:
   check:
-    runs-on: windows-latest
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
