@@ -9,7 +9,8 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 02 complete: enumeration, live observation, fingerprints, global scheduling and activity hints.
 - Stage 03 complete: isolated parser with watchdog, syntax records, lexical/module resolution, deterministic graph, incremental cache and bounded MAP.md publication. See results/2026-10-19-typescript-graph.md for measured fixture accuracy and deliberate resolution limits.
 - Stage 04 implementation complete: main service, validated renderer IPC, Project settings UI and reproducible packaged full-index benchmark. Release-validation gates remain open (see below).
-- Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met — the next step is the edit-path/disk optimization pass before stage 06.
+- Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met.
+- Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md. Stages 06–14 pending; stage 06 (MCP tools) is next and was not started.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
@@ -92,12 +93,27 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
   references 2/0/0 (TP/FP/FN). Packaged Linux benchmark (1 run): C# 10k cold 57.4 s, edit p95 19.0 s, peak 2.3 GiB, map
   data 46× source; TS 10k cold 41.2 s, edit p95 10.8 s.
 - Not done: Windows determinism run (no Windows machine in this session).
-- Next: optimization pass on the publish/edit path (in-memory cache size index instead of directory walks, no fsync for
-  derived cache records, single serialization/validation per publication, path-limited reconciliation for watcher
-  events, compressed cache records), then stage 06.
+- Committed as `82e37a5`.
+
+### Optimization pass (after stage 05)
+
+- Watcher-only batches enumerate only their paths and merge into the inventory with complete skip/failure maps (equal
+  to a full scan; tested with and without Git). Directories, `.gitignore` and `.*proj` changes still reconcile fully.
+- Cache records are `<key>.json.gz`, written without fsync, size-indexed in memory (`CacheStore`), legacy `.json`
+  records removed on load. Graph text/hash computed once per publication; post-assembly zod validation removed (tests
+  assert conformance; readers validate). Edge de-duplication uses a field key.
+- Packaged Linux benchmark: TS 10k cold 31–33 s, edit p95 4.4 s (was 10.8 s), map 71 MiB (was 133), idle 0.64 % CPU;
+  C# 10k cold 45–54 s, edit p95 12.4 s (was 19.0 s), map 126 MiB (was 271). NFR-1/2/5/6 still not met — see the
+  report for the next targets (whole-graph re-resolution per edit, C# resolver cost, `graph.json` size, memory).
+- Validation: `npm run check` green (1,346 unit, 71 integration, 3 latency); E2E code-map/ipc-hosts/smoke 10/10.
 
 ## Resume checkpoint
 
-- Implementation commits pushed to origin/main: stage 03 dd91d6a; stage 04 c08d205. Working tree is clean after the accompanying documentation checkpoint.
-- No stage 05 source changes exist. Its plan was read for preparation only. Resume with the open stage 04 release gates, then C# stage 05; stages 06–14 remain entirely pending.
-- Benchmark processes exited; the Docker validation container is stopped. All measurement artifacts needed for review are committed. Ignored test-results also retain packaged harnesses, fixtures and complete logs for profiling.
+- Pushed to origin/main: stage 05 `82e37a5`, then the optimization pass and this documentation update. The working tree
+  is clean; no stage 06 code exists.
+- Session ended at the user's request after the optimization pass; another agent continues. Next: stage 06
+  (`etap-06-narzedzia-mcp.md`, MCP tools; relevant code: `src/main/services/mcp/` — `tool-registry.ts`, `core-tools.ts`,
+  `resource-tools.ts` as the pattern for project-scoped tools, `caller-context.ts`, `mcp-hub.ts`). Open items carried
+  over: Windows determinism and benchmark runs, stage 04 release gates, and the remaining performance targets.
+- Reproduce the environment with the notes under "Environment and validation" (Linux container, Node 24 in
+  `/opt/node24`).

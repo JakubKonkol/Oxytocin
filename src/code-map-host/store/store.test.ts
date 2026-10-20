@@ -14,7 +14,7 @@ import { ensureOxyIgnored, removeOxyEntry, updateProjectGitignore } from './giti
 import { OwnerLock } from './owner-lock';
 import { deleteMapData, prepareOxyDirectory } from './oxy-dir';
 import { safeDirectory } from './paths';
-import { atomicWrite, cleanTemporaryFiles, dataSize, loadSnapshot, publishSnapshot } from './writer';
+import { atomicWrite, CacheStore, cleanTemporaryFiles, dataSize, loadSnapshot, publishSnapshot } from './writer';
 
 const roots: string[] = [];
 const leases: OwnerLock[] = [];
@@ -249,10 +249,35 @@ describe('Code Map publication', () => {
     await publishSnapshot(root, { ...snapshot(), cache: new Map([[firstHash, '{}']]) }, () => Promise.resolve());
     expect(await loadSnapshot(directory)).not.toBeNull();
     await publishSnapshot(root, { ...snapshot(), cache: new Map([[nextHash, '{}']]) }, () => Promise.resolve());
-    await expect(lstat(join(directory, 'cache/11', `${firstHash}.json`))).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(lstat(join(directory, 'cache/11', `${firstHash}.json.gz`))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await dataSize(directory)).toBeGreaterThan(0);
     await writeFile(join(directory, 'graph.json'), '{}');
     expect(await loadSnapshot(directory)).toBeNull();
+  });
+  it('indexes compressed records once, drops older record formats and reports sizes without walking', async () => {
+    const root = await temporary();
+    const directory = await safeDirectory(root, ['.oxy', 'code-map']);
+    const legacy = '3'.repeat(64);
+    await mkdir(join(directory, 'cache/33'), { recursive: true });
+    await writeFile(join(directory, 'cache/33', `${legacy}.json`), '{}');
+    const store = new CacheStore(root);
+    await store.load();
+    await expect(lstat(join(directory, 'cache/33', `${legacy}.json`))).rejects.toMatchObject({ code: 'ENOENT' });
+    const key = '4'.repeat(64);
+    const record = JSON.stringify({ value: 'x'.repeat(10_000) });
+    const { bytes } = await publishSnapshot(
+      root,
+      { ...snapshot(), cache: new Map([[key, record]]) },
+      () => Promise.resolve(),
+      store,
+    );
+    expect(store.bytes).toBeLessThan(record.length / 10);
+    expect(bytes).toBe(await dataSize(directory));
+    expect(await store.read(key)).toBe(record);
+    const reloaded = new CacheStore(root);
+    await reloaded.load();
+    expect(reloaded.bytes).toBe(store.bytes);
+    expect(await reloaded.read('5'.repeat(64))).toBeNull();
   });
   it('never truncates the graph when publication is interrupted', async () => {
     const root = await temporary();

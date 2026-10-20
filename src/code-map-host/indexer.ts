@@ -1,8 +1,24 @@
+import { lstat } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { CodeMapDiagnostics } from '@shared/domain/code-map';
 import { CodeMapWatch, discoverGitWatchDirectories, type WatchSubscribe } from './watch';
 import type { CodeMapScheduler, BuildRequest } from './scheduler';
 import { enumerate, type Enumeration } from './enumerate';
 import { fingerprint, sameMetadata, type Fingerprint } from './fingerprint';
+
+function bounded(skipped: ReadonlyMap<string, string>, failed: ReadonlyMap<string, string>): CodeMapDiagnostics {
+  const list = (entries: ReadonlyMap<string, string>) =>
+    [...entries]
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .slice(0, 200)
+      .map(([path, reason]) => ({ path, reason }));
+  return {
+    skipped: list(skipped),
+    failed: list(failed),
+    unresolved: [],
+    truncated: skipped.size > 200 || failed.size > 200,
+  };
+}
 
 export interface InventorySnapshot {
   files: ReadonlyMap<string, Fingerprint>;
@@ -41,6 +57,9 @@ export class CheckoutIndexer {
   private appliedRebuild = 0;
   private readonly failedPaths = new Set<string>();
   private activeSequence = 0;
+  /** Exclusions and probe failures of the inventory, kept complete so path-limited updates stay exact. */
+  private skipped: Map<string, string> | undefined;
+  private probeFailures = new Map<string, string>();
   constructor(
     private readonly options: {
       checkoutId: string;
@@ -115,16 +134,32 @@ export class CheckoutIndexer {
     const checkpoint = this.watcher.checkpoint();
     this.activeSequence = checkpoint.sequence;
     const started = performance.now();
-    const enumeration: Enumeration = await enumerate({ ...this.options, signal });
+    const dirty = new Set([...request.paths, ...checkpoint.changes.map((change) => change.path)]);
+    const fullHash = request.fullHash || checkpoint.unknown;
+    const paths = !request.reconcile && !fullHash && !reextract && this.skipped ? await this.limitedPaths(dirty) : null;
+    const enumeration: Enumeration = await enumerate({ ...this.options, signal, ...(paths ? { paths } : {}) });
+    const skipped = paths ? new Map(this.skipped) : enumeration.skippedPaths;
+    const probeFailures = paths ? new Map(this.probeFailures) : enumeration.failedPaths;
+    if (paths)
+      for (const path of paths) {
+        skipped.delete(path);
+        probeFailures.delete(path);
+      }
+    for (const [path, reason] of paths ? enumeration.skippedPaths : []) skipped.set(path, reason);
+    for (const [path, reason] of paths ? enumeration.failedPaths : []) probeFailures.set(path, reason);
+    enumeration.skippedCount = skipped.size;
+    enumeration.diagnostics = bounded(skipped, probeFailures);
     const enumerateMs = performance.now() - started;
     signal.throwIfAborted();
     const { hooks } = this.options;
     hooks.start(enumeration.files.length);
-    const dirty = new Set([...request.paths, ...checkpoint.changes.map((change) => change.path)]);
-    const fullHash = request.fullHash || checkpoint.unknown;
-    const next = new Map<string, Fingerprint>();
+    const next = paths ? new Map(this.files) : new Map<string, Fingerprint>();
     const currentPaths = new Set(enumeration.files.map((file) => file.path));
-    for (const path of this.files.keys()) if (!currentPaths.has(path)) hooks.removed(path);
+    for (const path of paths ?? this.files.keys())
+      if (!currentPaths.has(path) && this.files.has(path)) {
+        hooks.removed(path);
+        next.delete(path);
+      }
     const readStart = performance.now();
     for (let offset = 0; offset < enumeration.files.length; offset += 32) {
       signal.throwIfAborted();
@@ -187,11 +222,30 @@ export class CheckoutIndexer {
     );
     signal.throwIfAborted();
     this.files = next;
+    this.skipped = skipped;
+    this.probeFailures = probeFailures;
     this.appliedRebuild = rebuildVersion;
     this.lastReconciled = checkedAt;
     if (fullHash) this.lastFullHash = checkedAt;
     this.watcher.commit(checkpoint.sequence);
     if (this.watcher.checkpoint().sequence > checkpoint.sequence) this.reconcileSoon();
+  }
+  /**
+   * Watcher batches touching only known files are enumerated path by path. Directories, ignore rules and project
+   * files change what a full scan would include, so they still reconcile the whole checkout.
+   */
+  private async limitedPaths(dirty: ReadonlySet<string>): Promise<string[] | null> {
+    const paths = [...dirty].sort();
+    if (!paths.length || paths.length > 500 || paths.join('').length > 8000) return null;
+    if (paths.some((path) => /(^|\/)(\.gitignore|[^/]+\.(cs|fs|vb)proj)$/i.test(path))) return null;
+    for (const path of paths) {
+      const prefix = `${path}/`;
+      for (const known of this.files.keys()) if (known.startsWith(prefix)) return null;
+      for (const known of this.skipped?.keys() ?? []) if (known.startsWith(prefix)) return null;
+      const info = await lstat(join(this.options.root, ...path.split('/'))).catch(() => null);
+      if (info?.isDirectory()) return null;
+    }
+    return paths;
   }
   async dispose(): Promise<void> {
     if (this.closed) return;

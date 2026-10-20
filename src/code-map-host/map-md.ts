@@ -93,8 +93,8 @@ export function renderMapMarkdown(
   graph: CodeMapGraph,
   configs: ReadonlyMap<string, ProjectConfig> = new Map(),
   maxBytes = 32 * 1024,
+  graphHash = sha256(`${JSON.stringify(graph)}\n`),
 ): string {
-  const graphHash = sha256(`${JSON.stringify(graph)}\n`);
   const scale = Math.min(1, maxBytes / (32 * 1024));
   const languageCounts = new Map<string, Map<string, number>>();
   for (const file of graph.files)

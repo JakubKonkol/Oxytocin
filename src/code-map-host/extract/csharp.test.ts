@@ -11,6 +11,7 @@ import { FileRecordSchema, type FileRecord } from './record';
 import { fileRecord, normalizedSource } from './files';
 import { parseProjectConfig, type ProjectConfig } from '../resolve/config';
 import { buildGraph } from '../graph/build';
+import { CodeMapGraphSchema } from '@shared/domain/code-map';
 import { renderMapMarkdown } from '../map-md';
 
 let assets: string;
@@ -82,6 +83,7 @@ describe('C# extraction and binding', () => {
   it('matches the reviewed solution fixture: projects, partial types, namespaces and declared-type calls', async () => {
     const { records, configs } = await load(fixture);
     const graph = buildGraph(records, configs, generator);
+    expect(CodeMapGraphSchema.parse(graph)).toEqual(graph);
     const expected = JSON.parse(await readFile(join(fixture, 'expected.json'), 'utf8')) as {
       calls: string[][];
       inheritance: string[][];

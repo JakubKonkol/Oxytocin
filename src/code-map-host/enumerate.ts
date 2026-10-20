@@ -73,6 +73,9 @@ export interface Enumeration {
   files: EnumeratedFile[];
   diagnostics: CodeMapDiagnostics;
   skippedCount: number;
+  /** Complete skip and failure reasons by path; `diagnostics` holds the bounded, sorted view. */
+  skippedPaths: Map<string, string>;
+  failedPaths: Map<string, string>;
   git: boolean;
 }
 export function metadataOf(info: Awaited<ReturnType<typeof stat>>): SourceMetadata {
@@ -100,13 +103,18 @@ export async function enumerate(options: {
   excludedPaths?: readonly string[];
   signal?: AbortSignal;
   maxFiles?: number;
+  /** Limits enumeration to these paths (watcher events); the result describes only them. */
+  paths?: readonly string[];
 }): Promise<Enumeration> {
   const root = await realpath(options.root);
   const excluded = options.excludedPaths ?? [];
   const diagnostics: CodeMapDiagnostics = { skipped: [], failed: [], unresolved: [], truncated: false };
   let skippedCount = 0;
+  const skippedPaths = new Map<string, string>();
+  const failedPaths = new Map<string, string>();
   const skip = (path: string, reason: string) => {
     skippedCount++;
+    skippedPaths.set(path, reason);
     if (diagnostics.skipped.length < 200) diagnostics.skipped.push({ path, reason });
     else diagnostics.truncated = true;
   };
@@ -115,7 +123,15 @@ export async function enumerate(options: {
   try {
     const result = await promisify(execFile)(
       options.gitPath,
-      ['--no-optional-locks', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+      [
+        '--no-optional-locks',
+        'ls-files',
+        '-z',
+        '--cached',
+        '--others',
+        '--exclude-standard',
+        ...(options.paths ? ['--', ...options.paths.map((path) => `:(literal)${path}`)] : []),
+      ],
       {
         cwd: root,
         windowsHide: true,
@@ -139,20 +155,30 @@ export async function enumerate(options: {
     directory: string;
     rules: Ignore;
   }
-  const walk = async (directory: string, scopes: IgnoreScope[]): Promise<void> => {
-    options.signal?.throwIfAborted();
-    let current = scopes;
+  const scopeOf = async (directory: string): Promise<IgnoreScope | null> => {
     const ignorePath = join(directory, '.gitignore');
     try {
       const info = await lstat(ignorePath);
       if (info.isFile() && !info.isSymbolicLink() && info.size <= MAX_SOURCE_BYTES)
-        current = [
-          ...scopes,
-          { directory, rules: ignore({ ignorecase: false }).add(await readFile(ignorePath, 'utf8')) },
-        ];
+        return { directory, rules: ignore({ ignorecase: false }).add(await readFile(ignorePath, 'utf8')) };
     } catch (error) {
       if (!hasCode(error, 'ENOENT')) throw error;
     }
+    return null;
+  };
+  const ignoredBy = (scopes: readonly IgnoreScope[], absolute: string, directory: boolean): boolean => {
+    let ignored = false;
+    for (const scope of scopes) {
+      const result = scope.rules.test(`${toPosix(relative(scope.directory, absolute))}${directory ? '/' : ''}`);
+      if (result.ignored) ignored = true;
+      else if (result.unignored) ignored = false;
+    }
+    return ignored;
+  };
+  const walk = async (directory: string, scopes: IgnoreScope[]): Promise<void> => {
+    options.signal?.throwIfAborted();
+    const own = await scopeOf(directory);
+    const current = own ? [...scopes, own] : scopes;
     const entries = (await readdir(directory, { withFileTypes: true })).sort((a, b) => comparePaths(a.name, b.name));
     const dotnet = entries.some((entry) => entry.isFile() && DOTNET_PROJECT.test(entry.name));
     for (const entry of entries) {
@@ -166,15 +192,7 @@ export async function enumerate(options: {
         skip(path, builtInExclusion(path) ?? 'user-exclusion');
         continue;
       }
-      let ignored = false;
-      for (const scope of current) {
-        const result = scope.rules.test(
-          `${toPosix(relative(scope.directory, absolute))}${entry.isDirectory() ? '/' : ''}`,
-        );
-        if (result.ignored) ignored = true;
-        else if (result.unignored) ignored = false;
-      }
-      if (ignored) continue;
+      if (ignoredBy(current, absolute, entry.isDirectory())) continue;
       if (entry.isDirectory()) {
         if (await lstat(join(absolute, '.git')).catch(() => null)) {
           skip(path, 'nested-repository');
@@ -185,7 +203,24 @@ export async function enumerate(options: {
       if (candidates.length > (options.maxFiles ?? CODE_MAP_LIMITS.files)) throw new CodeMapLimitError();
     }
   };
-  if (!git) await walk(root, []);
+  /** Without Git, a single path is eligible when no ancestor is excluded or ignored, as the walk would decide. */
+  const eligible = async (path: string): Promise<boolean> => {
+    const parts = path.split('/');
+    let scopes: IgnoreScope[] = [];
+    for (let index = 0; index < parts.length; index++) {
+      const own = await scopeOf(join(root, ...parts.slice(0, index)));
+      if (own) scopes = [...scopes, own];
+      const prefix = parts.slice(0, index + 1).join('/');
+      if (index < parts.length - 1 && (builtInExclusion(prefix) || matchesExclusion(prefix, excluded))) return false;
+      if (ignoredBy(scopes, join(root, ...prefix.split('/')), index < parts.length - 1)) return false;
+    }
+    return true;
+  };
+  if (!git && options.paths)
+    for (const path of options.paths) {
+      if (await eligible(path)) candidates.push(path);
+    }
+  else if (!git) await walk(root, []);
   const boundaries = new Map<string, Promise<string | null>>();
   const nestedRoot = (directory: string): Promise<string | null> => {
     if (directory === root) return Promise.resolve(null);
@@ -204,6 +239,16 @@ export async function enumerate(options: {
   const projectDirectories = new Set(
     candidates.filter((path) => DOTNET_PROJECT.test(path)).map((path) => posix.dirname(path.replace(/\/$/, ''))),
   );
+  if (options.paths)
+    for (const path of candidates) {
+      const parts = path.split('/');
+      for (let index = 0; index < parts.length - 1; index++) {
+        const directory = parts.slice(0, index).join('/') || '.';
+        if (!['bin', 'obj'].includes(parts[index]!.toLowerCase()) || projectDirectories.has(directory)) continue;
+        const names = await readdir(join(root, ...parts.slice(0, index))).catch(() => [] as string[]);
+        if (names.some((name) => DOTNET_PROJECT.test(name))) projectDirectories.add(directory);
+      }
+    }
   const reportedOutputs = new Set<string>();
   const ordered = [...new Set(candidates)].sort(comparePaths).filter((path) => {
     const output = dotnetOutputDirectory(path, projectDirectories);
@@ -261,6 +306,7 @@ export async function enumerate(options: {
           return { path, metadata: metadataOf(info) };
         } catch (error) {
           if (hasCode(error, 'ENOENT')) return null;
+          failedPaths.set(path, error instanceof Error ? error.message : String(error));
           if (diagnostics.failed.length < 200)
             diagnostics.failed.push({ path, reason: error instanceof Error ? error.message : String(error) });
           else diagnostics.truncated = true;
@@ -277,5 +323,5 @@ export async function enumerate(options: {
   }
   diagnostics.skipped.sort((a, b) => comparePaths(a.path, b.path));
   diagnostics.failed.sort((a, b) => comparePaths(a.path, b.path));
-  return { root, files, diagnostics, skippedCount, git };
+  return { root, files, diagnostics, skippedCount, skippedPaths, failedPaths, git };
 }

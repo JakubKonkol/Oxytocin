@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   CODE_MAP_LIMITS,
@@ -15,8 +15,8 @@ import { parserLanguage } from '../extract/languages';
 import type { ParserClient } from '../parse/client';
 import { parseProjectConfig, type ProjectConfig } from '../resolve/config';
 import { renderMapMarkdown } from '../map-md';
-import { atomicWrite, dataSize, loadSnapshot, publishSnapshot, sha256 } from '../store/writer';
-import { rejectLink, safeDirectory } from '../store/paths';
+import { atomicWrite, CacheStore, loadSnapshot, publishSnapshot, sha256 } from '../store/writer';
+import { safeDirectory } from '../store/paths';
 import type { InventorySnapshot } from '../indexer';
 import { buildGraph } from './build';
 
@@ -41,7 +41,8 @@ export class GraphEngine {
   private symbolCount = 0;
   private relationCount = 0;
   private runtimeVersion = '';
-  private cacheAvailable = false;
+  private bytes = 0;
+  private readonly cache: CacheStore;
   constructor(
     private readonly options: {
       root: string;
@@ -51,15 +52,12 @@ export class GraphEngine {
       parser: Pick<ParserClient, 'parse'>;
       assertOwned(): Promise<void>;
     },
-  ) {}
+  ) {
+    this.cache = new CacheStore(options.root);
+  }
   async initialize(): Promise<void> {
     this.directory = await safeDirectory(this.options.root, ['.oxy', 'code-map']);
-    try {
-      await safeDirectory(this.options.root, ['.oxy', 'code-map', 'cache'], false);
-      this.cacheAvailable = true;
-    } catch {
-      /* No records exist on a first build. */
-    }
+    await this.cache.load();
     const grammars = GrammarManifestSchema.parse(
       JSON.parse(await readFile(join(this.options.assets, 'grammars.json'), 'utf8')),
     );
@@ -115,14 +113,10 @@ export class GraphEngine {
     );
   }
   private async cached(path: string, hash: string): Promise<FileRecord | null> {
-    if (!this.cacheAvailable) return null;
+    const text = await this.cache.read(this.cacheKey(path, hash));
+    if (text === null) return null;
     try {
-      const key = this.cacheKey(path, hash);
-      const directory = await safeDirectory(this.options.root, ['.oxy', 'code-map', 'cache', key.slice(0, 2)], false);
-      const file = join(directory, `${key}.json`);
-      await rejectLink(file);
-      if ((await stat(file)).size > 32 * 1024 * 1024) return null;
-      const record = FileRecordSchema.parse(JSON.parse(await readFile(file, 'utf8')));
+      const record = FileRecordSchema.parse(JSON.parse(text));
       return record.file.path === path && record.file.sha256 === hash ? record : null;
     } catch {
       return null;
@@ -219,7 +213,8 @@ export class GraphEngine {
       },
       inventory.skippedCount,
     );
-    const hash = sha256(`${JSON.stringify(graph)}\n`);
+    const graphText = `${JSON.stringify(graph)}\n`;
+    const hash = sha256(graphText);
     const same = this.graph && hash === this.manifest?.graphSha256 && this.dirtyCache.size === 0;
     const now = new Date(inventory.checkedAt).toISOString();
     const manifest = CodeMapManifestSchema.parse({
@@ -254,14 +249,22 @@ export class GraphEngine {
       this.manifest = manifest;
     } else {
       const keys = new Set([...this.records].map(([path, record]) => this.cacheKey(path, record.file.sha256)));
-      this.manifest = await publishSnapshot(
+      const published = await publishSnapshot(
         this.options.root,
-        { graph, map: renderMapMarkdown(graph, this.configs), manifest, cache: this.dirtyCache, liveCacheKeys: keys },
+        {
+          graph: graphText,
+          map: renderMapMarkdown(graph, this.configs, undefined, hash),
+          manifest,
+          cache: this.dirtyCache,
+          liveCacheKeys: keys,
+        },
         owned,
+        this.cache,
       );
+      this.manifest = published.manifest;
+      this.bytes = published.bytes;
     }
     this.graph = graph;
-    this.cacheAvailable = true;
     this.appliedRebuild = this.activeRebuild;
     this.dirtyCache.clear();
     const failed = [
@@ -275,7 +278,7 @@ export class GraphEngine {
     return {
       graph,
       manifest: this.manifest,
-      bytes: await dataSize(this.directory),
+      bytes: this.bytes || this.cache.bytes + Buffer.byteLength(graphText),
       diagnostics: {
         skipped: inventory.diagnostics.skipped,
         failed: failed.slice(0, 200),

@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { copyCodeMapAssets } from '../../../scripts/code-map-assets';
 import { ParserRuntime } from '../parse/runtime';
@@ -111,7 +112,7 @@ describe('Graph publication pipeline', () => {
     const caches = await cacheFiles(root);
     expect(caches).toHaveLength(3);
     for (const path of caches) {
-      const contents = await readFile(path, 'utf8');
+      const contents = gunzipSync(await readFile(path)).toString('utf8');
       expect(contents).not.toContain('PRIVATE_CONFIGURATION');
       expect(contents).not.toContain(root);
     }

@@ -32,6 +32,8 @@ it('registers observation before scanning, reconciles by activity and audits has
       files: [],
       diagnostics: { skipped: [], failed: [], unresolved: [], truncated: false },
       skippedCount: 0,
+      skippedPaths: new Map(),
+      failedPaths: new Map(),
       git: false,
     });
   });

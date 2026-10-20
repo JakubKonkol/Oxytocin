@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { CODE_MAP_LIMITS, CodeMapGraphSchema, emptyCodeMapCoverage, type CodeMapGraph } from '@shared/domain/code-map';
+import { CODE_MAP_LIMITS, emptyCodeMapCoverage, type CodeMapGraph } from '@shared/domain/code-map';
 import { comparePaths, CodeMapLimitError } from '../enumerate';
 import type { FileRecord } from '../extract/record';
 import type { ProjectConfig } from '../resolve/config';
@@ -139,7 +139,14 @@ export function buildGraph(
   graph.packages = [...packageNodes.values()].sort((left, right) => comparePaths(left.id, right.id));
   graph.files.sort((left, right) => comparePaths(left.id, right.id));
   graph.symbols.sort((left, right) => comparePaths(left.id, right.id));
-  const edges = [...new Map(graph.edges.map((edge) => [JSON.stringify(edge), edge])).values()];
+  const edges = [
+    ...new Map(
+      graph.edges.map((edge) => [
+        `${edge.from}\0${edge.to}\0${edge.rel}\0${edge.prov}\0${edge.typeOnly}\0${edge.at?.[0]}\0${edge.at?.[1]}`,
+        edge,
+      ]),
+    ).values(),
+  ];
   graph.edges = edges.sort(
     (left, right) =>
       comparePaths(left.from, right.from) ||
@@ -165,5 +172,6 @@ export function buildGraph(
   );
   graph.coverage.unresolved.imports = graph.unresolved.filter((entry) => entry.rel === 'imports').length;
   graph.coverage.unresolved.calls = graph.unresolved.filter((entry) => entry.rel === 'calls').length;
-  return CodeMapGraphSchema.parse(graph);
+  // Assembled only from validated records; readers validate `graph.json` with the schema (tests assert conformance).
+  return graph;
 }

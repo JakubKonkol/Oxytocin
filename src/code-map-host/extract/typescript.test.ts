@@ -9,6 +9,7 @@ import { FileRecordSchema, type FileRecord } from './record';
 import { fileRecord, normalizedSource } from './files';
 import { parseProjectConfig, type ProjectConfig } from '../resolve/config';
 import { buildGraph } from '../graph/build';
+import { CodeMapGraphSchema } from '@shared/domain/code-map';
 import { renderMapMarkdown } from '../map-md';
 
 let assets: string;
@@ -62,6 +63,7 @@ describe('TypeScript syntax and binding extraction', () => {
     };
     await walk(root);
     const graph = buildGraph(records, configs, generator);
+    expect(CodeMapGraphSchema.parse(graph)).toEqual(graph);
     const symbols = new Map(graph.symbols.map((symbol) => [symbol.id, symbol]));
     const calls = graph.edges
       .filter((edge) => edge.rel === 'calls')
