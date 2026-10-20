@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type CallerDeps, resolveCaller } from './caller-context';
+import { type CallerDeps, resolveCaller, resolveCodeMapCaller } from './caller-context';
 
 const projects = [
   { id: 'p1', name: 'Shop', rootPath: 'C:\\work\\shop' },
@@ -14,6 +14,39 @@ const deps = (over: Partial<CallerDeps> = {}): CallerDeps => ({
   realpath: (path) => Promise.resolve(path === 'C:\\short\\SHOP~1' ? 'C:\\work\\shop' : null),
   platform: 'win32',
   ...over,
+});
+
+describe('strict Code Map caller', () => {
+  const strict = () => deps({ realpath: (path) => Promise.resolve(path) });
+  it('never falls back to the active or only project, rejects conflicting and unknown selectors', async () => {
+    expect((await resolveCodeMapCaller(strict(), { args: {} })).context.projectId).toBeUndefined();
+    expect(
+      (await resolveCodeMapCaller(strict(), { terminalHeader: 't-1', args: { cwd: 'C:\\work\\shop' } })).projectError,
+    ).toContain('Conflicting');
+    expect(
+      (await resolveCodeMapCaller(strict(), { args: { cwd: 'C:\\unknown', project: 'Shop' } })).context.projectId,
+    ).toBeUndefined();
+    expect(
+      (await resolveCodeMapCaller(strict(), { args: { cwd: 'C:\\work\\shop', project: 'Api' } })).projectError,
+    ).toContain('Conflicting');
+    expect((await resolveCodeMapCaller(strict(), { args: { project: 'Api' } })).context.projectId).toBe('p2');
+  });
+  it('canonicalizes paths before selection and selects the longest registered containing root', async () => {
+    const nested = { id: 'nested', name: 'Nested', rootPath: 'C:\\work\\shop\\nested' };
+    const d = strict();
+    d.findByPath = (path) =>
+      [...projects, nested]
+        .filter((p) => path === p.rootPath || path.startsWith(`${p.rootPath}\\`))
+        .sort((a, b) => b.rootPath.length - a.rootPath.length)[0];
+    d.projects = () => [...projects, nested];
+    expect((await resolveCodeMapCaller(d, { args: { cwd: `${nested.rootPath}\\src` } })).context.projectId).toBe(
+      'nested',
+    );
+    d.realpath = () => Promise.resolve('C:\\outside');
+    expect(
+      (await resolveCodeMapCaller(d, { args: { cwd: 'C:\\work\\shop\\link' } })).context.projectId,
+    ).toBeUndefined();
+  });
 });
 
 describe('resolveCaller', () => {

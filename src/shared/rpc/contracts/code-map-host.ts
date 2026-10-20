@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CodeMapDiagnosticsSchema, CodeMapSettingsSchema, CodeMapStatusSchema } from '../../domain/code-map';
 import type { HostBaseEvents, HostBaseMethods } from './host-base';
+import { CodeMapQuerySchema, CodeMapQueryResultSchema } from '../../domain/code-map-query';
 
 export const CodeMapCheckoutSchema = z.object({ checkoutId: z.string().min(1).max(200) }).strict();
 export const ConfigureCodeMapCheckoutSchema = z
@@ -18,6 +19,11 @@ export const ConfigureCodeMapCheckoutSchema = z
 export type ConfigureCodeMapCheckout = z.infer<typeof ConfigureCodeMapCheckoutSchema>;
 
 export const CodeMapHostContracts = {
+  'query:run': {
+    params: CodeMapCheckoutSchema.extend({ requestId: z.string().min(1).max(200), query: CodeMapQuerySchema }),
+    result: CodeMapQueryResultSchema,
+  },
+  'query:cancel': { params: z.object({ requestId: z.string().min(1).max(200) }).strict(), result: z.null() },
   'hints:update': {
     params: z
       .object({

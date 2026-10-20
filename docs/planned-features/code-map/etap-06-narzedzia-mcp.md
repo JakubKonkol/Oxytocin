@@ -64,9 +64,9 @@ Poza zakresem: worktree i most Ensemble (etap 07), blok w `CLAUDE.md` (etap 07),
 
 ## Kryteria ukończenia
 
-- [ ] Pięć narzędzi działa przez istniejący Hub; agenci mają zwięzłe wskazówki.
-- [ ] Ścieżki świeżości i stale/error są jawne; brak „no matches” z niepełnego indeksu.
-- [ ] Ciepłe zapytania p95 < 200 ms (pomiar w `results/<data>-mcp-tools.md`).
+- [x] Pięć narzędzi działa przez istniejący Hub; agenci mają zwięzłe wskazówki.
+- [x] Ścieżki świeżości i stale/error są jawne; brak „no matches” z niepełnego indeksu.
+- [x] Ciepłe zapytania p95 < 200 ms (small fixture only; `results/2026-10-20-mcp-tools.md`).
 - [ ] Ręczny test z Claude Code i Codex CLI zapisany w pliku wyników (wersje klientów, czy znalazły i użyły narzędzi).
 - [ ] `npm run check` + integracja + E2E zielone.
 
@@ -86,3 +86,11 @@ CHANGELOG (`### Added`):
 - Lista narzędzi to nie autoryzacja — każde wywołanie sprawdza aktualny stan projektu.
 - Nie zmieniaj zachowania istniejących narzędzi rdzenia przy wprowadzaniu ścisłego wyboru checkoutu.
 - Token Hub daje szeroki dostęp — nie twierdź w dokumentacji ani UI, że izolujesz agentów.
+
+## Implementation notes (2026-10-20)
+
+The host exposes validated `query:run` / `query:cancel` RPC methods. Source snippets are optional and deliberately not
+emitted: results contain indexed signatures/ranges, and agents read current source separately. This avoids returning
+source from a different revision. Unchanged metadata audits reuse the immutable graph and its search/adjacency indexes.
+Manual CLI sessions remain unmeasured. App E2E was added but cannot run in this Windows session without Docker/WSL;
+the user authorized committing with available checks and this documented exception. See the results report.

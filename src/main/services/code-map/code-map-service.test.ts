@@ -86,6 +86,9 @@ it('starts lazily, reconciles settings/root/restart/removal and deletes disabled
     expect.anything(),
   );
   await service.setEnabled('project', false);
+  await expect(
+    service.query('project', { kind: 'search', query: 'secret' }, new AbortController().signal),
+  ).rejects.toThrow('Code Map is disabled');
   expect(call).toHaveBeenCalledWith('checkout:remove', { checkoutId: 'project' });
   expect(host.state).toBe('stopped');
   const configurations = call.mock.calls.filter(([m]) => m === 'checkout:configure').length;

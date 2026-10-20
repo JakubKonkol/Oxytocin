@@ -60,6 +60,7 @@ export class CheckoutIndexer {
   /** Exclusions and probe failures of the inventory, kept complete so path-limited updates stay exact. */
   private skipped: Map<string, string> | undefined;
   private probeFailures = new Map<string, string>();
+  private verification: { promise: Promise<void>; resolve(): void; reject(error: unknown): void } | undefined;
   constructor(
     private readonly options: {
       checkoutId: string;
@@ -87,10 +88,16 @@ export class CheckoutIndexer {
       checkoutId,
       projectId,
       async (request, signal) => {
+        const verification = request.reconcile ? this.verification : undefined;
+        if (verification) this.verification = undefined;
         const operation = this.reconcile(request, signal);
         this.running = operation;
         try {
           await operation;
+          verification?.resolve();
+        } catch (error) {
+          verification?.reject(error);
+          throw error;
         } finally {
           this.running = undefined;
         }
@@ -116,6 +123,8 @@ export class CheckoutIndexer {
     this.timer.unref();
   }
   pause(): void {
+    this.verification?.reject(new Error('Code Map updates paused'));
+    this.verification = undefined;
     this.options.scheduler.pause(this.options.checkoutId);
   }
   resume(): void {
@@ -127,6 +136,25 @@ export class CheckoutIndexer {
   }
   reconcileSoon(fullHash = false): void {
     this.options.scheduler.request(this.options.checkoutId, { immediate: true, reconcile: true, fullHash });
+  }
+  /** Concurrent callers queue one audit. Cancelling a reader never aborts this shared work. */
+  verify(fullHash: boolean): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('Code Map checkout closed'));
+    if (!this.verification) {
+      const pending = {} as NonNullable<CheckoutIndexer['verification']>;
+      pending.promise = new Promise<void>((resolve, reject) => {
+        pending.resolve = resolve;
+        pending.reject = reject;
+      });
+      this.verification = pending;
+    }
+    this.options.scheduler.request(this.options.checkoutId, {
+      immediate: true,
+      reconcile: true,
+      fullHash,
+      forQuery: true,
+    });
+    return this.verification.promise;
   }
   private async reconcile(request: BuildRequest, signal: AbortSignal): Promise<void> {
     const rebuildVersion = this.rebuildVersion;
@@ -250,6 +278,8 @@ export class CheckoutIndexer {
   async dispose(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.verification?.reject(new Error('Code Map checkout closed'));
+    this.verification = undefined;
     if (this.timer) clearInterval(this.timer);
     this.options.scheduler.remove(this.options.checkoutId);
     await this.watcher.close();

@@ -18,6 +18,7 @@ interface Task {
   run: (request: BuildRequest, signal: AbortSignal) => Promise<void>;
   error: (error: unknown) => void;
   paused: boolean;
+  queriedUntil?: number;
   pending?: Pending;
   quiet?: ReturnType<typeof setTimeout>;
   maximum?: ReturnType<typeof setTimeout>;
@@ -42,9 +43,10 @@ export class CodeMapScheduler implements Disposable {
   isActive(projectId: string): boolean {
     return projectId === this.activeProjectId || this.terminals.has(projectId);
   }
-  request(id: string, options: Partial<BuildRequest> & { immediate?: boolean } = {}): void {
+  request(id: string, options: Partial<BuildRequest> & { immediate?: boolean; forQuery?: boolean } = {}): void {
     const task = this.tasks.get(id);
     if (!task || this.disposed) return;
+    if (options.forQuery) task.queriedUntil = Date.now() + 2000;
     const pending = (task.pending ??= {
       paths: new Set(),
       reconcile: false,
@@ -100,6 +102,7 @@ export class CodeMapScheduler implements Disposable {
     }, 0);
   }
   private priority(task: Task): number {
+    if ((task.queriedUntil ?? 0) > Date.now()) return -1;
     if (Date.now() - task.pending!.since > 10_000) return 0;
     return task.projectId === this.activeProjectId ? 0 : this.terminals.has(task.projectId) ? 1 : 2;
   }

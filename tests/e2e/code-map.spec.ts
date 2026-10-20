@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { activeProjectId } from './helpers/terminal';
+import { connect, freePort } from './helpers/mcp';
 
 test('Code Map settings build, update, pause, rebuild, preserve settings and delete disabled data', async () => {
   const project = join(await mkdtemp(join(tmpdir(), 'oxy-map-ui-')), 'map-project');
@@ -197,6 +198,51 @@ test('a C# solution shows Calls coverage for C# and its types, projects and call
     expect(graph.edges).toContainEqual(expect.objectContaining({ to: validate.id, rel: 'calls' }));
     expect(await readFile(join(project, '.oxy/code-map/MAP.md'), 'utf8')).toContain('## .NET projects');
   } finally {
+    await app.close();
+  }
+});
+
+test('MCP Code Map tools see edits, report access and disappear after disabling', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'oxy-map-mcp-'));
+  await writeFile(join(project, 'api.ts'), 'export function beforeEdit() {}\n');
+  const { app, win, userData } = await launchApp({ project });
+  let client: Awaited<ReturnType<typeof connect>> | undefined;
+  try {
+    const id = await activeProjectId(win),
+      port = await freePort();
+    await win.evaluate((port) => window.oxy.invoke('settings:update', { 'mcp.enabled': true, 'mcp.port': port }), port);
+    await win.locator(`[data-project-id="${id}"]`).click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    await win.getByTestId('project-settings-tab-code-map').click();
+    await expect(win.getByTestId('code-map-mcp-status')).toContainText('enable Code Map');
+    await win.getByTestId('code-map-enabled').click();
+    await win
+      .getByRole('alertdialog', { name: 'Enable Code Map?' })
+      .getByRole('button', { name: 'Enable Code Map', exact: true })
+      .click();
+    await expect(win.getByTestId('code-map-state')).toHaveText('Ready', { timeout: 20000 });
+    await expect(win.getByTestId('code-map-mcp-status')).toContainText('available');
+    const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
+    client = await connect(port, token);
+    expect(await client.tools()).toContain('oxy_find_code');
+    expect(
+      (await client.call('oxy_find_code', { query: 'beforeEdit', cwd: project })).result?.content?.[0]?.text,
+    ).toContain('beforeEdit');
+    await writeFile(join(project, 'api.ts'), 'export function afterEdit() {}\n');
+    const found = await client.call('oxy_find_code', { query: 'afterEdit', cwd: project });
+    expect(found.result?.content?.[0]?.text).toContain('afterEdit');
+    expect(found.result?.content?.[0]?.text).toContain('"stale":false');
+    expect(
+      (await client.call('oxy_file_outline', { path: 'api.ts', cwd: project })).result?.content?.[0]?.text,
+    ).toContain('afterEdit');
+    await win.getByTestId('code-map-enabled').click();
+    expect((await client.call('oxy_find_code', { query: 'afterEdit', cwd: project })).result?.isError).toBe(true);
+    await expect.poll(() => client!.tools()).not.toContain('oxy_find_code');
+    await win.evaluate(() => window.oxy.invoke('settings:update', { 'mcp.enabled': false }));
+    await expect(win.getByTestId('code-map-mcp-status')).toContainText('enable Code Map');
+    await expect(win.getByRole('button', { name: 'Configure Agent Tools' })).toBeVisible();
+  } finally {
+    client?.close();
     await app.close();
   }
 });

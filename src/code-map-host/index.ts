@@ -34,6 +34,14 @@ const checkouts = new CodeMapCheckouts(
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
 const impl: Impl = {
+  'query:run': (input) => {
+    const params = CodeMapHostContracts['query:run'].params.parse(input);
+    return checkouts.query(params.checkoutId, params.requestId, params.query);
+  },
+  'query:cancel': (input) => {
+    checkouts.cancelQuery(CodeMapHostContracts['query:cancel'].params.parse(input).requestId);
+    return null;
+  },
   'hints:update': (input) => {
     checkouts.hints(CodeMapHostContracts['hints:update'].params.parse(input));
     return null;

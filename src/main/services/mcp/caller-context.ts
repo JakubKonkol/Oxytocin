@@ -98,3 +98,44 @@ export async function resolveCaller(deps: CallerDeps, input: CallerInput): Promi
 
 /** The message for tools that need a project when none could be chosen. */
 export const NO_PROJECT_MESSAGE = 'Pass `cwd` (your working directory) or `project` to choose an Oxytocin project.';
+
+/** Code Map never inherits the UI selection. Every explicit selector must agree with the terminal mapping. */
+export async function resolveCodeMapCaller(deps: CallerDeps, input: CallerInput): Promise<ResolvedCaller> {
+  const terminal = input.terminalHeader ? deps.terminal(input.terminalHeader.trim()) : undefined;
+  const projects = deps.projects();
+  const part: McpCallContext = terminal
+    ? { terminalId: terminal.id, ...(terminal.agentId ? { agentId: terminal.agentId } : {}) }
+    : {};
+  const fail = (projectError: string): ResolvedCaller => ({ context: part, projectError });
+  const canonical = async (value: string) => {
+    const path = fromShellPath(value.trim(), deps.platform);
+    if (!isAbsolutePath(path, deps.platform)) return undefined;
+    const real = await deps.realpath(path);
+    return real ? deps.findByPath(real) : undefined;
+  };
+  const selected: CallerProject[] = [];
+  if (terminal) {
+    const project = projects.find((p) => p.id === terminal.projectId);
+    if (!project) return fail('The terminal project is no longer registered.');
+    selected.push(project);
+  }
+  if (input.args['cwd'] !== undefined) {
+    if (typeof input.args['cwd'] !== 'string' || !input.args['cwd'].trim()) return fail('Pass an absolute cwd.');
+    const project = await canonical(input.args['cwd']);
+    if (!project) return fail('cwd is not inside a registered Code Map checkout.');
+    selected.push(project);
+  }
+  if (input.args['project'] !== undefined) {
+    if (typeof input.args['project'] !== 'string' || !input.args['project'].trim())
+      return fail('Pass a project name, id or root folder.');
+    const wanted = input.args['project'].trim();
+    const matches = projects.filter((p) => p.id === wanted || p.name.toLowerCase() === wanted.toLowerCase());
+    const project = matches.length === 1 ? matches[0] : matches.length ? undefined : await canonical(wanted);
+    if (!project) return fail('Project is unknown or ambiguous; pass its id or root folder.');
+    selected.push(project);
+  }
+  if (!selected.length) return fail(NO_PROJECT_MESSAGE);
+  if (selected.some((p) => p.id !== selected[0]!.id))
+    return fail('Conflicting Code Map selectors: terminal, cwd and project must choose the same checkout.');
+  return { context: { ...part, projectId: selected[0]!.id }, label: selected[0]!.name };
+}

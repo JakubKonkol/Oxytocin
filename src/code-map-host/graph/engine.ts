@@ -34,6 +34,7 @@ export class GraphEngine {
   private grammarVersions: Record<string, string> = {};
   private manifest: CodeMapManifest | undefined;
   private graph: CodeMapGraph | undefined;
+  private publishedConfigs: ReadonlyMap<string, ProjectConfig> = new Map();
   private directory = '';
   private rebuildVersion = 0;
   private appliedRebuild = 0;
@@ -42,6 +43,8 @@ export class GraphEngine {
   private relationCount = 0;
   private runtimeVersion = '';
   private bytes = 0;
+  private revision = 0;
+  private checkpoint: { revision: number; diagnostics: string; published: PublishedGraph } | undefined;
   private readonly cache: CacheStore;
   constructor(
     private readonly options: {
@@ -183,6 +186,7 @@ export class GraphEngine {
   removed(path: string): void {
     const record = this.records.get(path);
     if (record) {
+      this.revision++;
       this.symbolCount -= record.symbols.length;
       this.relationCount -= record.relations.length + record.imports.length;
     }
@@ -196,6 +200,26 @@ export class GraphEngine {
   async complete(inventory: InventorySnapshot, signal: AbortSignal): Promise<PublishedGraph> {
     for (const path of this.records.keys())
       if (!inventory.files.has(path) && !this.failures.has(path)) this.removed(path);
+    const diagnosticsKey = JSON.stringify([inventory.skippedCount, inventory.diagnostics]);
+    // A query metadata audit must not resolve and serialize the entire unchanged graph.
+    if (
+      this.checkpoint?.revision === this.revision &&
+      this.checkpoint.diagnostics === diagnosticsKey &&
+      this.manifest
+    ) {
+      const now = new Date(inventory.checkedAt).toISOString();
+      const manifest = {
+        ...this.manifest,
+        lastReconciledAt: now,
+        lastFullHashAt: inventory.fullHash ? now : this.manifest.lastFullHashAt,
+      };
+      signal.throwIfAborted();
+      await this.options.assertOwned();
+      await atomicWrite(join(this.directory, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+      signal.throwIfAborted();
+      this.manifest = manifest;
+      return { ...this.checkpoint.published, manifest };
+    }
     if (
       [...this.configs.values()].reduce((size, config) => size + Buffer.byteLength(JSON.stringify(config)), 0) >
       16 * 1024 * 1024
@@ -265,6 +289,7 @@ export class GraphEngine {
       this.bytes = published.bytes;
     }
     this.graph = graph;
+    this.publishedConfigs = new Map(this.configs);
     this.appliedRebuild = this.activeRebuild;
     this.dirtyCache.clear();
     const failed = [
@@ -275,7 +300,7 @@ export class GraphEngine {
         .filter(([path]) => !this.failures.has(path))
         .map(([path]) => ({ path, reason: 'Extraction is incomplete or retained from a previous source revision.' })),
     ];
-    return {
+    const published: PublishedGraph = {
       graph,
       manifest: this.manifest,
       bytes: this.bytes || this.cache.bytes + Buffer.byteLength(graphText),
@@ -286,6 +311,8 @@ export class GraphEngine {
         truncated: inventory.diagnostics.truncated || failed.length > 200 || graph.unresolved.length > 200,
       },
     };
+    this.checkpoint = { revision: this.revision, diagnostics: diagnosticsKey, published };
+    return published;
   }
   dispose(): void {
     this.records.clear();
@@ -294,8 +321,10 @@ export class GraphEngine {
     this.failures.clear();
     this.symbolCount = this.relationCount = 0;
   }
-  snapshot(): { graph: CodeMapGraph; manifest: CodeMapManifest } | null {
-    return this.graph && this.manifest ? { graph: this.graph, manifest: this.manifest } : null;
+  snapshot(): { graph: CodeMapGraph; manifest: CodeMapManifest; configs: ReadonlyMap<string, ProjectConfig> } | null {
+    return this.graph && this.manifest
+      ? { graph: this.graph, manifest: this.manifest, configs: this.publishedConfigs }
+      : null;
   }
   private store(path: string, record: FileRecord): void {
     const old = this.records.get(path);
@@ -308,6 +337,7 @@ export class GraphEngine {
     if (symbols > CODE_MAP_LIMITS.symbols || relations > CODE_MAP_LIMITS.edges) throw new CodeMapLimitError();
     this.symbolCount = symbols;
     this.relationCount = relations;
+    this.revision++;
     this.records.set(path, record);
   }
 }

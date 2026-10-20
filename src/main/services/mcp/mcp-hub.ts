@@ -17,7 +17,10 @@ import type { Settings } from '@shared/domain/settings';
 import type { Logger } from '@shared/logging/logger';
 import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
-import { type CallerDeps, resolveCaller, type ResolvedCaller } from './caller-context';
+import { type CallerDeps, resolveCaller, resolveCodeMapCaller, type ResolvedCaller } from './caller-context';
+import { buildCodeMapTools, isCodeMapTool } from './code-map-tools';
+import type { CodeMapService } from '../code-map/code-map-service';
+import { CODE_MAP_MCP_INSTRUCTIONS } from '@shared/domain/code-map';
 import {
   addCommandLine,
   type ConnectResult,
@@ -116,6 +119,11 @@ export interface McpHubDeps {
     /** What an agent in this project should know about its resources ('' when there are none). */
     brief(projectId: string): string;
   };
+  codeMap?: {
+    service: Pick<CodeMapService, 'query'>;
+    enabled(projectId?: string): boolean;
+    onDidChange(listener: () => void): Disposable;
+  };
 }
 
 const NEEDS_REASON: Record<ResourceToolNeed, string> = {
@@ -172,7 +180,11 @@ export class McpHub implements Disposable {
       () => this.token(),
     );
     const resourceTools = deps.resources?.tools ?? [];
-    const core: CoreTool[] = [...buildCoreTools({ ...deps.core, tools: () => this.registry.all() }), ...resourceTools];
+    const core: CoreTool[] = [
+      ...buildCoreTools({ ...deps.core, tools: () => this.registry.all() }),
+      ...resourceTools,
+      ...(deps.codeMap ? buildCodeMapTools(deps.codeMap.service) : []),
+    ];
     this.coreTools = new Map(core.map((t) => [t.definition.name, t]));
     for (const t of resourceTools) this.logDetails.set(t.definition.name, (args) => t.logDetail(args));
     const defaults: Record<string, McpPolicy> = {};
@@ -184,6 +196,7 @@ export class McpHub implements Disposable {
     this.applyToolSettings(deps.settings());
     this.applyResourceKinds();
     if (deps.resources) this.store.add(deps.resources.onDidChange(() => this.applyResourceKinds()));
+    if (deps.codeMap) this.store.add(deps.codeMap.onDidChange(() => this.applyResourceKinds()));
     this.registry.setPlugins(deps.plugins.sources());
     this.lastListedKey = this.registry.listedKey();
     this.store.add(this.registry.onDidChange(() => this.onRegistryChange()));
@@ -292,12 +305,14 @@ export class McpHub implements Disposable {
   /** Resource tools are listed only while a project has what they need (keeps everyone else's tool list short). */
   private applyResourceKinds(): void {
     const r = this.deps.resources;
-    if (!r) return;
-    const kinds = r.kinds();
+    const kinds = r?.kinds() ?? new Set<string>();
     const has = (need: ResourceToolNeed) =>
       need === 'database' ? kinds.has('sql') || kinds.has('mongodb') || kinds.has('redis') : kinds.has(need);
     const hidden = new Map<string, string>();
-    for (const t of r.tools) if (!has(t.needs)) hidden.set(t.definition.name, NEEDS_REASON[t.needs]);
+    for (const t of r?.tools ?? []) if (!has(t.needs)) hidden.set(t.definition.name, NEEDS_REASON[t.needs]);
+    if (this.deps.codeMap && !this.deps.codeMap.enabled())
+      for (const name of this.coreTools.keys())
+        if (isCodeMapTool(name)) hidden.set(name, 'Enable Code Map in a project to offer this tool.');
     this.registry.setCoreHidden(hidden);
   }
 
@@ -316,6 +331,8 @@ export class McpHub implements Disposable {
     for (const e of this.registry.listed())
       if (e.source.kind === 'plugin') plugins.set(e.source.pluginName, (plugins.get(e.source.pluginName) ?? 0) + 1);
     const parts = [INSTRUCTIONS];
+    const terminal = terminalHeader ? this.deps.caller.terminal(terminalHeader.trim()) : undefined;
+    if (terminal && this.deps.codeMap?.enabled(terminal.projectId)) parts.push(CODE_MAP_MCP_INSTRUCTIONS);
     if (plugins.size) {
       const lines = [...plugins].map(([name, n]) => `- ${name}: ${n} tool${n === 1 ? '' : 's'}`);
       parts.push(`Plugins with tools now:\n${lines.join('\n')}`);
@@ -384,7 +401,7 @@ export class McpHub implements Disposable {
 
   async callTool(name: string, args: Record<string, unknown>, call: ToolCall): Promise<McpToolResult> {
     if (!this.registry.resolve(name)) return toolError(`The tool ${name} is not available.`);
-    const caller = await resolveCaller(this.deps.caller, {
+    const caller = await (isCodeMapTool(name) ? resolveCodeMapCaller : resolveCaller)(this.deps.caller, {
       ...(call.terminalHeader ? { terminalHeader: call.terminalHeader } : {}),
       args,
     });
@@ -464,7 +481,11 @@ export class McpHub implements Disposable {
         : undefined;
       return finish(normalized.isError ? 'error' : 'ok', normalized, text);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = isCodeMapTool(name)
+        ? 'Code Map request failed or access was revoked. Check selectors, project settings and indexing status.'
+        : e instanceof Error
+          ? e.message
+          : String(e);
       return finish('error', toolError(message), message);
     } finally {
       clearTimeout(timer);

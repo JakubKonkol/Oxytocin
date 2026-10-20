@@ -281,3 +281,6 @@ export function codeMapLanguageSupport(language: string): {
 
 export const CODE_MAP_AGENT_INSTRUCTIONS =
   'This project has an Oxytocin Code Map. Start by reading `.oxy/code-map/MAP.md` for the layout, entry points and key APIs. Use `.oxy/code-map/graph.json` (or the `oxy_*` Code Map tools when available) to find symbols, imports and potential dependents. Check freshness, read current source before editing, and fall back to normal text search when the map is unavailable or incomplete. Missing edges do not prove that code is unused.';
+
+export const CODE_MAP_MCP_INSTRUCTIONS =
+  'When Code Map is available, read `.oxy/code-map/MAP.md` first, then use oxy_find_code with your working directory to locate relevant code. Use oxy_file_outline and oxy_code_relations for structure and likely dependencies. Check freshness, coverage, and resolution evidence; read current source before editing. Missing edges do not prove that code is unused. Fall back to normal search when results are incomplete or unavailable.';

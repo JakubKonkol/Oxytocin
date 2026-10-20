@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -6,7 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginManifestSchema } from '../../src/shared/domain/plugin';
 import { defaultSettings, type Settings } from '../../src/shared/domain/settings';
 import { Emitter } from '../../src/shared/utils/emitter';
-import { McpHub } from '../../src/main/services/mcp/mcp-hub';
+import { McpHub, type McpHubDeps } from '../../src/main/services/mcp/mcp-hub';
+import { CodeMapCheckouts } from '../../src/code-map-host/checkouts';
+import { fileRecord } from '../../src/code-map-host/extract/files';
+import { copyCodeMapAssets } from '../../scripts/code-map-assets';
 import type { PluginToolSource } from '../../src/main/services/mcp/tool-registry';
 import { PluginRuntime } from '../../src/plugin-host/runtime';
 import { silentLogger } from '../helpers/logger';
@@ -24,7 +27,7 @@ afterEach(async () => {
 });
 
 /** The hub with the fixture plugin running in a real PluginRuntime (as in the Plugin Host). */
-async function setup() {
+async function setup(codeMap?: McpHubDeps['codeMap']) {
   const manifest = PluginManifestSchema.parse(
     (JSON.parse(await readFile(join(fixture, 'package.json'), 'utf8')) as { oxytocin: unknown }).oxytocin,
   );
@@ -124,6 +127,7 @@ async function setup() {
       },
     },
     logger: silentLogger,
+    ...(codeMap ? { codeMap } : {}),
   });
   await hub.start();
   cleanup.push(async () => {
@@ -208,6 +212,117 @@ const toolNames = async (port: number, session: string) =>
   (await post(port, { jsonrpc: '2.0', id: 9, method: 'tools/list' }, session)).json
     .result!.tools!.map((t) => t.name)
     .filter((n) => n.startsWith('tests_'));
+
+it('queries a live Code Map over HTTP, observes immediate edits, bounds results and revokes cached tools', async () => {
+  const assets = join(userData, 'assets');
+  await copyCodeMapAssets(assets);
+  const root = await mkdtemp(join(tmpdir(), 'oxy-mcp-map-'));
+  let enabled = true;
+  const changed = new Emitter<void>();
+  const checkouts = new CodeMapCheckouts('Oxytocin test', () => {}, {
+    assets,
+    parserEntry: '',
+    parser: {
+      parse: (path, source) => {
+        const record = fileRecord(path, source);
+        record.symbols.push({
+          id: `s:${path}:${source}`,
+          file: record.file.id,
+          name: source,
+          kind: 'function',
+          signature: `function ${source}()`,
+          owner: null,
+          exported: true,
+          span: [1, 0, 1, source.length],
+        });
+        return Promise.resolve(record);
+      },
+      dispose: async () => {},
+    },
+  });
+  cleanup.push(async () => {
+    await checkouts.dispose();
+    await rm(root, { recursive: true, force: true });
+  });
+  await writeFile(join(root, 'api.ts'), 'beforeEdit');
+  await checkouts.configure({
+    checkoutId: 'p1',
+    projectId: 'p1',
+    root,
+    mode: 'project',
+    gitPath: 'git',
+    ignoreInGit: false,
+  });
+  const { hub, port } = await setup({
+    enabled: () => enabled,
+    onDidChange: changed.event,
+    service: {
+      query: async (id, query) => {
+        if (!enabled || id !== 'p1') throw new Error('Code Map disabled');
+        return checkouts.query(id, crypto.randomUUID(), query);
+      },
+    },
+  });
+  const init = await post(port, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-06-18' },
+  });
+  const session = init.session;
+  expect(init.json.result!['instructions']).toContain('oxy_find_code');
+  const names = (await post(port, { jsonrpc: '2.0', id: 2, method: 'tools/list' }, session)).json.result!.tools!.map(
+    (t) => t.name,
+  );
+  expect(names).toContain('oxy_file_outline');
+  const call = async (name: string, args: unknown) =>
+    (await post(port, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } }, session)).json
+      .result!;
+  const text = (r: Record<string, unknown>) => (r['content'] as { text: string }[])[0]!.text;
+  expect(text(await call('oxy_find_code', { query: 'beforeEdit' }))).toContain('beforeEdit');
+  await writeFile(join(root, 'api.ts'), 'afterEdit');
+  const updated = text(await call('oxy_find_code', { query: 'afterEdit', maxChars: 2000 }));
+  expect(updated).toContain('afterEdit');
+  expect(updated.length).toBeLessThanOrEqual(2000);
+  expect(text(await call('oxy_file_outline', { path: 'api.ts' }))).toContain('afterEdit');
+  expect(text(await call('oxy_code_relations', { path: 'api.ts' }))).toContain('whyIncluded');
+  expect(text(await call('oxy_repo_map', {}))).toContain('## Layout');
+  expect(text(await call('oxy_code_map_status', {}))).toContain('coverage');
+  if (process.env['OXYTOCIN_CODE_MAP_QUERY_BENCHMARK'] === '1') {
+    const timings: number[] = [];
+    for (let i = 0; i < 50; i++) {
+      const start = performance.now();
+      const response = await call('oxy_find_code', { query: 'afterEdit' });
+      expect(text(response)).toContain('afterEdit');
+      timings.push(performance.now() - start);
+    }
+    timings.sort((a, b) => a - b);
+    await mkdir('test-results', { recursive: true });
+    await writeFile(
+      'test-results/code-map-stage06-mcp.json',
+      JSON.stringify(
+        {
+          fixtureFiles: 1,
+          samples: timings.length,
+          medianMs: timings[24],
+          p95Ms: timings[47],
+          maxMs: timings[49],
+          node: process.version,
+          platform: process.platform,
+        },
+        null,
+        2,
+      ),
+    );
+  }
+  expect((await call('oxy_find_code', { query: 'afterEdit', project: 'unknown' }))['isError']).toBe(true);
+  enabled = false;
+  // Cached registry entry is still listed until the change event; dispatch checks the current opt-in.
+  expect((await call('oxy_find_code', { query: 'afterEdit' }))['isError']).toBe(true);
+  changed.fire();
+  expect(hub.registry.resolve('oxy_find_code')).toBeUndefined();
+  expect(JSON.stringify(hub.state().log)).not.toContain('afterEdit');
+});
 
 describe('MCP hub with a plugin', () => {
   it('tells connected agents when a plugin adds or removes tools, and runs them', async () => {

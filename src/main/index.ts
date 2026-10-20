@@ -894,6 +894,12 @@ function bootstrap(): void {
       isFile: async (path) => (await stat(path).catch(() => null))?.isFile() ?? false,
       platform: process.platform,
     },
+    codeMap: {
+      service: codeMap,
+      enabled: (id) =>
+        id ? !!projects.get(id)?.settings.codeMap?.enabled : projects.list().some((p) => p.settings.codeMap?.enabled),
+      onDidChange: (listener) => projects.onDidChange(() => listener()),
+    },
     caller: callerDeps,
     describeTerminal: (id) => {
       const t = terminals.get(id);

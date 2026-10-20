@@ -10,7 +10,8 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 03 complete: isolated parser with watchdog, syntax records, lexical/module resolution, deterministic graph, incremental cache and bounded MAP.md publication. See results/2026-10-19-typescript-graph.md for measured fixture accuracy and deliberate resolution limits.
 - Stage 04 implementation complete: main service, validated renderer IPC, Project settings UI and reproducible packaged full-index benchmark. Release-validation gates remain open (see below).
 - Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met.
-- Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md. Stages 06–14 pending; stage 06 (MCP tools) is next and was not started.
+- Optimization pass after stage 05 complete (path-limited watcher updates, compressed in-memory-indexed cache, single serialization); see results/2026-10-20-optimization.md.
+- Stage 06 implemented: bounded host queries, freshness barriers and five read-only MCP tools. Small-fixture warm HTTP p95 71.28 ms. Manual CLI validation and app E2E remain open; see results/2026-10-20-mcp-tools.md. Stages 07–14 pending.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
@@ -109,11 +110,23 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 
 ## Resume checkpoint
 
-- Pushed to origin/main: stage 05 `82e37a5`, then the optimization pass and this documentation update. The working tree
-  is clean; no stage 06 code exists.
-- Session ended at the user's request after the optimization pass; another agent continues. Next: stage 06
-  (`etap-06-narzedzia-mcp.md`, MCP tools; relevant code: `src/main/services/mcp/` — `tool-registry.ts`, `core-tools.ts`,
-  `resource-tools.ts` as the pattern for project-scoped tools, `caller-context.ts`, `mcp-hub.ts`). Open items carried
-  over: Windows determinism and benchmark runs, stage 04 release gates, and the remaining performance targets.
-- Reproduce the environment with the notes under "Environment and validation" (Linux container, Node 24 in
-  `/opt/node24`).
+### Stage 06 validation
+
+- `npm run check` green: 1,354 unit tests passed / 3 skipped, 66 integration passed / 66 skipped by platform/resource
+  availability, 3 latency passed. `npm run build` green. Logs are under `test-results/code-map-stage06-*`.
+- Small-fixture warm HTTP search p95 71.28 ms (50 samples), deterministic ranking fixture recall@8 1.0.
+- App E2E and interactive Claude Code/Codex CLI checks remain unexecuted; see the stage results report.
+
+- Continue through stages 07–14 in order, with a separate commit after each stage. The user will push all commits;
+  do not push from this session (explicit 2026-10-20 instruction).
+- Current machine: Windows, Node 24.16.0; dependencies installed with npm ci. Docker is absent and WSL has no installed
+  distribution. The user explicitly authorized committing after available checks while recording missing E2E.
+- For Windows checks, set command-local `TEMP`/`TMP` to `C:\Users\Public\oxy-code-map-validation-20261020-6c2d` and
+  `VITEST_MAX_WORKERS=4`. The default short temporary path triggers existing libuv watcher assertions and a PowerShell
+  status-line test failure. Do not put temporary fixtures inside this repository: non-Git tests would inherit Git.
+- Stage 06 adds host-owned search/outline/relations/repo-map, a pinned graph checkpoint, independent reader cancellation,
+  two-second latest/verified waits, explicit stale reads, strict checkout selection and immediate opt-out checks. No
+  source snippets are emitted. Graphs/indexes are reused by unchanged metadata audits. The Code Map tab reports real
+  MCP availability and links to Agent Tools. Tests include live HTTP calls and a deterministic E2E client (unexecuted).
+- Existing release gates remain open: performance on large checkouts, installer/Windows CI, determinism and dogfooding.
+  Manual Claude Code/Codex CLI sessions and app E2E are still required before claiming stage 06 release readiness.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  CODE_MAP_AGENT_INSTRUCTIONS,
+  CODE_MAP_MCP_INSTRUCTIONS,
   CodeMapSettingsSchema,
   type CodeMapDiagnostics,
   type CodeMapStatus,
@@ -13,6 +13,9 @@ import { Button } from '../../../ui/Button';
 import { openFile } from '../../editor/editor-actions';
 import { workspaceFor } from '../../attention/reveal';
 import { Check, Field, Section, input } from './controls';
+import { useMcpStore } from '../../agent-tools/mcp-store';
+import { useSettingsStore } from '../../../stores/settings-store';
+import { executeCommand } from '../../../lib/commands';
 
 export const CODE_MAP_STATE_LABELS: Record<CodeMapStatus['state'], string> = {
   disabled: 'Disabled',
@@ -27,6 +30,8 @@ export const CODE_MAP_STATE_LABELS: Record<CodeMapStatus['state'], string> = {
 
 /** Commands apply immediately; the rest of the settings dialog keeps its own draft. */
 export function CodeMapTab({ project, close }: { project: Project; close: () => void }) {
+  const mcp = useMcpStore((s) => s.state?.status);
+  const mcpEnabled = useSettingsStore((s) => s.settings?.['mcp.enabled']);
   const status = useProjectsStore((s) => s.codeMaps[project.id]);
   const settings = CodeMapSettingsSchema.parse(project.settings.codeMap ?? {});
   const savedExclusions = settings.excludedPaths.join('\n');
@@ -39,6 +44,10 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     let cancelled = false;
+    void useMcpStore
+      .getState()
+      .load()
+      .catch(() => undefined);
     void ipc
       .invoke('codeMap:getStatus', { projectId: project.id })
       .then((status) => {
@@ -181,9 +190,24 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
             </p>
           </>
         )}
-        <p className="text-small text-fg-muted">
-          MCP tools: not yet available. Agents can read MAP.md and graph.json directly.
+        <p className="text-small text-fg-muted" data-testid="code-map-mcp-status">
+          MCP tools:{' '}
+          {!settings.enabled
+            ? 'enable Code Map for this project.'
+            : !mcpEnabled
+              ? 'MCP server is disabled.'
+              : mcp?.port != null
+                ? 'available through the MCP server, subject to Agent Tools policies.'
+                : 'MCP server is not running.'}
         </p>
+        <Button
+          onClick={() => {
+            close();
+            void executeCommand('oxytocin.mcp.openSettings');
+          }}
+        >
+          Configure Agent Tools
+        </Button>
         <div className="flex flex-wrap gap-2">
           <Button disabled={!canWrite} onClick={() => void action(status?.state === 'paused' ? 'resume' : 'pause')}>
             {status?.state === 'paused' ? 'Resume updates' : 'Pause updates'}
@@ -257,7 +281,7 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
           <Button
             onClick={() =>
               void run(async () => {
-                await ipc.invoke('clipboard:writeText', { text: CODE_MAP_AGENT_INSTRUCTIONS });
+                await ipc.invoke('clipboard:writeText', { text: CODE_MAP_MCP_INSTRUCTIONS });
                 setCopied(true);
               })
             }

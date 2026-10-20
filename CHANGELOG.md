@@ -7,6 +7,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map for agents:** `oxy_find_code`, `oxy_file_outline`, `oxy_code_relations`, `oxy_repo_map` and
+  `oxy_code_map_status` are available through Oxytocin's MCP server for enabled projects. Answers are bounded, report
+  freshness and coverage, and use an explicit checkout selection. Configure MCP access from the Code Map settings tab.
 - **Code Map:** enable it in Project settings → Code Map to keep a local, deterministic map of the project's code in
   `.oxy/` (ignored by Git unless you choose otherwise). It updates in the background while Oxytocin runs. Agents can read
   `.oxy/code-map/MAP.md`; copy ready-made agent instructions from the tab. TypeScript and JavaScript symbols, imports and

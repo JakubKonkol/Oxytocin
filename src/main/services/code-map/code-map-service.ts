@@ -14,6 +14,13 @@ import type { Logger } from '@shared/logging/logger';
 import { OxyError } from '@shared/errors';
 import { DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
+import { randomUUID } from 'node:crypto';
+import {
+  CodeMapQueryResultSchema,
+  CodeMapQuerySchema,
+  type CodeMapQueryInput,
+  type CodeMapQueryResult,
+} from '@shared/domain/code-map-query';
 import type { UtilityHost } from '../../hosts/utility-host';
 import type { ProjectService } from '../projects/project-service';
 
@@ -206,6 +213,39 @@ export class CodeMapService {
       if (!this.configured.has(id)) return { skipped: [], failed: [], unresolved: [], truncated: false };
       return this.deps.host.call('checkout:diagnostics', { checkoutId: id });
     });
+  }
+  async query(id: string, input: CodeMapQueryInput, signal: AbortSignal): Promise<CodeMapQueryResult> {
+    const query = CodeMapQuerySchema.parse(input);
+    const authorize = () => {
+      const project = this.project(id);
+      if (!project.settings.codeMap?.enabled || project.missing)
+        throw new OxyError('UNAVAILABLE', 'Code Map is disabled or the project is unavailable');
+      return project.rootPath;
+    };
+    const root = authorize();
+    signal.throwIfAborted();
+    // Only configuration is serialized; concurrent readers must not block disable or each other.
+    await this.enqueue(() => this.sync());
+    if (authorize() !== root) throw new OxyError('UNAVAILABLE', 'Code Map checkout changed');
+    signal.throwIfAborted();
+    const requestId = randomUUID();
+    const abort = () => {
+      void this.deps.host.call('query:cancel', { requestId }).catch(() => undefined);
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    try {
+      const result = CodeMapQueryResultSchema.parse(
+        await this.deps.host.call('query:run', { checkoutId: id, requestId, query }, { timeoutMs: 10_000 }),
+      );
+      signal.throwIfAborted();
+      if (authorize() !== root || result.checkoutId !== id)
+        throw new OxyError('UNAVAILABLE', 'Code Map checkout changed');
+      if (JSON.stringify(result).length > query.maxChars)
+        throw new OxyError('INVALID', 'Code Map response exceeds the character budget');
+      return result;
+    } finally {
+      signal.removeEventListener('abort', abort);
+    }
   }
   deleteData(id: string): Promise<CodeMapStatus> {
     return this.enqueue(async () => {

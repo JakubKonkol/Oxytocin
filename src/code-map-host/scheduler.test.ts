@@ -12,6 +12,23 @@ afterEach(() => {
 });
 
 describe('Code Map scheduling', () => {
+  it('prioritizes a queried checkout over ordinary queued work', async () => {
+    const order: string[] = [];
+    for (const id of ['background', 'query']) {
+      scheduler.register(
+        id,
+        id,
+        () => {
+          order.push(id);
+          return Promise.resolve();
+        },
+        vi.fn(),
+      );
+      scheduler.request(id, { immediate: true, forQuery: id === 'query' });
+    }
+    await vi.advanceTimersByTimeAsync(1);
+    expect(order).toEqual(['query', 'background']);
+  });
   it('debounces by 300 ms of quiet and merges a branch-sized batch', async () => {
     const run = vi.fn<(request: BuildRequest) => Promise<void>>().mockResolvedValue();
     scheduler.register('checkout', 'project', run, vi.fn());
