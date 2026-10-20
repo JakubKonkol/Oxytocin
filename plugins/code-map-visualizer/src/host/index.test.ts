@@ -1,5 +1,12 @@
 import { expect, it, vi } from 'vitest';
-import type { PluginContext, PluginView, ViewProvider, CodeMapChange, Disposable } from '@oxytocin/plugin-api';
+import type {
+  PluginContext,
+  PluginView,
+  ViewProvider,
+  CodeMapChange,
+  CodeMapKnowledgeChange,
+  Disposable,
+} from '@oxytocin/plugin-api';
 import { activate } from './index';
 
 it('keeps Changes and Impact in the selected checkout and refuses a removed worktree without fallback', async () => {
@@ -30,6 +37,7 @@ it('keeps Changes and Impact in the selected checkout and refuses a removed work
       git: { onDidChangeStatus: () => disposable, getCheckoutChanges },
       codeMap: {
         onDidChange: () => disposable,
+        onDidChangeKnowledge: () => disposable,
         query,
         listCheckouts: () =>
           Promise.resolve([
@@ -74,17 +82,28 @@ it('keeps Changes and Impact in the selected checkout and refuses a removed work
     expect.objectContaining({ checkoutId: 'worktree:t', view: 'impact', root: { symbolId: 's:run' } }),
     expect.anything(),
   );
+  await requests.get('query')!({ view: 'knowledge', checkoutId: 'worktree:t', learningState: 'stale' });
+  expect(query).toHaveBeenLastCalledWith(
+    expect.objectContaining({ checkoutId: 'worktree:t', view: 'knowledge', learningState: 'stale' }),
+    expect.anything(),
+  );
+  await requests.get('query')!({ view: 'task-context', checkoutId: 'worktree:t', receipt: 'exact-receipt' });
+  expect(query).toHaveBeenLastCalledWith(
+    expect.objectContaining({ checkoutId: 'worktree:t', view: 'context-receipt', receipt: 'exact-receipt' }),
+    expect.anything(),
+  );
   available = false;
   await expect(Promise.resolve(requests.get('query')!({ view: 'changes', checkoutId: 'worktree:t' }))).rejects.toThrow(
     'no longer available',
   );
-  expect(query).toHaveBeenCalledTimes(2);
+  expect(query).toHaveBeenCalledTimes(4);
   for (const sub of subscriptions) sub.dispose();
 });
 
 it('cancels hidden views and deduplicates reader audit invalidations without an update loop', async () => {
   let provider: ViewProvider | undefined,
     changed: ((change: CodeMapChange) => void) | undefined,
+    knowledgeChanged: ((change: CodeMapKnowledgeChange) => void) | undefined,
     visible: ((shown: boolean) => void) | undefined;
   const requests = new Map<string, (input: unknown) => unknown>(),
     post = vi.fn(() => Promise.resolve(true)),
@@ -98,6 +117,10 @@ it('cancels hidden views and deduplicates reader audit invalidations without an 
       commands: { register: () => disposable },
       git: { onDidChangeStatus: () => disposable },
       codeMap: {
+        onDidChangeKnowledge: (listener: (c: CodeMapKnowledgeChange) => void) => {
+          knowledgeChanged = listener;
+          return disposable;
+        },
         onDidChange: (listener: (c: CodeMapChange) => void) => {
           changed = listener;
           return disposable;
@@ -152,6 +175,12 @@ it('cancels hidden views and deduplicates reader audit invalidations without an 
     changed!({ ...event, generation: 3 });
     await vi.advanceTimersByTimeAsync(160);
     expect(post).toHaveBeenCalledTimes(2);
+    knowledgeChanged!({ projectId: 'other', checkoutId: 'other', memoryRevision: 3 });
+    await vi.advanceTimersByTimeAsync(160);
+    expect(post).toHaveBeenCalledTimes(2);
+    knowledgeChanged!({ projectId: 'p', checkoutId: 'p', memoryRevision: 3 });
+    await vi.advanceTimersByTimeAsync(160);
+    expect(post).toHaveBeenCalledTimes(3);
   } finally {
     vi.useRealTimers();
     for (const subscription of subscriptions) subscription.dispose();

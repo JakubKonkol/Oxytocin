@@ -39,6 +39,8 @@ import {
   CodeMapLocatorSchema,
   CodeMapSourceLocationSchema,
   CodeMapCheckoutInfoSchema,
+  CodeMapKnowledgeChangeSchema,
+  isKnowledgeView,
   type CodeMapChangeSchema,
   type CodeMapHostQueryInput,
   type CodeMapHostQueryResult,
@@ -65,6 +67,8 @@ export class CodeMapService {
   readonly onDidChangeStatus = this.changed.event;
   private readonly checkoutChanged = new Emitter<z.infer<typeof CodeMapChangeSchema>>();
   readonly onDidChangeCheckout = this.checkoutChanged.event;
+  private readonly knowledgeChanged = new Emitter<z.infer<typeof CodeMapKnowledgeChangeSchema>>();
+  readonly onDidChangeKnowledge = this.knowledgeChanged.event;
   private readonly owners = new Map<string, string>();
   private readonly statuses = new Map<string, CodeMapStatus>();
   private readonly configured = new Map<string, string>();
@@ -105,6 +109,12 @@ export class CodeMapService {
       }),
     );
     this.subscriptions.add(
+      deps.host.onEvent('memory:changed', (raw) => {
+        const change = CodeMapKnowledgeChangeSchema.parse(raw);
+        if (deps.projects.get(change.projectId)) this.knowledgeChanged.fire(change);
+      }),
+    );
+    this.subscriptions.add(
       deps.host.onEvent('checkout:status', (raw) => {
         const status = CodeMapStatusSchema.parse(raw);
         const projectId = this.worktrees.get(status.checkoutId)?.projectId ?? status.checkoutId;
@@ -131,6 +141,7 @@ export class CodeMapService {
 
   private readonly log = (error: unknown) => this.deps.logger.warn('Code Map operation failed', error);
   private revokeLearnings(projectId: string, checkoutId?: string): void {
+    this.knowledgeChanged.fire({ projectId, checkoutId: checkoutId ?? projectId, memoryRevision: 0 });
     for (const request of this.learningRequests.values())
       if (request.projectId === projectId && (!checkoutId || request.checkoutId === checkoutId))
         request.controller.abort();
@@ -506,6 +517,57 @@ export class CodeMapService {
   }
   async pluginQuery(input: CodeMapPluginRequest, signal: AbortSignal): Promise<CodeMapHostQueryResult> {
     const { projectId, checkoutId, ...query } = CodeMapPluginRequestSchema.parse(input);
+    if (query.kind === 'slice' && isKnowledgeView(query)) {
+      const root = this.checkoutRoot(projectId, checkoutId);
+      await this.enqueue(() => this.sync());
+      signal.throwIfAborted();
+      if (this.checkoutRoot(projectId, checkoutId) !== root) throw new OxyError('UNAVAILABLE', 'Checkout changed');
+      const requestId = randomUUID();
+      const abort = () => {
+        void this.deps.host.call('memory:cancel', { requestId }).catch(() => undefined);
+      };
+      signal.addEventListener('abort', abort, { once: true });
+      try {
+        const result = CodeMapHostQueryResultSchema.parse(
+          await this.deps.host.call(
+            'memory:view',
+            {
+              requestId,
+              authority: this.memoryAuthority(projectId, checkoutId, root),
+              query,
+              mode: this.project(projectId).settings.codeMap?.memory?.mode ?? 'review',
+            },
+            { timeoutMs: 30000 },
+          ),
+        );
+        signal.throwIfAborted();
+        if (this.checkoutRoot(projectId, checkoutId) !== root || result.checkoutId !== checkoutId)
+          throw new OxyError('UNAVAILABLE', 'Checkout changed');
+        if (result.data) {
+          const current = CodeMapStatusSchema.parse(await this.deps.host.call('checkout:status', { checkoutId }));
+          signal.throwIfAborted();
+          this.checkoutRoot(projectId, checkoutId);
+          if (current.generation !== result.freshness.generation)
+            return {
+              ...result,
+              code: 'SNAPSHOT_CHANGED',
+              data: undefined,
+              hint: 'The code generation changed while the response was in flight.',
+            };
+        }
+        if (this.project(projectId).settings.codeMap?.memory?.mode === 'off')
+          return {
+            ...result,
+            code: query.view === 'context-receipt' ? 'RECEIPT_EXPIRED' : 'MEMORY_OFF',
+            data: undefined,
+          };
+        if (Buffer.byteLength(JSON.stringify(result)) > 512 * 1024)
+          throw new OxyError('INVALID', 'Knowledge response exceeds its budget');
+        return result;
+      } finally {
+        signal.removeEventListener('abort', abort);
+      }
+    }
     const result = await this.runQuery(projectId, query, signal, checkoutId);
     if (query.kind === 'slice' && result.data) {
       const current = CodeMapStatusSchema.parse(await this.deps.host.call('checkout:status', { checkoutId }));
@@ -624,5 +686,6 @@ export class CodeMapService {
     this.closed = true;
     this.changed.dispose();
     this.checkoutChanged.dispose();
+    this.knowledgeChanged.dispose();
   }
 }

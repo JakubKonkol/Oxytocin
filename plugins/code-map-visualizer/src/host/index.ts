@@ -22,6 +22,36 @@ export async function activate(ctx: PluginContext): Promise<void> {
       }, 150);
   };
   ctx.subscriptions.push(
+    oxy.commands.register('codeMap.openReceipt', async (raw) => {
+      const input =
+        raw === undefined
+          ? {}
+          : z
+              .object({
+                projectId: z.string().max(64).optional(),
+                checkoutId: z.string().max(200).optional(),
+                receipt: z.string().min(1).max(200).optional(),
+              })
+              .strict()
+              .parse(raw);
+      const projectId = input.projectId ?? (await oxy.projects.getActive())?.id;
+      if (!projectId) return;
+      for (const view of views.keys())
+        if (projectOf(view) === projectId) {
+          await view.postMessage({
+            type: 'open-receipt',
+            projectId,
+            checkoutId: input.checkoutId,
+            receipt: input.receipt,
+          });
+          await oxy.ui.openPanel('codeMap.view', { projectId });
+          return;
+        }
+      await oxy.ui.openPanel('codeMap.view', {
+        projectId,
+        params: { view: 'task-context', checkoutId: input.checkoutId, receipt: input.receipt },
+      });
+    }),
     oxy.commands.register('codeMap.open', async (raw) => {
       const projectId = typeof raw === 'string' ? raw : (await oxy.projects.getActive())?.id;
       await oxy.ui.openPanel('codeMap.view', projectId ? { projectId } : {});
@@ -43,6 +73,9 @@ export async function activate(ctx: PluginContext): Promise<void> {
       const key = `${change.generation}:${change.state}`;
       if (checkpoints.get(change.checkoutId) === key) return;
       checkpoints.set(change.checkoutId, key);
+      for (const view of views.keys()) if (projectOf(view) === change.projectId) invalidate(view);
+    }),
+    oxy.codeMap.onDidChangeKnowledge((change) => {
       for (const view of views.keys()) if (projectOf(view) === change.projectId) invalidate(view);
     }),
     oxy.ui.registerPanelProvider('codeMap.view', {
@@ -67,6 +100,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           return {
             project: project ? { id: project.id, name: project.name } : null,
             checkouts: projectId ? await oxy.codeMap.listCheckouts(projectId) : [],
+            ...(view.params ? { initial: SelectionSchema.parse(view.params) } : {}),
           };
         });
         view.onRequest('query', async (input: unknown) => {
@@ -98,7 +132,14 @@ export async function activate(ctx: PluginContext): Promise<void> {
               : {
                   ...ref,
                   kind: 'slice',
-                  view: selection.view === 'changes' ? 'impact' : selection.view,
+                  view:
+                    selection.view === 'changes'
+                      ? 'impact'
+                      : selection.view === 'task-context'
+                        ? 'context-receipt'
+                        : selection.view,
+                  ...(selection.view === 'task-context' ? { receipt: selection.receipt } : {}),
+                  ...(selection.view === 'knowledge' ? { learningState: selection.learningState } : {}),
                   root: selection.view === 'changes' ? undefined : selection.root,
                   ...(changes ? { paths: paths.slice(0, 500) } : {}),
                   generation: selection.generation,

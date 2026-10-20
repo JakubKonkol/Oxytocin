@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CodeMapRelativePathSchema } from './code-map';
 import { CodeMapFreshnessModeSchema, CodeMapFreshnessSchema } from './code-map-query';
 import { CodeMapSliceEdgeSchema, CodeMapSliceNodeSchema } from './code-map-plugin';
-import { LearningDraftSchema, LearningSchema } from './code-map-memory';
+import { LearningDraftSchema, LearningSchema, LearningReferenceSchema } from './code-map-memory';
 
 const key = z.string().min(1).max(200);
 const revision = z.number().int().nonnegative();
@@ -42,17 +42,7 @@ export const LearningToolRequestSchema = z.discriminatedUnion('kind', [
   LearningFeedbackSchema.extend({ kind: z.literal('feedback') }),
 ]);
 export type LearningToolRequest = z.input<typeof LearningToolRequestSchema>;
-export const ContextLearningSchema = LearningSchema.omit({
-  applicability: true,
-  conflicts: true,
-  feedback: true,
-  dedup: true,
-})
-  .extend({
-    applicability: LearningSchema.shape.applicability.valueType,
-    whyIncluded: z.string().max(200),
-  })
-  .strict();
+export const ContextLearningSchema = LearningReferenceSchema;
 export const TaskContextResultSchema = z
   .object({
     kind: z.literal('task-context'),

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1
+
+- `knowledge` and `context-receipt` slices require **both** `code-map.read` and `code-map.knowledge.read`. Structural
+  queries and their events expose no knowledge labels, records or counts. Revocation cancels pending knowledge reads.
+- `oxy.codeMap.onDidChangeKnowledge` (`code-map.knowledge.read`) emits a targeted project/checkout/revision hint.
+  Learning/evidence nodes and logical `applies_to`, `supported_by`, `supersedes`, `conflicts_with` edges are reference
+  data, separate from structural dependencies. Knowledge filters: `active` (default), `pending`, `stale`, `all`.
+- `context-receipt` accepts the opaque receipt returned by `oxy_task_context`, reconstructing only selected IDs,
+  revisions and inclusion reasons while its code/memory checkpoint remains available. Receipts expire after 30 minutes
+  or revocation; no original question is retained. `SNAPSHOT_CHANGED` and `RECEIPT_EXPIRED` carry no replacement data.
+- Core commands: `oxytocin.codeMap.openLearnings(projectId)` opens the core manager;
+  `oxytocin.codeMap.openReceipt({ projectId, checkoutId, receipt })` opens the built-in visualizer's Task context view.
+  Call them with `oxy.commands.execute` or a view's `executeCommand`. The visualizer must be enabled for receipt display.
+
 ## 0.2.0
 
 - Impact slices accept a symbol/file root or up to 500 changed paths and return bounded incoming dependencies.

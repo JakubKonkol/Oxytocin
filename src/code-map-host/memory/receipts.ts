@@ -14,7 +14,7 @@ export interface ContextReceipt {
   principal: string;
   expiresAt: number;
   nodes: { id: string; whyIncluded: string }[];
-  relations: { from: string; to: string; rel: string; prov: string }[];
+  relations: TaskContextResult['relations'];
   learnings: { id: string; revision: number; whyIncluded: string }[];
 }
 /** Bounded ephemeral selections. Never stores the question, transcript, source text or client bearer token. */
@@ -42,7 +42,7 @@ export class ContextReceipts {
       principal: actor.principal,
       expiresAt: this.now() + 30 * 60000,
       nodes: result.nodes.map(({ id, whyIncluded }) => ({ id, whyIncluded })),
-      relations: result.relations.map(({ from, to, rel, prov }) => ({ from, to, rel, prov })),
+      relations: structuredClone(result.relations),
       learnings: result.learnings.map(({ id, revision, whyIncluded }) => ({ id, revision, whyIncluded })),
     };
     const bytes = Buffer.byteLength(JSON.stringify(receipt));

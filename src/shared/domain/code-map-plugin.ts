@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LearningReferenceSchema } from './code-map-memory';
 import {
   CodeMapRelativePathSchema,
   CodeMapRelationSchema,
@@ -22,6 +23,12 @@ export const CodeMapChangeSchema = CodeMapRefSchema.extend({
   generation: z.number().int().nonnegative(),
   state: CodeMapStateSchema,
 });
+export const CodeMapKnowledgeChangeSchema = CodeMapRefSchema.extend({
+  memoryRevision: z.number().int().nonnegative(),
+}).strict();
+export function isKnowledgeView(request: { kind: string; view?: string }): boolean {
+  return request.kind === 'slice' && (request.view === 'knowledge' || request.view === 'context-receipt');
+}
 export const CodeMapCheckoutInfoSchema = CodeMapRefSchema.extend({
   label: z.string().max(1000),
   mode: z.enum(['project', 'worktree']),
@@ -29,7 +36,9 @@ export const CodeMapCheckoutInfoSchema = CodeMapRefSchema.extend({
 export const CodeMapSliceQuerySchema = z
   .object({
     kind: z.literal('slice'),
-    view: z.enum(['overview', 'file', 'neighborhood', 'impact']),
+    view: z.enum(['overview', 'file', 'neighborhood', 'impact', 'knowledge', 'context-receipt']),
+    receipt: z.string().min(1).max(200).optional(),
+    learningState: z.enum(['active', 'pending', 'stale', 'all']).optional(),
     paths: z.array(CodeMapRelativePathSchema).max(500).optional(),
     root: z
       .union([
@@ -53,13 +62,21 @@ export const CodeMapSliceQuerySchema = z
   })
   .strict()
   .refine(
-    (v) => v.view === 'overview' || !!v.root || (v.view === 'impact' && v.paths !== undefined),
+    (v) =>
+      ['overview', 'knowledge', 'context-receipt'].includes(v.view) ||
+      !!v.root ||
+      (v.view === 'impact' && v.paths !== undefined),
     'This slice needs a root or impact paths',
   )
   .refine(
     (v) => v.paths === undefined || (v.view === 'impact' && !v.root),
     'Paths are only valid for impact without a root',
-  );
+  )
+  .refine(
+    (v) => (v.view === 'context-receipt' ? !!v.receipt : v.receipt === undefined),
+    'A receipt is required only for context-receipt',
+  )
+  .refine((v) => v.learningState === undefined || v.view === 'knowledge', 'Learning filters require knowledge');
 export type CodeMapSliceQuery = z.infer<typeof CodeMapSliceQuerySchema>;
 const ref = CodeMapRefSchema.shape;
 export const CodeMapPluginRequestSchema = z.discriminatedUnion('kind', [
@@ -74,7 +91,9 @@ export type CodeMapHostQueryInput = z.input<typeof CodeMapHostQuerySchema>;
 
 export const CodeMapSliceNodeSchema = z.object({
   id: z.string().min(1).max(8192),
-  kind: z.enum(['file', 'symbol', 'group', 'package']),
+  kind: z.enum(['file', 'symbol', 'group', 'package', 'learning', 'evidence']),
+  learning: LearningReferenceSchema.optional(),
+  evidence: z.object({ path: CodeMapRelativePathSchema, hash: CodeMapHashSchema }).strict().optional(),
   label: z.string().max(4096),
   path: z.union([CodeMapRelativePathSchema, z.literal('.')]).optional(),
   files: z.number().int().nonnegative().optional(),
@@ -88,8 +107,8 @@ export const CodeMapSliceNodeSchema = z.object({
 export const CodeMapSliceEdgeSchema = z.object({
   from: z.string(),
   to: z.string(),
-  rel: CodeMapRelationSchema,
-  prov: z.enum(['syntax', 'binding', 'heuristic']),
+  rel: z.enum([...CodeMapRelationSchema.options, 'applies_to', 'supported_by', 'supersedes', 'conflicts_with']),
+  prov: z.enum(['syntax', 'binding', 'heuristic', 'knowledge']),
   count: z.number().int().positive().optional(),
   at: z.tuple([z.number().int().positive(), z.number().int().nonnegative()]).optional(),
   typeOnly: z.boolean().optional(),
@@ -98,6 +117,9 @@ export const CodeMapSliceEdgeSchema = z.object({
 export const CodeMapSliceDataSchema = z.object({
   kind: z.literal('slice'),
   view: CodeMapSliceQuerySchema.shape.view,
+  memoryRevision: z.number().int().nonnegative().optional(),
+  receipt: z.string().min(1).max(200).optional(),
+  receiptExpiresAt: z.iso.datetime().optional(),
   nodes: z.array(CodeMapSliceNodeSchema).max(500),
   edges: z.array(CodeMapSliceEdgeSchema).max(1000),
   visitedNodes: z.number().int().nonnegative(),
@@ -105,7 +127,13 @@ export const CodeMapSliceDataSchema = z.object({
   exhaustive: z.literal(false),
 });
 export const CodeMapHostQueryResultSchema = CodeMapQueryResultSchema.extend({
-  code: z.enum([...CodeMapQueryResultSchema.shape.code.options, 'SNAPSHOT_CHANGED']),
+  code: z.enum([
+    ...CodeMapQueryResultSchema.shape.code.options,
+    'SNAPSHOT_CHANGED',
+    'RECEIPT_EXPIRED',
+    'MEMORY_OFF',
+    'MEMORY_UNAVAILABLE',
+  ]),
   data: z.union([CodeMapQueryDataSchema, CodeMapSliceDataSchema]).optional(),
   reasons: z
     .array(

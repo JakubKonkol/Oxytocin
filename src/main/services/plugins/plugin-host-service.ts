@@ -36,6 +36,8 @@ import {
   CodeMapPluginResultSchema,
   CodeMapLocatorSchema,
   CodeMapChangeSchema,
+  CodeMapKnowledgeChangeSchema,
+  isKnowledgeView,
 } from '@shared/domain/code-map-plugin';
 import type { UtilityHost } from '../../hosts/utility-host';
 import { collectContributions } from './discovery';
@@ -141,7 +143,8 @@ export interface PluginCorePort {
 }
 
 export interface PluginHostServiceDeps {
-  codeMap?: Pick<CodeMapService, 'listCheckouts' | 'query' | 'pluginQuery' | 'locateSource' | 'onDidChangeCheckout'>;
+  codeMap?: Pick<CodeMapService, 'listCheckouts' | 'query' | 'pluginQuery' | 'locateSource' | 'onDidChangeCheckout'> &
+    Partial<Pick<CodeMapService, 'onDidChangeKnowledge'>>;
   host: Pick<
     UtilityHost<PluginHostMethods, PluginHostEvents>,
     'call' | 'onEvent' | 'onDidBecomeReady' | 'serve' | 'emit' | 'state'
@@ -171,6 +174,8 @@ const CORE_COMMANDS = new Set([
   'oxytocin.panel.focus',
   'oxytocin.mcp.openSettings',
   'oxytocin.codeMap.openSettings',
+  'oxytocin.codeMap.openLearnings',
+  'oxytocin.codeMap.openReceipt',
   'oxytocin.resources.agentBrief',
 ]);
 
@@ -264,6 +269,7 @@ function toHostInfo(p: PluginDescriptor): HostPluginInfo | null {
  */
 export class PluginHostService implements Disposable {
   private readonly codeMapRequests = new Map<string, AbortController>();
+  private readonly codeMapKnowledgeRequests = new Set<string>();
   private readonly store = new DisposableStore();
   private busy: string | null = null;
   private readonly incidents = new Map<string, number>();
@@ -301,6 +307,15 @@ export class PluginHostService implements Disposable {
               host.emit('api:event', { name: 'codeMap.changed', payload, pluginId: plugin.id });
         }),
       );
+    if (deps.codeMap?.onDidChangeKnowledge)
+      this.store.add(
+        deps.codeMap.onDidChangeKnowledge((change) => {
+          const payload = CodeMapKnowledgeChangeSchema.parse(change);
+          for (const plugin of deps.plugins.enabled())
+            if (plugin.manifest?.permissions.includes('code-map.knowledge.read'))
+              host.emit('api:event', { name: 'codeMap.knowledgeChanged', payload, pluginId: plugin.id });
+        }),
+      );
     this.store.add(
       host.serve({ 'api:call': (req: { pluginId: string; method: string; params: unknown }) => this.apiCall(req) }),
     );
@@ -325,7 +340,13 @@ export class PluginHostService implements Disposable {
       deps.plugins.onDidChange(() => {
         for (const [key, controller] of this.codeMapRequests) {
           const id = key.split('\0')[0]!;
-          if (!deps.plugins.enabled().some((p) => p.id === id && p.manifest?.permissions.includes('code-map.read')))
+          if (
+            !deps.plugins.enabled().some((p) => p.id === id && p.manifest?.permissions.includes('code-map.read')) ||
+            (this.codeMapKnowledgeRequests.has(key) &&
+              !deps.plugins
+                .enabled()
+                .some((p) => p.id === id && p.manifest?.permissions.includes('code-map.knowledge.read')))
+          )
             controller.abort();
         }
         void this.reload();
@@ -739,6 +760,15 @@ export class PluginHostService implements Disposable {
       const { id, args } = params as { id: string; args: unknown[] };
       if (!CORE_COMMANDS.has(id)) throw new OxyError('NOT_FOUND', `Unknown command: ${id}`);
       if (id === 'oxytocin.changes.refresh') return undefined;
+      if (id === 'oxytocin.codeMap.openLearnings') z.string().min(1).max(64).parse(args[0]);
+      if (id === 'oxytocin.codeMap.openReceipt')
+        z.object({
+          projectId: z.string().min(1).max(64),
+          checkoutId: z.string().min(1).max(200),
+          receipt: z.string().min(1).max(200),
+        })
+          .strict()
+          .parse(args[0]);
       // Returns the brief about the project resources of a terminal: `{ terminalId }` → `{ text } | null`.
       if (id === 'oxytocin.resources.agentBrief') {
         const arg = args[0];
@@ -801,17 +831,26 @@ export class PluginHostService implements Disposable {
           .strict()
           .parse(params);
         const key = `${pluginId}\0${request.requestId}`;
+        const knowledge = isKnowledgeView(request.request);
+        const authorizeQuery = () => {
+          const maps = authorize();
+          if (knowledge) this.permission(this.deps.plugins.get(pluginId)!, 'code-map.knowledge.read');
+          return maps;
+        };
+        authorizeQuery();
         if (this.codeMapRequests.has(key) || this.codeMapRequests.size >= 100)
           throw new OxyError('INVALID', 'Too many concurrent Code Map requests');
         const controller = new AbortController();
         this.codeMapRequests.set(key, controller);
+        if (knowledge) this.codeMapKnowledgeRequests.add(key);
         try {
           const result = await maps.pluginQuery(request.request, controller.signal);
           controller.signal.throwIfAborted();
-          authorize();
+          authorizeQuery();
           return CodeMapPluginResultSchema.parse(result);
         } finally {
           this.codeMapRequests.delete(key);
+          this.codeMapKnowledgeRequests.delete(key);
         }
       }
       throw new OxyError('NOT_FOUND', 'Unknown Code Map method');

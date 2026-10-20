@@ -48,7 +48,12 @@ export function contextLearning(
   whyIncluded: string,
 ): TaskContextResult['learnings'][number] {
   const { applicability, conflicts: _conflicts, feedback: _feedback, dedup: _dedup, ...claim } = record;
-  return { ...claim, applicability: applicability[checkoutId]!, whyIncluded };
+  return {
+    ...claim,
+    admission: record.admission ?? (record.review === 'accepted' ? 'reviewed' : 'pending'),
+    applicability: applicability[checkoutId]!,
+    whyIncluded,
+  };
 }
 /** Deterministic lexical ranking; no model, embedding or inferred semantic relation. */
 export function taskContext(

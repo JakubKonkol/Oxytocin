@@ -33,8 +33,15 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
 - Stage 13 complete: authenticated task context, proposals and receipt-bound feedback in the Hub and Ensemble;
   strict schemas, whole-item character budgets, 50 proposals/checkout/hour and independent-session reuse. Full check,
   real HTTP integration, 27 Linux host/storage tests and 13 headless app E2E pass. See
-  `results/2026-10-20-learning-tools.md`. Next: stage 14 knowledge/receipt visualization and the offline longitudinal
-  corpus/harness. Paid runs and Automatic remain deferred.
+  `results/2026-10-20-learning-tools.md`.
+- Stage 14 implemented within the authorized offline scope: API 0.2.1 knowledge permission, Knowledge inspection and
+  exact receipt projection, core manager/receipt commands, TTL/revocation handling and headless UI coverage. Offline
+  longitudinal corpus/harness: 10 sequences × 4 sessions × 4 arms × 3 repeats (480 planned independent sessions).
+  See `results/2026-10-20-learning-evaluation.md`. Paid model measurements remain unrun; Review/Automatic benefit gates
+  are unverified and Automatic is unavailable. No implementation stages remain in the authorized scope; retain the
+  previously documented release/performance/manual-client gates.
+  Validation: Windows full check (1,431 unit / 70 integration / 3 latency passed; 6/66 skips), Linux 60 focused tests,
+  app/plugin build and 16/16 Docker/Xvfb E2E. No desktop windows or paid model sessions.
 - Latest owner instruction (2026-10-20): resume autonomous implementation, **commit and push after every stage**.
   This supersedes checkpoint/stop and older no-push instructions below. Work remains on `main`. No desktop windows;
   Electron E2E runs in Docker/Xvfb. Paid evaluations remain deferred; prepare the stage 14 harness/corpus only.

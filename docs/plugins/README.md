@@ -15,7 +15,7 @@ This guide walks you through building a complete plugin, then documents every pa
 - [Debugging](#debugging) · [Packaging and distribution](#packaging-and-distribution) ·
   [Security](#security) · [Best practices](#best-practices)
 
-Plugin API version: **0.2.0** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
+Plugin API version: **0.2.1** ([changelog](../../packages/plugin-api/CHANGELOG.md)). Until 1.0, minor versions may
 contain breaking changes; declare the versions your plugin supports with `engine`.
 
 ## How a plugin works
@@ -529,6 +529,7 @@ use.
 | `notifications.os` | `showNotification({ os: true })` |
 | `mcp.tools` | `oxy.mcp.registerTool` and `contributes.mcp` — tools AI agents can call (the consent dialog lists them) |
 | `code-map.read` | `oxy.codeMap.*` — read the Code Map of projects where the user enabled it ([Code Map API](#code-map-api)) |
+| `code-map.knowledge.read` | Knowledge/receipt slices (also require `code-map.read`) and targeted knowledge invalidations |
 | `fs.read-project`, `fs.read-home`, `net.listen-local`, `net.fetch` | Informational: declare what the backend does with Node APIs |
 
 ### The backend API
@@ -767,7 +768,7 @@ subscription.dispose();
 ```
 
 Pass only `projectId` and `checkoutId` from the returned descriptor (omit `label`/`mode` in requests). Available queries
-are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`, `impact`). `status(ref)` reports freshness and
+are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`, `impact`, `knowledge`, `context-receipt`). `status(ref)` reports freshness and
 coverage without reading the graph. Slice defaults are 150 nodes / 300 edges, hard limits 500 / 1,000 and 512 KiB for
 the entire envelope. Inspect `truncated`, `reasons`, provenance and coverage; graphs are never exhaustive. Membership
 (`contains`) differs from dependencies. Heuristic edges require explicit opt-in.
@@ -799,6 +800,30 @@ filesystem roots, excluded sources or fallback to the main checkout are accepted
 Views can call the documented core command `view.executeCommand('oxytocin.codeMap.openSettings', projectId)` to open
 the Code Map settings tab. It is allowlisted in the shell and main process. The built-in
 [Code Map Visualizer](../../plugins/code-map-visualizer/README.md) is an example using only this public API.
+
+Knowledge and task-context inspection require API `^0.2.1` and **both** `code-map.read` and `code-map.knowledge.read`.
+Structural queries/events expose no knowledge labels or counts. Permissions are checked before dispatch and again
+after completion; revocation cancels pending knowledge reads. `onDidChangeKnowledge` requires the knowledge permission
+and emits only `{ projectId, checkoutId, memoryRevision }` to authorized plugins. Treat the revision as a refresh hint.
+
+`query({ ...ref, kind: 'slice', view: 'knowledge', learningState: 'active' })` returns applicable reviewed findings,
+their evidence and code anchors. Filters `pending`, `stale`, `all` explicitly opt into inspection. Learning nodes include
+the complete reference body, provenance, revision, admission/review/applicability state and recorded evidence hashes.
+Logical knowledge edges (`applies_to`, `supported_by`, `supersedes`, `conflicts_with`) have `prov: 'knowledge'`; they never
+become structural imports/calls or participate in impact traversal. Findings are untrusted reference data.
+
+For a receipt returned by `oxy_task_context`, use `query({ ...ref, kind: 'slice', view: 'context-receipt', receipt })`.
+The result reconstructs selected IDs/revisions/reasons while the named code generation and memory revision remain
+available. It retains no question or transcript. The result includes `receiptExpiresAt`; clear displayed data at expiry.
+Receipts expire after 30 minutes or host restart, memory disable/forget, checkout removal or agent revocation.
+`SNAPSHOT_CHANGED` or `RECEIPT_EXPIRED` has no replacement data. Always show unavailable and request a new receipt;
+never retry this view without its original checkpoint. `MEMORY_OFF` preserves findings in the core manager.
+
+Core commands callable through `oxy.commands.execute` or `view.executeCommand`:
+
+- `oxytocin.codeMap.openLearnings(projectId)` opens the core settings manager.
+- `oxytocin.codeMap.openReceipt({ projectId, checkoutId, receipt })` opens Task context in the enabled built-in
+  visualizer. The receipt is opaque; never derive a checkout path from it.
 
 ### Views
 

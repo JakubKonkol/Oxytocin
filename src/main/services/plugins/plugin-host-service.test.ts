@@ -161,10 +161,46 @@ function setup(
     notifyWithActions,
     agentMocks,
     changedPlugins,
+    emitted: host.emit,
   };
 }
 
 describe('PluginHostService', () => {
+  it('isolates knowledge dispatch and events, aborting only pending knowledge after permission revocation', async () => {
+    const list = [
+      descriptor('map.only', { permissions: ['code-map.read'] }),
+      descriptor('both.read', { permissions: ['code-map.read', 'code-map.knowledge.read'] }),
+    ];
+    const knowledge = new Emitter<{ projectId: string; checkoutId: string; memoryRevision: number }>();
+    const signals: AbortSignal[] = [];
+    const maps: NonNullable<PluginHostServiceDeps['codeMap']> = {
+      listCheckouts: () => [],
+      query: vi.fn(),
+      locateSource: vi.fn(),
+      pluginQuery: (_input, signal) => {
+        signals.push(signal);
+        return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled'))));
+      },
+      onDidChangeCheckout: new Emitter<never>().event,
+      onDidChangeKnowledge: knowledge.event,
+    };
+    const s = setup({ list, codeMap: maps });
+    const request = { projectId: 'p', checkoutId: 'p', kind: 'slice', view: 'knowledge' };
+    await expect(s.api('map.only', 'codeMap.query', { requestId: 'denied', request })).rejects.toThrow(
+      'code-map.knowledge.read',
+    );
+    expect(signals).toHaveLength(0);
+    knowledge.fire({ projectId: 'p', checkoutId: 'p', memoryRevision: 4 });
+    expect(JSON.stringify(s.emitted.mock.calls)).not.toContain('map.only');
+    expect(JSON.stringify(s.emitted.mock.calls)).toContain('both.read');
+    const pending = s.api('both.read', 'codeMap.query', { requestId: 'allowed', request });
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    list[1] = descriptor('both.read', { permissions: ['code-map.read'] });
+    s.changedPlugins.fire(list);
+    await expect(pending).rejects.toThrow('cancelled');
+    expect(signals[0]!.aborted).toBe(true);
+    s.service.dispose();
+  });
   it('requires both Git and Code Map permissions for validated checkout comparisons', async () => {
     const s = setup({
       list: [

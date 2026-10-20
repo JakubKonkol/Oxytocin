@@ -94,6 +94,10 @@ export interface CodeMapChange extends CodeMapRef {
   generation: number;
   state: CodeMapState;
 }
+/** Targeted separately from structural invalidations; requires code-map.knowledge.read (since 0.2.1). */
+export interface CodeMapKnowledgeChange extends CodeMapRef {
+  memoryRevision: number;
+}
 export interface CodeMapCheckout extends CodeMapRef {
   label: string;
   mode: 'project' | 'worktree';
@@ -135,7 +139,9 @@ export interface CodeMapEdge {
 }
 export interface CodeMapSliceNode {
   id: string;
-  kind: 'file' | 'symbol' | 'group' | 'package';
+  kind: 'file' | 'symbol' | 'group' | 'package' | 'learning' | 'evidence';
+  learning?: CodeMapLearning;
+  evidence?: { path: string; hash: string };
   label: string;
   path?: string;
   files?: number;
@@ -146,18 +152,48 @@ export interface CodeMapSliceNode {
   stale?: boolean;
   whyIncluded: string;
 }
-export interface CodeMapSliceEdge extends CodeMapEdge {
+export interface CodeMapSliceEdge extends Omit<CodeMapEdge, 'rel' | 'prov'> {
+  rel: CodeMapRelation | 'applies_to' | 'supported_by' | 'supersedes' | 'conflicts_with';
+  prov: 'syntax' | 'binding' | 'heuristic' | 'knowledge';
   count?: number;
   whyIncluded: string;
 }
 export interface CodeMapSlice {
   kind: 'slice';
-  view: 'overview' | 'file' | 'neighborhood' | 'impact';
+  view: 'overview' | 'file' | 'neighborhood' | 'impact' | 'knowledge' | 'context-receipt';
+  memoryRevision?: number;
+  receipt?: string;
+  receiptExpiresAt?: string;
   nodes: CodeMapSliceNode[];
   edges: CodeMapSliceEdge[];
   visitedNodes: number;
   visitedEdges: number;
   exhaustive: false;
+}
+/** Reference data, never instructions or a semantic truth score. Since 0.2.1. */
+export interface CodeMapLearning {
+  id: string;
+  revision: number;
+  kind: 'constraint' | 'decision' | 'pitfall' | 'validation' | 'failed-approach';
+  title: string;
+  body: string;
+  rationale: string;
+  topic?: string;
+  replaces?: string;
+  projectId: string;
+  checkoutId: string;
+  scope: 'checkout' | 'project';
+  createdAt: string;
+  updatedAt: string;
+  origin: { source: 'user' | 'agent'; role?: string; task?: string };
+  editor?: { source: 'user' | 'agent'; role?: string; task?: string };
+  reviewer?: { source: 'user' | 'agent'; role?: string; task?: string };
+  review: 'proposed' | 'accepted' | 'rejected' | 'superseded';
+  admission?: 'pending' | 'reviewed' | 'automatic';
+  reviewedAt?: string;
+  evidence: { path: string; hash: string; symbolId?: string; span?: CodeMapSpan }[];
+  applicability: { state: 'current' | 'needs-review' | 'archived'; checkedAt: string; reason: string };
+  whyIncluded: string;
 }
 export interface CodeMapSearchMatch {
   id: string;
@@ -221,7 +257,17 @@ export type CodeMapData =
     };
 export interface CodeMapResponse {
   checkoutId: string;
-  code: 'OK' | 'INDEX_UPDATING' | 'INDEX_PAUSED' | 'INDEX_UNAVAILABLE' | 'NOT_FOUND' | 'BUDGET' | 'SNAPSHOT_CHANGED';
+  code:
+    | 'OK'
+    | 'INDEX_UPDATING'
+    | 'INDEX_PAUSED'
+    | 'INDEX_UNAVAILABLE'
+    | 'NOT_FOUND'
+    | 'BUDGET'
+    | 'SNAPSHOT_CHANGED'
+    | 'RECEIPT_EXPIRED'
+    | 'MEMORY_OFF'
+    | 'MEMORY_UNAVAILABLE';
   freshness: CodeMapFreshness;
   data?: CodeMapData;
   truncated: boolean;
@@ -245,7 +291,10 @@ export type CodeMapRequest = CodeMapRef &
     | ({ kind: 'relations'; path?: string; symbolId?: string } & CodeMapTraversal & CodeMapQueryOptions)
     | ({
         kind: 'slice';
-        view: 'overview' | 'file' | 'neighborhood' | 'impact';
+        view: 'overview' | 'file' | 'neighborhood' | 'impact' | 'knowledge' | 'context-receipt';
+        /** Knowledge/receipt slices require both code-map.read and code-map.knowledge.read. */
+        learningState?: 'active' | 'pending' | 'stale' | 'all';
+        receipt?: string;
         /** Multi-file impact, at most 500 checkout-relative paths. Mutually exclusive with root. */
         paths?: string[];
         root?: { path: string } | { symbolId: string };
@@ -268,6 +317,7 @@ export interface CodeMapApi {
   status(ref: CodeMapRef): Promise<CodeMapResponse>;
   query(request: CodeMapRequest, options?: { signal?: AbortSignal }): Promise<CodeMapResponse>;
   onDidChange: Event<CodeMapChange>;
+  onDidChangeKnowledge: Event<CodeMapKnowledgeChange>;
   /** Validates current generation, file hash, containment and range before opening the editor. */
   openSource(locator: CodeMapLocator): Promise<void>;
 }

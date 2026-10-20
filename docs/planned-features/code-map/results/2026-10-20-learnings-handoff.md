@@ -1,7 +1,10 @@
 # Code Map checkpoint: continue stage 12
 
-> Historical checkpoint. Stage 12 is now completed; see [the storage report](2026-10-20-learning-storage.md) and
-> [current status](../status.md). The owner subsequently requested autonomous continuation and a push per stage.
+> Historical checkpoint. Stages 12–14 have since been implemented within the authorized offline-evaluation scope.
+> See [storage](2026-10-20-learning-storage.md), [agent tools](2026-10-20-learning-tools.md),
+> [visualization/evaluation](2026-10-20-learning-evaluation.md) and [current status](../status.md).
+> The owner requested autonomous continuation and a push per stage. Paid evaluations remain deferred; Automatic is
+> unavailable. The stage 12/13/14 instructions below describe the earlier checkpoint, not remaining implementation work.
 
 The owner requested a checkpoint, handoff and push on 2026-10-20. This supersedes earlier no-push instructions in
 historical progress notes. Work stays on `main`. Do not treat the request to finish the session as completion of

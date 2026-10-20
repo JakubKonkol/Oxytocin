@@ -15,7 +15,17 @@ import { LearningMemory } from './admission';
 import { LearningTools } from './agent-tools';
 import { ContextReceipts } from './receipts';
 import { taskContext } from './context';
-import { loadMemory } from './store';
+import { loadMemory, writeMemory } from './store';
+import {
+  CodeMapSliceQuerySchema,
+  CodeMapHostQueryResultSchema,
+  type CodeMapHostQueryResult,
+} from '@shared/domain/code-map-plugin';
+
+const sliceResult = (result: CodeMapHostQueryResult) => ({
+  ...result,
+  data: result.data?.kind === 'slice' ? result.data : undefined,
+});
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -138,6 +148,79 @@ async function fixture() {
   };
 }
 
+it('projects pending/active/stale findings and atomically bounds complete evidence groups', async () => {
+  const f = await fixture();
+  const view = (fields = {}) =>
+    f.tools
+      .view(
+        'view',
+        f.authority,
+        CodeMapSliceQuerySchema.parse({ kind: 'slice', view: 'knowledge', ...fields }),
+        'review',
+      )
+      .then(sliceResult);
+  await f.propose();
+  expect((await view()).data?.nodes).toEqual([]);
+  expect((await view({ learningState: 'pending' })).data?.nodes.some((n) => n.kind === 'learning')).toBe(true);
+  await f.accept();
+  const active = await view();
+  expect(CodeMapHostQueryResultSchema.safeParse(active).success).toBe(true);
+  expect(active.data?.nodes.find((n) => n.kind === 'learning')?.learning).toMatchObject({
+    review: 'accepted',
+    admission: 'reviewed',
+  });
+  expect(active.data?.edges.map((e) => e.rel)).toEqual(expect.arrayContaining(['supported_by', 'applies_to']));
+  const bounded = await view({ maxNodes: 1 });
+  expect(bounded.data?.nodes).toEqual([]);
+  expect(bounded.reasons).toContain('NODE_LIMIT');
+  await writeFile(join(f.root, 'api.ts'), 'export function changed() {}\n');
+  expect((await view()).data?.nodes).toEqual([]);
+  expect(
+    (await view({ learningState: 'stale' })).data?.nodes.find((n) => n.kind === 'learning')?.learning?.applicability
+      .state,
+  ).toBe('needs-review');
+});
+
+it('reconstructs only the named receipt and refuses scope, generation, memory, off and revoked selections', async () => {
+  const f = await fixture();
+  await f.accept();
+  const context = await f.context();
+  const query = CodeMapSliceQuerySchema.parse({ kind: 'slice', view: 'context-receipt', receipt: context.receipt });
+  const view = () => f.tools.view('receipt-view', f.authority, query, 'review').then(sliceResult);
+  const result = await view();
+  expect(result.code).toBe('OK');
+  expect(result.data?.receipt).toBe(context.receipt);
+  expect(result.data?.receiptExpiresAt).toBeTruthy();
+  expect(result.data?.nodes.filter((n) => n.kind === 'learning').map((n) => n.learning?.id)).toEqual(
+    context.learnings.map((l) => l.id),
+  );
+  expect(result.data?.nodes.filter((n) => n.kind === 'learning').map((n) => n.whyIncluded)).toEqual(
+    context.learnings.map((l) => l.whyIncluded),
+  );
+  expect(JSON.stringify(result)).not.toContain('protocol compatibility');
+  expect(await f.tools.view('wrong', { ...f.authority, checkoutId: 'other' }, query, 'review')).toMatchObject({
+    code: 'RECEIPT_EXPIRED',
+    data: undefined,
+  });
+  f.setGeneration(2);
+  expect(await view()).toMatchObject({ code: 'SNAPSHOT_CHANGED', data: undefined });
+  f.setGeneration(1);
+  await f.memory.run(f.authority, {
+    action: 'review',
+    id: context.learnings[0]!.id,
+    expectedRevision: context.learnings[0]!.revision,
+    decision: 'reject',
+    idempotencyKey: 'changed',
+  });
+  expect(await view()).toMatchObject({ code: 'SNAPSHOT_CHANGED', data: undefined });
+  expect(await f.tools.view('off', f.authority, query, 'off')).toMatchObject({
+    code: 'RECEIPT_EXPIRED',
+    data: undefined,
+  });
+  f.tools.revoke('p');
+  expect(await view()).toMatchObject({ code: 'RECEIPT_EXPIRED', data: undefined });
+});
+
 it('queues authenticated proposals, then reuses reviewed knowledge in a later independent session', async () => {
   const { root, memory, authority, actor, propose, accept, context } = await fixture();
   const proposed = await propose();
@@ -158,6 +241,53 @@ it('queues authenticated proposals, then reuses reviewed knowledge in a later in
   const stored = (await memory.run(authority, { action: 'get', id })).records[0]!;
   expect(stored.origin.source).toBe('agent');
   expect(await readFile(join(root, '.oxy/learnings/learnings.json'), 'utf8')).not.toContain('retries');
+});
+it('quarantines imported automatic admission until explicit user review and invalidates non-indexed evidence receipts', async () => {
+  const f = await fixture();
+  const id = await f.accept();
+  const imported = await loadMemory(f.root);
+  imported.records[0]!.admission = 'automatic';
+  await writeMemory(f.root, imported);
+  expect((await f.context()).learnings).toEqual([]);
+  await f.memory.run(f.authority, {
+    action: 'review',
+    id,
+    expectedRevision: imported.records[0]!.revision,
+    decision: 'accept',
+    idempotencyKey: 'review-import',
+  });
+  expect((await f.context()).learnings[0]?.admission).toBe('reviewed');
+  const saved = await f.memory.run(f.authority, {
+    action: 'save',
+    draft: {
+      kind: 'constraint',
+      title: 'Document protocol',
+      body: 'Use documented protocol.',
+      rationale: '',
+      evidence: [{ path: 'rules.md' }],
+    },
+    expectedRevision: 0,
+    idempotencyKey: 'doc',
+  });
+  const doc = saved.records[0]!;
+  await f.memory.run(f.authority, {
+    action: 'review',
+    id: doc.id,
+    expectedRevision: doc.revision,
+    decision: 'accept',
+    idempotencyKey: 'doc-review',
+  });
+  const selected = await f.run({ kind: 'task-context', question: 'Document protocol', paths: ['rules.md'] });
+  if (selected.kind !== 'task-context') throw new Error(JSON.stringify(selected));
+  expect(selected.learnings.some((l) => l.id === doc.id)).toBe(true);
+  await writeFile(join(f.root, 'rules.md'), 'The documented protocol changed.\n');
+  const result = await f.tools.view(
+    'changed-doc',
+    f.authority,
+    CodeMapSliceQuerySchema.parse({ kind: 'slice', view: 'context-receipt', receipt: selected.receipt }),
+    'review',
+  );
+  expect(result).toMatchObject({ code: 'SNAPSHOT_CHANGED', data: undefined });
 });
 it('binds feedback to the emitted revision/session and counts idempotent or repeated feedback only once', async () => {
   const { root, actor, accept, context, run, memory, authority } = await fixture();

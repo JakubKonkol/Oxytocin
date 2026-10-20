@@ -48,7 +48,11 @@ export function closePluginTerminalPanel(req: { terminalId: string; projectId: s
 export function runCoreCommand(id: string, args: unknown[]): void {
   switch (id) {
     case 'oxytocin.codeMap.openSettings':
+    case 'oxytocin.codeMap.openLearnings':
       if (typeof args[0] === 'string') openProjectSettings(args[0], 'code-map');
+      break;
+    case 'oxytocin.codeMap.openReceipt':
+      void executeCommand('codeMap.openReceipt', args[0]);
       break;
     case 'oxytocin.terminal.new':
       void executeCommand('terminal.new');

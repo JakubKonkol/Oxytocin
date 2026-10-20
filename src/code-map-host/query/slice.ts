@@ -10,6 +10,8 @@ export function graphSlice(
   request: CodeMapSliceQuery,
   neighbors?: CodeRelations,
 ): { data: CodeMapSliceData | null; reasons: ('NODE_LIMIT' | 'EDGE_LIMIT' | 'VISIT_LIMIT')[] } {
+  if (request.view === 'knowledge' || request.view === 'context-receipt')
+    throw new Error('Knowledge views require the authorized memory route');
   const data: CodeMapSliceData = {
     kind: 'slice',
     view: request.view,

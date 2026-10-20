@@ -17,6 +17,8 @@ import {
   CodeMapHostQueryResultSchema,
   CodeMapLocatorSchema,
   CodeMapSourceLocationSchema,
+  CodeMapSliceQuerySchema,
+  type CodeMapKnowledgeChangeSchema,
 } from '../../domain/code-map-plugin';
 
 export const CodeMapCheckoutSchema = z.object({ checkoutId: z.string().min(1).max(200) }).strict();
@@ -35,6 +37,17 @@ export const ConfigureCodeMapCheckoutSchema = z
 export type ConfigureCodeMapCheckout = z.infer<typeof ConfigureCodeMapCheckoutSchema>;
 
 export const CodeMapHostContracts = {
+  'memory:view': {
+    params: z
+      .object({
+        requestId: z.string().min(1).max(200),
+        authority: MemoryAuthoritySchema,
+        query: CodeMapSliceQuerySchema,
+        mode: z.enum(['off', 'review']),
+      })
+      .strict(),
+    result: CodeMapHostQueryResultSchema,
+  },
   'memory:agent': {
     params: z
       .object({
@@ -108,4 +121,7 @@ export type CodeMapHostMethods = HostBaseMethods & {
     params: z.input<(typeof CodeMapHostContracts)[K]['params']>,
   ) => z.infer<(typeof CodeMapHostContracts)[K]['result']>;
 };
-export type CodeMapHostEvents = HostBaseEvents & { 'checkout:status': z.infer<typeof CodeMapStatusSchema> };
+export type CodeMapHostEvents = HostBaseEvents & {
+  'checkout:status': z.infer<typeof CodeMapStatusSchema>;
+  'memory:changed': z.infer<typeof CodeMapKnowledgeChangeSchema>;
+};

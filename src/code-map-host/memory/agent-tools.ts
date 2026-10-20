@@ -14,6 +14,13 @@ import type { LearningMemory } from './admission';
 import { actorKey, ContextReceipts } from './receipts';
 import { taskContext } from './context';
 import { sha256 } from '../store/writer';
+import {
+  CodeMapSliceQuerySchema,
+  type CodeMapSliceQuery,
+  type CodeMapHostQueryResult,
+} from '@shared/domain/code-map-plugin';
+import { boundSliceResult } from '../query/slice-budget';
+import { knowledgeSlice } from './knowledge';
 
 const errors: Record<string, string> = {
   UNAVAILABLE: 'Code Map or checkout access is unavailable.',
@@ -66,6 +73,97 @@ export class LearningTools {
   revokeActor(principal: string): void {
     this.receipts.revokeActor(principal);
     for (const [id, r] of this.running) if (r.principal === principal) this.cancel(id);
+  }
+  async view(
+    requestId: string,
+    authority: MemoryAuthority,
+    input: CodeMapSliceQuery,
+    mode: 'off' | 'review',
+  ): Promise<CodeMapHostQueryResult> {
+    const query = CodeMapSliceQuerySchema.parse(input);
+    if (query.view !== 'knowledge' && query.view !== 'context-receipt') throw new Error('Not a knowledge view');
+    if (this.running.has(requestId) || this.running.size >= 100) throw new Error('Too many knowledge views');
+    const controller = new AbortController();
+    this.running.set(requestId, { authority, principal: 'user-view', controller });
+    try {
+      const structure = await this.checkouts.query(authority.checkoutId, `${requestId}:structure`, {
+        kind: 'status',
+        freshness: query.freshness,
+        maxChars: 24000,
+      });
+      controller.signal.throwIfAborted();
+      const result: CodeMapHostQueryResult = {
+        ...structure,
+        data: undefined,
+        hint: 'Reference findings and their recorded evidence. Matching hashes do not establish semantic truth.',
+      };
+      if (mode === 'off')
+        return {
+          ...result,
+          code: query.view === 'context-receipt' ? 'RECEIPT_EXPIRED' : 'MEMORY_OFF',
+          hint: 'Memory is off; existing findings remain in the core Learnings manager.',
+        };
+      try {
+        const receipt =
+          query.view === 'context-receipt'
+            ? this.receipts.inspect(query.receipt!, authority.projectId, authority.checkoutId)
+            : undefined;
+        const snapshot = this.checkouts.memorySnapshot(authority.checkoutId);
+        const epoch = this.memory.observation.epoch(authority.checkoutId);
+        const memory = await this.memory.inspect(authority, controller.signal);
+        controller.signal.throwIfAborted();
+        if (receipt) this.receipts.inspect(receipt.id, authority.projectId, authority.checkoutId);
+        if (
+          snapshot?.generation !== this.checkouts.memorySnapshot(authority.checkoutId)?.generation ||
+          epoch !== this.memory.observation.epoch(authority.checkoutId) ||
+          (snapshot && snapshot.generation !== structure.freshness.generation) ||
+          (query.generation !== undefined && query.generation !== snapshot?.generation) ||
+          (receipt &&
+            (receipt.generation !== snapshot?.generation ||
+              receipt.memoryRevision !== memory.memoryRevision ||
+              !receipt.learnings.every((l) =>
+                memory.records.some(
+                  (r) =>
+                    r.id === l.id &&
+                    r.revision === l.revision &&
+                    r.review === 'accepted' &&
+                    r.admission !== 'automatic' &&
+                    r.applicability[authority.checkoutId]?.state === 'current' &&
+                    !r.conflicts.length,
+                ),
+              )))
+        )
+          return {
+            ...result,
+            code: 'SNAPSHOT_CHANGED',
+            hint: 'The named code generation or memory revision is unavailable. Request new task context.',
+          };
+        const projected = knowledgeSlice(
+          snapshot?.graph,
+          memory.records,
+          authority.checkoutId,
+          query,
+          memory.memoryRevision,
+          receipt,
+        );
+        result.data = projected.data;
+        result.reasons = projected.reasons;
+        result.truncated = projected.reasons.length > 0;
+        return boundSliceResult(result);
+      } catch (error) {
+        const failure = learningFailure(error);
+        return {
+          ...result,
+          code:
+            failure.code === 'RECEIPT_EXPIRED' || failure.code === 'INVALID_RECEIPT'
+              ? 'RECEIPT_EXPIRED'
+              : 'MEMORY_UNAVAILABLE',
+          hint: failure.kind === 'error' ? failure.message : 'Memory is unavailable.',
+        };
+      }
+    } finally {
+      this.running.delete(requestId);
+    }
   }
   async run(
     requestId: string,

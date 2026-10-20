@@ -1,7 +1,8 @@
 # Code Map Visualizer
 
 Open **Code Map** from a project's menu, Code Map settings, the Add menu, or **Code Map: Open**. Enable indexing in
-project settings first. The plugin uses public APIs with `projects.read`, `code-map.read` and `git.read`.
+project settings first. The plugin uses public APIs with `projects.read`, `code-map.read`, `code-map.knowledge.read`
+and `git.read`.
 
 Overview groups folders and aggregates indexed dependencies. Select a folder to explore it, a file for declarations,
 or search for a symbol and explore its neighborhood. Filter directions, relation types, evidence and depth (1–3).
@@ -26,6 +27,19 @@ not prove code is unused. Git and index snapshots are separate checkpoints, so r
 
 Both Git change paths and graph results are bounded; truncation is visible. Export is deferred; this version focuses
 on inspecting and navigating the current view.
+
+**Knowledge** shows applicable reviewed findings and their recorded evidence by default. Inspect pending proposals,
+findings needing review, or all records with the filter. Reviewed findings are rounded rectangles, proposals diamonds,
+findings needing review triangles, and imported automatic records gray hexagons. Evidence nodes are rectangles;
+knowledge edges are dashed and never participate in structural impact queries. Automatic records are quarantined from
+Review retrieval. Matching evidence hashes establish freshness, not semantic truth. **Open Learnings manager** opens
+the core review UI with `oxytocin.codeMap.openLearnings(projectId)`.
+
+**Task context** accepts the receipt returned by `oxy_task_context`. Use the form or the documented core command
+`oxytocin.codeMap.openReceipt({ projectId, checkoutId, receipt })`. It shows selected IDs, evidence and inclusion reasons,
+without retaining the question. Receipts expire after 30 minutes, host restart or revocation. Changed code generations
+or memory revisions show an explicit unavailable state; request new context. Off mode preserves stored findings but
+hides them here. Removed checkouts are never replaced with the main checkout. Reference findings remain untrusted data.
 
 Assets and Cytoscape.js (MIT) ship with the plugin; it needs no CDN, network connection or compiler. Disable the plugin
 to remove visualization; indexing and agent MCP tools remain core features. No API credentials or MCP server token

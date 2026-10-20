@@ -45,6 +45,7 @@ export class LearningMemory {
   constructor(
     private readonly snapshot: (checkoutId: string) => { graph: CodeMapGraph; generation: number } | undefined,
     subscribe?: WatchSubscribe,
+    private readonly changed?: (projectId: string, checkoutId: string, memoryRevision: number) => void,
   ) {
     this.observation = new EvidenceObservation(subscribe);
   }
@@ -61,6 +62,9 @@ export class LearningMemory {
   context(authority: MemoryAuthority, signal?: AbortSignal): Promise<LearningResult> {
     return this.enqueueInternal(authority, { action: 'context' }, signal);
   }
+  inspect(authority: MemoryAuthority, signal?: AbortSignal): Promise<LearningResult> {
+    return this.enqueueInternal(authority, { action: 'inspect' }, signal);
+  }
   feedback(
     authority: MemoryAuthority,
     operation: LearningFeedbackMutation,
@@ -70,7 +74,7 @@ export class LearningMemory {
   }
   private enqueueInternal(
     authority: MemoryAuthority,
-    operation: LearningOperation | LearningFeedbackMutation | { action: 'context' },
+    operation: LearningOperation | LearningFeedbackMutation | { action: 'context' } | { action: 'inspect' },
     signal?: AbortSignal,
   ): Promise<LearningResult> {
     const next = this.queue.then(() => this.execute(MemoryAuthoritySchema.parse(authority), operation, signal));
@@ -87,7 +91,12 @@ export class LearningMemory {
 
   private async execute(
     authority: MemoryAuthority,
-    operation: LearningOperation | LearningFeedbackMutation | { action: 'archive' } | { action: 'context' },
+    operation:
+      | LearningOperation
+      | LearningFeedbackMutation
+      | { action: 'archive' }
+      | { action: 'context' }
+      | { action: 'inspect' },
     signal?: AbortSignal,
   ): Promise<LearningResult> {
     signal?.throwIfAborted();
@@ -114,7 +123,8 @@ export class LearningMemory {
       operation.action === 'list' ||
       operation.action === 'get' ||
       operation.action === 'export' ||
-      operation.action === 'context'
+      operation.action === 'context' ||
+      operation.action === 'inspect'
     ) {
       try {
         await safeDirectory(authority.projectRoot, ['.oxy', 'learnings'], false);
@@ -172,6 +182,7 @@ export class LearningMemory {
         stores.set(sourceLocation, cleared);
         stores.set(archiveLocation, archive);
         await commitMemory(authority.projectRoot, stores, new Set([archiveLocation, sourceLocation]));
+        this.changed?.(authority.projectId, authority.checkoutId, archive.revision);
         await this.observation.remove(authority.checkoutId);
         return { memoryRevision: archive.revision, records: [], total: archive.records.length };
       }
@@ -206,6 +217,7 @@ export class LearningMemory {
         });
       const snapshot = this.snapshot(authority.archived ? authority.projectId : authority.checkoutId);
       const epoch = this.observation.epoch(authority.checkoutId);
+      let refreshed = false;
       for (const [target, store] of stores) {
         let dirty = false;
         for (const record of store.records.filter(visible)) {
@@ -226,6 +238,7 @@ export class LearningMemory {
         if (dirty) {
           store.revision++;
           await persist(target, store);
+          refreshed = true;
         }
       }
       const result = (records: Learning[], extras: Partial<LearningResult> = {}): LearningResult =>
@@ -235,10 +248,18 @@ export class LearningMemory {
           total: allRecords.length,
           ...extras,
         });
+      if (refreshed) this.changed?.(authority.projectId, authority.checkoutId, result([]).memoryRevision);
+      if (operation.action === 'inspect') {
+        signal?.throwIfAborted();
+        return result(allRecords);
+      }
       if (operation.action === 'context') {
         const reviewed = allRecords.filter((r) => r.review === 'accepted');
         const active = reviewed.filter(
-          (r) => r.review === 'accepted' && r.applicability[authority.checkoutId]?.state === 'current',
+          (r) =>
+            r.review === 'accepted' &&
+            r.admission !== 'automatic' &&
+            r.applicability[authority.checkoutId]?.state === 'current',
         );
         const eligible = active.filter(
           (r) =>
@@ -385,6 +406,7 @@ export class LearningMemory {
             origin: old?.origin ?? authority.origin,
             editor: authority.origin,
             review: 'proposed',
+            admission: 'pending',
             applicability: {},
             conflicts,
             feedback: old?.feedback ?? { used: 0, irrelevant: 0, outdated: 0, incorrect: 0 },
@@ -432,6 +454,7 @@ export class LearningMemory {
             throw new Error('CONFLICT: reject alternatives or name the reviewed record as a replacement');
           record.evidence = evidence;
           record.review = 'accepted';
+          record.admission = 'reviewed';
           record.reviewedAt = now;
           record.reviewer = authority.origin;
           record.applicability = {
@@ -526,6 +549,7 @@ export class LearningMemory {
       for (const lock of checkoutLocks) await lock.assertOwned();
       signal?.throwIfAborted();
       await commitMemory(authority.projectRoot, stores, dirtyStores);
+      this.changed?.(authority.projectId, authority.checkoutId, result([]).memoryRevision);
       if (operation.action === 'review' && operation.decision !== 'reject' && record)
         this.observation.reviewed(authority.checkoutId, record.id);
       await this.observation.observe(authority, [...stores.values()].flatMap((f) => f.records).filter(visible), () => {

@@ -87,6 +87,23 @@ label {
 .path {
   overflow-wrap: anywhere;
 }
+.knowledge-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.knowledge-controls p {
+  flex-basis: 100%;
+  margin: 4px 0;
+}
+.knowledge-controls input {
+  min-width: 240px;
+}
+.learning-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .changed-files {
   max-height: 180px;
   overflow: auto;

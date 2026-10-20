@@ -7,6 +7,12 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map Visualizer:** Knowledge shows findings next to their code and evidence, with review and freshness filters.
+  Task context shows the items an agent received and why, using an expiring receipt. Both require the new
+  `code-map.knowledge.read` permission (Plugin API 0.2.1); the core Learnings manager remains available separately.
+  An offline longitudinal corpus and evaluation harness cover four arms and changed evidence. Automatic remains
+  unavailable until measured evaluation passes its release gate.
+
 - **Code Map learnings for agents:** `oxy_task_context` returns bounded code pointers, relations and up to three
   applicable reviewed findings. Agents propose reusable findings with `oxy_propose_learning` and report feedback
   with `oxy_learning_feedback`. Receipts bind feedback to the authenticated session and checkout; negative feedback
@@ -15,7 +21,7 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   review, revision history, search, export and confirmed deletion. Changed evidence requires explicit revalidation;
   rebuilding or deleting the map preserves findings. Removed worktrees retain an inspectable archive; explicitly
   promote a finding to share it with the project. Project budgets include live stores, archives and revisions.
-  Agent learning tools and the knowledge visualizer remain under development. Memory settings offer Review and Off;
+  Memory settings offer Review and Off;
   Automatic is unavailable.
 - **Code Map:** Python support — package roots, declarations, decorators, relative imports/re-exports and simple
   calls, including self methods. Unknown instance attributes and dynamic imports remain unresolved; support is shown

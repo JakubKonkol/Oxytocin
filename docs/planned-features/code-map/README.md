@@ -1,11 +1,11 @@
 # Code Map — finalny plan funkcjonalności
 
-> Implementation progress (2026-10-20): stages 00–13 implemented; release-validation gates remain open. Continue with
-> stage 14 using [status.md](status.md) and [the learning-tools report](results/2026-10-20-learning-tools.md).
-> Stage 12 includes the core manager, worktree archives, explicit promotion and evidence observation. Stage 10 includes an
-> offline harness and frozen corpus; paid evaluation remains deferred and the benefit gate is unverified. Stages
-> Stage 13 adds authenticated proposals, task context and feedback; stage 14 remains. The owner requested autonomous
-> continuation and a push after each stage on 2026-10-20.
+> Implementation progress (2026-10-20): stages 00–14 implemented within the owner's authorized scope; release-validation
+> gates remain open. See [status.md](status.md) and [the stage 14 report](results/2026-10-20-learning-evaluation.md).
+> Stage 12 adds durable storage, archives and promotion; stage 13 authenticated learning tools; stage 14 Knowledge and
+> Task context views behind a separate permission, plus an offline longitudinal corpus/harness (10 sequences, 4 sessions,
+> 4 arms, 3 repeats). Paid evaluations in stages 10/14 remain deferred, with no measured benefit claims. Automatic is
+> unavailable while its release gate is unverified. The owner requested autonomous continuation and a push after each stage.
 
 > **Planning baseline (historical):** plan gotowy do realizacji, implementacja nierozpoczęta. Wersja planu: 2026-10-19 (stan kodu: Oxytocin
 > 0.9.10, plugin API 0.1.10). Ten dokument zastępuje wcześniejsze trzy rundy researchu (są w historii Gita, commit

@@ -36,9 +36,19 @@ const checkouts = new CodeMapCheckouts(
 );
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
-const memory = new LearningMemory((checkoutId) => checkouts.memorySnapshot(checkoutId));
+const memory = new LearningMemory(
+  (checkoutId) => checkouts.memorySnapshot(checkoutId),
+  undefined,
+  (projectId, checkoutId, memoryRevision) => {
+    runtime.rpc.emit('memory:changed', { projectId, checkoutId, memoryRevision });
+  },
+);
 const learningTools = new LearningTools(checkouts, memory);
 const impl: Impl = {
+  'memory:view': (input) => {
+    const p = CodeMapHostContracts['memory:view'].params.parse(input);
+    return learningTools.view(p.requestId, p.authority, p.query, p.mode);
+  },
   'memory:agent': (input) => {
     const p = CodeMapHostContracts['memory:agent'].params.parse(input);
     return learningTools.run(p.requestId, p.authority, p.actor, p.request, p.mode);

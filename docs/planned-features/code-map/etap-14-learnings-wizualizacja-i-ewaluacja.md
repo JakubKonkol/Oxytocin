@@ -4,6 +4,10 @@
 
 ## Cel
 
+> Implementation status (2026-10-20): Knowledge/Task context and the offline longitudinal corpus/harness are implemented.
+> The owner explicitly deferred paid model evaluations; the separate Review/Automatic results criterion below remains
+> open. Automatic is unavailable. See [the implementation/evaluation report](results/2026-10-20-learning-evaluation.md).
+
 Wizualizator pokazuje learnings przy ich kotwicach (widoki Knowledge i Task context) za nowym uprawnieniem
 `code-map.knowledge.read`, a tryby Review i Automatic zostają zmierzone ewaluacją longitudinalną. Tryb Automatic jest
 dostępny w produkcie tylko, jeśli przejdzie swoją bramkę.
@@ -66,11 +70,11 @@ dostępny w produkcie tylko, jeśli przejdzie swoją bramkę.
 
 ## Kryteria ukończenia
 
-- [ ] Widoki Knowledge/Task context dostępne tylko z możliwościami learnings; uprawnienia przetestowane.
+- [x] Widoki Knowledge/Task context dostępne tylko z możliwościami learnings; uprawnienia przetestowane.
 - [ ] Tryby Review i Automatic mają osobne wyniki longitudinalne z narzutem przechwytywania i przypadkami szkodliwymi
       (`results/<data>-learning-evaluation.md`).
-- [ ] Tryb Automatic oferowany tylko, jeśli przeszedł bramkę.
-- [ ] `npm run check` + E2E zielone.
+- [x] Tryb Automatic oferowany tylko, jeśli przeszedł bramkę.
+- [x] `npm run check` + E2E zielone.
 
 ## Commity i CHANGELOG
 

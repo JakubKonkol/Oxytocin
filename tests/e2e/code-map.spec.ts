@@ -257,6 +257,16 @@ test('public Code Map plugin API opens verified source and rejects disabled proj
       (projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true, ignoreInGit: true }),
       id,
     );
+    await expect(
+      win.evaluate(
+        (projectId) =>
+          window.oxy.invoke('plugins:executeCommand', {
+            id: 'map.query',
+            args: [{ projectId, checkoutId: projectId, kind: 'slice', view: 'knowledge' }],
+          }),
+        id,
+      ),
+    ).rejects.toThrow('code-map.knowledge.read');
     await expect
       .poll(
         async () =>

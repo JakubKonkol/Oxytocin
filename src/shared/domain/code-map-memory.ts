@@ -41,6 +41,7 @@ export const LearningSchema = LearningDraftSchema.extend({
   editor: provenance.optional(),
   reviewer: provenance.optional(),
   review: z.enum(['proposed', 'accepted', 'rejected', 'superseded']),
+  admission: z.enum(['pending', 'reviewed', 'automatic']).optional(),
   reviewedAt: z.iso.datetime().optional(),
   applicability: z.record(
     key,
@@ -59,6 +60,17 @@ export const LearningSchema = LearningDraftSchema.extend({
     .default({ used: 0, irrelevant: 0, outdated: 0, incorrect: 0 }),
 }).strict();
 export type Learning = z.infer<typeof LearningSchema>;
+export const LearningReferenceSchema = LearningSchema.omit({
+  applicability: true,
+  conflicts: true,
+  feedback: true,
+  dedup: true,
+})
+  .extend({
+    applicability: LearningSchema.shape.applicability.valueType,
+    whyIncluded: z.string().max(200),
+  })
+  .strict();
 export type LearningDraft = z.infer<typeof LearningDraftSchema>;
 export const LearningOperationSchema = z.discriminatedUnion('action', [
   z

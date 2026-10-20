@@ -48,6 +48,36 @@ function setup(
 const actions = [{ id: 'yes', title: 'Yes' }];
 
 describe('Code Map API facade', () => {
+  it('requires both permissions for mixed slices and rechecks knowledge before returning any metadata', async () => {
+    const request = { projectId: 'p', checkoutId: 'p', kind: 'slice' as const, view: 'knowledge' as const };
+    for (const permissions of [[], ['code-map.read'], ['code-map.knowledge.read']]) {
+      const s = setup(() => Promise.resolve(null), { permissions });
+      await expect(s.api.codeMap.query(request)).rejects.toThrow();
+      expect(s.call).not.toHaveBeenCalled();
+    }
+    const permissions = ['code-map.read', 'code-map.knowledge.read'];
+    let finish!: (value: unknown) => void;
+    const s = setup(() => Promise.resolve(null), {
+      permissions,
+      call: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    });
+    const listener = vi.fn();
+    s.api.codeMap.onDidChangeKnowledge(listener);
+    const change = { projectId: 'p', checkoutId: 'p', memoryRevision: 1 };
+    s.events.fire('codeMap.knowledgeChanged', change, 'another.plugin');
+    expect(listener).not.toHaveBeenCalled();
+    s.events.fire('codeMap.knowledgeChanged', change, plugin.id);
+    expect(listener).toHaveBeenCalledOnce();
+    const pending = s.api.codeMap.query(request);
+    permissions.splice(1, 1);
+    finish({ secret: 'never parsed' });
+    await expect(pending).rejects.toThrow('code-map.knowledge.read');
+    s.events.fire('codeMap.knowledgeChanged', change, plugin.id);
+    expect(listener).toHaveBeenCalledOnce();
+  });
   it('guards checkout Git access and validates the returned bounded comparison', async () => {
     const ref = { projectId: 'p', checkoutId: 'worktree:t' };
     for (const permissions of [[], ['git.read'], ['code-map.read']]) {

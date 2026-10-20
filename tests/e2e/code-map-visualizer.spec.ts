@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -6,6 +6,135 @@ import { launchApp } from './helpers/launch';
 import { activeProjectId } from './helpers/terminal';
 import { userDataWithPlugins } from './helpers/plugins';
 import { claudeConfigDir, ensembleRecords, gitIn, gitRepo, useFakeClaude } from './helpers/ensemble';
+import { connect, freePort } from './helpers/mcp';
+import { LearningResultSchema } from '../../src/shared/domain/code-map-memory';
+import { LearningToolResultSchema } from '../../src/shared/domain/code-map-learning-tools';
+
+test('Knowledge inspects pending, reviewed and stale findings; Task context opens a bounded receipt and expires', async () => {
+  test.setTimeout(120_000);
+  const project = await mkdtemp(join(tmpdir(), 'oxy-map-knowledge-'));
+  await writeFile(join(project, 'api.ts'), 'export function protocol() { return 1; }\n');
+  const { app, win, userData } = await launchApp({ project });
+  let client: Awaited<ReturnType<typeof connect>> | undefined;
+  try {
+    const projectId = await activeProjectId(win),
+      port = await freePort();
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), projectId);
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), projectId)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    await win.evaluate(
+      (projectId) => window.oxy.invoke('plugins:executeCommand', { id: 'codeMap.open', args: [projectId] }),
+      projectId,
+    );
+    const frame = win.frameLocator('iframe[src*="oxytocin.code-map-visualizer"]');
+    await frame.getByRole('checkbox', { name: 'List only', exact: true }).check();
+    await frame.getByRole('button', { name: 'Knowledge', exact: true }).click();
+    await win.evaluate(
+      (projectId) => window.oxy.invoke('codeMap:setMemoryMode', { projectId, mode: 'off' }),
+      projectId,
+    );
+    await expect(frame.getByRole('status').filter({ hasText: 'Memory is off' })).toBeVisible();
+    await win.evaluate(
+      (projectId) => window.oxy.invoke('codeMap:setMemoryMode', { projectId, mode: 'review' }),
+      projectId,
+    );
+    const saved = LearningResultSchema.parse(
+      await win.evaluate(
+        (projectId) =>
+          window.oxy.invoke('codeMap:memory', {
+            projectId,
+            operation: {
+              action: 'save',
+              draft: {
+                kind: 'constraint',
+                title: 'Protocol rule',
+                body: 'Preserve protocol compatibility.',
+                evidence: [{ path: 'api.ts' }],
+              },
+              expectedRevision: 0,
+              idempotencyKey: 'view-note',
+            },
+          }),
+        projectId,
+      ),
+    );
+    const note = saved.records[0]!;
+    const table = frame.getByRole('table', { name: 'Code Map nodes' });
+    await expect(table.getByRole('button', { name: 'Protocol rule', exact: true })).toHaveCount(0);
+    await frame.getByRole('combobox', { name: 'Learning filter' }).selectOption('pending');
+    await table.getByRole('button', { name: 'Protocol rule', exact: true }).click();
+    await expect(frame.getByRole('region', { name: 'Learning details' })).toContainText('proposed');
+    await win.evaluate(
+      ({ projectId, id, revision }) =>
+        window.oxy.invoke('codeMap:memory', {
+          projectId,
+          operation: {
+            action: 'review',
+            id,
+            expectedRevision: revision,
+            decision: 'accept',
+            idempotencyKey: 'accept-view',
+          },
+        }),
+      { projectId, id: note.id, revision: note.revision },
+    );
+    await frame.getByRole('combobox', { name: 'Learning filter' }).selectOption('active');
+    await expect(table.getByRole('row').filter({ hasText: 'Protocol rule' })).toContainText('reviewed');
+    await frame.getByRole('button', { name: 'Open Learnings manager' }).click();
+    const dialog = win.getByTestId('project-settings');
+    await expect(dialog.getByTestId('learnings-list')).toContainText('Protocol rule');
+    await win.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await win.evaluate((port) => window.oxy.invoke('settings:update', { 'mcp.enabled': true, 'mcp.port': port }), port);
+    const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
+    client = await connect(port, token);
+    const context = LearningToolResultSchema.parse(
+      JSON.parse(
+        (
+          await client.call('oxy_task_context', {
+            cwd: project,
+            question: 'private original question protocol',
+            paths: ['api.ts'],
+          })
+        ).result!.content![0]!.text,
+      ),
+    );
+    if (context.kind !== 'task-context' || !context.receipt) throw new Error(JSON.stringify(context));
+    await win.clock.install();
+    await frame.getByRole('button', { name: 'Task context', exact: true }).click();
+    await frame.getByRole('textbox', { name: 'Context receipt' }).fill(context.receipt);
+    // Uses the documented core command, through the plugin view bridge.
+    await frame.getByRole('button', { name: 'Open context receipt', exact: true }).click();
+    await expect(table.getByRole('button', { name: 'Protocol rule', exact: true })).toBeVisible();
+    await expect(frame.locator('body')).not.toContainText('private original question');
+    await win.clock.fastForward(31 * 60_000);
+    await expect(table.getByRole('button', { name: 'Protocol rule', exact: true })).toHaveCount(0);
+    await expect(frame.getByRole('alert')).toContainText(/expired|unavailable/i);
+    await win.clock.resume();
+    await frame.getByRole('button', { name: 'Knowledge', exact: true }).click();
+    await writeFile(join(project, 'api.ts'), 'export function protocol() { return 2; }\n');
+    await frame.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(table.getByRole('button', { name: 'Protocol rule', exact: true })).toHaveCount(0);
+    await frame.getByRole('combobox', { name: 'Learning filter' }).selectOption('stale');
+    await expect(table.getByRole('row').filter({ hasText: 'Protocol rule' })).toContainText('needs-review');
+    await frame.getByRole('button', { name: 'Task context', exact: true }).click();
+    await expect(frame.getByRole('status').filter({ hasText: 'Task context unavailable' })).toContainText(
+      'SNAPSHOT_CHANGED',
+    );
+    await expect(table.getByRole('button', { name: 'Protocol rule', exact: true })).toHaveCount(0);
+  } finally {
+    client?.close();
+    await app.close();
+  }
+});
 
 test('visualizer explores a symbol by keyboard, opens source and updates after edits', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-map-view-'));
@@ -143,6 +272,49 @@ test('Changes and Impact show bounded incoming dependencies and compare an Ensem
       'Uncommitted changes compared with HEAD',
     );
     await expect(frame.getByRole('region', { name: 'Changed files' })).not.toContainText('api.ts');
+    const checkoutId = `worktree:${record.task.id}`;
+    const note = LearningResultSchema.parse(
+      await win.evaluate(
+        ({ projectId, checkoutId }) =>
+          window.oxy.invoke('codeMap:memory', {
+            projectId,
+            checkoutId,
+            operation: {
+              action: 'save',
+              draft: {
+                kind: 'constraint',
+                title: 'Isolated worktree finding',
+                body: 'Inspect the worktree API.',
+                evidence: [{ path: 'api.ts' }],
+              },
+              expectedRevision: 0,
+              idempotencyKey: 'worktree-view',
+            },
+          }),
+        { projectId: id, checkoutId },
+      ),
+    ).records[0]!;
+    await win.evaluate(
+      ({ projectId, checkoutId, id, revision }) =>
+        window.oxy.invoke('codeMap:memory', {
+          projectId,
+          checkoutId,
+          operation: {
+            action: 'review',
+            id,
+            expectedRevision: revision,
+            decision: 'accept',
+            idempotencyKey: 'accept-worktree-view',
+          },
+        }),
+      { projectId: id, checkoutId, id: note.id, revision: note.revision },
+    );
+    await frame.getByRole('combobox', { name: 'Checkout', exact: true }).selectOption(checkoutId);
+    await frame.getByRole('button', { name: 'Knowledge', exact: true }).click();
+    await expect(table.getByRole('button', { name: 'Isolated worktree finding', exact: true })).toBeVisible();
+    await win.evaluate((taskId) => window.oxy.invoke('ensemble:delete', { taskId }), record.task.id);
+    await expect(frame.getByRole('alert')).toContainText('no longer available');
+    await expect(table.getByRole('button', { name: 'Isolated worktree finding', exact: true })).toHaveCount(0);
   } finally {
     await app.close();
   }

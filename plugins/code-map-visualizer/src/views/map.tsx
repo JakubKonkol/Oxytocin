@@ -31,6 +31,8 @@ function App() {
   const [listOnly, setListOnly] = useState(false),
     [provenance, setProvenance] = useState('all');
   const [searchText, setSearchText] = useState('');
+  const [receiptText, setReceiptText] = useState('');
+  const pendingReceipt = useRef<{ projectId: string; selection: Selection } | undefined>(undefined);
   const [history, setHistory] = useState<{ entries: Selection[]; at: number }>({ entries: [initial()], at: 0 });
   const graph = useRef<HTMLDivElement>(null),
     cy = useRef<Core | null>(null),
@@ -59,12 +61,20 @@ function App() {
         setChanges(undefined);
         setSelected(undefined);
         project.current = id;
-        current.current = initial();
-        setSelection(initial());
-        setHistory({ entries: [initial()], at: 0 });
+        const starting =
+          pendingReceipt.current?.projectId === id ? pendingReceipt.current.selection : (next.initial ?? initial());
+        pendingReceipt.current = undefined;
+        current.current = starting;
+        setSelection(starting);
+        setReceiptText(starting.receipt ?? '');
+        setHistory({ entries: [starting], at: 0 });
       }
       setModel(next);
       if (!id || !next.checkouts.length) {
+        setResponse(undefined);
+        return;
+      }
+      if (current.current.view === 'task-context' && !current.current.receipt) {
         setResponse(undefined);
         return;
       }
@@ -73,7 +83,7 @@ function App() {
       expected = id;
       let answer = await view.request<Answer>('query', current.current);
       if (!gate.current.accepts(request, answer.projectId)) return;
-      if (answer.response.code === 'SNAPSHOT_CHANGED') {
+      if (answer.response.code === 'SNAPSHOT_CHANGED' && current.current.view !== 'task-context') {
         answer = await view.request<Answer>('query', { ...current.current, generation: undefined });
         if (!gate.current.accepts(request, answer.projectId)) return;
       }
@@ -100,7 +110,20 @@ function App() {
     const epoch = gate.current;
     queueMicrotask(() => void load());
     const unsubscribe = view.onMessage((raw) => {
-      const m = raw as { type?: string; projectId?: string };
+      const m = raw as { type?: string; projectId?: string; checkoutId?: string; receipt?: string };
+      if (m.type === 'open-receipt' && m.projectId) {
+        const next = SelectionSchema.parse({ view: 'task-context', checkoutId: m.checkoutId, receipt: m.receipt });
+        pendingReceipt.current = { projectId: m.projectId, selection: next };
+        gate.current.invalidate();
+        current.current = next;
+        setSelection(next);
+        setResponse(undefined);
+        setSelected(undefined);
+        setReceiptText(m.receipt ?? '');
+        setHistory({ entries: [next], at: 0 });
+        refresh.current();
+        return;
+      }
       if (m.type === 'reset') {
         gate.current.invalidate();
         project.current = '';
@@ -111,7 +134,10 @@ function App() {
         setSelected(undefined);
         setModel({ project: null, checkouts: [] });
       }
-      if (m.type === 'reset' || m.type === 'invalidate') refresh.current();
+      if (m.type === 'reset' || m.type === 'invalidate') {
+        if (current.current.view === 'knowledge' || current.current.view === 'task-context') setResponse(undefined);
+        refresh.current();
+      }
     });
     const visible = view.onVisibilityChange((shown) => {
       gate.current.invalidate();
@@ -133,6 +159,18 @@ function App() {
   useEffect(() => {
     if (view) queueMicrotask(() => void load());
   }, [selection, view, load]);
+  useEffect(() => {
+    if (response?.data?.kind !== 'slice' || !response.data.receiptExpiresAt) return;
+    const remaining = Date.parse(response.data.receiptExpiresAt) - Date.now();
+    const timer = setTimeout(
+      () => {
+        setResponse(undefined);
+        setError('Receipt expired. Task context unavailable; request a new context.');
+      },
+      Math.max(0, remaining),
+    );
+    return () => clearTimeout(timer);
+  }, [response]);
   const rawNodes: CodeMapSliceNode[] =
     response?.data?.kind === 'slice'
       ? response.data.nodes
@@ -151,9 +189,13 @@ function App() {
   const changedPaths = new Set(changes?.files.flatMap((f) => (f.oldPath ? [f.path, f.oldPath] : [f.path])));
   const nodes = rawNodes.map((node) => ({
     ...node,
+    learningReview: node.learning?.review,
+    learningAdmission: node.learning?.admission,
+    learningApplicability: node.learning?.applicability.state,
     changeKind: changes ? (changedPaths.has(node.path ?? '') ? 'changed' : 'dependent') : 'none',
   }));
   const grouped = selection.view === 'impact' || selection.view === 'changes';
+  const knowledge = selection.view === 'knowledge' || selection.view === 'task-context';
   const orderedNodes = grouped
     ? [...nodes].sort((a, b) => (a.path ?? a.label).localeCompare(b.path ?? b.label))
     : nodes;
@@ -202,6 +244,39 @@ function App() {
           },
           { selector: 'edge[rel = "contains"]', style: { 'line-style': 'dotted', 'target-arrow-shape': 'none' } },
           { selector: 'edge[prov = "heuristic"]', style: { 'line-style': 'dashed' } },
+          {
+            selector: 'edge[prov = "knowledge"]',
+            style: {
+              'line-style': 'dashed',
+              'line-color': color('--warning'),
+              'target-arrow-color': color('--warning'),
+            },
+          },
+          {
+            selector: 'node[kind = "learning"]',
+            style: {
+              shape: 'round-rectangle',
+              'background-color': color('--warning'),
+              'border-width': 2,
+              'border-color': color('--text-primary'),
+            },
+          },
+          {
+            selector: 'node[kind = "learning"][learningReview = "proposed"]',
+            style: { shape: 'diamond', 'border-style': 'dashed' },
+          },
+          {
+            selector: 'node[kind = "learning"][learningReview = "accepted"][learningApplicability = "needs-review"]',
+            style: { shape: 'triangle', 'border-style': 'dashed' },
+          },
+          {
+            selector: 'node[kind = "learning"][learningAdmission = "automatic"]',
+            style: { shape: 'hexagon', 'background-color': color('--text-muted') },
+          },
+          {
+            selector: 'node[kind = "evidence"]',
+            style: { shape: 'rectangle', 'background-color': color('--text-muted') },
+          },
           {
             selector: 'node[changeKind = "changed"]',
             style: {
@@ -261,6 +336,7 @@ function App() {
     setHistory((h) => ({ entries: [...h.entries.slice(0, h.at + 1), next].slice(-50), at: Math.min(h.at + 1, 49) }));
   };
   const expand = (node: CodeMapSliceNode) => {
+    if (node.kind === 'learning' || node.kind === 'evidence') return;
     if (node.kind === 'group' && node.path)
       navigate({
         ...selection,
@@ -345,7 +421,9 @@ function App() {
       ) : (
         <>
           <nav aria-label="Code Map views">
-            {(['overview', 'file', 'neighborhood', 'search', 'changes', 'impact'] as const).map((mode) => (
+            {(
+              ['overview', 'file', 'neighborhood', 'search', 'changes', 'impact', 'knowledge', 'task-context'] as const
+            ).map((mode) => (
               <button
                 key={mode}
                 aria-current={selection.view === mode ? 'page' : undefined}
@@ -371,7 +449,7 @@ function App() {
                   })
                 }
               >
-                {mode[0]!.toUpperCase() + mode.slice(1)}
+                {mode === 'task-context' ? 'Task context' : mode[0]!.toUpperCase() + mode.slice(1)}
               </button>
             ))}
             <button disabled={history.at === 0} onClick={() => travel(-1)}>
@@ -386,81 +464,153 @@ function App() {
               List only
             </label>
           </nav>
-          <div className="controls">
-            <input
-              aria-label="Search code"
-              placeholder="Symbol or path"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter')
-                  navigate({ ...selection, view: 'search', query: searchText, generation: undefined });
-              }}
-            />
-            <button
-              onClick={() => navigate({ ...selection, view: 'search', query: searchText, generation: undefined })}
-            >
-              Find
-            </button>
-          </div>
-          <div className="controls">
-            <label>
-              Direction
-              <select
-                value={selection.view === 'impact' || selection.view === 'changes' ? 'incoming' : selection.direction}
-                disabled={selection.view === 'impact' || selection.view === 'changes'}
-                onChange={(e) => navigate({ ...selection, direction: e.target.value as Selection['direction'] })}
-              >
-                {['both', 'incoming', 'outgoing'].map((v) => (
-                  <option key={v}>{v}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Depth
-              <select
-                value={selection.depth}
-                onChange={(e) => navigate({ ...selection, depth: Number(e.target.value) })}
-              >
-                {[1, 2, 3].map((n) => (
-                  <option key={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Evidence
-              <select value={provenance} onChange={(e) => setProvenance(e.target.value)}>
-                {['all', 'syntax', 'binding', 'heuristic'].map((p) => (
-                  <option key={p}>{p}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={selection.includeHeuristic}
-                onChange={(e) => navigate({ ...selection, includeHeuristic: e.target.checked })}
-              />
-              Include heuristic edges
-            </label>
-          </div>
-          <div className="controls" aria-label="Relation filters">
-            {relationTypes.map((rel) => (
-              <label key={rel}>
+          {knowledge && (
+            <section className="knowledge-controls" aria-label="Learning inspection">
+              <p role="note">
+                Reference findings and recorded evidence. Matching evidence does not verify a claim. Reviewed findings,
+                pending proposals and findings needing review have distinct shapes.
+              </p>
+              <button onClick={() => void view?.executeCommand('oxytocin.codeMap.openLearnings', model.project?.id)}>
+                Open Learnings manager
+              </button>
+              {selection.view === 'knowledge' ? (
+                <label>
+                  Findings{' '}
+                  <select
+                    aria-label="Learning filter"
+                    value={selection.learningState}
+                    onChange={(e) =>
+                      navigate({
+                        ...selection,
+                        learningState: e.target.value as Selection['learningState'],
+                        generation: undefined,
+                      })
+                    }
+                  >
+                    <option value="active">Applicable reviewed</option>
+                    <option value="pending">Pending proposals</option>
+                    <option value="stale">Needs review</option>
+                    <option value="all">All (inspection)</option>
+                  </select>
+                </label>
+              ) : (
+                <div>
+                  <label>
+                    Context receipt{' '}
+                    <input
+                      aria-label="Context receipt"
+                      maxLength={200}
+                      value={receiptText}
+                      onChange={(e) => setReceiptText(e.target.value)}
+                    />
+                  </label>
+                  <button
+                    disabled={!receiptText.trim()}
+                    onClick={() =>
+                      void view?.executeCommand('oxytocin.codeMap.openReceipt', {
+                        projectId: model.project!.id,
+                        checkoutId: selection.checkoutId ?? model.project!.id,
+                        receipt: receiptText.trim(),
+                      })
+                    }
+                  >
+                    Open context receipt
+                  </button>
+                  <p role="status">
+                    {!selection.receipt
+                      ? 'Enter a receipt returned by oxy_task_context.'
+                      : response?.code && response.code !== 'OK'
+                        ? `Task context unavailable: ${response.code}. ${response.hint}`
+                        : 'Selected items only; the original question is not retained.'}
+                  </p>
+                </div>
+              )}
+              {response?.code === 'MEMORY_OFF' && (
+                <p role="status">Memory is off. Findings remain in the core Learnings manager.</p>
+              )}
+            </section>
+          )}
+          {!knowledge && (
+            <>
+              <div className="controls">
                 <input
-                  type="checkbox"
-                  checked={selection.relations.includes(rel)}
-                  onChange={(e) => {
-                    const relations = e.target.checked
-                      ? [...selection.relations, rel]
-                      : selection.relations.filter((r) => r !== rel);
-                    if (relations.length) navigate({ ...selection, relations });
+                  aria-label="Search code"
+                  placeholder="Symbol or path"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter')
+                      navigate({ ...selection, view: 'search', query: searchText, generation: undefined });
                   }}
                 />
-                {rel}
-              </label>
-            ))}
-          </div>
+                <button
+                  onClick={() => navigate({ ...selection, view: 'search', query: searchText, generation: undefined })}
+                >
+                  Find
+                </button>
+              </div>
+              <div className="controls">
+                <label>
+                  Direction
+                  <select
+                    value={
+                      selection.view === 'impact' || selection.view === 'changes' ? 'incoming' : selection.direction
+                    }
+                    disabled={selection.view === 'impact' || selection.view === 'changes'}
+                    onChange={(e) => navigate({ ...selection, direction: e.target.value as Selection['direction'] })}
+                  >
+                    {['both', 'incoming', 'outgoing'].map((v) => (
+                      <option key={v}>{v}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Depth
+                  <select
+                    value={selection.depth}
+                    onChange={(e) => navigate({ ...selection, depth: Number(e.target.value) })}
+                  >
+                    {[1, 2, 3].map((n) => (
+                      <option key={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Evidence
+                  <select value={provenance} onChange={(e) => setProvenance(e.target.value)}>
+                    {['all', 'syntax', 'binding', 'heuristic'].map((p) => (
+                      <option key={p}>{p}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selection.includeHeuristic}
+                    onChange={(e) => navigate({ ...selection, includeHeuristic: e.target.checked })}
+                  />
+                  Include heuristic edges
+                </label>
+              </div>
+              <div className="controls" aria-label="Relation filters">
+                {relationTypes.map((rel) => (
+                  <label key={rel}>
+                    <input
+                      type="checkbox"
+                      checked={selection.relations.includes(rel)}
+                      onChange={(e) => {
+                        const relations = e.target.checked
+                          ? [...selection.relations, rel]
+                          : selection.relations.filter((r) => r !== rel);
+                        if (relations.length) navigate({ ...selection, relations });
+                      }}
+                    />
+                    {rel}
+                  </label>
+                ))}
+              </div>
+            </>
+          )}
           <div className="controls">
             <button onClick={() => cy.current?.zoom(cy.current.zoom() * 1.2)}>Zoom in</button>
             <button onClick={() => cy.current?.zoom(cy.current.zoom() / 1.2)}>Zoom out</button>
@@ -549,7 +699,33 @@ function App() {
                     {edges.filter((e) => e.from === chosen.id).length}
                   </p>
                   <p>{chosen.whyIncluded}</p>
-                  <button onClick={() => expand(chosen)}>Explore one step</button>
+                  {chosen.learning && (
+                    <section aria-label="Learning details">
+                      <p>
+                        {chosen.learning.review} · {chosen.learning.admission ?? 'reviewed'} ·{' '}
+                        {chosen.learning.applicability.state} · revision {chosen.learning.revision}
+                      </p>
+                      <p>
+                        {chosen.learning.origin.source} · {chosen.learning.origin.role ?? 'user'} ·{' '}
+                        {chosen.learning.scope}
+                      </p>
+                      <p className="learning-body">{chosen.learning.body}</p>
+                      <p>{chosen.learning.rationale}</p>
+                      <p>{chosen.learning.applicability.reason}</p>
+                      {chosen.learning.evidence.map((e, i) => (
+                        <p className="path" key={i}>
+                          {e.path} · {e.hash}
+                        </p>
+                      ))}
+                    </section>
+                  )}
+                  {chosen.evidence && <p className="path">Whole-file evidence: {chosen.evidence.hash}</p>}
+                  <button
+                    disabled={chosen.kind === 'learning' || chosen.kind === 'evidence'}
+                    onClick={() => expand(chosen)}
+                  >
+                    Explore one step
+                  </button>
                   <button
                     onClick={() =>
                       navigate({
@@ -559,7 +735,12 @@ function App() {
                         generation: response?.freshness.generation,
                       })
                     }
-                    disabled={!chosen.path || chosen.kind === 'group'}
+                    disabled={
+                      !chosen.path ||
+                      chosen.kind === 'group' ||
+                      chosen.kind === 'learning' ||
+                      chosen.kind === 'evidence'
+                    }
                   >
                     Show potential dependents
                   </button>
@@ -633,6 +814,12 @@ function NodeRow({
         </td>
         <td>
           {n.kind}
+          {n.learning && (
+            <span>
+              {' '}
+              · {n.learning.review} · {n.learning.admission ?? 'reviewed'} · {n.learning.applicability.state}
+            </span>
+          )}
           {n.changeKind === 'changed' ? ' · Changed' : n.changeKind === 'dependent' ? ' · Potential dependent' : ''}
         </td>
         <td>

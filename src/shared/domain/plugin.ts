@@ -4,6 +4,7 @@ import { McpContributionSchema } from './mcp';
 export const PLUGIN_PERMISSIONS = [
   'projects.read',
   'code-map.read',
+  'code-map.knowledge.read',
   'terminals.read-metadata',
   'terminals.create',
   'terminals.write',
@@ -26,6 +27,7 @@ export type PluginPermission = z.infer<typeof PluginPermissionSchema>;
 export const PERMISSION_DESCRIPTIONS: Record<PluginPermission, string> = {
   'projects.read': 'See your projects (names and folders)',
   'code-map.read': 'Read enabled Code Maps and open their source locations',
+  'code-map.knowledge.read': 'Read project findings, evidence and task context selections',
   'terminals.read-metadata': 'See your terminals (titles, folders, running processes)',
   'terminals.create': 'Open new terminals and run commands in them',
   'terminals.write': 'Type into your terminals',

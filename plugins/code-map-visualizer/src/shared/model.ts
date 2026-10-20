@@ -3,7 +3,11 @@ import type { CodeMapCheckout, CodeMapResponse, GitCheckoutChanges } from '@oxyt
 
 export const SelectionSchema = z
   .object({
-    view: z.enum(['overview', 'file', 'neighborhood', 'search', 'changes', 'impact']).default('overview'),
+    view: z
+      .enum(['overview', 'file', 'neighborhood', 'search', 'changes', 'impact', 'knowledge', 'task-context'])
+      .default('overview'),
+    receipt: z.string().min(1).max(200).optional(),
+    learningState: z.enum(['active', 'pending', 'stale', 'all']).default('active'),
     checkoutId: z.string().min(1).max(200).optional(),
     root: z
       .union([
@@ -27,6 +31,7 @@ export type Selection = z.infer<typeof SelectionSchema>;
 export interface Model {
   project: { id: string; name: string } | null;
   checkouts: CodeMapCheckout[];
+  initial?: Selection;
 }
 export interface Answer {
   projectId: string;

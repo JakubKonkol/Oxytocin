@@ -7,6 +7,7 @@ import type {
   AgentSnapshot,
   CommandsApi,
   CodeMapChange,
+  CodeMapKnowledgeChange,
   Disposable,
   EnvironmentCollection,
   EnvScope,
@@ -35,10 +36,13 @@ import {
   CodeMapPluginResultSchema,
   CodeMapLocatorSchema,
   CodeMapChangeSchema,
+  CodeMapKnowledgeChangeSchema,
+  isKnowledgeView,
 } from '@shared/domain/code-map-plugin';
 
 export type ApiEventName =
   | 'codeMap.changed'
+  | 'codeMap.knowledgeChanged'
   | 'projects.changed'
   | 'projects.active'
   | 'terminals.open'
@@ -113,14 +117,17 @@ export function createApi(deps: ApiDeps): OxytocinApi {
     <T>(name: ApiEventName, permission?: string): Event<T> =>
     (listener) => {
       if (permission) require(permission);
-      const d = deps.events.emitter(name, name === 'codeMap.changed' ? plugin.id : undefined).event((payload) => {
-        try {
-          const r = listener(payload as T);
-          if (r instanceof Promise) r.catch((e: unknown) => deps.reportError(`${name} listener`, e));
-        } catch (e) {
-          deps.reportError(`${name} listener`, e);
-        }
-      });
+      const d = deps.events
+        .emitter(name, name === 'codeMap.changed' || name === 'codeMap.knowledgeChanged' ? plugin.id : undefined)
+        .event((payload) => {
+          try {
+            if (permission && !has(permission)) return;
+            const r = listener(payload as T);
+            if (r instanceof Promise) r.catch((e: unknown) => deps.reportError(`${name} listener`, e));
+          } catch (e) {
+            deps.reportError(`${name} listener`, e);
+          }
+        });
       return deps.track(d);
     };
 
@@ -341,21 +348,32 @@ export function createApi(deps: ApiDeps): OxytocinApi {
         const parsed = CodeMapPluginRequestSchema.parse(request),
           requestId = randomUUID(),
           signal = options?.signal;
+        const authorizeQuery = () => {
+          require('code-map.read');
+          if (isKnowledgeView(parsed)) require('code-map.knowledge.read');
+        };
+        authorizeQuery();
         signal?.throwIfAborted();
         const abort = () => {
           void call('codeMap.cancel', { requestId }).catch(() => undefined);
         };
         signal?.addEventListener('abort', abort, { once: true });
         try {
-          const result = CodeMapPluginResultSchema.parse(await call('codeMap.query', { requestId, request: parsed }));
+          const result = await call('codeMap.query', { requestId, request: parsed });
           signal?.throwIfAborted();
-          return result;
+          authorizeQuery();
+          return CodeMapPluginResultSchema.parse(result);
         } finally {
           signal?.removeEventListener('abort', abort);
         }
       },
       onDidChange: (listener) =>
         event<CodeMapChange>('codeMap.changed', 'code-map.read')((value) => listener(CodeMapChangeSchema.parse(value))),
+      onDidChangeKnowledge: (listener) =>
+        event<CodeMapKnowledgeChange>(
+          'codeMap.knowledgeChanged',
+          'code-map.knowledge.read',
+        )((value) => listener(CodeMapKnowledgeChangeSchema.parse(value))),
       openSource: async (locator) => {
         require('code-map.read');
         z.null().parse(await call('codeMap.openSource', CodeMapLocatorSchema.parse(locator)));

@@ -1,6 +1,6 @@
 {
   "name": "@oxytocin/code-map-visualizer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Explore bounded local code graphs and open verified source locations",
   "license": "MIT",
   "private": true,
@@ -10,22 +10,28 @@
     "displayName": "Code Map Visualizer",
     "description": "Explore folders, files and symbol neighborhoods using a graph or keyboard-accessible list.",
     "publisher": "oxytocin",
-    "engine": "^0.2.0",
+    "engine": "^0.2.1",
     "main": "dist/host.js",
     "activationEvents": [
       "onCommand:codeMap.open",
+      "onCommand:codeMap.openReceipt",
       "onPanel:codeMap.view"
     ],
     "permissions": [
       "projects.read",
       "git.read",
-      "code-map.read"
+      "code-map.read",
+      "code-map.knowledge.read"
     ],
     "contributes": {
       "commands": [
         {
           "id": "codeMap.open",
           "title": "Code Map: Open"
+        },
+        {
+          "id": "codeMap.openReceipt",
+          "title": "Code Map: Open task context receipt"
         }
       ],
       "panels": [
