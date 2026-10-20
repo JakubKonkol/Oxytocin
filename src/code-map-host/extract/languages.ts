@@ -5,5 +5,6 @@ export function parserLanguage(path: string): string | null {
   if (/\.[cm]?jsx?$/.test(path)) return 'javascript';
   if (/\.cs$/.test(path)) return 'csharp';
   if (/\.go$/.test(path)) return 'go';
+  if (/\.java$/.test(path)) return 'java';
   return null;
 }

@@ -68,6 +68,25 @@ export async function makeCodeMapGoFixture(root: string, count = 10_000): Promis
     );
   }
 }
+export async function makeCodeMapJavaFixture(root: string, count = 10_000): Promise<void> {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 50_000) throw new Error('Invalid fixture file count');
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, 'pom.xml'), '<project><artifactId>java-fixture</artifactId></project>\n');
+  for (let start = 0; start < count; start += 100) {
+    const pkg = Math.floor(start / 100),
+      directory = join(root, 'src/main/java/fixture', `pkg${pkg}`);
+    await mkdir(directory, { recursive: true });
+    await Promise.all(
+      Array.from({ length: Math.min(100, count - start) }, (_, offset) => {
+        const index = start + offset;
+        return writeFile(
+          join(directory, `Service${index}.java`),
+          `package fixture.pkg${pkg};\npublic class Service${index} { public Service${index}() {} public void run() { helper(); } private void helper() {} }\n`,
+        );
+      }),
+    );
+  }
+}
 
 const CSHARP_FILES_PER_PROJECT = 500;
 /** Deterministic C# solution: file-scoped namespaces, records, interfaces, partial types and cross-project calls. */

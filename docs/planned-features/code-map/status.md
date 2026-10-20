@@ -19,7 +19,10 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
 - Stage 10 implemented: host-owned impact/dependents, Changes and Impact views, strict checkout selection, authorized worktree/base Git comparison and verified source navigation. Export deliberately deferred. Offline evaluation corpus/harness prepared (26 tasks, 20 held-out); no paid sessions, benefit gate unverified. See `results/2026-10-20-insights.md` and `results/2026-10-20-agent-evaluation.md`.
 - Stage 11a Go implemented: modules/workspaces, declarations, declared receiver calls and explicit unresolved interface
   dispatch; reviewed fixture and packaged Windows 10k benchmark recorded in `results/2026-10-20-go.md`. Cold 31.35 s,
-  edit p95 0.893 s, peak 684.71 MiB; memory target unmet. Continue at 11b Java, 11c Python and 12–14, with separate commits and no push.
+  edit p95 0.893 s, peak 684.71 MiB; memory target unmet.
+- Stage 11b Java implemented: nominal declared-type calls, imports, visibility, inheritance/arity and source module
+  groups. Fixture calls 10/0/0; packaged Windows 10k cold 42.22 s, edit p95 1.275 s, peak 699.91 MiB. See
+  `results/2026-10-20-java.md`. Continue with 11c Python, then 12–14, with separate commits and no push.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation

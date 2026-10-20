@@ -266,6 +266,11 @@ export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
 const LANGUAGE_SUPPORT: Record<string, { level: z.infer<typeof CodeMapSupportLevelSchema>; description: string }> = {
   typescript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
   javascript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
+  java: {
+    level: 'Calls',
+    description:
+      'Packages, source modules and calls bound from declared types and argument counts. Classpath conditions, reflection, dynamic dispatch and ambiguous same-arity overloads remain unresolved; build tools never run.',
+  },
   go: {
     level: 'Calls',
     description:

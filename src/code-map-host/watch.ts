@@ -84,7 +84,12 @@ export class CodeMapWatch implements Disposable {
           reconcile = true;
         }
         if (paths.length < 500) paths.push(path);
-        if (/(^|\/)(\.gitignore|package\.json|go\.(mod|work)|[jt]sconfig[^/]*\.json)$/.test(path)) reconcile = true;
+        if (
+          /(^|\/)(\.gitignore|package\.json|pom\.xml|settings\.gradle(?:\.kts)?|go\.(mod|work)|[jt]sconfig[^/]*\.json)$/.test(
+            path,
+          )
+        )
+          reconcile = true;
       }
       if (paths.length || reconcile) this.changed({ paths, reconcile, sequence: this.sequence });
     };

@@ -6,7 +6,12 @@ import { promisify } from 'node:util';
 import { createPackage } from '@electron/asar';
 import { build } from 'esbuild';
 import { copyCodeMapAssets } from './code-map-assets';
-import { makeCodeMapCSharpFixture, makeCodeMapFixture, makeCodeMapGoFixture } from './make-fixtures';
+import {
+  makeCodeMapCSharpFixture,
+  makeCodeMapFixture,
+  makeCodeMapGoFixture,
+  makeCodeMapJavaFixture,
+} from './make-fixtures';
 
 /**
  * Packaged, offline full-index benchmark. Windows is the reference platform; Linux runs the same harness headless
@@ -76,6 +81,8 @@ async function run() {
   if (selected('csharp-10000')) await makeCodeMapCSharpFixture(csharp);
   const go = join(output, 'go 10000');
   if (selected('go-10000')) await makeCodeMapGoFixture(go);
+  const java = join(output, 'java 10000');
+  if (selected('java-10000')) await makeCodeMapJavaFixture(java);
   const repo = join(output, 'Oxytocin snapshot');
   const tracked = (
     await promisify(execFile)(
@@ -99,6 +106,7 @@ async function run() {
     ['fixture-10000', fixture, 'package-0/module-0.ts'],
     ['csharp-10000', csharp, 'Project0/Services/Service0.cs'],
     ['go-10000', go, 'pkg0/service0.go'],
+    ['java-10000', java, 'src/main/java/fixture/pkg0/Service0.java'],
     ['oxytocin', repo, 'src/shared/utils/emitter.ts'],
   ] as const) {
     if (!selected(name)) continue;

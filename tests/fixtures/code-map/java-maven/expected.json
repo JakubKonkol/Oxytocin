@@ -1,0 +1,16 @@
+{
+  "calls": [
+    ["Base", "save", "Base", "log"],
+    ["Service", "save", "Base", "log"],
+    ["Service", "save", "Service", "local"],
+    ["Service", "save", "Base", "note"],
+    ["Main", "run", "Service", "save"],
+    ["Main", "run", "Service", "save"],
+    ["Main", "run", "Service", "save"],
+    ["Main", "run", "Base", "save"],
+    ["Main", "run", "Service", "Service"],
+    ["Main", "run", "Tools", "notify"]
+  ],
+  "unresolved": ["same", "unknown.save", "java.util.Collections.emptyList"],
+  "note": "Reviewed original sources. same(int) and same(String) share arity and remain ambiguous. Inherited two-argument save remains a candidate despite the one-argument derived member. No external framework method is invented."
+}

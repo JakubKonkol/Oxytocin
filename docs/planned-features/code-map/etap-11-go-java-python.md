@@ -70,7 +70,15 @@ kolejności: Go → Java → Python. Rust i PHP później, na żądanie, według
   [results/2026-10-20-go.md](results/2026-10-20-go.md). Memory target remains unmet.
 - [x] Full checks and Go app E2E; broader Code Map/visualizer/host/startup E2E 16/16.
 
-Java and Python remain to implement.
+### 11b Java — implemented 2026-10-20
+
+- [x] Existing bundled grammar verified; extractor/resolver, visibility, package/static/wildcard imports, declared
+  types, base overloads and Maven/Gradle source groups implemented. Build tools never execute.
+- [x] Reviewed fixture (calls 10/0/0 TP/FP/FN), determinism, limits/privacy regressions and packaged offline 10k
+  benchmark: [results/2026-10-20-java.md](results/2026-10-20-java.md). Memory target remains unmet.
+- [x] Full checks, broader Code Map app E2E 17/17 and focused Java E2E.
+
+Python remains to implement.
 
 - [ ] Checklista języka spełniona; liczby w `results/<data>-<język>.md`.
 - [ ] `npm run check` + E2E (`code-map.spec.ts` z fixture języka) zielone.

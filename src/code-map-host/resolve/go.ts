@@ -122,6 +122,14 @@ export class GoResolver {
     return found.typeKind === 'alias' && found.target ? this.type(found.path, found.target, visited) : found;
   }
   append(graph: CodeMapGraph, packageNodes: Map<string, CodeMapGraph['packages'][number]>, limit: number): void {
+    const appendEdge = (edge: CodeMapGraph['edges'][number]) => {
+      if (graph.edges.length >= limit) throw new CodeMapLimitError();
+      graph.edges.push(edge);
+    };
+    const appendUnresolved = (entry: CodeMapGraph['unresolved'][number]) => {
+      if (graph.unresolved.length >= limit) throw new CodeMapLimitError();
+      graph.unresolved.push(entry);
+    };
     const symbols = new Map(graph.symbols.map((s) => [s.id, s]));
     for (const [path, record] of [...this.records].sort(([a], [b]) => comparePaths(a, b))) {
       if (!record.go) continue;
@@ -132,18 +140,18 @@ export class GoResolver {
             symbol = symbols.get(declaration.symbol);
           if (owner && symbol) {
             symbol.owner = owner.symbol;
-            graph.edges.push({ from: owner.symbol, to: symbol.id, rel: 'contains', prov: 'syntax' });
+            appendEdge({ from: owner.symbol, to: symbol.id, rel: 'contains', prov: 'syntax' });
           }
         }
       for (const imported of go.imports) {
         const files = this.imported(path, imported.module);
         if (files.length)
           for (const p of files)
-            graph.edges.push({ from: record.file.id, to: `f:${p}`, rel: 'imports', prov: 'binding', at: imported.at });
+            appendEdge({ from: record.file.id, to: `f:${p}`, rel: 'imports', prov: 'binding', at: imported.at });
         else {
           const id = `p:go:${imported.module}`;
           packageNodes.set(id, { id, name: imported.module, external: true });
-          graph.edges.push({ from: record.file.id, to: id, rel: 'imports', prov: 'syntax', at: imported.at });
+          appendEdge({ from: record.file.id, to: id, rel: 'imports', prov: 'syntax', at: imported.at });
         }
       }
       for (const call of go.calls) {
@@ -180,12 +188,12 @@ export class GoResolver {
         const ids = [...new Set(candidates.map((d) => d.symbol))];
         if (ids.length === 1) {
           const to = ids[0]!;
-          graph.edges.push({ from: call.from, to, rel: 'calls', prov: 'binding', at: call.at });
+          appendEdge({ from: call.from, to, rel: 'calls', prov: 'binding', at: call.at });
           const file = symbols.get(to)?.file;
           if (file && file !== record.file.id)
-            graph.edges.push({ from: record.file.id, to: file, rel: 'references', prov: 'binding', at: call.at });
+            appendEdge({ from: record.file.id, to: file, rel: 'references', prov: 'binding', at: call.at });
         } else
-          graph.unresolved.push({
+          appendUnresolved({
             from: call.from,
             rel: 'calls',
             target: parts.join('.') || '<expression>',

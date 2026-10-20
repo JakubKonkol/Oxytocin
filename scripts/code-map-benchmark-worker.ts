@@ -67,7 +67,9 @@ async function run() {
         ? `${source}\npublic static class BenchmarkEdit${edit} { public static int Value() => ${edit}; }\n`
         : config.editFile.endsWith('.go')
           ? `${source}\nfunc BenchmarkEdit${edit}() int { return ${edit} }\n`
-          : `${source}\nexport function benchmarkEdit${edit}() { return ${edit}; }\n`,
+          : config.editFile.endsWith('.java')
+            ? `${source}\nclass BenchmarkEdit${edit} { static int value() { return ${edit}; } }\n`
+            : `${source}\nexport function benchmarkEdit${edit}() { return ${edit}; }\n`,
     );
     await wait(generation);
     edits.push(performance.now() - start);

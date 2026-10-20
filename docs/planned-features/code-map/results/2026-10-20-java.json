@@ -1,0 +1,157 @@
+{
+  "recordedAt": "2026-10-20T16:03:17.315Z",
+  "machine": {
+    "cpu": "AMD Ryzen 7 5800X 8-Core Processor             ",
+    "threads": 16,
+    "memoryGiB": 31.92010498046875
+  },
+  "revision": "d5876b6de8a88ba4c1963af0e3a1ec6177e462c1",
+  "runs": {
+    "packaged": true,
+    "results": [
+      {
+        "name": "java-10000",
+        "result": {
+          "coldMs": [
+            42222.539899999996
+          ],
+          "editMs": [
+            1274.5575000000026,
+            1165.402399999999,
+            1221.6434999999983,
+            1089.1555000000008,
+            1049.6920000000027,
+            992.074099999998,
+            994.9158000000025,
+            1070.593200000003,
+            1036.7631000000038,
+            1069.8973000000042
+          ],
+          "phases": [
+            {
+              "format": "oxytocin.code-map.manifest",
+              "schemaVersion": 1,
+              "state": "ready",
+              "graphSha256": "3f704c93ba8ee370e1cb11b6f66fa38c5bc776eae61e03389a176841043d0ea3",
+              "generation": 1,
+              "builtAt": "2026-10-20T16:02:51.429Z",
+              "lastReconciledAt": "2026-10-20T16:02:51.429Z",
+              "lastFullHashAt": "2026-10-20T16:02:51.429Z",
+              "durationsMs": {
+                "enumerate": 20241.5096,
+                "parse": 6704.095799999999,
+                "resolve": 589.1303000000007,
+                "write": 13089.301699999996
+              },
+              "counts": {
+                "files": 10001,
+                "symbols": 40000,
+                "edges": 60105
+              },
+              "limits": {
+                "files": 50000,
+                "symbols": 500000,
+                "edges": 2000000,
+                "bytes": 536870912
+              },
+              "warnings": []
+            }
+          ],
+          "idleMs": 15.355000000003201,
+          "idleCpuPercentOfCore": 0,
+          "idleGenerationChanged": false,
+          "status": {
+            "checkoutId": "benchmark",
+            "state": "ready",
+            "generation": 12,
+            "progress": null,
+            "counts": {
+              "files": 10001,
+              "symbols": 40000,
+              "edges": 60105
+            },
+            "coverage": {
+              "files": {
+                "indexed": 10000,
+                "unsupported": 1,
+                "skipped": 2,
+                "failed": 0
+              },
+              "byLanguage": {
+                "java": 10000,
+                "xml": 1
+              },
+              "unresolved": {
+                "imports": 0,
+                "calls": 0
+              }
+            },
+            "languages": {
+              "java": {
+                "level": "Calls",
+                "description": "Packages, source modules and calls bound from declared types and argument counts. Classpath conditions, reflection, dynamic dispatch and ambiguous same-arity overloads remain unresolved; build tools never run."
+              },
+              "xml": {
+                "level": "Files",
+                "description": "File metadata only."
+              }
+            },
+            "updatedAt": "2026-10-20T16:03:16.669Z",
+            "bytes": 35262502,
+            "pendingFiles": 0,
+            "error": null,
+            "owner": {
+              "instanceId": "b70a59ac-2305-4860-b5e6-163171e5d9b0",
+              "pid": 25736,
+              "app": "Oxytocin benchmark",
+              "heartbeatAt": "2026-10-20T16:02:23.026Z"
+            },
+            "readOnly": false,
+            "gitIgnored": false,
+            "limits": {
+              "files": 50000,
+              "symbols": 500000,
+              "edges": 2000000,
+              "bytes": 536870912
+            }
+          },
+          "peakRssMiB": 699.90625,
+          "retainedRssMiB": 639.59765625,
+          "versions": {
+            "node": "24.21.0",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.8",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "149",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.7",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2025c",
+            "undici": "7.29.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.2.124.28-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "44.4.5",
+            "chrome": "152.0.7977.130"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -7,7 +7,61 @@ import {
 } from '@shared/domain/code-map';
 
 /** Bump on every change of extracted records: cached records of another version are reparsed. */
-export const EXTRACTOR_VERSION = 4;
+export const EXTRACTOR_VERSION = 5;
+export const JavaRecordSchema = z.object({
+  package: z.string().max(4096),
+  imports: z
+    .array(
+      z.object({ name: z.string().max(4096), wildcard: z.boolean(), static: z.boolean(), at: CodeMapPositionSchema }),
+    )
+    .max(50_000),
+  types: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        name: z.string(),
+        full: z.string(),
+        outer: z.string().nullable(),
+        bases: z
+          .array(z.object({ name: z.string(), rel: z.enum(['extends', 'implements']), at: CodeMapPositionSchema }))
+          .max(100),
+      }),
+    )
+    .max(50_000),
+  members: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        owner: z.string(),
+        name: z.string(),
+        type: z.string().nullable(),
+        static: z.boolean(),
+        constructor: z.boolean(),
+        parameters: z.number().int().nonnegative().nullable(),
+        variadic: z.boolean(),
+      }),
+    )
+    .max(50_000),
+  locals: z.array(z.object({ scope: z.string(), name: z.string(), type: z.string().nullable() })).max(100_000),
+  calls: z
+    .array(
+      z.object({
+        from: z.string(),
+        scope: z.string(),
+        owner: z.string().nullable(),
+        receiver: z.string().nullable(),
+        target: z.string(),
+        constructor: z.boolean(),
+        args: z.number().int().nonnegative(),
+        at: CodeMapPositionSchema,
+      }),
+    )
+    .max(100_000),
+  references: z
+    .array(z.object({ from: z.string(), owner: z.string().nullable(), name: z.string(), at: CodeMapPositionSchema }))
+    .max(100_000),
+});
+export type JavaRecord = z.infer<typeof JavaRecordSchema>;
 export const GoRecordSchema = z.object({
   package: z.string().max(1024),
   buildTags: z.array(z.string().max(1000)).max(100),
@@ -206,6 +260,7 @@ export const FileRecordSchema = z.object({
   syntaxErrors: z.number().int().nonnegative(),
   csharp: CSharpRecordSchema.optional(),
   go: GoRecordSchema.optional(),
+  java: JavaRecordSchema.optional(),
 });
 export type FileRecord = z.infer<typeof FileRecordSchema>;
 export type Scope = FileRecord['scopes'][number];

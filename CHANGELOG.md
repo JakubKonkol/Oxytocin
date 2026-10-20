@@ -7,6 +7,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map:** Java support — packages and source modules, declarations, imports, inheritance and calls bound from
+  declared receiver types and argument counts. Reflection and ambiguous same-arity overloads remain unresolved.
 - **Code Map:** Go support — modules and workspace packages, declarations, imports and calls resolved from declared
   receiver types. Interface dispatch and unknown receivers remain unresolved; build tags are recorded, not evaluated.
 - **Code Map Visualizer:** Changes highlights uncommitted files and their potential indexed dependents. Impact

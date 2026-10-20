@@ -301,6 +301,41 @@ test('Go workspace indexes package aliases, declared receivers and conservative 
   }
 });
 
+test('Java Maven modules expose declared receiver calls, inheritance and explicit overload ambiguity', async () => {
+  const project = join(await mkdtemp(join(tmpdir(), 'oxy-map-java-')), 'java-project');
+  await cp(resolve('tests/fixtures/code-map/java-maven'), project, { recursive: true });
+  const { app, win } = await launchApp({ project });
+  try {
+    const id = await activeProjectId(win);
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), id);
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), id)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    const graph = JSON.parse(await readFile(join(project, '.oxy/code-map/graph.json'), 'utf8')) as {
+      groups: { kind?: string }[];
+      edges: { rel: string }[];
+      unresolved: { target: string; reason: string }[];
+    };
+    expect(graph.edges.filter((e) => e.rel === 'calls')).toHaveLength(10);
+    expect(graph.groups.filter((g) => g.kind === 'project')).toHaveLength(3);
+    expect(graph.unresolved).toContainEqual(expect.objectContaining({ target: 'same', reason: 'ambiguous-overload' }));
+    await win.locator(`[data-project-id="${id}"]`).click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    await win.getByTestId('project-settings-tab-code-map').click();
+    await expect(win.getByTestId('code-map-language-java')).toContainText('java: Calls');
+    expect(await readFile(join(project, '.oxy/code-map/MAP.md'), 'utf8')).toContain('ambiguous same-arity overloads');
+  } finally {
+    await app.close();
+  }
+});
+
 test('MCP Code Map tools see edits, report access and disappear after disabling', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-map-mcp-'));
   await writeFile(join(project, 'api.ts'), 'export function beforeEdit() {}\n');
