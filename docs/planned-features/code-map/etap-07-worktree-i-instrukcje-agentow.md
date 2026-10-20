@@ -26,7 +26,7 @@ Poza zakresem: selektor checkoutu w wizualizatorze (etap 10).
   zawsze `*`, niezależnie od opcji Gita); usuń go przy usuwaniu worktree. Worktree powstają domyślnie poza repozytorium
   (`<repo>.worktrees/<slug>-<id>` albo `ensemble.worktreeRoot`); projekt w podfolderze repozytorium mapuje się na ten sam
   podfolder worktree.
-- Most MCP Ensemble (`ensembleBridgeTools` w `src/main/services/mcp/mcp-hub.ts`, `ensemble-tools.ts`): lista dozwolonych
+- Most MCP Ensemble (`ensembleBridgeTools` w `src/main/services/mcp/mcp-hub.ts`, `src/main/services/ensemble/ensemble-tools.ts`): lista dozwolonych
   narzędzi Code Map tylko do odczytu; checkout wynika z uwierzytelnionej roli/worktree, nigdy z selektorów podanych przez
   wołającego ani z nagłówka terminala. Odwołanie roli/usunięcie worktree anuluje dostęp i oczekujące żądania.
 - Dla worktree nigdy nie jest zwracana mapa głównego projektu (FR-WT-2).
