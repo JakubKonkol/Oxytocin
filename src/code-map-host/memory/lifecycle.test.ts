@@ -161,6 +161,16 @@ it('archives before removal, keeps the original identity, promotes explicitly an
   const found = (await memory.run(other, { action: 'get', id: record.id })).records[0]!;
   expect(found.applicability['worktree:other']?.state).toBe('needs-review');
   expect(found.applicability.p?.state).toBe('current');
+  const revalidated = (
+    await memory.run(authority, {
+      action: 'review',
+      id: found.id,
+      expectedRevision: found.revision,
+      decision: 'accept',
+      idempotencyKey: 'main-revalidation',
+    })
+  ).records[0]!;
+  expect(revalidated.applicability['worktree:other']?.state).toBe('needs-review');
 });
 it('includes other instances and archived revisions in project-wide reservations', async () => {
   const { root, authority } = await fixture();

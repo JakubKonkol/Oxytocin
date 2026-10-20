@@ -53,7 +53,10 @@ export const LearningSchema = LearningDraftSchema.extend({
       .strict(),
   ),
   conflicts: z.array(key).max(2000),
-  feedback: z.object({ used: revision, irrelevant: revision, outdated: revision, incorrect: revision }).strict(),
+  feedback: z
+    .object({ used: revision, irrelevant: revision, outdated: revision, incorrect: revision })
+    .strict()
+    .default({ used: 0, irrelevant: 0, outdated: 0, incorrect: 0 }),
 }).strict();
 export type Learning = z.infer<typeof LearningSchema>;
 export type LearningDraft = z.infer<typeof LearningDraftSchema>;
@@ -107,6 +110,7 @@ export const MemoryAuthoritySchema = z
     root: z.string().min(1).max(32768),
     projectRoot: z.string().min(1).max(32768),
     archived: z.boolean().optional(),
+    producer: key.optional(),
     checkouts: z.array(z.object({ checkoutId: key, root: z.string().min(1).max(32768) }).strict()).max(1000),
     excludedPaths: z.array(z.string().max(4096)).max(200),
     origin: LearningSchema.shape.origin,

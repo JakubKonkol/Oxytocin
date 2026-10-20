@@ -944,6 +944,9 @@ function bootstrap(): void {
     },
     codeMap: {
       service: codeMap,
+      learningService: codeMap,
+      memoryEnabled: () =>
+        projects.list().some((p) => p.settings.codeMap?.enabled && p.settings.codeMap.memory?.mode !== 'off'),
       enabled: (id) =>
         id ? !!projects.get(id)?.settings.codeMap?.enabled : projects.list().some((p) => p.settings.codeMap?.enabled),
       onDidChange: (listener) => projects.onDidChange(() => listener()),

@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map learnings for agents:** `oxy_task_context` returns bounded code pointers, relations and up to three
+  applicable reviewed findings. Agents propose reusable findings with `oxy_propose_learning` and report feedback
+  with `oxy_learning_feedback`. Receipts bind feedback to the authenticated session and checkout; negative feedback
+  suspends reuse until review. Review mode remains the default.
 - **Code Map learnings:** a core settings manager for user findings in main and Ensemble checkouts, with evidence hashes,
   review, revision history, search, export and confirmed deletion. Changed evidence requires explicit revalidation;
   rebuilding or deleting the map preserves findings. Removed worktrees retain an inspectable archive; explicitly

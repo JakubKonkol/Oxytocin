@@ -972,7 +972,14 @@ export class EnsembleService implements Disposable {
 
   // ── MCP (oxy_ensemble_*) ─────────────────────────────────────────────────────────────────────────────────
 
-  describe(token: string): { label: string; projectId: string; terminalId: string; checkoutId?: string } | null {
+  describe(token: string): {
+    label: string;
+    projectId: string;
+    terminalId: string;
+    checkoutId?: string;
+    roleId: string;
+    taskId: string;
+  } | null {
     const a = this.tokens.get(token);
     if (!a) return null;
     a.mcpSeenAt ??= this.now();
@@ -983,6 +990,8 @@ export class EnsembleService implements Disposable {
       label: `${agent.name} · ${r.task.title}`,
       projectId: r.task.projectId,
       terminalId: a.terminalId,
+      roleId: agent.id,
+      taskId: r.task.id,
       ...(r.run.worktree && !r.run.finished
         ? { checkoutId: r.run.worktree.mode === 'worktree' ? `worktree:${r.task.id}` : r.task.projectId }
         : {}),

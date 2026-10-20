@@ -29,7 +29,12 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
   unavailable while the paid evaluation gates are unverified.
 - Stage 12 complete: durable storage, core main/live/archive manager, explicit promotion into project storage,
   independent evidence observation, project-wide reservations and replayable multi-store mutations. Full check and
-  12 headless app E2E pass. See `results/2026-10-20-learning-storage.md`. Agent writes remain disabled until stage 13.
+  12 headless app E2E pass. See `results/2026-10-20-learning-storage.md`.
+- Stage 13 complete: authenticated task context, proposals and receipt-bound feedback in the Hub and Ensemble;
+  strict schemas, whole-item character budgets, 50 proposals/checkout/hour and independent-session reuse. Full check,
+  real HTTP integration, 27 Linux host/storage tests and 13 headless app E2E pass. See
+  `results/2026-10-20-learning-tools.md`. Next: stage 14 knowledge/receipt visualization and the offline longitudinal
+  corpus/harness. Paid runs and Automatic remain deferred.
 - Latest owner instruction (2026-10-20): resume autonomous implementation, **commit and push after every stage**.
   This supersedes checkpoint/stop and older no-push instructions below. Work remains on `main`. No desktop windows;
   Electron E2E runs in Docker/Xvfb. Paid evaluations remain deferred; prepare the stage 14 harness/corpus only.

@@ -8,6 +8,7 @@ import {
 import { CodeMapCheckouts } from './checkouts';
 import { LearningMemory } from './memory/admission';
 import { listArchives } from './memory/store';
+import { LearningTools } from './memory/agent-tools';
 
 declare const __OXYTOCIN_VERSION__: string;
 const pending = new Map<string, CodeMapStatus>();
@@ -36,7 +37,25 @@ const checkouts = new CodeMapCheckouts(
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
 const memory = new LearningMemory((checkoutId) => checkouts.memorySnapshot(checkoutId));
+const learningTools = new LearningTools(checkouts, memory);
 const impl: Impl = {
+  'memory:agent': (input) => {
+    const p = CodeMapHostContracts['memory:agent'].params.parse(input);
+    return learningTools.run(p.requestId, p.authority, p.actor, p.request, p.mode);
+  },
+  'memory:cancel': (input) => {
+    learningTools.cancel(CodeMapHostContracts['memory:cancel'].params.parse(input).requestId);
+    return null;
+  },
+  'memory:revoke': (input) => {
+    const p = CodeMapHostContracts['memory:revoke'].params.parse(input);
+    learningTools.revoke(p.projectId, p.checkoutId);
+    return null;
+  },
+  'memory:revokeActor': (input) => {
+    learningTools.revokeActor(CodeMapHostContracts['memory:revokeActor'].params.parse(input).principal);
+    return null;
+  },
   'memory:archives': async (input) =>
     (await listArchives(CodeMapHostContracts['memory:archives'].params.parse(input).root)).map((checkoutId) => ({
       checkoutId,

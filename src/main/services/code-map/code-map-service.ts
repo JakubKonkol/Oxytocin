@@ -19,6 +19,14 @@ import { realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
+  LearningActorSchema,
+  LearningToolRequestSchema,
+  LearningToolResultSchema,
+  type LearningActor,
+  type LearningToolRequest,
+  type LearningToolResult,
+} from '@shared/domain/code-map-learning-tools';
+import {
   LearningOperationSchema,
   LearningResultSchema,
   type LearningOperation,
@@ -62,6 +70,10 @@ export class CodeMapService {
   private readonly configured = new Map<string, string>();
   private readonly worktrees = new Map<string, { projectId: string; root: string; projectRoot: string }>();
   private readonly retiringMemories = new Map<string, MemoryAuthority>();
+  private readonly learningRequests = new Map<
+    string,
+    { projectId: string; checkoutId: string; controller: AbortController }
+  >();
   /** The latest registration request per worktree; removal revokes it even while it waits in the queue. */
   private readonly worktreeRequests = new Map<string, symbol>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -75,7 +87,14 @@ export class CodeMapService {
       logger: Logger;
     },
   ) {
-    this.subscriptions.add(deps.projects.onDidChange(() => this.schedule()));
+    this.subscriptions.add(
+      deps.projects.onDidChange(() => {
+        for (const project of deps.projects.list()) this.revokeLearnings(project.id);
+        for (const request of this.learningRequests.values())
+          if (!deps.projects.get(request.projectId)) request.controller.abort();
+        this.schedule();
+      }),
+    );
     this.subscriptions.add(
       deps.host.onDidBecomeReady(({ restarted }) => {
         if (!deps.projects.list().some((p) => p.settings.codeMap?.enabled)) return;
@@ -111,7 +130,82 @@ export class CodeMapService {
   }
 
   private readonly log = (error: unknown) => this.deps.logger.warn('Code Map operation failed', error);
+  private revokeLearnings(projectId: string, checkoutId?: string): void {
+    for (const request of this.learningRequests.values())
+      if (request.projectId === projectId && (!checkoutId || request.checkoutId === checkoutId))
+        request.controller.abort();
+    if (this.deps.host.state === 'running')
+      void this.deps.host.call('memory:revoke', { projectId, ...(checkoutId ? { checkoutId } : {}) }).catch(this.log);
+  }
+  revokeLearningActor(principal: string): void {
+    if (this.deps.host.state === 'running')
+      void this.deps.host.call('memory:revokeActor', { principal }).catch(this.log);
+  }
+  async learningTool(
+    id: string,
+    checkoutId: string,
+    input: LearningToolRequest,
+    actorInput: LearningActor,
+    signal: AbortSignal,
+  ): Promise<LearningToolResult> {
+    const request = LearningToolRequestSchema.parse(input),
+      actor = LearningActorSchema.parse(actorInput);
+    const root = this.checkoutRoot(id, checkoutId);
+    const authorize = () => {
+      signal.throwIfAborted();
+      if (this.checkoutRoot(id, checkoutId) !== root) throw new OxyError('UNAVAILABLE', 'Checkout changed');
+      const mode = this.project(id).settings.codeMap?.memory?.mode ?? 'review';
+      if (mode === 'off' && request.kind !== 'task-context') throw new Error('MEMORY_OFF');
+      return mode;
+    };
+    authorize();
+    await this.enqueue(() => this.sync());
+    const mode = authorize(),
+      requestId = randomUUID(),
+      controller = new AbortController();
+    const abort = () => {
+      controller.abort();
+      void this.deps.host.call('memory:cancel', { requestId }).catch(() => undefined);
+    };
+    signal.addEventListener('abort', abort, { once: true });
+    this.learningRequests.set(requestId, { projectId: id, checkoutId, controller });
+    const revoke = () => {
+      void this.deps.host.call('memory:cancel', { requestId }).catch(() => undefined);
+    };
+    controller.signal.addEventListener('abort', revoke, { once: true });
+    try {
+      authorize();
+      controller.signal.throwIfAborted();
+      const result = LearningToolResultSchema.parse(
+        await this.deps.host.call(
+          'memory:agent',
+          {
+            requestId,
+            authority: this.memoryAuthority(id, checkoutId, root),
+            actor,
+            request,
+            mode,
+          },
+          { timeoutMs: 30000 },
+        ),
+      );
+      authorize();
+      controller.signal.throwIfAborted();
+      if (
+        result.kind === 'task-context' &&
+        request.kind === 'task-context' &&
+        (result.checkoutId !== checkoutId || JSON.stringify(result).length > request.maxChars)
+      )
+        throw new OxyError('INVALID', 'Invalid task context response');
+      return result;
+    } finally {
+      signal.removeEventListener('abort', abort);
+      controller.signal.removeEventListener('abort', revoke);
+      this.learningRequests.delete(requestId);
+    }
+  }
   async setMemoryMode(id: string, mode: 'off' | 'review'): Promise<null> {
+    if (mode === 'off') this.revokeLearnings(id);
     return this.enqueue(async () => {
       const project = this.project(id);
       await this.deps.projects.update({
@@ -161,6 +255,7 @@ export class CodeMapService {
     origin: MemoryAuthority['origin'] = { source: 'user' },
   ) {
     const operation = LearningOperationSchema.parse(input);
+    if (operation.action === 'forget') this.revokeLearnings(id);
     return this.enqueue(async () => {
       const project = this.project(id);
       const checkout = this.registeredCheckouts().find((c) => c.id === checkoutId && c.projectId === id);
@@ -285,6 +380,7 @@ export class CodeMapService {
     // Revoke immediately, before any queued host operation or filesystem deletion.
     const checkoutId = `worktree:${taskId}`;
     const tree = this.worktrees.get(checkoutId);
+    if (tree) this.revokeLearnings(tree.projectId, checkoutId);
     const authority = tree
       ? this.memoryAuthority(tree.projectId, checkoutId, tree.root)
       : this.retiringMemories.get(checkoutId);
@@ -352,6 +448,7 @@ export class CodeMapService {
   }
 
   async setEnabled(id: string, enabled: boolean, ignoreInGit?: boolean): Promise<CodeMapStatus> {
+    if (!enabled) this.revokeLearnings(id);
     return this.enqueue(async () => {
       const project = this.project(id),
         current = CodeMapSettingsSchema.parse(project.settings.codeMap ?? {});
@@ -496,6 +593,7 @@ export class CodeMapService {
     }
   }
   deleteData(id: string): Promise<CodeMapStatus> {
+    this.revokeLearnings(id);
     return this.enqueue(async () => {
       const project = this.project(id);
       await this.deps.projects.update({
@@ -520,6 +618,7 @@ export class CodeMapService {
     });
   }
   async dispose(): Promise<void> {
+    for (const request of this.learningRequests.values()) request.controller.abort();
     this.subscriptions.dispose();
     await this.queue;
     this.closed = true;

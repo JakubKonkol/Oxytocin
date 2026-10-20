@@ -1,5 +1,8 @@
 # Etap 13 — learnings: narzędzia agentów i kontekst zadania
 
+> Completed 2026-10-20. Three authenticated MCP tools, bounded context, rate limits, receipts and feedback are
+> implemented and verified. See [implementation and validation](results/2026-10-20-learning-tools.md).
+
 > Część planu [Code Map](README.md). Przeczytaj `README.md` (sekcje 5.9, 8.7, 8.10) i etap 12.
 
 ## Cel
@@ -98,9 +101,9 @@ zcache'owanej odpowiedzi dla odczytu `latest`. Nie trzymaj czytelnika generacji 
 
 ## Kryteria ukończenia
 
-- [ ] Trzy narzędzia walidują obie strony granicy, przestrzegają budżetów/polityk i wiążą się z właściwym checkoutem.
-- [ ] Późniejsza niezależna sesja ponownie używa obowiązującej wiedzy; zmienione dowody blokują nieaktualne użycie.
-- [ ] `npm run check` + integracja + E2E zielone.
+- [x] Trzy narzędzia walidują obie strony granicy, przestrzegają budżetów/polityk i wiążą się z właściwym checkoutem.
+- [x] Późniejsza niezależna sesja ponownie używa obowiązującej wiedzy; zmienione dowody blokują nieaktualne użycie.
+- [x] `npm run check` + integracja + E2E zielone.
 
 ## Commity i CHANGELOG
 

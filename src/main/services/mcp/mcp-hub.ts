@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   MCP_DEFAULT_PORT,
   MCP_DEFAULT_TIMEOUT_MS,
@@ -19,6 +19,7 @@ import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { type CallerDeps, resolveCaller, resolveCodeMapCaller, type ResolvedCaller } from './caller-context';
 import { buildCodeMapTools, CodeMapToolInputError, isCodeMapTool } from './code-map-tools';
+import { buildLearningTools, isLearningTool } from './code-map-learning-tools';
 import type { CodeMapService } from '../code-map/code-map-service';
 import { CODE_MAP_MCP_INSTRUCTIONS } from '@shared/domain/code-map';
 import {
@@ -49,6 +50,7 @@ import { McpToolRegistry, type PluginToolSource, type RegistryEntry } from './to
 const LOG_LIMIT = 200;
 const NOTIFY_DEBOUNCE_MS = 200;
 const STATE_DEBOUNCE_MS = 100;
+const isMapRequest = (name: string) => isCodeMapTool(name) || isLearningTool(name);
 
 export interface AskPolicyRequest {
   toolTitle: string;
@@ -65,7 +67,14 @@ export interface AskPolicyRequest {
  */
 export interface EnsembleMcp {
   /** The call log label of the agent a role token belongs to (null: not a live Ensemble agent). */
-  describe(token: string): { label: string; projectId?: string; terminalId?: string; checkoutId?: string } | null;
+  describe(token: string): {
+    label: string;
+    projectId?: string;
+    terminalId?: string;
+    checkoutId?: string;
+    roleId?: string;
+    taskId?: string;
+  } | null;
   tools(): McpToolDefinition[];
   call(
     name: string,
@@ -121,6 +130,8 @@ export interface McpHubDeps {
   };
   codeMap?: {
     service: Pick<CodeMapService, 'query'>;
+    learningService?: Pick<CodeMapService, 'learningTool' | 'revokeLearningActor'>;
+    memoryEnabled?(): boolean;
     enabled(projectId?: string): boolean;
     onDidChange(listener: () => void): Disposable;
   };
@@ -184,6 +195,7 @@ export class McpHub implements Disposable {
       ...buildCoreTools({ ...deps.core, tools: () => this.registry.all() }),
       ...resourceTools,
       ...(deps.codeMap ? buildCodeMapTools(deps.codeMap.service) : []),
+      ...(deps.codeMap?.learningService ? buildLearningTools(deps.codeMap.learningService) : []),
     ];
     this.coreTools = new Map(core.map((t) => [t.definition.name, t]));
     for (const t of resourceTools) this.logDetails.set(t.definition.name, (args) => t.logDetail(args));
@@ -312,7 +324,10 @@ export class McpHub implements Disposable {
     for (const t of r?.tools ?? []) if (!has(t.needs)) hidden.set(t.definition.name, NEEDS_REASON[t.needs]);
     if (this.deps.codeMap && !this.deps.codeMap.enabled())
       for (const name of this.coreTools.keys())
-        if (isCodeMapTool(name)) hidden.set(name, 'Enable Code Map in a project to offer this tool.');
+        if (isMapRequest(name)) hidden.set(name, 'Enable Code Map in a project to offer this tool.');
+    if (this.deps.codeMap?.memoryEnabled && !this.deps.codeMap.memoryEnabled())
+      for (const name of ['oxy_propose_learning', 'oxy_learning_feedback'])
+        hidden.set(name, 'Enable Review memory in a Code Map project to offer this tool.');
     this.registry.setCoreHidden(hidden);
   }
 
@@ -401,7 +416,7 @@ export class McpHub implements Disposable {
 
   async callTool(name: string, args: Record<string, unknown>, call: ToolCall): Promise<McpToolResult> {
     if (!this.registry.resolve(name)) return toolError(`The tool ${name} is not available.`);
-    const caller = await (isCodeMapTool(name) ? resolveCodeMapCaller : resolveCaller)(this.deps.caller, {
+    const caller = await (isMapRequest(name) ? resolveCodeMapCaller : resolveCaller)(this.deps.caller, {
       ...(call.terminalHeader ? { terminalHeader: call.terminalHeader } : {}),
       args,
     });
@@ -464,7 +479,7 @@ export class McpHub implements Disposable {
           return finish('denied', toolError(message), answer === 'deny' ? 'Denied by the user' : 'No answer');
         }
       }
-      const run = this.run(entry, args, caller, call.sessionId, controller.signal, timeoutMs);
+      const run = this.run(entry, args, caller, call.sessionId, controller.signal, timeoutMs, call.principal);
       const aborted = new Promise<'aborted'>((resolve) => {
         if (controller.signal.aborted) resolve('aborted');
         else controller.signal.addEventListener('abort', () => resolve('aborted'), { once: true });
@@ -483,7 +498,7 @@ export class McpHub implements Disposable {
       return finish(normalized.isError ? 'error' : 'ok', normalized, text);
     } catch (e) {
       const message =
-        isCodeMapTool(name) && !(e instanceof CodeMapToolInputError)
+        isMapRequest(name) && !(e instanceof CodeMapToolInputError)
           ? 'Code Map request failed or access was revoked. Check selectors, project settings and indexing status.'
           : e instanceof Error
             ? e.message
@@ -502,11 +517,29 @@ export class McpHub implements Disposable {
     sessionId: string,
     signal: AbortSignal,
     timeoutMs: number,
+    principal?: string,
   ): Promise<McpToolResult | string> {
     if (entry.source.kind === 'core') {
       const tool = this.coreTools.get(entry.name);
       if (!tool) throw new Error(`The tool ${entry.name} is not available.`);
-      return tool.run({ args, caller, sessionId, signal });
+      let learningActor;
+      if (isLearningTool(entry.name)) {
+        if (principal) {
+          const who = this.ensemble?.describe(principal);
+          if (
+            !who?.checkoutId ||
+            who.projectId !== caller.context.projectId ||
+            who.checkoutId !== (caller.context.checkoutId ?? caller.context.projectId)
+          )
+            throw new Error('Learning role access revoked');
+          learningActor = {
+            principal: createHash('sha256').update(principal).digest('hex'),
+            role: who.roleId ?? 'ensemble',
+            ...(who.taskId ? { task: who.taskId } : {}),
+          };
+        } else learningActor = { principal: 'hub', role: 'hub' };
+      }
+      return tool.run({ args, caller, sessionId, signal, ...(learningActor ? { learningActor } : {}) });
     }
     return this.deps.plugins.call({
       pluginId: entry.source.pluginId,
@@ -558,7 +591,7 @@ export class McpHub implements Disposable {
 
   private ensembleBridgeTools(): McpToolDefinition[] {
     const names = new Set((this.deps.resources?.tools ?? []).map((t) => t.definition.name));
-    for (const name of this.coreTools.keys()) if (isCodeMapTool(name)) names.add(name);
+    for (const name of this.coreTools.keys()) if (isMapRequest(name)) names.add(name);
     return this.registry
       .listed()
       .filter((e) => names.has(e.name))
@@ -589,6 +622,7 @@ export class McpHub implements Disposable {
   /** A role token was revoked: its open sessions end. */
   endEnsembleSessions(token: string): void {
     this.server.endSessionsOf(token);
+    this.deps.codeMap?.learningService?.revokeLearningActor(createHash('sha256').update(token).digest('hex'));
   }
 
   private async callEnsemble(name: string, args: Record<string, unknown>, call: ToolCall): Promise<McpToolResult> {
@@ -596,13 +630,13 @@ export class McpHub implements Disposable {
     const token = call.principal ?? '';
     const who = ensemble?.describe(token) ?? null;
     if (who && this.ensembleBridgeTools().some((t) => t.name === name)) {
-      if (isCodeMapTool(name) && !who.checkoutId) return toolError('This role has no registered Code Map checkout.');
+      if (isMapRequest(name) && !who.checkoutId) return toolError('This role has no registered Code Map checkout.');
       const { cwd: _cwd, project: _project, ...rest } = args;
       return this.callToolAs(name, rest, call, {
         context: {
           ...(who.projectId ? { projectId: who.projectId } : {}),
           ...(who.terminalId ? { terminalId: who.terminalId } : {}),
-          ...(isCodeMapTool(name) && who.checkoutId ? { checkoutId: who.checkoutId } : {}),
+          ...(isMapRequest(name) && who.checkoutId ? { checkoutId: who.checkoutId } : {}),
         },
         label: who.label,
       });

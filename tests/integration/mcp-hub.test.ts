@@ -11,6 +11,10 @@ import { CodeMapCheckouts } from '../../src/code-map-host/checkouts';
 import { fileRecord } from '../../src/code-map-host/extract/files';
 import { copyCodeMapAssets } from '../../scripts/code-map-assets';
 import { CodeMapQueryResultSchema } from '../../src/shared/domain/code-map-query';
+import { LearningToolResultSchema } from '../../src/shared/domain/code-map-learning-tools';
+import { LearningMemory } from '../../src/code-map-host/memory/admission';
+import { LearningTools } from '../../src/code-map-host/memory/agent-tools';
+import type { MemoryAuthority } from '../../src/shared/domain/code-map-memory';
 import type { PluginToolSource } from '../../src/main/services/mcp/tool-registry';
 import { PluginRuntime } from '../../src/plugin-host/runtime';
 import { silentLogger } from '../helpers/logger';
@@ -213,6 +217,148 @@ const toolNames = async (port: number, session: string) =>
   (await post(port, { jsonrpc: '2.0', id: 9, method: 'tools/list' }, session)).json
     .result!.tools!.map((t) => t.name)
     .filter((n) => n.startsWith('tests_'));
+
+it('uses three learning tools over real HTTP with independent sessions, review and evidence invalidation', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oxy-mcp-learning-')),
+    assets = join(userData, 'learning-assets');
+  await copyCodeMapAssets(assets);
+  const checkouts = new CodeMapCheckouts('Oxytocin test', () => {}, {
+    assets,
+    parserEntry: '',
+    parser: {
+      parse: (path, source) => {
+        const record = fileRecord(path, source);
+        record.file.status = 'ok';
+        return Promise.resolve(record);
+      },
+      dispose: () => Promise.resolve(),
+    },
+  });
+  cleanup.push(async () => {
+    await checkouts.dispose();
+    await rm(root, { recursive: true, force: true });
+  });
+  await writeFile(join(root, 'api.ts'), 'export const protocol = 1;\n');
+  await checkouts.configure({
+    checkoutId: 'p1',
+    projectId: 'p1',
+    root,
+    mode: 'project',
+    gitPath: 'git',
+    ignoreInGit: false,
+  });
+  await vi.waitFor(() => expect(checkouts.status('p1').state).toBe('ready'));
+  const memory = new LearningMemory((id) => checkouts.memorySnapshot(id));
+  cleanup.push(() => memory.dispose());
+  const tools = new LearningTools(checkouts, memory);
+  const authority: MemoryAuthority = {
+    projectId: 'p1',
+    checkoutId: 'p1',
+    root,
+    projectRoot: root,
+    checkouts: [{ checkoutId: 'p1', root }],
+    excludedPaths: [],
+    origin: { source: 'user' },
+  };
+  let enabled = true,
+    mode: 'off' | 'review' = 'review';
+  const changed = new Emitter<void>();
+  const { hub, port } = await setup({
+    enabled: () => enabled,
+    memoryEnabled: () => enabled && mode !== 'off',
+    onDidChange: changed.event,
+    service: {
+      query: async (id, query) => CodeMapQueryResultSchema.parse(await checkouts.query(id, crypto.randomUUID(), query)),
+    },
+    learningService: {
+      learningTool: (projectId, checkoutId, request, actor) => {
+        if (!enabled || projectId !== 'p1' || checkoutId !== 'p1') throw new Error('UNAVAILABLE');
+        return tools.run(crypto.randomUUID(), authority, actor, request, mode);
+      },
+      revokeLearningActor: (principal) => tools.revokeActor(principal),
+    },
+  });
+  const initialize = async () =>
+    (await post(port, { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }))
+      .session;
+  const firstSession = await initialize(),
+    secondSession = await initialize();
+  const call = async (session: string, name: string, args: unknown) =>
+    (await post(port, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name, arguments: args } }, session)).json
+      .result!;
+  const decode = (result: Record<string, unknown>) =>
+    LearningToolResultSchema.parse(JSON.parse((result['content'] as { text: string }[])[0]!.text));
+  const proposal = {
+    draft: {
+      kind: 'constraint',
+      title: 'Protocol compatibility',
+      body: 'Use the protocol.',
+      evidence: [{ path: 'api.ts' }],
+    },
+    expectedRevision: 0,
+    idempotencyKey: 'http-proposal',
+  };
+  const proposed = decode(await call(firstSession, 'oxy_propose_learning', proposal));
+  expect(proposed).toMatchObject({ kind: 'propose', code: 'OK', review: 'proposed' });
+  if (proposed.kind !== 'propose') throw new Error('Expected a proposal');
+  expect(decode(await call(firstSession, 'oxy_task_context', { question: 'protocol' }))).toMatchObject({
+    learnings: [],
+  });
+  await memory.run(authority, {
+    action: 'review',
+    id: proposed.id,
+    expectedRevision: proposed.revision,
+    decision: 'accept',
+    idempotencyKey: 'http-review',
+  });
+  const context = decode(await call(secondSession, 'oxy_task_context', { question: 'protocol', paths: ['api.ts'] }));
+  if (context.kind !== 'task-context') throw new Error(JSON.stringify(context));
+  expect(context.learnings[0]).toMatchObject({
+    id: proposed.id,
+    origin: { source: 'agent', role: 'hub' },
+    reviewer: { source: 'user' },
+  });
+  const feedback = {
+    receipt: context.receipt,
+    id: proposed.id,
+    revision: context.learnings[0]!.revision,
+    outcome: 'used',
+    idempotencyKey: 'http-feedback',
+  };
+  expect(decode(await call(firstSession, 'oxy_learning_feedback', feedback))).toMatchObject({
+    code: 'INVALID_RECEIPT',
+  });
+  expect(decode(await call(secondSession, 'oxy_learning_feedback', feedback))).toMatchObject({
+    kind: 'feedback',
+    code: 'OK',
+  });
+  expect(
+    (await call(firstSession, 'oxy_propose_learning', { ...proposal, author: 'user', role: 'another-role' }))[
+      'isError'
+    ],
+  ).toBe(true);
+  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol', maxChars: 1 }))).toMatchObject({
+    code: 'BUDGET_TOO_SMALL',
+  });
+  await writeFile(join(root, 'api.ts'), 'export const protocol = 2;\n');
+  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol' }))).toMatchObject({
+    learnings: [],
+  });
+  mode = 'off';
+  tools.revoke('p1');
+  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol' }))).toMatchObject({
+    memory: 'off',
+    learnings: [],
+  });
+  expect(decode(await call(secondSession, 'oxy_propose_learning', proposal))).toMatchObject({ code: 'MEMORY_OFF' });
+  changed.fire();
+  expect(hub.registry.resolve('oxy_propose_learning')).toBeUndefined();
+  expect(hub.registry.resolve('oxy_task_context')).toBeDefined();
+  enabled = false;
+  changed.fire();
+  expect(hub.registry.resolve('oxy_task_context')).toBeUndefined();
+  expect(JSON.stringify(hub.state().log)).not.toContain('Use the protocol.');
+});
 
 it('queries a live Code Map over HTTP, observes immediate edits, bounds results and revokes cached tools', async () => {
   const assets = join(userData, 'assets');

@@ -12,6 +12,7 @@ import { memoryLocations, type MemoryLocation } from './locations';
 import { EvidenceObservation } from './observation';
 import type { WatchSubscribe } from '../watch';
 import { commitMemory, replayTransaction } from './transaction';
+import { LearningFeedbackMutationSchema, type LearningFeedbackMutation } from '@shared/domain/code-map-learning-tools';
 
 const normalize = (text: string) => text.normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim();
 function dedupKey(
@@ -57,9 +58,28 @@ export class LearningMemory {
     return next;
   }
 
-  run(authority: MemoryAuthority, operation: LearningOperation): Promise<LearningResult> {
+  context(authority: MemoryAuthority, signal?: AbortSignal): Promise<LearningResult> {
+    return this.enqueueInternal(authority, { action: 'context' }, signal);
+  }
+  feedback(
+    authority: MemoryAuthority,
+    operation: LearningFeedbackMutation,
+    signal?: AbortSignal,
+  ): Promise<LearningResult> {
+    return this.enqueueInternal(authority, LearningFeedbackMutationSchema.parse(operation), signal);
+  }
+  private enqueueInternal(
+    authority: MemoryAuthority,
+    operation: LearningOperation | LearningFeedbackMutation | { action: 'context' },
+    signal?: AbortSignal,
+  ): Promise<LearningResult> {
+    const next = this.queue.then(() => this.execute(MemoryAuthoritySchema.parse(authority), operation, signal));
+    this.queue = next.catch(() => undefined);
+    return next;
+  }
+  run(authority: MemoryAuthority, operation: LearningOperation, signal?: AbortSignal): Promise<LearningResult> {
     const next = this.queue.then(() =>
-      this.execute(MemoryAuthoritySchema.parse(authority), LearningOperationSchema.parse(operation)),
+      this.execute(MemoryAuthoritySchema.parse(authority), LearningOperationSchema.parse(operation), signal),
     );
     this.queue = next.catch(() => undefined);
     return next;
@@ -67,13 +87,17 @@ export class LearningMemory {
 
   private async execute(
     authority: MemoryAuthority,
-    operation: LearningOperation | { action: 'archive' },
+    operation: LearningOperation | LearningFeedbackMutation | { action: 'archive' } | { action: 'context' },
+    signal?: AbortSignal,
   ): Promise<LearningResult> {
+    signal?.throwIfAborted();
     if (
       authority.origin.source !== 'user' &&
       operation.action !== 'save' &&
       operation.action !== 'list' &&
-      operation.action !== 'get'
+      operation.action !== 'get' &&
+      operation.action !== 'context' &&
+      operation.action !== 'feedback'
     )
       throw new Error('FORBIDDEN: user operation');
     if (authority.archived && !['get', 'list', 'export', 'delete', 'forget', 'review'].includes(operation.action))
@@ -86,7 +110,12 @@ export class LearningMemory {
         return { memoryRevision: 0, records: [], total: 0 };
       }
     }
-    if (operation.action === 'list' || operation.action === 'get' || operation.action === 'export') {
+    if (
+      operation.action === 'list' ||
+      operation.action === 'get' ||
+      operation.action === 'export' ||
+      operation.action === 'context'
+    ) {
       try {
         await safeDirectory(authority.projectRoot, ['.oxy', 'learnings'], false);
       } catch (error) {
@@ -206,6 +235,25 @@ export class LearningMemory {
           total: allRecords.length,
           ...extras,
         });
+      if (operation.action === 'context') {
+        const reviewed = allRecords.filter((r) => r.review === 'accepted');
+        const active = reviewed.filter(
+          (r) => r.review === 'accepted' && r.applicability[authority.checkoutId]?.state === 'current',
+        );
+        const eligible = active.filter(
+          (r) =>
+            !reviewed.some(
+              (other) =>
+                other.id !== r.id &&
+                (r.conflicts.includes(other.id) ||
+                  other.conflicts.includes(r.id) ||
+                  (r.topic && normalize(r.topic) === normalize(other.topic ?? '')) ||
+                  (r.replaces && r.replaces === other.replaces)),
+            ),
+        );
+        signal?.throwIfAborted();
+        return result(eligible);
+      }
       if (operation.action === 'list') {
         const search = normalize(operation.search);
         const records = allRecords.filter(
@@ -226,7 +274,9 @@ export class LearningMemory {
       if (operation.action === 'export')
         return result(allRecords, { history: [...stores.values()].flatMap((f) => f.history).filter(visible) });
       const digest = sha256(JSON.stringify(operation));
-      const retryKey = sha256(`${authority.origin.source}:${authority.origin.role ?? ''}:${operation.idempotencyKey}`);
+      const retryKey = sha256(
+        `${authority.producer ?? ''}:${authority.origin.source}:${authority.origin.role ?? ''}:${operation.idempotencyKey}`,
+      );
       const retry = file.retries.find((r) => r.key === retryKey);
       if (retry) {
         if (retry.digest !== digest) throw new Error('IDEMPOTENCY_CONFLICT: key reused for a different mutation');
@@ -234,6 +284,18 @@ export class LearningMemory {
         return result(record ? [record] : [], { duplicate: true });
       }
       const now = new Date().toISOString();
+      const category =
+        operation.action === 'feedback'
+          ? 'feedback'
+          : authority.origin.source === 'agent' && operation.action === 'save'
+            ? 'proposal'
+            : undefined;
+      if (
+        category &&
+        file.retries.filter((r) => r.kind === category && r.at > Date.now() - 3600000).length >=
+          (category === 'proposal' ? 50 : 200)
+      )
+        throw new Error('RATE_LIMIT: checkout learning limit reached; retry after an hour');
       const old =
         'id' in operation && operation.id ? file.records.find((r) => r.id === operation.id && visible(r)) : undefined;
       if (
@@ -244,9 +306,28 @@ export class LearningMemory {
       )
         throw new Error('REVISION_CONFLICT: refresh before editing this learning');
       let record: Learning | undefined;
+      let duplicateFeedback = false;
+      let duplicateProposal = false;
       const dirtyStores = new Set<MemoryLocation>([location!]);
       let promotedTo: MemoryFile | undefined;
-      if (operation.action === 'save') {
+      if (operation.action === 'feedback' && old) {
+        duplicateFeedback = file.retries.some(
+          (r) => r.kind === 'feedback' && r.receiptKey === operation.receiptKey && r.id === old.id,
+        );
+        record = structuredClone(old);
+        if (!duplicateFeedback) {
+          if (operation.evidence.length)
+            await evidenceFor(authority, { ...old, evidence: operation.evidence }, snapshot?.graph);
+          record.feedback[operation.outcome]++;
+          if (operation.outcome === 'outdated' || operation.outcome === 'incorrect')
+            record.applicability[authority.checkoutId] = {
+              state: 'needs-review',
+              checkedAt: now,
+              reason: `An authenticated client reported ${operation.outcome}; user review is required`,
+            };
+          file.records = file.records.map((r) => (r.id === record!.id ? record! : r));
+        }
+      } else if (operation.action === 'save') {
         if (!old && operation.expectedRevision !== 0)
           throw new Error('REVISION_CONFLICT: new learning must start at revision zero');
         if (authority.origin.source === 'agent' && old)
@@ -276,8 +357,10 @@ export class LearningMemory {
         const same = allRecords.find(
           (r) => r.id !== old?.id && r.dedup === dedup && r.review !== 'rejected' && r.review !== 'superseded',
         );
-        if (same) record = same;
-        else {
+        if (same) {
+          record = same;
+          duplicateProposal = true;
+        } else {
           const conflicts = allRecords
             .filter(
               (r) =>
@@ -352,6 +435,7 @@ export class LearningMemory {
           record.reviewedAt = now;
           record.reviewer = authority.origin;
           record.applicability = {
+            ...old.applicability,
             [evidenceAuthority.checkoutId]: {
               state: 'current',
               checkedAt: now,
@@ -426,6 +510,8 @@ export class LearningMemory {
         ...(record ? { id: record.id } : {}),
         revision: file.revision,
         at: Date.now(),
+        ...(category ? { kind: category } : {}),
+        ...(operation.action === 'feedback' ? { receiptKey: operation.receiptKey } : {}),
       });
       if (promotedTo) promotedTo.retries.push(file.retries.at(-1)!);
       let count = 0,
@@ -438,13 +524,14 @@ export class LearningMemory {
         throw new Error('MEMORY_LIMIT: export and remove learnings before adding more');
       await lease.assertOwned();
       for (const lock of checkoutLocks) await lock.assertOwned();
+      signal?.throwIfAborted();
       await commitMemory(authority.projectRoot, stores, dirtyStores);
       if (operation.action === 'review' && operation.decision !== 'reject' && record)
         this.observation.reviewed(authority.checkoutId, record.id);
       await this.observation.observe(authority, [...stores.values()].flatMap((f) => f.records).filter(visible), () => {
         void this.run(authority, { action: 'list', search: '', state: 'all', offset: 0 }).catch(() => undefined);
       });
-      return result(record ? [record] : []);
+      return result(record ? [record] : [], duplicateFeedback || duplicateProposal ? { duplicate: true } : {});
     } finally {
       for (const lock of checkoutLocks.reverse()) await lock.dispose();
       await lease.dispose();

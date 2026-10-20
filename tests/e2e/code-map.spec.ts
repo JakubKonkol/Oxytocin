@@ -10,7 +10,102 @@ import { connect, freePort } from './helpers/mcp';
 import { userDataWithPlugins } from './helpers/plugins';
 import { CodeMapPluginResultSchema } from '../../src/shared/domain/code-map-plugin';
 import { LearningResultSchema } from '../../src/shared/domain/code-map-memory';
+import { LearningToolResultSchema } from '../../src/shared/domain/code-map-learning-tools';
 import { ensembleRecords, gitRepo, useFakeClaude } from './helpers/ensemble';
+
+test('MCP learning proposal is reviewed in the core manager and reused only while evidence applies', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'oxy-learning-mcp-ui-'));
+  await writeFile(join(project, 'api.ts'), 'export function protocol() { return 1; }\n');
+  const { app, win, userData } = await launchApp({ project });
+  const clients: Awaited<ReturnType<typeof connect>>[] = [];
+  try {
+    const projectId = await activeProjectId(win),
+      port = await freePort();
+    await win.evaluate((port) => window.oxy.invoke('settings:update', { 'mcp.enabled': true, 'mcp.port': port }), port);
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), projectId);
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), projectId)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
+    const first = await connect(port, token);
+    clients.push(first);
+    expect(await first.tools()).toContain('oxy_propose_learning');
+    const decode = (value: Awaited<ReturnType<typeof first.call>>) =>
+      LearningToolResultSchema.parse(JSON.parse(value.result!.content![0]!.text));
+    const proposed = decode(
+      await first.call('oxy_propose_learning', {
+        cwd: project,
+        draft: {
+          kind: 'constraint',
+          title: 'Protocol compatibility',
+          body: 'Use the protocol.',
+          evidence: [{ path: 'api.ts' }],
+        },
+        expectedRevision: 0,
+        idempotencyKey: 'e2e-agent-proposal',
+      }),
+    );
+    expect(proposed).toMatchObject({ kind: 'propose', review: 'proposed' });
+    if (proposed.kind !== 'propose') throw new Error('Expected a proposal');
+    expect(
+      decode(await first.call('oxy_task_context', { cwd: project, question: 'protocol compatibility' })),
+    ).toMatchObject({ learnings: [] });
+    await win.getByRole('button', { name: 'Code Map status' }).click();
+    const dialog = win.getByTestId('project-settings'),
+      list = dialog.getByTestId('learnings-list');
+    await expect(list).toContainText('Protocol compatibility');
+    await list.getByRole('button').click();
+    await expect(list).toContainText('agent');
+    await dialog.getByRole('button', { name: 'Accept and revalidate' }).click();
+    await expect(list).toContainText('accepted');
+    const later = await connect(port, token);
+    clients.push(later);
+    const selected = decode(
+      await later.call('oxy_task_context', { cwd: project, question: 'protocol compatibility', paths: ['api.ts'] }),
+    );
+    if (selected.kind !== 'task-context') throw new Error(JSON.stringify(selected));
+    expect(selected.learnings[0]).toMatchObject({
+      id: proposed.id,
+      review: 'accepted',
+      origin: { source: 'agent', role: 'hub' },
+    });
+    const feedback = {
+      cwd: project,
+      receipt: selected.receipt,
+      id: proposed.id,
+      revision: selected.learnings[0]!.revision,
+      outcome: 'used',
+      idempotencyKey: 'e2e-used',
+    };
+    expect(decode(await first.call('oxy_learning_feedback', feedback))).toMatchObject({ code: 'INVALID_RECEIPT' });
+    expect(decode(await later.call('oxy_learning_feedback', feedback))).toMatchObject({ kind: 'feedback', code: 'OK' });
+    await writeFile(join(project, 'api.ts'), 'export function protocol() { return 2; }\n');
+    expect(
+      decode(
+        await later.call('oxy_task_context', { cwd: project, question: 'protocol compatibility', paths: ['api.ts'] }),
+      ),
+    ).toMatchObject({ learnings: [] });
+    await dialog.getByRole('button', { name: 'Refresh learnings' }).click();
+    await expect(list).toContainText('needs-review');
+    await dialog.getByLabel('Memory mode').selectOption('off');
+    expect(decode(await later.call('oxy_task_context', { cwd: project, question: 'protocol' }))).toMatchObject({
+      memory: 'off',
+      learnings: [],
+    });
+    await expect.poll(() => later.tools()).not.toContain('oxy_propose_learning');
+    expect(await readFile(join(project, '.oxy/learnings/learnings.json'), 'utf8')).toContain('Use the protocol.');
+  } finally {
+    for (const client of clients) client.close();
+    await app.close();
+  }
+});
 
 test('Learnings survive Ensemble worktree removal and require explicit project promotion', async () => {
   test.setTimeout(180_000);

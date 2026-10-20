@@ -23,6 +23,8 @@ export const MemoryFileSchema = z
             id: z.string().optional(),
             revision: z.number(),
             at: z.number(),
+            kind: z.enum(['proposal', 'feedback']).optional(),
+            receiptKey: z.string().max(200).optional(),
           })
           .strict(),
       )
@@ -139,10 +141,24 @@ export async function loadMemory(root: string, archiveId?: string): Promise<Memo
       await rejectLink(join(local, 'metadata.json'));
       try {
         const metadata = z
-          .object({ revision: MemoryFileSchema.shape.revision, retries: MemoryFileSchema.shape.retries })
+          .object({
+            revision: MemoryFileSchema.shape.revision,
+            retries: MemoryFileSchema.shape.retries,
+            feedback: z
+              .array(z.object({ id: z.string(), revision: z.number(), value: LearningSchema.shape.feedback }).strict())
+              .max(22000)
+              .default([]),
+          })
           .strict()
           .parse(JSON.parse(await readFile(join(local, 'metadata.json'), 'utf8')));
-        if (metadata.revision === primary.revision) primary.retries = metadata.retries;
+        if (metadata.revision === primary.revision) {
+          primary.retries = metadata.retries;
+          const counters = new Map(metadata.feedback.map((f) => [`${f.id}:${f.revision}`, f.value]));
+          for (const record of [...primary.records, ...primary.history]) {
+            const saved = counters.get(`${record.id}:${record.revision}`);
+            if (saved) record.feedback = saved;
+          }
+        }
       } catch (error) {
         if (!hasCode(error, 'ENOENT')) throw error;
       }
@@ -169,8 +185,20 @@ export async function writeMemory(root: string, input: MemoryFile, archiveId?: s
   await atomicWrite(join(local, 'pending.json'), content);
   await atomicWrite(join(local, 'recovery.json'), content);
   const { retries, ...portable } = file;
-  await atomicWrite(join(directory, 'learnings.json'), `${JSON.stringify(portable, null, 2)}\n`);
-  await atomicWrite(join(local, 'metadata.json'), `${JSON.stringify({ revision: file.revision, retries })}\n`);
+  const claim = ({ feedback: _feedback, ...record }: z.infer<typeof LearningSchema>) => record;
+  await atomicWrite(
+    join(directory, 'learnings.json'),
+    `${JSON.stringify({ ...portable, records: file.records.map(claim), history: file.history.map(claim) }, null, 2)}\n`,
+  );
+  const feedback = [...file.records, ...file.history].map((r) => ({
+    id: r.id,
+    revision: r.revision,
+    value: r.feedback,
+  }));
+  await atomicWrite(
+    join(local, 'metadata.json'),
+    `${JSON.stringify({ revision: file.revision, retries, feedback })}\n`,
+  );
   await rm(join(local, 'pending.json'), { force: true });
   // A killed atomic rename can leave temporary content. Forget/delete must purge those copies too.
   for (const folder of [directory, local])

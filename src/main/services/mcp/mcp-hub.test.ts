@@ -293,6 +293,71 @@ describe('McpHub resource tools', () => {
 });
 
 describe('McpHub Ensemble endpoint', () => {
+  it('uses authenticated role provenance for learning writes and aborts them on token revocation', async () => {
+    let live = true;
+    const learningTool = vi.fn<
+      (project: string, checkout: string, input: unknown, actor: unknown, signal: AbortSignal) => Promise<never>
+    >(
+      (_project, _checkout, _input, _actor, signal) =>
+        new Promise((_, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('revoked')), { once: true }),
+        ),
+    );
+    const revokeLearningActor = vi.fn();
+    const { hub } = setup({
+      codeMap: {
+        enabled: () => true,
+        memoryEnabled: () => true,
+        onDidChange: () => ({ dispose() {} }),
+        service: { query: () => Promise.reject(new Error('unused')) },
+        learningService: { learningTool, revokeLearningActor },
+      },
+    });
+    hub.setEnsemble({
+      describe: () =>
+        live ? { label: 'A', roleId: 'role-a', taskId: 'task-a', projectId: 'p1', checkoutId: 'worktree:a' } : null,
+      tools: () => [],
+      call: () => Promise.resolve(''),
+      instructions: () => '',
+    });
+    await hub.start();
+    let session: string | null = null;
+    const rpc = async (method: string, params: unknown = {}) => {
+      const response = await fetch(hub.ensembleUrl()!, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer private-role-token',
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Oxytocin-Terminal': 'foreign',
+          ...(session ? { 'Mcp-Session-Id': session } : {}),
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      });
+      session ??= response.headers.get('mcp-session-id');
+      return (await response.json()) as { result: McpToolResult };
+    };
+    await rpc('initialize');
+    const pending = rpc('tools/call', {
+      name: 'oxy_propose_learning',
+      arguments: {
+        cwd: '/foreign',
+        project: 'p2',
+        draft: { kind: 'decision', title: 'Protocol', body: 'Use it.' },
+        expectedRevision: 0,
+        idempotencyKey: 'role',
+      },
+    });
+    await vi.waitFor(() => expect(learningTool).toHaveBeenCalledOnce());
+    expect(learningTool.mock.calls[0]!.slice(0, 2)).toEqual(['p1', 'worktree:a']);
+    expect(learningTool.mock.calls[0]![3]).toMatchObject({ role: 'role-a', task: 'task-a', session });
+    expect(JSON.stringify(learningTool.mock.calls[0]![3])).not.toContain('private-role-token');
+    live = false;
+    hub.endEnsembleSessions('private-role-token');
+    expect((await pending).result.isError).toBe(true);
+    expect(learningTool.mock.calls[0]![4].aborted).toBe(true);
+    expect(revokeLearningActor).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/));
+  });
   it('uses only the authenticated role checkout, ignores selectors/header and cancels revoked roles', async () => {
     let live = true;
     const seen: string[] = [];

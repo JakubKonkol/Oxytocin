@@ -43,6 +43,8 @@ export interface CoreToolCall {
   caller: ResolvedCaller;
   sessionId: string;
   signal: AbortSignal;
+  /** Supplied by the authenticated endpoint, never a tool argument or terminal header. */
+  learningActor?: { principal: string; role: string; task?: string };
 }
 
 export interface CoreTool {

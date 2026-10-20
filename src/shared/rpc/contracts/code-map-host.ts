@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import {
+  LearningActorSchema,
+  LearningToolRequestSchema,
+  LearningToolResultSchema,
+} from '../../domain/code-map-learning-tools';
+import {
   MemoryAuthoritySchema,
   LearningOperationSchema,
   LearningResultSchema,
@@ -30,6 +35,26 @@ export const ConfigureCodeMapCheckoutSchema = z
 export type ConfigureCodeMapCheckout = z.infer<typeof ConfigureCodeMapCheckoutSchema>;
 
 export const CodeMapHostContracts = {
+  'memory:agent': {
+    params: z
+      .object({
+        requestId: z.string().min(1).max(200),
+        authority: MemoryAuthoritySchema,
+        actor: LearningActorSchema,
+        request: LearningToolRequestSchema,
+        mode: z.enum(['off', 'review']),
+      })
+      .strict(),
+    result: LearningToolResultSchema,
+  },
+  'memory:cancel': { params: z.object({ requestId: z.string().min(1).max(200) }).strict(), result: z.null() },
+  'memory:revoke': {
+    params: z
+      .object({ projectId: z.string().min(1).max(200), checkoutId: z.string().min(1).max(200).optional() })
+      .strict(),
+    result: z.null(),
+  },
+  'memory:revokeActor': { params: z.object({ principal: z.string().min(1).max(200) }).strict(), result: z.null() },
   'memory:archives': {
     params: z.object({ root: z.string().min(1).max(32768) }).strict(),
     result: z.array(LearningCheckoutSchema).max(1000),
