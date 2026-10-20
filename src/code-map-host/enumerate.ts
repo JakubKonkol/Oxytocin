@@ -37,6 +37,19 @@ export function builtInExclusion(path: string): string | null {
   return null;
 }
 
+const DOTNET_PROJECT = /\.(cs|fs|vb)proj$/i;
+/** `bin/` and `obj/` are build output only next to a .NET project file; elsewhere they may hold sources. */
+export function dotnetOutputDirectory(path: string, projectDirectories: ReadonlySet<string>): string | null {
+  const parts = path.split('/');
+  const index = parts.findIndex(
+    (part, index) =>
+      index < parts.length - 1 &&
+      ['bin', 'obj'].includes(part.toLowerCase()) &&
+      projectDirectories.has(parts.slice(0, index).join('/') || '.'),
+  );
+  return index < 0 ? null : parts.slice(0, index + 1).join('/');
+}
+
 export function matchesExclusion(path: string, patterns: readonly string[]): boolean {
   const parts = path.split('/');
   return patterns.some((pattern) => {
@@ -141,9 +154,14 @@ export async function enumerate(options: {
       if (!hasCode(error, 'ENOENT')) throw error;
     }
     const entries = (await readdir(directory, { withFileTypes: true })).sort((a, b) => comparePaths(a.name, b.name));
+    const dotnet = entries.some((entry) => entry.isFile() && DOTNET_PROJECT.test(entry.name));
     for (const entry of entries) {
       const absolute = join(directory, entry.name);
       const path = toPosix(relative(root, absolute));
+      if (dotnet && entry.isDirectory() && ['bin', 'obj'].includes(entry.name.toLowerCase())) {
+        skip(path, 'generated-or-local-directory');
+        continue;
+      }
       if (builtInExclusion(path) || matchesExclusion(path, excluded)) {
         skip(path, builtInExclusion(path) ?? 'user-exclusion');
         continue;
@@ -183,7 +201,18 @@ export async function enumerate(options: {
   };
   const reportedBoundaries = new Set<string>();
   const files: EnumeratedFile[] = [];
-  const ordered = [...new Set(candidates)].sort(comparePaths);
+  const projectDirectories = new Set(
+    candidates.filter((path) => DOTNET_PROJECT.test(path)).map((path) => posix.dirname(path.replace(/\/$/, ''))),
+  );
+  const reportedOutputs = new Set<string>();
+  const ordered = [...new Set(candidates)].sort(comparePaths).filter((path) => {
+    const output = dotnetOutputDirectory(path, projectDirectories);
+    if (output && !reportedOutputs.has(output)) {
+      reportedOutputs.add(output);
+      skip(output, 'generated-or-local-directory');
+    }
+    return !output;
+  });
   for (let offset = 0; offset < ordered.length; offset += 32) {
     options.signal?.throwIfAborted();
     const batch = await Promise.all(

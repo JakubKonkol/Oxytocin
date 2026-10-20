@@ -61,7 +61,12 @@ async function run() {
   for (let edit = 0; edit < 10; edit++) {
     const generation = status!.generation,
       start = performance.now();
-    await writeFile(sourcePath, `${source}\nexport function benchmarkEdit${edit}() { return ${edit}; }\n`);
+    await writeFile(
+      sourcePath,
+      config.editFile.endsWith('.cs')
+        ? `${source}\npublic static class BenchmarkEdit${edit} { public static int Value() => ${edit}; }\n`
+        : `${source}\nexport function benchmarkEdit${edit}() { return ${edit}; }\n`,
+    );
     await wait(generation);
     edits.push(performance.now() - start);
   }

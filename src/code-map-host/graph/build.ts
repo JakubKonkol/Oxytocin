@@ -5,6 +5,7 @@ import type { FileRecord } from '../extract/record';
 import type { ProjectConfig } from '../resolve/config';
 import { ModuleResolver } from '../resolve/modules';
 import { BindingResolver } from '../resolve/bindings';
+import { CSharpResolver } from '../resolve/csharp';
 
 export function buildGraph(
   records: ReadonlyMap<string, FileRecord>,
@@ -28,8 +29,13 @@ export function buildGraph(
   };
   const groups = new Map<string, CodeMapGraph['groups'][number]>();
   const ordered = [...records].sort(([left], [right]) => comparePaths(left, right));
+  const csharp =
+    [...records.values()].some((record) => record.csharp) ||
+    [...configs.values()].some((config) => config.kind.startsWith('dotnet-'))
+      ? new CSharpResolver(records, configs)
+      : null;
   for (const [, record] of ordered) {
-    graph.files.push({ ...record.file });
+    graph.files.push({ ...record.file, ...(csharp?.isTestFile(record.file.path) ? { test: true } : {}) });
     const category =
       record.file.status === 'unsupported' ? 'unsupported' : record.file.status === 'ok' ? 'indexed' : 'failed';
     graph.coverage.files[category]++;
@@ -47,9 +53,23 @@ export function buildGraph(
     graph.edges.push({ from: record.file.group, to: record.file.id, rel: 'contains', prov: 'syntax' });
     for (const symbol of record.symbols) {
       if (graph.symbols.length >= limits.symbols || graph.edges.length >= limits.edges) throw new CodeMapLimitError();
-      graph.symbols.push({ ...symbol });
+      const owner = symbol.owner ? (csharp?.aliases.get(symbol.owner) ?? symbol.owner) : null;
+      const primary = csharp?.aliases.get(symbol.id);
+      if (primary) {
+        // A further partial declaration: the merged type keeps one symbol and lists this span as a part.
+        graph.edges.push({
+          from: owner ?? record.file.id,
+          to: primary,
+          rel: 'contains',
+          prov: 'syntax',
+          at: [symbol.span[0], symbol.span[1]],
+        });
+        continue;
+      }
+      const parts = csharp?.parts.get(symbol.id);
+      graph.symbols.push({ ...symbol, owner, ...(parts ? { parts } : {}) });
       graph.edges.push({
-        from: symbol.owner ?? record.file.id,
+        from: owner ?? record.file.id,
         to: symbol.id,
         rel: 'contains',
         prov: 'syntax',
@@ -67,7 +87,26 @@ export function buildGraph(
     resolver.appendRelations(path, graph.edges, graph.unresolved, packages, limits.edges);
     if (graph.edges.length > limits.edges || graph.unresolved.length > limits.edges) throw new CodeMapLimitError();
   }
-  graph.groups = [...groups.values()].sort((left, right) => comparePaths(left.id, right.id));
+  const packageNodes = new Map<string, CodeMapGraph['packages'][number]>(
+    [...packages].map((name) => [`p:${name}`, { id: `p:${name}`, name, external: true }]),
+  );
+  if (csharp) {
+    for (const path of csharp.paths) csharp.appendRelations(path, graph.edges, graph.unresolved, limits.edges);
+    csharp.appendProjects(
+      graph,
+      ordered.map(([path]) => path),
+      packageNodes,
+    );
+    csharp.appendFileReferences(graph.edges);
+    if (graph.edges.length > limits.edges || graph.unresolved.length > limits.edges) throw new CodeMapLimitError();
+    const byId = new Map(graph.symbols.map((symbol) => [symbol.id, symbol]));
+    for (const symbol of graph.symbols)
+      if (symbol.visibility) {
+        symbol.visibility = csharp.visibility.get(symbol.id) ?? symbol.visibility;
+        symbol.exported = csharp.exported(symbol, byId);
+      }
+  }
+  graph.groups = [...graph.groups, ...groups.values()].sort((left, right) => comparePaths(left.id, right.id));
   for (const symbol of graph.symbols) if (resolver.exportedSymbols.has(symbol.id)) symbol.exported = true;
   const children = new Map<string, typeof graph.symbols>();
   const namespaceMembers = new Set(
@@ -87,6 +126,7 @@ export function buildGraph(
     expanded.add(owner.id);
     for (const child of children.get(owner.id) ?? []) {
       if (
+        child.visibility ||
         child.name.startsWith('#') ||
         /^(?:(?:static|readonly|abstract|override|public|async|get|set) )*(?:private|protected) /.test(child.signature)
       )
@@ -96,7 +136,7 @@ export function buildGraph(
       queue.push(child);
     }
   }
-  graph.packages = [...packages].sort(comparePaths).map((name) => ({ id: `p:${name}`, name, external: true }));
+  graph.packages = [...packageNodes.values()].sort((left, right) => comparePaths(left.id, right.id));
   graph.files.sort((left, right) => comparePaths(left.id, right.id));
   graph.symbols.sort((left, right) => comparePaths(left.id, right.id));
   const edges = [...new Map(graph.edges.map((edge) => [JSON.stringify(edge), edge])).values()];

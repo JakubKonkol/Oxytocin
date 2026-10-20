@@ -6,14 +6,28 @@ import { promisify } from 'node:util';
 import { createPackage } from '@electron/asar';
 import { build } from 'esbuild';
 import { copyCodeMapAssets } from './code-map-assets';
-import { makeCodeMapFixture } from './make-fixtures';
+import { makeCodeMapCSharpFixture, makeCodeMapFixture } from './make-fixtures';
 
+/**
+ * Packaged, offline full-index benchmark. Windows is the reference platform; Linux runs the same harness headless
+ * (no display server). Usage: `tsx scripts/code-map-benchmark.ts [output] [--only a,b] [--runs 3] [--idle-ms 300000]`.
+ */
 async function run() {
-  if (process.platform !== 'win32') throw new Error('Run the packaged Windows benchmark on Windows');
+  if (!['win32', 'linux'].includes(process.platform)) throw new Error('Run the packaged benchmark on Windows or Linux');
+  const windows = process.platform === 'win32';
+  const args = process.argv.slice(2);
+  const option = (name: string) => {
+    const index = args.indexOf(`--${name}`);
+    return index >= 0 ? args.splice(index, 2)[1] : undefined;
+  };
+  const only = option('only')?.split(',');
+  const runs = Number(option('runs') ?? 3);
+  const idleMs = Number(option('idle-ms') ?? 300_000);
   const root = resolve(import.meta.dirname, '..');
-  const output = resolve(process.argv[2] ?? join(root, 'test-results', 'code-map benchmark żółć'));
+  const output = resolve(args[0] ?? join(root, 'test-results', 'code-map benchmark żółć'));
+  const executable = windows ? 'Oxytocin Code Map Benchmark.exe' : 'oxytocin-code-map-benchmark';
   const app = join(output, 'app'),
-    packaged = join(output, 'packaged Windows żółć');
+    packaged = join(output, `packaged ${windows ? 'Windows' : 'Linux'} żółć`);
   await mkdir(app, { recursive: true });
   await build({
     entryPoints: {
@@ -39,24 +53,27 @@ async function run() {
     JSON.stringify({ name: 'oxytocin-code-map-benchmark', version: '1.0.0', main: 'main.cjs', license: 'MIT' }),
   );
   await cp(join(root, 'node_modules/electron/dist'), packaged, { recursive: true });
-  await rename(join(packaged, 'electron.exe'), join(packaged, 'Oxytocin Code Map Benchmark.exe'));
+  await rename(join(packaged, windows ? 'electron.exe' : 'electron'), join(packaged, executable));
   await createPackage(app, join(packaged, 'resources/app.asar'));
   const assets = join(packaged, 'resources/code-map');
   await copyCodeMapAssets(assets);
   for (const name of [
     '@parcel/watcher',
-    `@parcel/watcher-win32-${process.arch}`,
+    windows ? `@parcel/watcher-win32-${process.arch}` : `@parcel/watcher-linux-${process.arch}-glibc`,
     'detect-libc',
     'is-glob',
     'is-extglob',
     'picomatch',
   ])
     await cp(join(root, 'node_modules', name), join(packaged, 'resources/node_modules', name), { recursive: true });
-  const gitPath = (await promisify(execFile)('where.exe', ['git'], { windowsHide: true })).stdout
+  const gitPath = (await promisify(execFile)(windows ? 'where.exe' : 'which', ['git'], { windowsHide: true })).stdout
     .trim()
     .split(/\r?\n/)[0]!;
+  const selected = (name: string) => !only || only.includes(name);
   const fixture = join(output, 'fixture 10000');
-  await makeCodeMapFixture(fixture);
+  if (selected('fixture-10000')) await makeCodeMapFixture(fixture);
+  const csharp = join(output, 'csharp 10000');
+  if (selected('csharp-10000')) await makeCodeMapCSharpFixture(csharp);
   const repo = join(output, 'Oxytocin snapshot');
   const tracked = (
     await promisify(execFile)(
@@ -68,7 +85,7 @@ async function run() {
     .split('\0')
     .filter(Boolean)
     .filter((p) => !p.startsWith('.oxy/'));
-  for (let offset = 0; offset < tracked.length; offset += 32)
+  for (let offset = 0; selected('oxytocin') && offset < tracked.length; offset += 32)
     await Promise.all(
       tracked.slice(offset, offset + 32).map(async (path) => {
         await mkdir(dirname(join(repo, path)), { recursive: true });
@@ -78,8 +95,10 @@ async function run() {
   const jobs = [];
   for (const [name, directory, editFile] of [
     ['fixture-10000', fixture, 'package-0/module-0.ts'],
+    ['csharp-10000', csharp, 'Project0/Services/Service0.cs'],
     ['oxytocin', repo, 'src/shared/utils/emitter.ts'],
   ] as const) {
+    if (!selected(name)) continue;
     await promisify(execFile)(gitPath, ['--no-optional-locks', 'init'], { cwd: directory, windowsHide: true });
     const config = join(output, `${name}.json`);
     await writeFile(
@@ -89,8 +108,8 @@ async function run() {
         assets,
         gitPath,
         editFile,
-        idleMs: name === 'fixture-10000' ? 300_000 : 0,
-        runs: 3,
+        idleMs: name === 'fixture-10000' ? idleMs : 0,
+        runs,
       }),
     );
     jobs.push({ name, config });
@@ -101,11 +120,18 @@ async function run() {
   await new Promise<void>((resolve, reject) => {
     const env = { ...process.env };
     delete env['ELECTRON_RUN_AS_NODE'];
-    const child = spawn(join(packaged, 'Oxytocin Code Map Benchmark.exe'), [`--benchmark=${configPath}`], {
-      windowsHide: true,
-      env,
-      stdio: 'inherit',
-    });
+    delete env['NODE_OPTIONS'];
+    // Chromium on Linux cannot start from a non-ASCII path under the C locale.
+    if (!windows && !/utf-?8/i.test(env['LC_ALL'] || env['LANG'] || '')) env['LANG'] = 'C.UTF-8';
+    const child = spawn(
+      join(packaged, executable),
+      [...(windows ? [] : ['--no-sandbox', '--ozone-platform=headless', '--disable-gpu']), `--benchmark=${configPath}`],
+      {
+        windowsHide: true,
+        env,
+        stdio: 'inherit',
+      },
+    );
     child.once('error', reject);
     child.once('exit', (code) => (code === 0 ? resolve() : reject(new Error(`Benchmark exited ${code}`))));
   });

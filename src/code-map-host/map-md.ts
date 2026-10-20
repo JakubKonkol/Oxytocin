@@ -18,8 +18,51 @@ export function entryPoints(graph: CodeMapGraph, configs: ReadonlyMap<string, Pr
         if (paths.has(candidate)) entries.add(candidate);
       }
   }
+  const executables = new Set(
+    [...configs]
+      .filter(
+        ([, config]) =>
+          config.kind === 'dotnet-project' &&
+          (/^(exe|winexe)$/i.test(config.data.outputType ?? '') || /\.(web|worker)$/i.test(config.data.sdk ?? '')),
+      )
+      .map(([path]) => `c:${path}`),
+  );
+  for (const edge of graph.edges) {
+    // C# relations owned by a file rather than a declaration come only from top-level statements.
+    if (edge.rel === 'calls' && edge.from.startsWith('f:') && edge.from.endsWith('.cs'))
+      entries.add(edge.from.slice(2));
+    if (edge.rel === 'contains' && executables.has(edge.from) && /(^|\/)(Program|Startup)\.cs$/.test(edge.to))
+      entries.add(edge.to.slice(2));
+  }
+  for (const entry of graph.unresolved)
+    if (entry.rel === 'calls' && entry.from.startsWith('f:') && entry.from.endsWith('.cs'))
+      entries.add(entry.from.slice(2));
   for (const file of graph.files) if (file.test) entries.add(file.path);
   return [...entries].sort(comparePaths);
+}
+function dotnetProjects(graph: CodeMapGraph, configs: ReadonlyMap<string, ProjectConfig>): string[] {
+  const lines: string[] = [];
+  const projects = graph.groups.filter((group) => group.kind === 'project');
+  for (const solution of graph.groups.filter((group) => group.kind === 'solution')) {
+    const members = graph.edges.filter((edge) => edge.from === solution.id && edge.rel === 'contains').length;
+    lines.push(`- ${inline(solution.id.slice(2))} — solution · ${members} ${members === 1 ? 'project' : 'projects'}`);
+  }
+  for (const project of projects) {
+    const config = configs.get(project.id.slice(2));
+    const data = config?.kind === 'dotnet-project' ? config.data : null;
+    const references = graph.edges
+      .filter((edge) => edge.from === project.id && edge.rel === 'imports' && edge.to.startsWith('c:'))
+      .map((edge) => edge.to.slice(2));
+    const details = [
+      data?.rootNamespace ?? data?.assemblyName ?? project.name ?? '',
+      data?.targetFrameworks.join(', ') ?? '',
+      /^(exe|winexe)$/i.test(data?.outputType ?? '') ? 'executable' : (data?.sdk ?? ''),
+      countFiles(project.files),
+      references.length ? `references ${references.map(inline).join(', ')}` : '',
+    ].filter(Boolean);
+    lines.push(`- ${inline(project.id.slice(2))} — ${details.map(safe).join(' · ')}`);
+  }
+  return lines;
 }
 function safe(text: string): string {
   return text.replace(/[\r\n]/g, ' ');
@@ -77,13 +120,17 @@ export function renderMapMarkdown(
   ];
   lines.push(
     ...boundedLines(
-      graph.groups.map(
-        (group) =>
-          `${'  '.repeat(group.path === '.' ? 0 : group.path.split('/').length)}- ${inline(`${group.path}/`)} — ${countFiles(group.files)} · ${[...(languageCounts.get(group.path) ?? [])].sort(([left, a], [right, b]) => b - a || comparePaths(left, right))[0]?.[0] ?? 'unknown'}${/(^|\/)(__tests__|tests?|spec)(\/|$)/.test(group.path) ? ' (tests)' : ''}`,
-      ),
+      graph.groups
+        .filter((group) => !group.kind)
+        .map(
+          (group) =>
+            `${'  '.repeat(group.path === '.' ? 0 : group.path.split('/').length)}- ${inline(`${group.path}/`)} — ${countFiles(group.files)} · ${[...(languageCounts.get(group.path) ?? [])].sort(([left, a], [right, b]) => b - a || comparePaths(left, right))[0]?.[0] ?? 'unknown'}${/(^|\/)(__tests__|tests?|spec)(\/|$)/.test(group.path) ? ' (tests)' : ''}`,
+        ),
       8192 * scale,
     ),
   );
+  const projects = dotnetProjects(graph, configs);
+  if (projects.length) lines.push('', '## .NET projects', '', ...boundedLines(projects, 4096 * scale));
   const entries = entryPoints(graph, configs);
   lines.push(
     '',
@@ -96,7 +143,11 @@ export function renderMapMarkdown(
   );
   const counts = new Map<string, Set<string>>();
   for (const edge of graph.edges)
-    if (['imports', 'exports'].includes(edge.rel) && edge.to.startsWith('f:')) {
+    if (
+      ['imports', 'exports', 'references'].includes(edge.rel) &&
+      edge.from.startsWith('f:') &&
+      edge.to.startsWith('f:')
+    ) {
       const importers = counts.get(edge.to) ?? new Set<string>();
       importers.add(edge.from);
       counts.set(edge.to, importers);
@@ -152,7 +203,13 @@ export function renderMapMarkdown(
   lines.push('## Coverage notes', '');
   for (const [language, count] of Object.entries(graph.coverage.byLanguage))
     lines.push(
-      `- ${safe(language)}: ${count} files; ${['typescript', 'javascript'].includes(language) ? 'Calls (syntax and lexical bindings; unknown receivers remain unresolved)' : 'Files'}.`,
+      `- ${safe(language)}: ${count} files; ${
+        ['typescript', 'javascript'].includes(language)
+          ? 'Calls (syntax and lexical bindings; unknown receivers remain unresolved)'
+          : language === 'csharp'
+            ? 'Calls (projects, namespaces and declared types; extension methods, dynamic, delegates and dependency injection remain unresolved)'
+            : 'Files'
+      }.`,
     );
   lines.push(
     `- ${graph.coverage.unresolved.imports} unresolved imports; ${graph.coverage.unresolved.calls} unresolved calls.`,

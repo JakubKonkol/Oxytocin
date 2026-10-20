@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, writeFile, stat } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
@@ -167,3 +167,36 @@ for (const git of [false, true])
       await app.close();
     }
   });
+
+test('a C# solution shows Calls coverage for C# and its types, projects and calls in graph.json', async () => {
+  const project = join(await mkdtemp(join(tmpdir(), 'oxy-map-csharp-')), 'csharp-project');
+  await cp(resolve('tests/fixtures/code-map/csharp-solution'), project, { recursive: true });
+  const { app, win } = await launchApp({ project });
+  try {
+    await win.getByTestId('projects-item-csharp-project').click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    const dialog = win.getByTestId('project-settings');
+    await dialog.getByTestId('project-settings-tab-code-map').click();
+    await dialog.getByTestId('code-map-enabled').click();
+    await win
+      .getByRole('alertdialog', { name: 'Enable Code Map?' })
+      .getByRole('button', { name: 'Enable Code Map', exact: true })
+      .click();
+    await expect(dialog.getByTestId('code-map-state')).toHaveText('Ready', { timeout: 20_000 });
+    await expect(dialog.getByTestId('code-map-language-csharp')).toContainText('csharp: Calls');
+    await expect(dialog.getByTestId('code-map-language-csharp')).toContainText('Extension methods');
+    const graph = JSON.parse(await readFile(join(project, '.oxy/code-map/graph.json'), 'utf8')) as {
+      groups: { id: string; kind?: string }[];
+      symbols: { id: string; name: string; kind: string }[];
+      edges: { from: string; to: string; rel: string }[];
+    };
+    const order = graph.symbols.find((symbol) => symbol.name === 'Order' && symbol.kind === 'class');
+    expect(order).toBeDefined();
+    expect(graph.groups.filter((group) => group.kind === 'project')).toHaveLength(3);
+    const validate = graph.symbols.find((symbol) => symbol.name === 'Validate')!;
+    expect(graph.edges).toContainEqual(expect.objectContaining({ to: validate.id, rel: 'calls' }));
+    expect(await readFile(join(project, '.oxy/code-map/MAP.md'), 'utf8')).toContain('## .NET projects');
+  } finally {
+    await app.close();
+  }
+});

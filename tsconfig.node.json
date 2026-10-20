@@ -9,6 +9,7 @@
     "electron.vite.config.ts",
     "scripts/code-map-assets.ts",
     "scripts/code-map-grammar-manifest.ts",
+    "scripts/make-fixtures.ts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/pty-host/**/*",

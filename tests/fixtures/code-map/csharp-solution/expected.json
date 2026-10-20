@@ -1,0 +1,40 @@
+{
+  "calls": [
+    ["src/App/Program.cs", "<file>", "src/App/Startup.cs", "Configure", "binding"],
+    ["src/App/Program.cs", "<file>", "src/Core/Extensions/OrderExtensions.cs", "Describe", "heuristic"],
+    ["src/App/Program.cs", "<file>", "src/Core/Extensions/OrderExtensions.cs", "Describe", "heuristic"],
+    ["src/App/Program.cs", "<file>", "src/Core/Models/Order.cs", "Order", "binding"],
+    ["src/App/Program.cs", "<file>", "src/Core/Services/OrderRepository.cs", "OrderRepository", "binding"],
+    ["src/App/Program.cs", "<file>", "src/Core/Services/OrderRepository.cs", "Save", "binding"],
+    ["src/App/Program.cs", "<file>", "src/Core/Services/OrderRepository.cs", "Save", "binding"],
+    ["src/App/Startup.cs", "Configure", "src/App/Startup.cs", "Cache", "binding"],
+    ["src/App/Startup.cs", "Configure", "src/App/Startup.cs", "Put", "binding"],
+    ["src/Core/Models/Order.Validation.cs", "Validate", "src/Core/Models/Order.cs", "Process", "binding"],
+    ["src/Core/Services/OrderRepository.cs", "Find", "src/Core/Models/Order.cs", "Order", "binding"],
+    ["src/Core/Services/OrderRepository.cs", "Find", "src/Core/Models/Order.cs", "Process", "binding"],
+    ["src/Core/Services/OrderRepository.cs", "Save", "src/Core/Models/Order.Validation.cs", "Validate", "binding"],
+    ["src/Core/Services/OrderRepository.cs", "Save", "src/Core/Services/RepositoryBase.cs", "Log", "binding"],
+    ["src/Core/Services/OrderRepository.cs", "Save", "src/Core/Models/Order.cs", "Process", "binding"],
+    ["src/Core/Services/OrderRepository.cs", "Save", "src/Core/Services/OrderRepository.cs", "Save", "binding"],
+    ["src/Core/Services/RepositoryBase.cs", "Log", "src/Core/Services/RepositoryBase.cs", "Write", "binding"],
+    [
+      "tests/Core.Tests/OrderTests.cs",
+      "ValidatesPositiveIds",
+      "src/Core/Models/Order.Validation.cs",
+      "Validate",
+      "binding"
+    ],
+    ["tests/Core.Tests/OrderTests.cs", "ValidatesPositiveIds", "src/Core/Models/Order.cs", "Order", "binding"]
+  ],
+  "inheritance": [
+    ["OrderRepository", "extends", "RepositoryBase"],
+    ["OrderRepository", "implements", "IRepository"]
+  ],
+  "unresolvedCalls": [
+    ["order.IsNew", "member-not-found-or-extension-method"],
+    ["Console.WriteLine", "external-or-unknown-type"],
+    ["items.Add", "external-or-unknown-type"],
+    ["Assert.True", "external-or-unknown-type"]
+  ],
+  "note": "Reviewed by hand against the sources. Both #if branches of Describe are indexed, so its call binds heuristically to both. Extension method calls and framework types stay unresolved."
+}

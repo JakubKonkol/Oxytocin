@@ -66,6 +66,15 @@ export const CodeMapRelationSchema = z.enum([
   'implements',
 ]);
 export const CodeMapProvenanceSchema = z.enum(['syntax', 'binding', 'heuristic']);
+export const CodeMapVisibilitySchema = z.enum([
+  'public',
+  'protected internal',
+  'protected',
+  'internal',
+  'private protected',
+  'private',
+  'file',
+]);
 export const CodeMapSupportLevelSchema = z.enum(['Files', 'Symbols', 'Imports', 'Calls']);
 const id = z.string().min(1).max(8192);
 
@@ -112,6 +121,13 @@ export const CodeMapSymbolSchema = z.object({
   signature: z.string().max(4000),
   span: CodeMapSpanSchema,
   stale: z.boolean().optional(),
+  /** Declared or default accessibility for languages without module exports (C#). */
+  visibility: CodeMapVisibilitySchema.optional(),
+  /** Further declarations of a merged partial type, outside the primary span. */
+  parts: z
+    .array(z.object({ file: id, span: CodeMapSpanSchema }))
+    .max(1000)
+    .optional(),
 });
 export const CodeMapEdgeSchema = z.object({
   from: id,
@@ -144,11 +160,18 @@ export const CodeMapGraphSchema = z.object({
         path: z.union([z.literal('.'), CodeMapRelativePathSchema]),
         parent: id.nullable().optional(),
         files: count,
+        /** Absent for folders. Project and solution groups name their definition file in the ID. */
+        kind: z.enum(['project', 'solution']).optional(),
+        name: z.string().min(1).max(1024).optional(),
       }),
     )
     .max(CODE_MAP_LIMITS.files),
   files: z.array(CodeMapFileSchema).max(CODE_MAP_LIMITS.files),
-  packages: z.array(z.object({ id, name: z.string().min(1), external: z.boolean() })).max(CODE_MAP_LIMITS.files),
+  packages: z
+    .array(
+      z.object({ id, name: z.string().min(1), external: z.boolean(), ecosystem: z.enum(['npm', 'nuget']).optional() }),
+    )
+    .max(CODE_MAP_LIMITS.files),
   symbols: z.array(CodeMapSymbolSchema).max(CODE_MAP_LIMITS.symbols),
   edges: z.array(CodeMapEdgeSchema).max(CODE_MAP_LIMITS.edges),
   unresolved: z.array(CodeMapUnresolvedSchema).max(CODE_MAP_LIMITS.edges),
@@ -237,6 +260,23 @@ export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
     readOnly: false,
     limits: { ...CODE_MAP_LIMITS },
   };
+}
+
+const LANGUAGE_SUPPORT: Record<string, { level: z.infer<typeof CodeMapSupportLevelSchema>; description: string }> = {
+  typescript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
+  javascript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
+  csharp: {
+    level: 'Calls',
+    description:
+      'Projects, namespaces, using directives and calls bound from declared types. Extension methods, dynamic, LINQ query syntax, delegates and dependency injection remain unresolved; source generators, Razor and InternalsVisibleTo are not modelled, and both branches of #if are indexed.',
+  },
+};
+/** Support level per graph language ID; anything without an extractor is indexed as files. */
+export function codeMapLanguageSupport(language: string): {
+  level: z.infer<typeof CodeMapSupportLevelSchema>;
+  description: string;
+} {
+  return LANGUAGE_SUPPORT[language] ?? { level: 'Files', description: 'File metadata only.' };
 }
 
 export const CODE_MAP_AGENT_INSTRUCTIONS =

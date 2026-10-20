@@ -1,5 +1,6 @@
 import { realpath } from 'node:fs/promises';
 import {
+  codeMapLanguageSupport,
   initialCodeMapStatus,
   CodeMapStatusSchema,
   type CodeMapDiagnostics,
@@ -231,15 +232,5 @@ export class CodeMapCheckouts {
 }
 
 function languageSupport(languages: Record<string, number>): CodeMapStatus['languages'] {
-  return Object.fromEntries(
-    Object.keys(languages).map((language) => [
-      language,
-      {
-        level: ['typescript', 'javascript'].includes(language) ? 'Calls' : 'Files',
-        description: ['typescript', 'javascript'].includes(language)
-          ? 'Syntax and lexical bindings; unknown receiver types remain unresolved.'
-          : 'File metadata only.',
-      },
-    ]),
-  );
+  return Object.fromEntries(Object.keys(languages).map((language) => [language, codeMapLanguageSupport(language)]));
 }

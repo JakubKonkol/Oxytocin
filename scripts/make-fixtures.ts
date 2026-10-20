@@ -5,7 +5,7 @@
  *
  * Usage: `tsx scripts/make-fixtures.ts --source claude|codex|gemini --in <file.jsonl> --out <file.jsonl>
  *         [--cwd /fixture/proj] [--limit <usage records>]`
- *        `tsx scripts/make-fixtures.ts --source code-map --out <directory> [--count 10000]`
+ *        `tsx scripts/make-fixtures.ts --source code-map|code-map-csharp --out <directory> [--count 10000]`
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -46,6 +46,77 @@ export async function makeCodeMapFixture(root: string, count = 10_000): Promise<
         const index = start + offset;
         return writeFile(join(directory, `module-${index}.ts`), codeMapFixtureSource(index));
       }),
+    );
+  }
+}
+
+const CSHARP_FILES_PER_PROJECT = 500;
+/** Deterministic C# solution: file-scoped namespaces, records, interfaces, partial types and cross-project calls. */
+export function codeMapCSharpFixtureSource(index: number): string {
+  const project = Math.floor(index / CSHARP_FILES_PER_PROJECT);
+  const dependency = Math.max(0, index - 1);
+  const dependencyProject = Math.floor(dependency / CSHARP_FILES_PER_PROJECT);
+  return [
+    dependencyProject !== project ? `using Fixture.Project${dependencyProject}.Services;` : '',
+    `namespace Fixture.Project${project}.Services;`,
+    '',
+    `public interface IService${index} { Result${index} Run(Input${index} input); }`,
+    `public record Input${index}(string Name = "zażółć 🗺️", int Count = 0);`,
+    `public record Result${index}(int Count);`,
+    '',
+    `public partial class Service${index} : IService${index}`,
+    '{',
+    index ? `    private readonly Service${dependency} previous = new Service${dependency}();` : '',
+    `    public Result${index} Run(Input${index} input)`,
+    '    {',
+    index
+      ? `        var value = previous.Run(new Input${dependency}(input.Name, input.Count));`
+      : '        var value = new Result0(input.Count);',
+    `        return new Result${index}(value.Count + 1);`,
+    '    }',
+    '}',
+    '',
+    `public partial class Service${index}`,
+    '{',
+    `    public static Service${index} Create() => new Service${index}();`,
+    '}',
+    '',
+  ]
+    .filter((line, position) => line || position > 1)
+    .join('\n');
+}
+
+export async function makeCodeMapCSharpFixture(root: string, count = 10_000): Promise<void> {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 50_000) throw new Error('Invalid fixture file count');
+  await mkdir(root, { recursive: true });
+  const projects = Math.ceil(count / CSHARP_FILES_PER_PROJECT);
+  await writeFile(
+    join(root, 'Directory.Build.props'),
+    '<Project>\n  <PropertyGroup>\n    <TargetFramework>net8.0</TargetFramework>\n    <ImplicitUsings>enable</ImplicitUsings>\n  </PropertyGroup>\n</Project>\n',
+  );
+  await writeFile(
+    join(root, 'Fixture.sln'),
+    Array.from(
+      { length: projects },
+      (_, project) =>
+        `Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Project${project}", "Project${project}\\Project${project}.csproj", "{${String(project).padStart(8, '0')}-0000-0000-0000-000000000000}"\nEndProject\n`,
+    ).join(''),
+  );
+  for (let project = 0; project < projects; project++) {
+    const directory = join(root, `Project${project}`);
+    await mkdir(join(directory, 'Services'), { recursive: true });
+    await writeFile(
+      join(directory, `Project${project}.csproj`),
+      `<Project Sdk="Microsoft.NET.Sdk">\n  <ItemGroup>\n${project ? `    <ProjectReference Include="..\\Project${project - 1}\\Project${project - 1}.csproj" />\n` : ''}  </ItemGroup>\n</Project>\n`,
+    );
+    const start = project * CSHARP_FILES_PER_PROJECT;
+    await Promise.all(
+      Array.from({ length: Math.min(CSHARP_FILES_PER_PROJECT, count - start) }, (_, offset) =>
+        writeFile(
+          join(directory, 'Services', `Service${start + offset}.cs`),
+          codeMapCSharpFixtureSource(start + offset),
+        ),
+      ),
     );
   }
 }
@@ -152,8 +223,11 @@ async function main(): Promise<void> {
   const source = arg('source');
   const input = arg('in');
   const output = arg('out');
-  if (source === 'code-map' && output) {
-    await makeCodeMapFixture(output, Number(arg('count') ?? 10_000));
+  if ((source === 'code-map' || source === 'code-map-csharp') && output) {
+    await (source === 'code-map' ? makeCodeMapFixture : makeCodeMapCSharpFixture)(
+      output,
+      Number(arg('count') ?? 10_000),
+    );
     return;
   }
   if (!source || !['claude', 'codex', 'gemini'].includes(source) || !input || !output) {

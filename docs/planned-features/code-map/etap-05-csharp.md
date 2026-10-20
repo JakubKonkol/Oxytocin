@@ -80,10 +80,11 @@ Rozszerzenia: `.cs`; pliki projektu `.csproj`, solucje `.sln`/`.slnx`, `Director
 
 ## Kryteria ukończenia
 
-- [ ] Fixture C# zielone, liczby precision/recall zapisane w `results/<data>-csharp.md`.
-- [ ] Determinizm C# zielony na Windows i Linux.
-- [ ] Gramatyka C# w `grammars.json` z hashem i licencją; noty licencyjne zaktualizowane.
-- [ ] `npm run check` + E2E zielone.
+- [x] Fixture C# zielone, liczby precision/recall zapisane w `results/2026-10-20-csharp.md`.
+- [ ] Determinizm C# zielony na Windows i Linux. (Linux: zielony; Windows: do potwierdzenia razem z otwartymi bramkami
+      wydania z etapu 04 — sesja działała w kontenerze Linux.)
+- [x] Gramatyka C# w `grammars.json` z hashem i licencją; noty licencyjne zaktualizowane (już od etapu 00).
+- [x] `npm run check` + E2E zielone (Linux; E2E pod Xvfb).
 
 ## Commity i CHANGELOG
 
@@ -99,3 +100,47 @@ CHANGELOG (`### Added`):
 - Gramatyka C# ma 5,35 MB — ładuj ją leniwie, dopiero gdy projekt ma pliki `.cs` (decyzja z etapu 00).
 - Nie rozstrzygaj interfejsu po prefiksie `I`.
 - Nie zgaduj przeciążeń po typach argumentów, których nie znasz — tylko liczba argumentów.
+
+## Decyzje podjęte w trakcie
+
+1. **Schemat grafu zostaje w wersji 1** — dodane są wyłącznie pola opcjonalne: `symbols[].visibility`,
+   `symbols[].parts`, `groups[].kind`/`name` (`project`, `solution`) i `packages[].ecosystem` (`npm`, `nuget`). Rodzaje
+   symboli C# mapują się na istniejący enum: struct/record → `class`, delegate → `type`, konstruktor/operator/destruktor →
+   `method`, pole/zdarzenie/indekser/członek enuma → `property`, funkcja lokalna → `function`; prawdziwe słowo kluczowe
+   zostaje w sygnaturze. Przestrzenie nazw są symbolami `namespace` per plik (właściciele typów), nieeksportowanymi.
+2. **Rekord ekstrakcji** ma opcjonalne pole `csharp` (konteksty lookupu per zakres, `global using`, typy z bazami,
+   członkowie z zakresem liczby parametrów i zadeklarowanym typem, zmienne lokalne/parametry z zadeklarowanym typem,
+   intencje relacji z odbiorcą i liczbą argumentów, flaga top-level statements). `EXTRACTOR_VERSION` = 2 unieważnia
+   stary cache; zmiana listy implicit usings wymaga podbicia tej wersji.
+3. **Typy partial** scalają się per projekt + pełna nazwa + arność. Symbol główny to deklaracja z pierwszego pliku w
+   porządku ścieżek (stabilne ID), widoczność to najbardziej publiczna deklaracja, pozostałe deklaracje są w `parts`, a
+   ich pliki mają krawędź `contains` do scalonego symbolu. Eksport członków liczony jest po scaleniu.
+4. **Projekty i solucje** to grupy `c:<ścieżka pliku>`: `contains` solucja → projekt → plik, `imports` projekt → projekt
+   (`ProjectReference`, przechodnio widoczne) i projekt → `p:nuget:<nazwa>`. Plik należy do najbliższego projektu w górę,
+   chyba że wyklucza go prosty glob `Compile Remove`. Pliki bez projektu tworzą jeden „luźny” zestaw (np. Unity bez
+   wygenerowanych `.csproj`). `Directory.Build.props` (najbliższy) dostarcza wartości domyślne. Projekt testowy
+   (`IsTestProject` albo pakiet Microsoft.NET.Test.Sdk/xunit/NUnit/MSTest) oznacza swoje pliki `.cs` jako testy.
+5. **Lookup nazw typów**: parametry typów (bez krawędzi) → typy zagnieżdżone typu otaczającego i jego baz → przestrzeń
+   nazw i jej `using` → prefiksy przestrzeni → przestrzeń globalna + `using` pliku + `global using` projektu + implicit
+   usings SDK + `<Using>` z `.csproj`; aliasy i `using static` po drodze. Nazwy kwalifikowane próbują też przestrzeni
+   otaczających. Kilku kandydatów na jednym poziomie → `ambiguous-type`, nigdy zgadywanie.
+6. **Wywołania**: `M()` (funkcje lokalne → członkowie typu i baz z regułą static → typy zewnętrzne → `using static`),
+   `this.`/`base.`/`Typ.`/`x.` z zadeklarowanego typu (zmienne, parametry, pola, właściwości, łańcuchy `a.b.M()`,
+   `var x = new T()`/rzutowanie/`as`), `new T(…)` → konstruktor po liczbie argumentów (albo typ, gdy nie ma jawnych
+   konstruktorów), `: base(…)`/`: this(…)`. Kilka pasujących przeciążeń → krawędź `heuristic` do każdego. Brak członka
+   na znanym typie → `member-not-found-or-extension-method`; typy spoza projektów → `external-or-unknown-type`.
+7. **Zależności plików**: krawędź `references` plik → plik z każdej rozwiązanej relacji (typy, bazy, wywołania) do
+   symbolu w innym pliku; `at` = pierwsze wystąpienie; dla typu partial liczy się plik deklaracji głównej. Zasilają sekcję
+   Hubs w `MAP.md`.
+8. **Referencje miękkie** (`nameof`, wzorce stałych, `Typ.Członek` bez wywołania) dają krawędź tylko wtedy, gdy nazwa nie
+   jest zmienną/członkiem w zasięgu i rozwiązuje się do typu; nigdy nie trafiają do `unresolved`.
+9. **`bin/` i `obj/`** są pomijane tylko w folderze z plikiem `*.csproj`/`*.fsproj`/`*.vbproj` (globalne wykluczenie
+   `bin` zepsułoby projekty JS ze skryptami w `bin/`).
+10. **`#if`**: obie gałęzie są indeksowane; zduplikowane deklaracje dostają dyskryminator `~2`, a wywołania wiążą się
+    heurystycznie z obiema.
+11. **`MAP.md`**: sekcja `## .NET projects` (solucje, projekty z przestrzenią, frameworkami, typem wyjścia, liczbą plików i
+    referencjami) tylko, gdy są projekty; punkty wejścia z top-level statements oraz `Program.cs`/`Startup.cs` projektów
+    `Exe`/`WinExe`/Web/Worker.
+12. **Benchmark** `scripts/code-map-benchmark.ts` działa także na Linuksie (headless Ozone, `LANG=C.UTF-8`, bo Chromium
+    nie startuje ze ścieżki z polskimi znakami w locale C), ma opcje `--only`, `--runs`, `--idle-ms` i zadanie
+    `csharp-10000` z generatora `makeCodeMapCSharpFixture` (`scripts/make-fixtures.ts --source code-map-csharp`).

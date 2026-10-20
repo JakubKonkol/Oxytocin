@@ -4,6 +4,8 @@ import { ParserRuntime } from './runtime';
 import { ParseJobSchema, ParseResultSchema } from '../extract/record';
 import { normalizedSource } from '../extract/files';
 import { extractTypeScript } from '../extract/typescript';
+import { extractCSharp } from '../extract/csharp';
+import { parserLanguage } from '../extract/languages';
 import { CodeMapLimitError } from '../enumerate';
 
 const { assets } = z.object({ assets: z.string().min(1) }).parse(workerData);
@@ -15,10 +17,13 @@ port.on('message', (input: unknown) => {
     const job = ParseJobSchema.parse(input);
     try {
       const source = normalizedSource(job.source);
-      const language = /\.tsx$/.test(job.path) ? 'tsx' : /\.[cm]?jsx?$/.test(job.path) ? 'javascript' : 'typescript';
+      const language = parserLanguage(job.path);
+      if (!language) throw new Error('Code Map has no parser for this file');
       const tree = await runtime.parse(source, language);
       try {
-        port.postMessage(ParseResultSchema.parse({ id: job.id, record: extractTypeScript(job.path, source, tree) }));
+        const record =
+          language === 'csharp' ? extractCSharp(job.path, source, tree) : extractTypeScript(job.path, source, tree);
+        port.postMessage(ParseResultSchema.parse({ id: job.id, record }));
       } finally {
         tree.delete();
       }

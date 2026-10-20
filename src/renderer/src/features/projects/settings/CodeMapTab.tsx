@@ -69,7 +69,7 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
       const answer = await confirmDialogEx({
         title: 'Enable Code Map?',
         description:
-          'Oxytocin will create .oxy/ in this project and build a local map in the background while the app runs. It stores file paths, declarations and relationships. No AI, network requests or project scripts are used. Other languages currently have file coverage only. You can pause updates, rebuild or delete the map at any time.',
+          'Oxytocin will create .oxy/ in this project and build a local map in the background while the app runs. It stores file paths, declarations and relationships. No AI, network requests or project scripts are used. TypeScript, JavaScript and C# get declarations and relationships; other languages currently have file coverage only. You can pause updates, rebuild or delete the map at any time.',
         confirmLabel: 'Enable Code Map',
         checkbox: { label: 'Keep .oxy out of Git', defaultChecked: true },
       });
@@ -168,8 +168,9 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
             )}
             <ul className="text-small text-fg-secondary">
               {Object.entries(status.languages).map(([language, support]) => (
-                <li key={language} title={support.description}>
+                <li key={language} title={support.description} data-testid={`code-map-language-${language}`}>
                   {language}: {support.level} ({status.coverage.byLanguage[language] ?? 0} files)
+                  {support.level !== 'Files' && <span className="block text-fg-muted">{support.description}</span>}
                 </li>
               ))}
             </ul>

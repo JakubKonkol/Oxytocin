@@ -11,6 +11,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   `.oxy/` (ignored by Git unless you choose otherwise). It updates in the background while Oxytocin runs. Agents can read
   `.oxy/code-map/MAP.md`; copy ready-made agent instructions from the tab. TypeScript and JavaScript symbols, imports and
   calls; other files appear as files.
+- **Code Map:** C# support — solutions and projects, namespaces, types and members, `using` directives and project
+  references, and calls resolved from declared types. Partial types appear once with all their declarations; `bin/` and
+  `obj/` next to a project file are skipped.
 
 ## [0.9.10] - 2026-10-19
 

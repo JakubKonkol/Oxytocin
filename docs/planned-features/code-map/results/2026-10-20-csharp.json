@@ -1,0 +1,305 @@
+{
+  "recordedAt": "2026-10-20T10:38:14.961Z",
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "threads": 4,
+    "memoryGiB": 15.71600341796875
+  },
+  "revision": "2bd3c8f00bda033168aec20dfb19a704ca7a47cb",
+  "runs": {
+    "packaged": true,
+    "results": [
+      {
+        "name": "fixture-10000",
+        "result": {
+          "coldMs": [
+            41154.1029
+          ],
+          "editMs": [
+            10378.451358999999,
+            10316.179547,
+            10836.248337000005,
+            9652.892842999994,
+            10367.53392599999,
+            9711.592728999996,
+            9578.798951999997,
+            9438.354343999992,
+            9297.131410999995,
+            8843.192467
+          ],
+          "phases": [
+            {
+              "format": "oxytocin.code-map.manifest",
+              "schemaVersion": 1,
+              "state": "ready",
+              "graphSha256": "7186bf853877e7e77e3e76f1e13eb27e92627b693006de01307124d7fe0ec48a",
+              "generation": 1,
+              "builtAt": "2026-10-20T10:32:17.910Z",
+              "lastReconciledAt": "2026-10-20T10:32:17.910Z",
+              "lastFullHashAt": "2026-10-20T10:32:17.910Z",
+              "durationsMs": {
+                "enumerate": 2552.2417009999995,
+                "parse": 16640.332693999997,
+                "resolve": 4366.361912,
+                "write": 12560.584474
+              },
+              "counts": {
+                "files": 10001,
+                "symbols": 100000,
+                "edges": 210099
+              },
+              "limits": {
+                "files": 50000,
+                "symbols": 500000,
+                "edges": 2000000,
+                "bytes": 536870912
+              },
+              "warnings": []
+            }
+          ],
+          "idleMs": 1.5641409999807365,
+          "idleCpuPercentOfCore": 20.788342253922032,
+          "idleGenerationChanged": false,
+          "status": {
+            "checkoutId": "benchmark",
+            "state": "ready",
+            "generation": 12,
+            "progress": null,
+            "counts": {
+              "files": 10001,
+              "symbols": 100000,
+              "edges": 210099
+            },
+            "coverage": {
+              "files": {
+                "indexed": 10000,
+                "unsupported": 1,
+                "skipped": 4,
+                "failed": 0
+              },
+              "byLanguage": {
+                "json": 1,
+                "typescript": 10000
+              },
+              "unresolved": {
+                "imports": 0,
+                "calls": 9999
+              }
+            },
+            "languages": {
+              "json": {
+                "level": "Files",
+                "description": "File metadata only."
+              },
+              "typescript": {
+                "level": "Calls",
+                "description": "Syntax and lexical bindings; unknown receiver types remain unresolved."
+              }
+            },
+            "updatedAt": "2026-10-20T10:34:17.715Z",
+            "bytes": 139007217,
+            "pendingFiles": 0,
+            "error": null,
+            "owner": {
+              "instanceId": "4e9da36d-eeca-4649-9d98-9761ce4db96c",
+              "pid": 9855,
+              "app": "Oxytocin benchmark",
+              "heartbeatAt": "2026-10-20T10:31:55.809Z"
+            },
+            "readOnly": false,
+            "gitIgnored": false,
+            "limits": {
+              "files": 50000,
+              "symbols": 500000,
+              "edges": 2000000,
+              "bytes": 536870912
+            }
+          },
+          "peakRssMiB": 1469.5,
+          "retainedRssMiB": 874.30078125,
+          "versions": {
+            "node": "24.21.0",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.8",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "149",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.7",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2025c",
+            "undici": "7.29.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.2.124.28-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "44.4.5",
+            "chrome": "152.0.7977.130"
+          }
+        }
+      },
+      {
+        "name": "csharp-10000",
+        "result": {
+          "coldMs": [
+            57435.273747
+          ],
+          "editMs": [
+            18980.969451999998,
+            16225.75376800001,
+            15358.115572999988,
+            16611.012436000005,
+            17012.967656000008,
+            15284.771272999991,
+            14389.511407999991,
+            14381.818937000004,
+            14074.899116000015,
+            14944.828347000002
+          ],
+          "phases": [
+            {
+              "format": "oxytocin.code-map.manifest",
+              "schemaVersion": 1,
+              "state": "ready",
+              "graphSha256": "db153379e246a4e4c5cc397b8ab359960b059dee6701c882bed07fcbeb6a24aa",
+              "generation": 1,
+              "builtAt": "2026-10-20T10:34:51.526Z",
+              "lastReconciledAt": "2026-10-20T10:34:51.526Z",
+              "lastFullHashAt": "2026-10-20T10:34:51.526Z",
+              "durationsMs": {
+                "enumerate": 2212.1490410000006,
+                "parse": 22158.604661,
+                "resolve": 7592.003173000001,
+                "write": 16921.922461999995
+              },
+              "counts": {
+                "files": 10022,
+                "symbols": 119999,
+                "edges": 280116
+              },
+              "limits": {
+                "files": 50000,
+                "symbols": 500000,
+                "edges": 2000000,
+                "bytes": 536870912
+              },
+              "warnings": []
+            }
+          ],
+          "idleMs": 1.4639719999977387,
+          "idleCpuPercentOfCore": 24.139766536155495,
+          "idleGenerationChanged": false,
+          "status": {
+            "checkoutId": "benchmark",
+            "state": "ready",
+            "generation": 12,
+            "progress": null,
+            "counts": {
+              "files": 10022,
+              "symbols": 119999,
+              "edges": 280116
+            },
+            "coverage": {
+              "files": {
+                "indexed": 10000,
+                "unsupported": 22,
+                "skipped": 4,
+                "failed": 0
+              },
+              "byLanguage": {
+                "csharp": 10000,
+                "plaintext": 1,
+                "xml": 21
+              },
+              "unresolved": {
+                "imports": 0,
+                "calls": 0
+              }
+            },
+            "languages": {
+              "csharp": {
+                "level": "Calls",
+                "description": "Projects, namespaces, using directives and calls bound from declared types. Extension methods, dynamic, LINQ query syntax, delegates and dependency injection remain unresolved; source generators, Razor and InternalsVisibleTo are not modelled, and both branches of #if are indexed."
+              },
+              "plaintext": {
+                "level": "Files",
+                "description": "File metadata only."
+              },
+              "xml": {
+                "level": "Files",
+                "description": "File metadata only."
+              }
+            },
+            "updatedAt": "2026-10-20T10:38:01.132Z",
+            "bytes": 284022205,
+            "pendingFiles": 0,
+            "error": null,
+            "owner": {
+              "instanceId": "2f4915d7-4cbd-4653-a58a-ad51222893e1",
+              "pid": 9993,
+              "app": "Oxytocin benchmark",
+              "heartbeatAt": "2026-10-20T10:34:23.936Z"
+            },
+            "readOnly": false,
+            "gitIgnored": false,
+            "limits": {
+              "files": 50000,
+              "symbols": 500000,
+              "edges": 2000000,
+              "bytes": 536870912
+            }
+          },
+          "peakRssMiB": 2310.046875,
+          "retainedRssMiB": 1153.71875,
+          "versions": {
+            "node": "24.21.0",
+            "acorn": "8.18.0",
+            "ada": "4.0.0",
+            "amaro": "1.1.11",
+            "ares": "1.34.8",
+            "brotli": "1.2.0",
+            "cldr": "48.0",
+            "icu": "78.2",
+            "llhttp": "9.4.3",
+            "merve": "1.2.2",
+            "modules": "149",
+            "napi": "10",
+            "nbytes": "0.1.4",
+            "ncrypto": "0.0.1",
+            "nghttp2": "1.70.0",
+            "nghttp3": "",
+            "ngtcp2": "",
+            "openssl": "0.0.0",
+            "simdjson": "4.6.7",
+            "simdutf": "7.7.0",
+            "sqlite": "3.53.4",
+            "tz": "2025c",
+            "undici": "7.29.1",
+            "unicode": "17.0",
+            "uv": "1.52.1",
+            "uvwasi": "0.0.23",
+            "v8": "15.2.124.28-electron.0",
+            "zlib": "1.3.2.1-motley",
+            "zstd": "1.6.0",
+            "electron": "44.4.5",
+            "chrome": "152.0.7977.130"
+          }
+        }
+      }
+    ]
+  }
+}

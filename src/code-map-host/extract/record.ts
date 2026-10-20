@@ -6,7 +6,96 @@ import {
   CodeMapSymbolSchema,
 } from '@shared/domain/code-map';
 
-export const EXTRACTOR_VERSION = 1;
+export const EXTRACTOR_VERSION = 2;
+/** A dotted C# name: each segment is `Name` or `Name/arity` for generic names. */
+const CSharpNameSchema = z.array(z.string().min(1).max(1024)).min(1).max(32);
+export const CSharpTypeRefSchema = z.object({ name: CSharpNameSchema, scope: z.string() });
+const CSharpReceiverSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('none') }),
+  z.object({ kind: z.literal('this') }),
+  z.object({ kind: z.literal('base') }),
+  z.object({ kind: z.literal('name'), name: CSharpNameSchema }),
+  z.object({ kind: z.literal('new'), type: CSharpNameSchema }),
+  z.object({ kind: z.literal('expression') }),
+]);
+const CSharpUsingsSchema = z.object({
+  namespaces: z.array(z.string().max(4096)).max(1000),
+  statics: z.array(CSharpNameSchema).max(1000),
+  aliases: z.array(z.object({ name: z.string().max(1024), target: CSharpNameSchema })).max(1000),
+});
+export const CSharpRecordSchema = z.object({
+  /** Lookup context per lexical scope ID; absent entries inherit everything from their parent. */
+  contexts: z
+    .array(
+      z.object({
+        scope: z.string(),
+        namespace: z.string().max(4096).optional(),
+        usings: CSharpUsingsSchema.optional(),
+        typeParameters: z.array(z.string().max(1024)).max(100).optional(),
+      }),
+    )
+    .max(100_000),
+  globalUsings: CSharpUsingsSchema,
+  types: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        name: z.string().max(1024),
+        arity: z.number().int().nonnegative(),
+        /** Fully qualified namespace and enclosing type names, dotted. */
+        container: z.string().max(8192),
+        outer: z.string().nullable(),
+        kind: z.enum(['class', 'struct', 'record', 'interface', 'enum', 'delegate']),
+        partial: z.boolean(),
+        scope: z.string(),
+        bases: z.array(CSharpTypeRefSchema.extend({ at: CodeMapPositionSchema })).max(100),
+      }),
+    )
+    .max(50_000),
+  members: z
+    .array(
+      z.object({
+        owner: z.string(),
+        name: z.string().max(1024),
+        symbol: z.string(),
+        kind: z.enum(['method', 'constructor', 'property', 'field', 'event', 'indexer', 'operator', 'enum-member']),
+        static: z.boolean(),
+        parameters: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),
+        type: CSharpTypeRefSchema.nullable(),
+      }),
+    )
+    .max(50_000),
+  locals: z
+    .array(
+      z.object({
+        scope: z.string(),
+        name: z.string().max(1024),
+        type: CSharpTypeRefSchema.nullable(),
+        symbol: z.string().optional(),
+        parameters: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),
+      }),
+    )
+    .max(100_000),
+  relations: z
+    .array(
+      z.object({
+        from: z.string(),
+        scope: z.string(),
+        rel: z.enum(['calls', 'references']),
+        /** Calls: the invoked member name; references: the referenced type name. */
+        target: CSharpNameSchema,
+        receiver: CSharpReceiverSchema.optional(),
+        args: z.number().int().nonnegative().optional(),
+        syntax: z.enum(['call', 'new', 'type', 'attribute', 'nameof']),
+        at: CodeMapPositionSchema,
+      }),
+    )
+    .max(100_000),
+  /** Top-level statements make the file a program entry point. */
+  topLevel: z.boolean(),
+});
+export type CSharpRecord = z.infer<typeof CSharpRecordSchema>;
+export type CSharpTypeRef = z.infer<typeof CSharpTypeRefSchema>;
 export const ImportIntentSchema = z.object({
   module: z.string().max(4096).nullable(),
   scope: z.string(),
@@ -79,6 +168,7 @@ export const FileRecordSchema = z.object({
     )
     .max(100_000),
   syntaxErrors: z.number().int().nonnegative(),
+  csharp: CSharpRecordSchema.optional(),
 });
 export type FileRecord = z.infer<typeof FileRecordSchema>;
 export type Scope = FileRecord['scopes'][number];

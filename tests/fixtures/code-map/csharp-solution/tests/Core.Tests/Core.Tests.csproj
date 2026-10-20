@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <ProjectReference Include="..\..\src\Core\Core.csproj" />
+  </ItemGroup>
+</Project>

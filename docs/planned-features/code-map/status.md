@@ -1,6 +1,6 @@
 # Code Map implementation status
 
-Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
+Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 
 ## Current work
 
@@ -8,10 +8,17 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Stage 01 complete: contracts, lazy host supervision and build assets, safe storage and Git ignores.
 - Stage 02 complete: enumeration, live observation, fingerprints, global scheduling and activity hints.
 - Stage 03 complete: isolated parser with watchdog, syntax records, lexical/module resolution, deterministic graph, incremental cache and bounded MAP.md publication. See results/2026-10-19-typescript-graph.md for measured fixture accuracy and deliberate resolution limits.
-- Stage 04 implementation complete: main service, validated renderer IPC, Project settings UI and reproducible packaged full-index benchmark. Release-validation gates remain open (see below). Stages 05–14 pending. Work stops here at the user's request; do not start stage 05 in this session.
+- Stage 04 implementation complete: main service, validated renderer IPC, Project settings UI and reproducible packaged full-index benchmark. Release-validation gates remain open (see below).
+- Stage 05 complete (C#): projects/solutions, namespaces, partial types, using directives, declared-type calls, MAP.md .NET section. Measured on Linux; see results/2026-10-20-csharp.md. Performance targets are not met — the next step is the edit-path/disk optimization pass before stage 06.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation
+
+- 2026-10-20 sessions run in a Linux cloud container (no Docker, no Windows): Node 24 installed to `/opt/node24`
+  (`export PATH=/opt/node24/bin:$PATH`), Electron binary installed with `node node_modules/electron/install.js`. Run E2E
+  with `xvfb-run -a npm run e2e -- <specs>`. The packaged benchmark runs headless on Linux (`--ozone-platform=headless`;
+  the script sets `LANG=C.UTF-8` because Chromium cannot start from a non-ASCII path in the C locale). Linux full
+  `npm run check` is green here, including the PTY integration test that timed out in Docker earlier.
 
 - Windows, Node 24.11.1; use `npm.cmd` / `npx.cmd` in PowerShell (the execution policy blocks `npm.ps1`).
 - Docker Desktop Linux engine is available, including the existing `oxy-e2e:latest` image. Run Electron E2E in Docker under Xvfb; never open desktop windows.
@@ -70,6 +77,24 @@ Updated: 2026-10-19. Base revision: `bd1355d`. Working branch: `main`.
 - Packaged Windows full-index benchmark completed headlessly from `scripts/code-map-benchmark.ts`, using the actual controller, worker, grammars and native watcher, empty compiler PATH and blocked utility sockets/fetch. Results and raw machine/run data are committed as `results/2026-10-19-phase-1.md` / `.json`. The benchmark baseline predates the cold-cache probe optimization; do not claim its effect has been measured.
 - 10k fixture: empty-map median 37.56 s, edit p95 4.94 s, peak RSS 1,453.90 MiB, five-minute inactive idle 0.291% of a core with no generation loop. Oxytocin snapshot: build median 7.58 s, edit p95 1.52 s, peak 899.85 MiB, known 2 TSX recovery failures. Disk ratios are 28.80× / 9.31× source size, below the hard cap but far above the 5% aspiration. Throughput/memory/disk targets are not met; the report lists phase timings and optimization targets.
 - Continue with stage 05 (`etap-05-csharp.md`) when the user resumes. First address/retain the open release gates: optimize and repeat the large-fixture profile, active-checkout idle scans, controlled terminal/Git p95 comparison, actual production-installer smoke, hosted Windows CI and multi-day dogfooding. The packaged benchmark harness passes offline; it does not replace a full installer smoke. No production release was published. Do not mark these gates complete or claim release readiness/token savings.
+
+### Stage 05 — C#
+
+- Extractor `extract/csharp.ts` (declarations with visibility, overload/arity IDs, usings, bases, declared types of
+  members/locals/parameters, call intents with receivers and argument counts), `.csproj`/`.sln`/`.slnx`/
+  `Directory.Build.props` as data (`resolve/dotnet-projects.ts`), resolver `resolve/csharp.ts` (C# lookup order, partial
+  merge, project visibility, overloads by argument count, file→file `references`). Graph schema stays v1 with optional
+  fields only; record format version 2 invalidates old caches. Decisions are listed at the end of `etap-05-csharp.md`.
+- `bin/`/`obj/` skipped next to .NET project files; C# test projects mark their files as tests; UI shows the C# level and
+  its limitations; MAP.md has a `.NET projects` section and C# entry points.
+- Validation (Linux): `npm run check` green (1,343 unit, 71 integration, 3 latency tests); E2E code-map/ipc-hosts/smoke
+  10/10 under Xvfb, including the new C# solution test. Reviewed fixture: calls 19/0/0, inheritance 2/0/0, project
+  references 2/0/0 (TP/FP/FN). Packaged Linux benchmark (1 run): C# 10k cold 57.4 s, edit p95 19.0 s, peak 2.3 GiB, map
+  data 46× source; TS 10k cold 41.2 s, edit p95 10.8 s.
+- Not done: Windows determinism run (no Windows machine in this session).
+- Next: optimization pass on the publish/edit path (in-memory cache size index instead of directory walks, no fsync for
+  derived cache records, single serialization/validation per publication, path-limited reconciliation for watcher
+  events, compressed cache records), then stage 06.
 
 ## Resume checkpoint
 

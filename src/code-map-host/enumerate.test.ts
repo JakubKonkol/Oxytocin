@@ -26,6 +26,28 @@ afterEach(async () => {
 });
 
 describe('Code Map enumeration', () => {
+  it('skips bin and obj only next to a .NET project file, with and without Git', async () => {
+    for (const useGit of [false, true]) {
+      const root = await temporary();
+      if (useGit) await git(root, 'init');
+      for (const path of [
+        'App/App.csproj',
+        'App/Program.cs',
+        'App/bin/Debug/App.deps.json',
+        'App/obj/project.assets.json',
+        'tools/bin/cli.ts',
+      ])
+        await file(root, path, 'text');
+      const result = await enumerate({ root, gitPath: 'git' });
+      expect(result.files.map((entry) => entry.path)).toEqual(['App/App.csproj', 'App/Program.cs', 'tools/bin/cli.ts']);
+      expect(result.diagnostics.skipped).toEqual(
+        expect.arrayContaining([
+          { path: 'App/bin', reason: 'generated-or-local-directory' },
+          { path: 'App/obj', reason: 'generated-or-local-directory' },
+        ]),
+      );
+    }
+  });
   it('includes tracked and untracked files, respects Git and treats nested repositories as boundaries', async () => {
     const root = await temporary();
     await git(root, 'init');

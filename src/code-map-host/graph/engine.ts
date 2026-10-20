@@ -11,6 +11,7 @@ import { GrammarManifestSchema } from '@shared/domain/code-map-grammars';
 import { CodeMapLimitError, comparePaths } from '../enumerate';
 import { EXTRACTOR_VERSION, FileRecordSchema, type FileRecord } from '../extract/record';
 import { fileRecord } from '../extract/files';
+import { parserLanguage } from '../extract/languages';
 import type { ParserClient } from '../parse/client';
 import { parseProjectConfig, type ProjectConfig } from '../resolve/config';
 import { renderMapMarkdown } from '../map-md';
@@ -66,7 +67,7 @@ export class GraphEngine {
       [
         ...new Map(
           grammars.grammars
-            .filter((entry) => ['javascript', 'typescript', 'tsx'].includes(entry.language))
+            .filter((entry) => ['javascript', 'typescript', 'tsx', 'csharp'].includes(entry.language))
             .map((entry) => [entry.package, entry.version]),
         ).entries(),
       ].sort(([a], [b]) => comparePaths(a, b)),
@@ -141,7 +142,7 @@ export class GraphEngine {
       if (config) this.configs.set(path, config);
       const cached = this.activeRebuild === this.appliedRebuild ? await this.cached(path, base.file.sha256) : null;
       if (cached && cached.file.status !== 'failed') record = cached;
-      else record = /\.[cm]?[jt]sx?$/.test(path) ? await this.options.parser.parse(path, source, signal) : base;
+      else record = parserLanguage(path) ? await this.options.parser.parse(path, source, signal) : base;
       if (record.syntaxErrors) {
         this.failures.set(
           path,
@@ -212,7 +213,7 @@ export class GraphEngine {
       this.configs,
       {
         oxytocin: this.options.version,
-        extractors: { files: 1, typescript: EXTRACTOR_VERSION },
+        extractors: { csharp: EXTRACTOR_VERSION, files: 1, typescript: EXTRACTOR_VERSION },
         grammars: this.grammarVersions,
         settingsHash: `sha256:${sha256(JSON.stringify([...new Set(this.options.excludedPaths)].sort(comparePaths)))}`,
       },

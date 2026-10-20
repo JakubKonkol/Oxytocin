@@ -51,6 +51,18 @@ describe('Code Map parser isolation', () => {
     abort.abort();
     await expect(parser.parse('cancelled.ts', '', abort.signal)).rejects.toThrow();
   });
+  it('loads the C# grammar lazily within the parser deadline', async () => {
+    const parser = client();
+    const started = performance.now();
+    const record = await parser.parse(
+      'Program.cs',
+      'namespace App; public static class Program { public static void Main() {} }',
+    );
+    expect(performance.now() - started).toBeLessThan(2500);
+    expect(record.csharp?.types.map((type) => type.name)).toEqual(['Program']);
+    expect(record.symbols.find((symbol) => symbol.name === 'Main')).toMatchObject({ kind: 'method', exported: true });
+    await expect(parser.parse('notes.txt', 'text')).rejects.toThrow('no parser');
+  });
   it('terminates a blocked parser thread and starts a fresh one for the next file', async () => {
     const entry = join(directory, 'blocked.cjs');
     await writeFile(
