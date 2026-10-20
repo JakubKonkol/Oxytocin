@@ -336,6 +336,40 @@ test('Java Maven modules expose declared receiver calls, inheritance and explici
   }
 });
 
+test('Python src packages report Imports plus simple calls and leave dynamic attributes unresolved', async () => {
+  const project = join(await mkdtemp(join(tmpdir(), 'oxy-map-python-')), 'python-project');
+  await cp(resolve('tests/fixtures/code-map/python-src'), project, { recursive: true });
+  const { app, win } = await launchApp({ project });
+  try {
+    const id = await activeProjectId(win);
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), id);
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), id)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    const graph = JSON.parse(await readFile(join(project, '.oxy/code-map/graph.json'), 'utf8')) as {
+      edges: { rel: string }[];
+      unresolved: { target: string }[];
+    };
+    expect(graph.edges.filter((e) => e.rel === 'calls')).toHaveLength(13);
+    expect(graph.unresolved).toContainEqual(expect.objectContaining({ target: 'temporary.method' }));
+    await win.locator(`[data-project-id="${id}"]`).click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    await win.getByTestId('project-settings-tab-code-map').click();
+    await expect(win.getByTestId('code-map-language-python')).toContainText('python: Imports');
+    await expect(win.getByTestId('code-map-language-python')).toContainText('simple calls');
+    expect(await readFile(join(project, '.oxy/code-map/MAP.md'), 'utf8')).toContain('Arbitrary instance attributes');
+  } finally {
+    await app.close();
+  }
+});
+
 test('MCP Code Map tools see edits, report access and disappear after disabling', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-map-mcp-'));
   await writeFile(join(project, 'api.ts'), 'export function beforeEdit() {}\n');

@@ -6,5 +6,6 @@ export function parserLanguage(path: string): string | null {
   if (/\.cs$/.test(path)) return 'csharp';
   if (/\.go$/.test(path)) return 'go';
   if (/\.java$/.test(path)) return 'java';
+  if (/\.py$/.test(path)) return 'python';
   return null;
 }

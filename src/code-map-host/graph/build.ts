@@ -8,6 +8,7 @@ import { BindingResolver } from '../resolve/bindings';
 import { CSharpResolver } from '../resolve/csharp';
 import { GoResolver } from '../resolve/go';
 import { JavaResolver } from '../resolve/java';
+import { PythonResolver } from '../resolve/python';
 
 export function buildGraph(
   records: ReadonlyMap<string, FileRecord>,
@@ -113,6 +114,8 @@ export function buildGraph(
     new GoResolver(records, configs).append(graph, packageNodes, limits.edges);
   if ([...records.values()].some((r) => r.java))
     new JavaResolver(records, configs).append(graph, packageNodes, limits.edges);
+  if ([...records.values()].some((r) => r.python))
+    new PythonResolver(records, configs).append(graph, packageNodes, limits.edges);
   graph.groups.sort((a, b) => comparePaths(a.id, b.id));
   for (const symbol of graph.symbols) if (resolver.exportedSymbols.has(symbol.id)) symbol.exported = true;
   const children = new Map<string, typeof graph.symbols>();
@@ -129,6 +132,7 @@ export function buildGraph(
   const expanded = new Set<string>();
   for (let index = 0; index < queue.length; index++) {
     const owner = queue[index]!;
+    if (records.get(owner.file.slice(2))?.python) continue;
     if (expanded.has(owner.id) || !['class', 'interface', 'namespace', 'enum'].includes(owner.kind)) continue;
     expanded.add(owner.id);
     for (const child of children.get(owner.id) ?? []) {

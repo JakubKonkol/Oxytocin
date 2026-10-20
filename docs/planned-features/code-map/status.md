@@ -22,7 +22,11 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
   edit p95 0.893 s, peak 684.71 MiB; memory target unmet.
 - Stage 11b Java implemented: nominal declared-type calls, imports, visibility, inheritance/arity and source module
   groups. Fixture calls 10/0/0; packaged Windows 10k cold 42.22 s, edit p95 1.275 s, peak 699.91 MiB. See
-  `results/2026-10-20-java.md`. Continue with 11c Python, then 12–14, with separate commits and no push.
+  `results/2026-10-20-java.md`.
+- Stage 11c Python implemented: src/configured roots, relative imports/re-exports, declarations/decorator names and
+  conservative simple calls. Fixture calls 13/0/0; packaged Windows 10k cold 47.02 s, edit p95 1.547 s, peak 856.27 MiB.
+  See `results/2026-10-20-python.md`. Continue with stages 12–14, separate commits and no push. Automatic remains
+  unavailable while the paid evaluation gates are unverified.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation

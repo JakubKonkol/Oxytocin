@@ -122,6 +122,7 @@ export const CodeMapSymbolSchema = z.object({
   span: CodeMapSpanSchema,
   stale: z.boolean().optional(),
   buildTags: z.array(z.string().max(1000)).max(100).optional(),
+  decorators: z.array(z.string().max(1000)).max(100).optional(),
   /** Declared or default accessibility for languages without module exports (C#). */
   visibility: CodeMapVisibilitySchema.optional(),
   /** Further declarations of a merged partial type, outside the primary span. */
@@ -266,6 +267,11 @@ export function initialCodeMapStatus(checkoutId: string): CodeMapStatus {
 const LANGUAGE_SUPPORT: Record<string, { level: z.infer<typeof CodeMapSupportLevelSchema>; description: string }> = {
   typescript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
   javascript: { level: 'Calls', description: 'Syntax and lexical bindings; unknown receiver types remain unresolved.' },
+  python: {
+    level: 'Imports',
+    description:
+      'Packages, declarations and imports, plus simple calls to module/imported functions and classes, self methods and class methods. Arbitrary instance attributes, dynamic imports, decorators and sys.path execution are not inferred.',
+  },
   java: {
     level: 'Calls',
     description:

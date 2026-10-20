@@ -78,10 +78,16 @@ kolejności: Go → Java → Python. Rust i PHP później, na żądanie, według
   benchmark: [results/2026-10-20-java.md](results/2026-10-20-java.md). Memory target remains unmet.
 - [x] Full checks, broader Code Map app E2E 17/17 and focused Java E2E.
 
-Python remains to implement.
+### 11c Python — implemented 2026-10-20
 
-- [ ] Checklista języka spełniona; liczby w `results/<data>-<język>.md`.
-- [ ] `npm run check` + E2E (`code-map.spec.ts` z fixture języka) zielone.
+- [x] Existing grammar verified; packages/src/setuptools/Poetry roots, namespace packages, declarations, decorator
+  names, literal exports, relative imports/re-exports and simple calls. Dynamic attributes/imports stay unresolved.
+- [x] Reviewed fixture (calls 13/0/0 TP/FP/FN), determinism, shadowing/privacy and packaged offline 10k measurements:
+  [results/2026-10-20-python.md](results/2026-10-20-python.md). Memory target remains unmet.
+- [x] Full checks, broader app E2E 18/18 and focused Python E2E.
+
+- [x] Checklista języka spełniona; liczby w `results/<data>-<język>.md` (all three reports above).
+- [x] `npm run check` + E2E (`code-map.spec.ts` z fixture języka) zielone.
 
 ## Pułapki
 

@@ -87,6 +87,27 @@ export async function makeCodeMapJavaFixture(root: string, count = 10_000): Prom
     );
   }
 }
+export async function makeCodeMapPythonFixture(root: string, count = 10_000): Promise<void> {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 50_000) throw new Error('Invalid fixture file count');
+  await mkdir(root, { recursive: true });
+  await writeFile(
+    join(root, 'pyproject.toml'),
+    '[project]\nname="python-fixture"\nversion="1.0.0"\n[tool.setuptools.packages.find]\nwhere=["src"]\n',
+  );
+  for (let start = 0; start < count; start += 100) {
+    const directory = join(root, 'src', `pkg${Math.floor(start / 100)}`);
+    await mkdir(directory, { recursive: true });
+    await Promise.all(
+      Array.from({ length: Math.min(100, count - start) }, (_, offset) => {
+        const index = start + offset;
+        return writeFile(
+          join(directory, `service${index}.py`),
+          `class Service${index}:\n    def run(self):\n        return self.helper()\n    def helper(self):\n        return 1\ndef work${index}():\n    return Service${index}()\n`,
+        );
+      }),
+    );
+  }
+}
 
 const CSHARP_FILES_PER_PROJECT = 500;
 /** Deterministic C# solution: file-scoped namespaces, records, interfaces, partial types and cross-project calls. */

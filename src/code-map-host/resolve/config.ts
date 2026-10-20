@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { parseDotnetProject, parseDotnetSolution, type DotnetProject, type DotnetSolution } from './dotnet-projects';
 import { parseGoConfig } from './go';
 import { parseJavaConfig } from './java';
+import { parsePythonConfig } from './python';
 
 const path = z.string().max(4096);
 const PackageSchema = z.object({
@@ -30,12 +31,14 @@ export type ProjectConfig =
   | { kind: 'go-module'; data: { module: string } }
   | { kind: 'go-work'; data: { uses: string[] } }
   | { kind: 'java-project'; data: { name: string; modules: string[] } }
+  | { kind: 'python-project'; data: { roots: { path: string; prefix: string }[] } }
   | { kind: 'dotnet-project'; data: DotnetProject }
   | { kind: 'dotnet-props'; data: DotnetProject }
   | { kind: 'dotnet-solution'; data: DotnetSolution };
 
 /** Keep selected configuration as runtime data; scripts, credentials and raw config text never enter the cache. */
 export function parseProjectConfig(path: string, source: string): ProjectConfig | null {
+  if (posix.basename(path) === 'pyproject.toml') return parsePythonConfig(path, source);
   if (['go.mod', 'go.work'].includes(posix.basename(path))) return parseGoConfig(path, source);
   if (/^(pom\.xml|settings\.gradle(?:\.kts)?)$/.test(posix.basename(path))) return parseJavaConfig(path, source);
   const name = posix.basename(path).toLowerCase();

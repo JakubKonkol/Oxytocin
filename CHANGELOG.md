@@ -7,6 +7,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Code Map:** Python support — package roots, declarations, decorators, relative imports/re-exports and simple
+  calls, including self methods. Unknown instance attributes and dynamic imports remain unresolved; support is shown
+  as Imports with simple calls.
 - **Code Map:** Java support — packages and source modules, declarations, imports, inheritance and calls bound from
   declared receiver types and argument counts. Reflection and ambiguous same-arity overloads remain unresolved.
 - **Code Map:** Go support — modules and workspace packages, declarations, imports and calls resolved from declared

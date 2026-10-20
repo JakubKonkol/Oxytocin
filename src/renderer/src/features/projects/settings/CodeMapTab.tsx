@@ -80,7 +80,7 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
       const answer = await confirmDialogEx({
         title: 'Enable Code Map?',
         description:
-          'Oxytocin will create .oxy/ in this project and build a local map in the background while the app runs. It stores file paths, declarations and relationships. No AI, network requests or project scripts are used. TypeScript, JavaScript and C# get declarations and relationships; other languages currently have file coverage only. You can pause updates, rebuild or delete the map at any time.',
+          'Oxytocin will create .oxy/ in this project and build a local map in the background while the app runs. It stores file paths, declarations and relationships. No AI, network requests or project scripts are used. TypeScript, JavaScript, C#, Go and Java get declarations and relationships; Python gets declarations, imports and simple calls. Other languages have file coverage only. You can pause updates, rebuild or delete the map at any time.',
         confirmLabel: 'Enable Code Map',
         checkbox: { label: 'Keep .oxy out of Git', defaultChecked: true },
       });

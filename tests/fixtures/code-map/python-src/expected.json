@@ -1,0 +1,19 @@
+{
+  "calls": [
+    ["base.py", "base", "base.py", "helper"],
+    ["service.py", "method", "util.py", "calculate"],
+    ["service.py", "inherited", "base.py", "base"],
+    ["service.py", "static", "util.py", "calculate"],
+    ["service.py", "run", "util.py", "calculate"],
+    ["consumer.py", "use", "service.py", "run"],
+    ["consumer.py", "use", "util.py", "calculate"],
+    ["consumer.py", "use", "service.py", "run"],
+    ["consumer.py", "use", "service.py", "Service"],
+    ["consumer.py", "use", "service.py", "static"],
+    ["consumer.py", "use", "util.py", "calculate"],
+    ["consumer.py", "use", "service.py", "Service"],
+    ["consumer.py", "use", "tool.py", "work"]
+  ],
+  "unresolved": ["temporary.method", "dynamic.method", "importlib.import_module", "_hidden", "choose"],
+  "note": "Reviewed original source. Both try/except alternatives are retained, so choose is ambiguous. Arbitrary instance attributes and importlib are not inferred. Literal __all__ controls star exports; ns is a namespace package without __init__.py."
+}

@@ -85,7 +85,7 @@ export class CodeMapWatch implements Disposable {
         }
         if (paths.length < 500) paths.push(path);
         if (
-          /(^|\/)(\.gitignore|package\.json|pom\.xml|settings\.gradle(?:\.kts)?|go\.(mod|work)|[jt]sconfig[^/]*\.json)$/.test(
+          /(^|\/)(\.gitignore|package\.json|pyproject\.toml|pom\.xml|settings\.gradle(?:\.kts)?|go\.(mod|work)|[jt]sconfig[^/]*\.json)$/.test(
             path,
           )
         )

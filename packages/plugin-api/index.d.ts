@@ -122,6 +122,7 @@ export interface CodeMapSymbol {
   stale?: boolean;
   visibility?: string;
   buildTags?: string[];
+  decorators?: string[];
   parts?: { file: string; span: CodeMapSpan }[];
 }
 export interface CodeMapEdge {

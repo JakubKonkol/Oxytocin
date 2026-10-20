@@ -31,7 +31,8 @@ const intents = (record: FileRecord) =>
   record.imports.length +
   (record.csharp?.relations.length ?? 0) +
   (record.go ? record.go.calls.length + record.go.imports.length : 0) +
-  (record.java ? record.java.calls.length + record.java.imports.length + record.java.references.length : 0);
+  (record.java ? record.java.calls.length + record.java.imports.length + record.java.references.length : 0) +
+  (record.python ? record.python.calls.length + record.python.imports.length + record.python.bases.length : 0);
 export class GraphEngine {
   readonly records = new Map<string, FileRecord>();
   readonly configs = new Map<string, ProjectConfig>();
@@ -74,7 +75,9 @@ export class GraphEngine {
       [
         ...new Map(
           grammars.grammars
-            .filter((entry) => ['javascript', 'typescript', 'tsx', 'csharp', 'go', 'java'].includes(entry.language))
+            .filter((entry) =>
+              ['javascript', 'typescript', 'tsx', 'csharp', 'go', 'java', 'python'].includes(entry.language),
+            )
             .map((entry) => [entry.package, entry.version]),
         ).entries(),
       ].sort(([a], [b]) => comparePaths(a, b)),
@@ -242,6 +245,7 @@ export class GraphEngine {
           files: 1,
           go: EXTRACTOR_VERSION,
           java: EXTRACTOR_VERSION,
+          python: EXTRACTOR_VERSION,
           typescript: EXTRACTOR_VERSION,
         },
         grammars: this.grammarVersions,

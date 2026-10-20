@@ -7,7 +7,70 @@ import {
 } from '@shared/domain/code-map';
 
 /** Bump on every change of extracted records: cached records of another version are reparsed. */
-export const EXTRACTOR_VERSION = 5;
+export const EXTRACTOR_VERSION = 6;
+export const PythonRecordSchema = z.object({
+  module: z.string(),
+  all: z.array(z.string().max(1024)).max(50_000).nullable().optional(),
+  imports: z
+    .array(
+      z.object({
+        module: z.string().max(4096),
+        level: z.number().int().nonnegative().max(100),
+        scope: z.string(),
+        names: z.array(z.object({ name: z.string(), alias: z.string() })).max(1000),
+        from: z.boolean(),
+        wildcard: z.boolean(),
+        at: CodeMapPositionSchema,
+      }),
+    )
+    .max(50_000),
+  definitions: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        name: z.string(),
+        scope: z.string(),
+        kind: z.enum(['function', 'class', 'variable']),
+        ownerClass: z.string().nullable(),
+      }),
+    )
+    .max(50_000),
+  bindings: z
+    .array(
+      z.object({
+        scope: z.string(),
+        name: z.string(),
+        kind: z.enum(['definition', 'import', 'unknown', 'self']),
+        symbol: z.string().optional(),
+        module: z.string().optional(),
+        imported: z.string().nullable().optional(),
+        level: z.number().int().nonnegative().max(100).optional(),
+      }),
+    )
+    .max(100_000),
+  bases: z
+    .array(
+      z.object({
+        symbol: z.string(),
+        scope: z.string(),
+        target: z.array(z.string()).max(20).nullable(),
+        at: CodeMapPositionSchema,
+      }),
+    )
+    .max(50_000),
+  calls: z
+    .array(
+      z.object({
+        from: z.string(),
+        scope: z.string(),
+        ownerClass: z.string().nullable(),
+        target: z.array(z.string()).max(20).nullable(),
+        at: CodeMapPositionSchema,
+      }),
+    )
+    .max(100_000),
+});
+export type PythonRecord = z.infer<typeof PythonRecordSchema>;
 export const JavaRecordSchema = z.object({
   package: z.string().max(4096),
   imports: z
@@ -261,6 +324,7 @@ export const FileRecordSchema = z.object({
   csharp: CSharpRecordSchema.optional(),
   go: GoRecordSchema.optional(),
   java: JavaRecordSchema.optional(),
+  python: PythonRecordSchema.optional(),
 });
 export type FileRecord = z.infer<typeof FileRecordSchema>;
 export type Scope = FileRecord['scopes'][number];
