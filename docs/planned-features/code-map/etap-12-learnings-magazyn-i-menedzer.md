@@ -1,8 +1,8 @@
 # Etap 12 — learnings: magazyn, walidacja dowodów i menedżer
 
-> Checkpoint 2026-10-20: **in progress**. Main-checkout user manager and storage foundation implemented and tested;
-> worktree lifecycle, full project budgets and watcher invalidation remain. See
-> [the handoff](results/2026-10-20-learnings-handoff.md). No completion criteria below are marked complete yet.
+> Completed 2026-10-20. Storage, worktree archives, promotion, project budgets, evidence observation and the core
+> manager are implemented. See [implementation and validation](results/2026-10-20-learning-storage.md).
+> Automatic remains unavailable pending the deferred evaluation gate.
 
 > Część planu [Code Map](README.md). Przeczytaj `README.md` (sekcje 5.9, 8.2, 8.3, 8.10).
 
@@ -169,10 +169,10 @@ menedżerze → rewalidacja; Forget all z potwierdzeniem; Rebuild nie usuwa lear
 
 ## Kryteria ukończenia
 
-- [ ] Tryb pamięci, menedżer, przeglądy, dowody, korekty, eksport i usuwanie działają bez pluginu.
-- [ ] Odzyskiwanie po awarii, konflikty rewizji, izolacja worktree i semantyka forget zaliczone.
-- [ ] Żadnego zbierania transkryptów, automatycznych edycji repozytorium ani wywołań dostawców w tle.
-- [ ] `npm run check` + E2E zielone.
+- [x] Tryb pamięci, menedżer, przeglądy, dowody, korekty, eksport i usuwanie działają bez pluginu.
+- [x] Odzyskiwanie po awarii, konflikty rewizji, izolacja worktree i semantyka forget zaliczone.
+- [x] Żadnego zbierania transkryptów, automatycznych edycji repozytorium ani wywołań dostawców w tle.
+- [x] `npm run check` + E2E zielone.
 
 ## Commity i CHANGELOG
 

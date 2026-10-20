@@ -345,10 +345,13 @@ export class EnsembleService implements Disposable {
     for (const [id, c] of this.commands)
       if (c.taskId === taskId) await this.deps.terminals.close(id).catch(() => undefined);
     const ws = r.run.worktree;
-    // Access is revoked synchronously; a failing host must not keep the task from being deleted.
-    await this.deps.codeMap
-      ?.remove(taskId)
-      .catch((error: unknown) => this.deps.logger.warn(`Removing the Code Map of ${taskId} failed`, error));
+    // Durable findings must be archived before the workspace host can remove the directory.
+    const revoked = this.deps.codeMap?.remove(taskId);
+    if (ws?.mode === 'worktree' && !r.run.finished) await revoked;
+    else
+      await revoked?.catch((error: unknown) =>
+        this.deps.logger.warn(`Removing the Code Map of ${taskId} failed`, error),
+      );
     if (ws?.mode === 'worktree' && ws.repoRoot && !r.run.finished)
       await this.deps
         .workspace('ensemble:removeWorktree', {
@@ -1171,9 +1174,7 @@ export class EnsembleService implements Disposable {
     if (!ws || ws.mode !== 'worktree' || !ws.repoRoot || !ws.branch || !ws.baseRef)
       throw new OxyError('INVALID', 'This task worked in your checkout: there is no branch to finish.');
     await this.stopAll(taskId, false);
-    await this.deps.codeMap
-      ?.remove(taskId)
-      .catch((error: unknown) => this.deps.logger.warn(`Removing the Code Map of ${taskId} failed`, error));
+    await this.deps.codeMap?.remove(taskId);
     const result = await this.deps
       .workspace(
         'ensemble:finish',

@@ -40,7 +40,8 @@ export async function removeProject(project: Project): Promise<void> {
   const running = terminals.filter((t) => t.state === 'running');
   const result = await confirmDialogEx({
     title: `Remove ‘${project.name}’ from Oxytocin?`,
-    description: 'The folder on disk is not touched. Any .oxy/ data stays in the project folder.',
+    description:
+      'The folder on disk is not touched. Code Map data and durable learnings in .oxy/ stay in the project folder. Use Forget all learnings in Project settings to erase findings first.',
     confirmLabel: 'Remove',
     destructive: true,
     ...(terminals.length > 0

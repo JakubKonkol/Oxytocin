@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LearningOperationSchema, LearningResultSchema } from '../domain/code-map-memory';
+import { LearningOperationSchema, LearningResultSchema, LearningCheckoutSchema } from '../domain/code-map-memory';
 import { CodeMapDiagnosticsSchema, CodeMapSettingsSchema, CodeMapStatusSchema } from '../domain/code-map';
 import { AgentLaunchRequestSchema, AgentLaunchResultSchema } from '../domain/agent-launch';
 import { ProjectRuntimeStatusSchema } from '../domain/activity';
@@ -92,6 +92,10 @@ interface InvokeSpec {
 
 /** Source of truth for request/response IPC (renderer → main). Requests are validated in main. */
 export const invokeContract = {
+  'codeMap:memoryCheckouts': {
+    req: z.object({ projectId: ProjectIdSchema }).strict(),
+    res: z.array(LearningCheckoutSchema).max(1000),
+  },
   'codeMap:memory': {
     req: z
       .object({

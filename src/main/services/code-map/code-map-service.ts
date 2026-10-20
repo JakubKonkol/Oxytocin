@@ -61,6 +61,7 @@ export class CodeMapService {
   private readonly statuses = new Map<string, CodeMapStatus>();
   private readonly configured = new Map<string, string>();
   private readonly worktrees = new Map<string, { projectId: string; root: string; projectRoot: string }>();
+  private readonly retiringMemories = new Map<string, MemoryAuthority>();
   /** The latest registration request per worktree; removal revokes it even while it waits in the queue. */
   private readonly worktreeRequests = new Map<string, symbol>();
   private queue: Promise<unknown> = Promise.resolve();
@@ -123,6 +124,36 @@ export class CodeMapService {
       return null;
     });
   }
+  async memoryCheckouts(id: string) {
+    return this.enqueue(async () => {
+      const project = this.project(id);
+      if (this.deps.host.state === 'stopped' || this.deps.host.state === 'failed') this.deps.host.start();
+      try {
+        const archives = await this.deps.host.call('memory:archives', { root: project.rootPath });
+        const live = this.registeredCheckouts()
+          .filter((c) => c.projectId === id)
+          .map((c) => ({ checkoutId: c.id, archived: false }));
+        return [...live, ...archives.filter((a) => !live.some((c) => c.checkoutId === a.checkoutId))];
+      } finally {
+        await this.sync();
+      }
+    });
+  }
+  private memoryAuthority(id: string, checkoutId: string, root: string, archived = false): MemoryAuthority {
+    const project = this.project(id);
+    return {
+      projectId: id,
+      checkoutId,
+      root,
+      projectRoot: project.rootPath,
+      archived,
+      checkouts: this.registeredCheckouts()
+        .filter((c) => c.projectId === id)
+        .map((c) => ({ checkoutId: c.id, root: c.rootPath })),
+      excludedPaths: project.settings.codeMap?.excludedPaths ?? [],
+      origin: { source: 'user' },
+    };
+  }
   memory(
     id: string,
     input: LearningOperation,
@@ -133,24 +164,20 @@ export class CodeMapService {
     return this.enqueue(async () => {
       const project = this.project(id);
       const checkout = this.registeredCheckouts().find((c) => c.id === checkoutId && c.projectId === id);
-      if (!checkout) throw new OxyError('UNAVAILABLE', 'Learning checkout is no longer registered');
-      if (checkoutId !== id || origin.source !== 'user')
-        throw new OxyError('UNAVAILABLE', 'Learning worktree lifecycle and agent tools are not implemented yet');
+      if (origin.source !== 'user') throw new OxyError('UNAVAILABLE', 'Learning agent tools are not implemented yet');
       if (this.deps.host.state === 'stopped' || this.deps.host.state === 'failed') this.deps.host.start();
       try {
+        const archived =
+          !checkout &&
+          (await this.deps.host.call('memory:archives', { root: project.rootPath })).some(
+            (c) => c.checkoutId === checkoutId,
+          );
+        if (!checkout && !archived) throw new OxyError('UNAVAILABLE', 'Learning checkout is no longer registered');
         return LearningResultSchema.parse(
           await this.deps.host.call(
             'memory:run',
             {
-              authority: {
-                projectId: id,
-                checkoutId,
-                root: checkout.rootPath,
-                projectRoot: project.rootPath,
-                checkouts: [{ checkoutId: id, root: project.rootPath }],
-                excludedPaths: project.settings.codeMap?.excludedPaths ?? [],
-                origin,
-              },
+              authority: this.memoryAuthority(id, checkoutId, checkout?.rootPath ?? project.rootPath, !!archived),
               operation,
             },
             { timeoutMs: 30000 },
@@ -256,9 +283,22 @@ export class CodeMapService {
   }
   removeWorktree(taskId: string): Promise<void> {
     // Revoke immediately, before any queued host operation or filesystem deletion.
-    this.worktreeRequests.delete(`worktree:${taskId}`);
-    this.worktrees.delete(`worktree:${taskId}`);
-    return this.enqueue(() => this.sync());
+    const checkoutId = `worktree:${taskId}`;
+    const tree = this.worktrees.get(checkoutId);
+    const authority = tree
+      ? this.memoryAuthority(tree.projectId, checkoutId, tree.root)
+      : this.retiringMemories.get(checkoutId);
+    if (authority) this.retiringMemories.set(checkoutId, authority);
+    this.worktreeRequests.delete(checkoutId);
+    this.worktrees.delete(checkoutId);
+    return this.enqueue(async () => {
+      if (authority) {
+        if (this.deps.host.state === 'stopped' || this.deps.host.state === 'failed') this.deps.host.start();
+        await this.deps.host.call('memory:archive', authority, { timeoutMs: 30000 });
+        this.retiringMemories.delete(checkoutId);
+      }
+      await this.sync();
+    });
   }
   registeredCheckouts(): { id: string; projectId: string; name: string; rootPath: string }[] {
     return [

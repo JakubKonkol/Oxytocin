@@ -27,12 +27,12 @@ Updated: 2026-10-20. Stage 10 base revision: `6b7b5de`. Working branch: `main`.
   conservative simple calls. Fixture calls 13/0/0; packaged Windows 10k cold 47.02 s, edit p95 1.547 s, peak 856.27 MiB.
   See `results/2026-10-20-python.md`. Automatic remains
   unavailable while the paid evaluation gates are unverified.
-- Stage 12 **in progress**: durable storage and core user manager for the **main checkout only**. Main rejects agent
-  writes and worktree memory operations until their authorization/lifecycle is implemented. Do not mark stage 12
-  complete or start stage 13 before finishing its remaining requirements. Read
-  `results/2026-10-20-learnings-handoff.md` for implementation details, limitations and validation.
-- Latest owner instruction (2026-10-20): stop further implementation, save the handoff and **push the changes**.
-  This supersedes the older no-push instructions in the historical stage log below. Future work remains on `main`.
+- Stage 12 complete: durable storage, core main/live/archive manager, explicit promotion into project storage,
+  independent evidence observation, project-wide reservations and replayable multi-store mutations. Full check and
+  12 headless app E2E pass. See `results/2026-10-20-learning-storage.md`. Agent writes remain disabled until stage 13.
+- Latest owner instruction (2026-10-20): resume autonomous implementation, **commit and push after every stage**.
+  This supersedes checkpoint/stop and older no-push instructions below. Work remains on `main`. No desktop windows;
+  Electron E2E runs in Docker/Xvfb. Paid evaluations remain deferred; prepare the stage 14 harness/corpus only.
 - Read `README.md`, the current stage document and this file before continuing. Follow the dependency order; do not mark measurement gates complete without recorded results.
 
 ## Environment and validation

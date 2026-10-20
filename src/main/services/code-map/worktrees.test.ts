@@ -88,6 +88,14 @@ it('registers isolated worktrees, inherits options and revokes in-flight readers
       },
     };
     await service.removeWorktree('one');
+    expect(call).toHaveBeenCalledWith(
+      'memory:archive',
+      expect.objectContaining({ projectId: 'p1', checkoutId: 'worktree:one', root: join(root, 'one') }),
+      expect.anything(),
+    );
+    expect(call.mock.calls.findIndex(([method]) => method === 'memory:archive')).toBeLessThan(
+      call.mock.calls.findIndex(([method]) => method === 'checkout:remove'),
+    );
     release!(answer);
     await expect(pending).rejects.toThrow('no longer registered');
     await expect(service.query('p1', { kind: 'status' }, new AbortController().signal, 'worktree:one')).rejects.toThrow(

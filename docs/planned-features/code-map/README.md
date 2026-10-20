@@ -1,10 +1,10 @@
 # Code Map — finalny plan funkcjonalności
 
-> Implementation progress (2026-10-20): stages 00–11 implemented; release-validation gates remain open. Resume at
-> stage 12 using [status.md](status.md) and [the current handoff](results/2026-10-20-learnings-handoff.md).
-> Stage 12 has a working main-checkout user manager and storage foundation, but is incomplete. Stage 10 includes an
+> Implementation progress (2026-10-20): stages 00–12 implemented; release-validation gates remain open. Continue with
+> stage 13 using [status.md](status.md) and [the storage report](results/2026-10-20-learning-storage.md).
+> Stage 12 includes the core manager, worktree archives, explicit promotion and evidence observation. Stage 10 includes an
 > offline harness and frozen corpus; paid evaluation remains deferred and the benefit gate is unverified. Stages
-> 13–14 have not started. The owner explicitly requested a checkpoint and push on 2026-10-20.
+> 13–14 remain. The owner requested autonomous continuation and a push after each stage on 2026-10-20.
 
 > **Planning baseline (historical):** plan gotowy do realizacji, implementacja nierozpoczęta. Wersja planu: 2026-10-19 (stan kodu: Oxytocin
 > 0.9.10, plugin API 0.1.10). Ten dokument zastępuje wcześniejsze trzy rundy researchu (są w historii Gita, commit
@@ -1033,7 +1033,7 @@ flowchart LR
 | 09   | [etap-09-wizualizator.md](etap-09-wizualizator.md)                                       | Spike renderera i plugin Code Map Visualizer.                                                           | **tak — wydanie**              | 08        | L       | implemented; release-validation gates open |
 | 10   | [etap-10-wglady-i-ewaluacja-agentow.md](etap-10-wglady-i-ewaluacja-agentow.md)           | Changes overlay, Impact, selektor checkoutu, eksport, ewaluacja agentów.                                | **tak — wydanie**              | 07, 09    | M       | implemented; corpus/harness ready, paid evaluation gate open |
 | 11   | [etap-11-go-java-python.md](etap-11-go-java-python.md)                                   | Go, Java, Python (osobne wydanie na język).                                                             | **tak — 3 wydania**            | 04        | S–M/język | Go, Java and Python implemented; performance gates open |
-| 12   | [etap-12-learnings-magazyn-i-menedzer.md](etap-12-learnings-magazyn-i-menedzer.md)       | Magazyn learnings, walidacja dowodów, menedżer Learnings.                                               | **tak — wydanie**              | 10        | L       | do zrobienia |
+| 12   | [etap-12-learnings-magazyn-i-menedzer.md](etap-12-learnings-magazyn-i-menedzer.md)       | Magazyn learnings, walidacja dowodów, menedżer Learnings.                                               | **tak — wydanie**              | 10        | L       | zrobione |
 | 13   | [etap-13-learnings-narzedzia-agentow.md](etap-13-learnings-narzedzia-agentow.md)         | `oxy_task_context`, `oxy_propose_learning`, `oxy_learning_feedback`.                                    | **tak — wydanie**              | 12        | L       | do zrobienia |
 | 14   | [etap-14-learnings-wizualizacja-i-ewaluacja.md](etap-14-learnings-wizualizacja-i-ewaluacja.md) | Widoki Knowledge/Task context, `code-map.knowledge.read`, ewaluacja longitudinalna.               | **tak — wydanie**              | 13, 09    | M       | do zrobienia |
 

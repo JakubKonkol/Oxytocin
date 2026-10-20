@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { LearningSchema } from '@shared/domain/code-map-memory';
 import { hasCode, rejectLink, safeDirectory } from '../store/paths';
-import { atomicWrite } from '../store/writer';
+import { atomicWrite, sha256 } from '../store/writer';
 
 export const MEMORY_BYTES = 32 * 1024 * 1024;
 export const MemoryFileSchema = z
@@ -11,6 +11,7 @@ export const MemoryFileSchema = z
     format: z.literal('oxytocin.learnings'),
     schemaVersion: z.literal(1),
     revision: z.number().int().nonnegative(),
+    checkoutId: z.string().min(1).max(200).optional(),
     records: z.array(LearningSchema).max(2000),
     history: z.array(LearningSchema).max(20000),
     retries: z
@@ -25,7 +26,8 @@ export const MemoryFileSchema = z
           })
           .strict(),
       )
-      .max(4096),
+      .max(4096)
+      .default([]),
   })
   .strict();
 export type MemoryFile = z.infer<typeof MemoryFileSchema>;
@@ -53,17 +55,66 @@ async function read(path: string): Promise<MemoryFile | null> {
 }
 
 /** All replicas contain the latest committed state, including deletions. Never recover from an older revision. */
-export async function loadMemory(root: string): Promise<MemoryFile> {
+export function memorySegments(archiveId?: string): string[] {
+  return ['.oxy', 'learnings', ...(archiveId ? ['archives', sha256(archiveId)] : [])];
+}
+function localSegments(archiveId?: string): string[] {
+  return ['.oxy', 'learnings', 'local', ...(archiveId ? ['archives', sha256(archiveId)] : [])];
+}
+export async function listArchives(root: string): Promise<string[]> {
   let directory: string;
   try {
-    directory = await safeDirectory(root, ['.oxy', 'learnings'], false);
+    directory = await safeDirectory(root, ['.oxy', 'learnings', 'archives'], false);
+  } catch (error) {
+    if (hasCode(error, 'ENOENT')) return [];
+    throw error;
+  }
+  const ids: string[] = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !/^[a-f0-9]{64}$/.test(entry.name))
+      throw new Error('MEMORY_CORRUPT: invalid archive directory');
+    const primary = join(await safeDirectory(directory, [entry.name], false), 'learnings.json');
+    let file: MemoryFile | null = null;
+    try {
+      file = await read(primary);
+    } catch (error) {
+      if (String(error).includes('INCOMPATIBLE_SCHEMA')) throw error;
+    }
+    if (!file) {
+      try {
+        const local = await safeDirectory(root, ['.oxy', 'learnings', 'local', 'archives', entry.name], false);
+        file = (await read(join(local, 'pending.json'))) ?? (await read(join(local, 'recovery.json')));
+      } catch (error) {
+        if (!hasCode(error, 'ENOENT')) throw error;
+      }
+      if (!file) {
+        const local = await safeDirectory(root, ['.oxy', 'learnings', 'local'], false);
+        await rejectLink(join(local, 'transaction.json'));
+        try {
+          await stat(join(local, 'transaction.json'));
+          continue;
+        } catch (error) {
+          throw new Error('MEMORY_CORRUPT: incomplete archive without a recovery transaction', { cause: error });
+        }
+      }
+    }
+    if (!file?.checkoutId || sha256(file.checkoutId) !== entry.name)
+      throw new Error('MEMORY_CORRUPT: invalid archive identity');
+    ids.push(file.checkoutId);
+  }
+  return ids.sort();
+}
+export async function loadMemory(root: string, archiveId?: string): Promise<MemoryFile> {
+  let directory: string;
+  try {
+    directory = await safeDirectory(root, memorySegments(archiveId), false);
   } catch (error) {
     if (hasCode(error, 'ENOENT')) return emptyMemory();
     throw error;
   }
   let local: string | null = null;
   try {
-    local = await safeDirectory(root, ['.oxy', 'learnings', 'local'], false);
+    local = await safeDirectory(root, localSegments(archiveId), false);
   } catch (error) {
     if (!hasCode(error, 'ENOENT')) throw error;
   }
@@ -79,35 +130,52 @@ export async function loadMemory(root: string): Promise<MemoryFile> {
   const pending = local ? await read(join(local, 'pending.json')) : null;
   if (pending) {
     if (primary && pending.revision < primary.revision) throw new Error('RECOVERY_CONFLICT: older pending memory');
-    await writeMemory(root, pending);
+    await writeMemory(root, pending, archiveId);
     return pending;
   }
-  if (!failure && primary) return primary;
+  if (!failure && primary) {
+    // Retry/counter metadata is machine-local, never committed with the portable claims.
+    if (local) {
+      await rejectLink(join(local, 'metadata.json'));
+      try {
+        const metadata = z
+          .object({ revision: MemoryFileSchema.shape.revision, retries: MemoryFileSchema.shape.retries })
+          .strict()
+          .parse(JSON.parse(await readFile(join(local, 'metadata.json'), 'utf8')));
+        if (metadata.revision === primary.revision) primary.retries = metadata.retries;
+      } catch (error) {
+        if (!hasCode(error, 'ENOENT')) throw error;
+      }
+    }
+    return primary;
+  }
   const recovery = local ? await read(join(local, 'recovery.json')) : null;
   if (recovery) {
-    await writeMemory(root, recovery);
+    await writeMemory(root, recovery, archiveId);
     return recovery;
   }
   if (failure) throw new Error('MEMORY_CORRUPT: primary and recovery are unavailable', { cause: failure });
   return emptyMemory();
 }
 
-export async function writeMemory(root: string, input: MemoryFile): Promise<void> {
+export async function writeMemory(root: string, input: MemoryFile, archiveId?: string): Promise<void> {
   const file = MemoryFileSchema.parse(input);
   file.records.sort((a, b) => a.id.localeCompare(b.id));
   const content = `${JSON.stringify(file, null, 2)}\n`;
   if (Buffer.byteLength(content) > MEMORY_BYTES)
     throw new Error('MEMORY_LIMIT: export and delete old learnings before adding more');
-  const directory = await safeDirectory(root, ['.oxy', 'learnings']);
-  const local = await safeDirectory(root, ['.oxy', 'learnings', 'local']);
+  const directory = await safeDirectory(root, memorySegments(archiveId));
+  const local = await safeDirectory(root, localSegments(archiveId));
   await atomicWrite(join(local, 'pending.json'), content);
   await atomicWrite(join(local, 'recovery.json'), content);
-  await atomicWrite(join(directory, 'learnings.json'), content);
+  const { retries, ...portable } = file;
+  await atomicWrite(join(directory, 'learnings.json'), `${JSON.stringify(portable, null, 2)}\n`);
+  await atomicWrite(join(local, 'metadata.json'), `${JSON.stringify({ revision: file.revision, retries })}\n`);
   await rm(join(local, 'pending.json'), { force: true });
   // A killed atomic rename can leave temporary content. Forget/delete must purge those copies too.
   for (const folder of [directory, local])
     for (const entry of await readdir(folder, { withFileTypes: true }))
-      if (entry.isFile() && /^(learnings|recovery|pending)\.json\.tmp-/.test(entry.name))
+      if (entry.isFile() && /^(learnings|recovery|pending|metadata)\.json\.tmp-/.test(entry.name))
         await rm(join(folder, entry.name), { force: true });
   await atomicWrite(join(local, '.gitignore'), '*\n');
   const oxy = await safeDirectory(root, ['.oxy']);

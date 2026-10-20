@@ -3,6 +3,8 @@ import { CodeMapHashSchema, CodeMapRelativePathSchema, CodeMapSpanSchema } from 
 
 const key = z.string().min(1).max(200);
 const revision = z.number().int().nonnegative();
+const provenance = z.object({ source: z.enum(['user', 'agent']), role: key.optional(), task: key.optional() }).strict();
+export const LearningCheckoutSchema = z.object({ checkoutId: key, archived: z.boolean() }).strict();
 export const LearningDraftSchema = z
   .object({
     kind: z.enum(['constraint', 'decision', 'pitfall', 'validation', 'failed-approach']),
@@ -35,7 +37,9 @@ export const LearningSchema = LearningDraftSchema.extend({
   scope: z.enum(['checkout', 'project']),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
-  origin: z.object({ source: z.enum(['user', 'agent']), role: key.optional(), task: key.optional() }).strict(),
+  origin: provenance,
+  editor: provenance.optional(),
+  reviewer: provenance.optional(),
   review: z.enum(['proposed', 'accepted', 'rejected', 'superseded']),
   reviewedAt: z.iso.datetime().optional(),
   applicability: z.record(
@@ -91,7 +95,7 @@ export const LearningResultSchema = z
     memoryRevision: revision,
     records: z.array(LearningSchema).max(2000),
     total: revision,
-    history: z.array(LearningSchema).max(10000).optional(),
+    history: z.array(LearningSchema).max(100000).optional(),
     duplicate: z.boolean().optional(),
   })
   .strict();
@@ -102,6 +106,7 @@ export const MemoryAuthoritySchema = z
     checkoutId: key,
     root: z.string().min(1).max(32768),
     projectRoot: z.string().min(1).max(32768),
+    archived: z.boolean().optional(),
     checkouts: z.array(z.object({ checkoutId: key, root: z.string().min(1).max(32768) }).strict()).max(1000),
     excludedPaths: z.array(z.string().max(4096)).max(200),
     origin: LearningSchema.shape.origin,

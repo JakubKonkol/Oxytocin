@@ -8,6 +8,9 @@ import { Field, Section, input } from './controls';
 
 const blank: LearningDraft = { kind: 'constraint', title: '', body: '', rationale: '', evidence: [] };
 export function LearningsManager({ projectId }: { projectId: string }) {
+  const [checkouts, setCheckouts] = useState<{ checkoutId: string; archived: boolean }[]>([]);
+  const [checkoutId, setCheckoutId] = useState(projectId);
+  const archived = checkouts.some((c) => c.checkoutId === checkoutId && c.archived);
   const [result, setResult] = useState<LearningResult | null>(null);
   const [selected, setSelected] = useState<Learning | null>(null);
   const [history, setHistory] = useState<Learning[]>([]);
@@ -20,11 +23,17 @@ export function LearningsManager({ projectId }: { projectId: string }) {
   const [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const request = (operation: LearningOperation) => ipc.invoke('codeMap:memory', { projectId, operation });
+  const request = (operation: LearningOperation) => ipc.invoke('codeMap:memory', { projectId, checkoutId, operation });
+  useEffect(() => {
+    void ipc
+      .invoke('codeMap:memoryCheckouts', { projectId })
+      .then(setCheckouts)
+      .catch((e: unknown) => setError(String(e)));
+  }, [projectId]);
   useEffect(() => {
     let cancelled = false;
     void ipc
-      .invoke('codeMap:memory', { projectId, operation: { action: 'list', search, state: filter, offset } })
+      .invoke('codeMap:memory', { projectId, checkoutId, operation: { action: 'list', search, state: filter, offset } })
       .then((value) => {
         if (!cancelled) setResult(value);
       })
@@ -34,7 +43,7 @@ export function LearningsManager({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, search, filter, offset]);
+  }, [projectId, checkoutId, search, filter, offset]);
   const choose = (record: Learning | null) => {
     setSelected(record);
     setHistory([]);
@@ -113,6 +122,25 @@ export function LearningsManager({ projectId }: { projectId: string }) {
         evidence does not verify a claim. Unanchored findings need review after 30 days.
       </p>
       <div className="flex flex-wrap gap-2">
+        <select
+          aria-label="Learning checkout"
+          className={input}
+          value={checkoutId}
+          disabled={busy}
+          onChange={(e) => {
+            choose(null);
+            setResult(null);
+            setError('');
+            setOffset(0);
+            setCheckoutId(e.target.value);
+          }}
+        >
+          {(checkouts.length ? checkouts : [{ checkoutId: projectId, archived: false }]).map((c) => (
+            <option key={c.checkoutId} value={c.checkoutId}>
+              {c.checkoutId === projectId ? 'Main checkout' : `${c.checkoutId}${c.archived ? ' (archived)' : ''}`}
+            </option>
+          ))}
+        </select>
         <input
           className={input}
           aria-label="Search learnings"
@@ -158,7 +186,7 @@ export function LearningsManager({ projectId }: { projectId: string }) {
               className="w-full rounded-control p-2 text-left hover:bg-hover"
               onClick={() => void run({ action: 'get', id: record.id })}
             >
-              {record.title} · {record.review} · {record.applicability[projectId]?.state ?? 'awaiting review'} ·{' '}
+              {record.title} · {record.review} · {record.applicability[checkoutId]?.state ?? 'awaiting review'} ·{' '}
               {record.origin.source} · revision {record.revision}
             </button>
           </li>
@@ -176,7 +204,7 @@ export function LearningsManager({ projectId }: { projectId: string }) {
       {selected && (
         <p className="text-small text-fg-muted">
           {selected.id} · {selected.scope} · {selected.origin.role ?? 'user'} · {selected.createdAt}
-          {selected.applicability[projectId]?.reason ? ` · ${selected.applicability[projectId]?.reason}` : ''}
+          {selected.applicability[checkoutId]?.reason ? ` · ${selected.applicability[checkoutId]?.reason}` : ''}
         </p>
       )}
       <Field label="Kind">
@@ -256,7 +284,7 @@ export function LearningsManager({ projectId }: { projectId: string }) {
       ))}
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={busy || !parsed.success}
+          disabled={busy || archived || !parsed.success}
           onClick={() => {
             if (parsed.success)
               void run({
@@ -272,14 +300,17 @@ export function LearningsManager({ projectId }: { projectId: string }) {
         </Button>
         {selected && (
           <>
-            <Button disabled={busy} onClick={() => void run({ action: 'review', ...mutation(), decision: 'accept' })}>
+            <Button
+              disabled={busy || archived}
+              onClick={() => void run({ action: 'review', ...mutation(), decision: 'accept' })}
+            >
               Accept and revalidate
             </Button>
             <Button disabled={busy} onClick={() => void run({ action: 'review', ...mutation(), decision: 'reject' })}>
               Reject learning
             </Button>
             <Button disabled={busy} onClick={() => void run({ action: 'review', ...mutation(), decision: 'promote' })}>
-              Promote to project
+              {archived ? 'Review against main and promote' : 'Promote to project'}
             </Button>
             <Button
               variant="danger"
@@ -318,7 +349,7 @@ export function LearningsManager({ projectId }: { projectId: string }) {
           void confirmDialog({
             title: 'Forget all learnings?',
             description:
-              'Permanently delete all findings and revision history in this checkout, including recovery copies. Map data is preserved. Existing exports cannot be erased.',
+              'Permanently delete all findings visible in this checkout and their revisions, including shared project findings and recovery copies. Map data is preserved. Existing exports cannot be erased.',
             confirmLabel: 'Forget all learnings',
             destructive: true,
           }).then((yes) => {

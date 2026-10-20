@@ -11,7 +11,9 @@ import { fileRecord } from '../extract/files';
 import { sha256 } from '../store/writer';
 
 const roots: string[] = [];
+const memories: LearningMemory[] = [];
 afterEach(async () => {
+  for (const memory of memories.splice(0)) await memory.dispose();
   for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true });
 });
 async function setup() {
@@ -28,6 +30,7 @@ async function setup() {
     origin: { source: 'user' },
   };
   const memory = new LearningMemory(() => undefined);
+  memories.push(memory);
   const draft = LearningDraftSchema.parse({
     kind: 'constraint',
     title: 'Protocol requirement',
@@ -110,6 +113,7 @@ describe('durable learnings foundation', () => {
     const original = await readFile(join(root, 'rules.md'), 'utf8');
     await writeFile(join(root, 'rules.md'), 'The protocol changed.');
     const restarted = new LearningMemory(() => undefined);
+    memories.push(restarted);
     record = (await restarted.run(authority, { action: 'get', id: record.id })).records[0]!;
     expect(record.applicability.project?.state).toBe('needs-review');
     await writeFile(join(root, 'rules.md'), original);

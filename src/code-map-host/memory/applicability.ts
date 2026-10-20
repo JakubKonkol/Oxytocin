@@ -50,6 +50,17 @@ export async function evidenceFor(
       const content = bytes.subarray(0, bytesRead);
       if (content.includes(0)) throw new Error('INVALID_EVIDENCE: binary file');
       const hash = sha256(content);
+      if (reference.span) {
+        const lines = normalizedSource(content.toString('utf8')).split('\n');
+        const [start, startColumn, end, endColumn] = reference.span;
+        if (
+          start > lines.length ||
+          end > lines.length ||
+          startColumn > lines[start - 1]!.length ||
+          endColumn > lines[end - 1]!.length
+        )
+          throw new Error('INVALID_EVIDENCE: span exceeds document bounds');
+      }
       if (
         verifyIndex &&
         indexed &&
@@ -61,7 +72,12 @@ export async function evidenceFor(
       // Evidence uses whole-file bytes; structural source hashes normalize BOM and line endings.
       if (reference.symbolId) {
         const symbol = graph?.symbols.find((s) => s.id === reference.symbolId && s.file === indexed?.id);
-        if (!symbol || (reference.span && JSON.stringify(reference.span) !== JSON.stringify(symbol.span)))
+        if (
+          !symbol ||
+          symbol.stale ||
+          indexed?.stale ||
+          (reference.span && JSON.stringify(reference.span) !== JSON.stringify(symbol.span))
+        )
           throw new Error('INVALID_EVIDENCE: symbol or span is unavailable in this generation');
       }
       evidence.push({ ...reference, hash });

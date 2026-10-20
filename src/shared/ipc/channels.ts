@@ -3,6 +3,7 @@
  * events.ts must cover exactly these channels (enforced by the type checker).
  */
 export const INVOKE_CHANNELS = [
+  'codeMap:memoryCheckouts',
   'codeMap:memory',
   'codeMap:setMemoryMode',
   'codeMap:getStatus',

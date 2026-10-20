@@ -9,6 +9,100 @@ import { activeProjectId } from './helpers/terminal';
 import { connect, freePort } from './helpers/mcp';
 import { userDataWithPlugins } from './helpers/plugins';
 import { CodeMapPluginResultSchema } from '../../src/shared/domain/code-map-plugin';
+import { LearningResultSchema } from '../../src/shared/domain/code-map-memory';
+import { ensembleRecords, gitRepo, useFakeClaude } from './helpers/ensemble';
+
+test('Learnings survive Ensemble worktree removal and require explicit project promotion', async () => {
+  test.setTimeout(180_000);
+  const project = await gitRepo();
+  const { app, win } = await launchApp({ project });
+  try {
+    const projectId = await activeProjectId(win);
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), projectId);
+    await useFakeClaude(win);
+    const task = await win.evaluate(async (projectId) => {
+      const record = (await window.oxy.invoke('ensemble:create', {
+        projectId,
+        templateId: 'feature',
+        title: 'Archive findings',
+      })) as { task: { id: string } };
+      await window.oxy.invoke('ensemble:command', { taskId: record.task.id, event: { type: 'start' } });
+      return record.task.id;
+    }, projectId);
+    await expect
+      .poll(async () => (await ensembleRecords(win)).find((r) => r.task.id === task)?.run.worktree?.path, {
+        timeout: 60000,
+      })
+      .toBeTruthy();
+    const tree = (await ensembleRecords(win)).find((r) => r.task.id === task)!.run.worktree!.path;
+    const checkoutId = `worktree:${task}`;
+    await expect
+      .poll(async () =>
+        (
+          (await win.evaluate(
+            (projectId) => window.oxy.invoke('codeMap:memoryCheckouts', { projectId }),
+            projectId,
+          )) as { checkoutId: string }[]
+        ).some((c) => c.checkoutId === checkoutId),
+      )
+      .toBe(true);
+    const result = LearningResultSchema.parse(
+      await win.evaluate(
+        ({ projectId, checkoutId }) =>
+          window.oxy.invoke('codeMap:memory', {
+            projectId,
+            checkoutId,
+            operation: {
+              action: 'save',
+              draft: {
+                kind: 'decision',
+                title: 'Archived protocol',
+                body: 'Keep the README protocol.',
+                evidence: [{ path: 'README.md' }],
+              },
+              expectedRevision: 0,
+              idempotencyKey: 'archive-e2e',
+            },
+          }),
+        { projectId, checkoutId },
+      ),
+    );
+    const primary = join(tree, '.oxy/learnings/learnings.json');
+    const intact = await readFile(primary, 'utf8');
+    await writeFile(primary, JSON.stringify({ ...JSON.parse(intact), schemaVersion: 99 }));
+    await expect(win.evaluate((taskId) => window.oxy.invoke('ensemble:delete', { taskId }), task)).rejects.toThrow();
+    expect((await stat(tree)).isDirectory()).toBe(true);
+    await writeFile(primary, intact);
+    await win.evaluate((taskId) => window.oxy.invoke('ensemble:delete', { taskId }), task);
+    await expect(stat(tree)).rejects.toMatchObject({ code: 'ENOENT' });
+    await win.getByRole('button', { name: 'Code Map status' }).click();
+    const dialog = win.getByTestId('project-settings');
+    await dialog.getByLabel('Learning checkout').selectOption(checkoutId);
+    const list = dialog.getByTestId('learnings-list');
+    await expect(list).toContainText('Archived protocol');
+    await expect(list).toContainText('archived');
+    await list.getByRole('button').click();
+    await expect(dialog.getByRole('button', { name: 'Accept and revalidate' })).toBeDisabled();
+    await dialog.getByRole('button', { name: 'Review against main and promote' }).click();
+    await dialog.getByLabel('Learning checkout').selectOption(projectId);
+    await expect(list).toContainText('Archived protocol');
+    await expect(list).toContainText('accepted');
+    const exported = LearningResultSchema.parse(
+      await win.evaluate(
+        (projectId) => window.oxy.invoke('codeMap:memory', { projectId, operation: { action: 'export' } }),
+        projectId,
+      ),
+    );
+    expect(exported.records[0]).toMatchObject({
+      id: result.records[0]!.id,
+      checkoutId,
+      scope: 'project',
+      review: 'accepted',
+    });
+  } finally {
+    await app.close();
+  }
+});
 
 test('Learnings manager reviews evidence, preserves findings when map data is deleted and forgets revisions', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-learning-ui-'));
