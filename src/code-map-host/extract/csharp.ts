@@ -441,7 +441,12 @@ export function extractCSharp(path: string, source: string, tree: Tree): FileRec
     }
     const body = field(node, 'body');
     if (body?.type === 'enum_member_declaration_list') {
-      for (const member of named(body).filter((child) => child.type === 'enum_member_declaration')) {
+      // Members inside `#if`/`#elif`/`#else` are children of the directive nodes; both branches are indexed.
+      const members = (list: Node): Node[] =>
+        named(list).flatMap((child) =>
+          child.type === 'enum_member_declaration' ? [child] : child.type.startsWith('preproc_') ? members(child) : [],
+        );
+      for (const member of members(body)) {
         const memberName = field(member, 'name')?.text;
         if (!memberName) continue;
         attributes(member, inner);

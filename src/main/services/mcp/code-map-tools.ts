@@ -11,6 +11,8 @@ export const CODE_MAP_TOOL_KINDS = {
   oxy_file_outline: 'outline',
   oxy_code_relations: 'relations',
 } as const;
+/** A mistake the agent can correct (arguments, checkout selection): its message is shown to the agent. */
+export class CodeMapToolInputError extends Error {}
 export function isCodeMapTool(name: string): boolean {
   return Object.hasOwn(CODE_MAP_TOOL_KINDS, name);
 }
@@ -42,9 +44,11 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
       run: async ({ args, caller, signal }) => {
         const parsed = schema.safeParse(args);
         if (!parsed.success)
-          throw new Error('Invalid Code Map arguments: check path, query, limit, depth, freshness and maxChars.');
+          throw new CodeMapToolInputError(
+            'Invalid Code Map arguments: check path, query, limit, depth, freshness and maxChars.',
+          );
         if (caller.projectError || !caller.context.projectId)
-          throw new Error(caller.projectError ?? NO_PROJECT_MESSAGE);
+          throw new CodeMapToolInputError(caller.projectError ?? NO_PROJECT_MESSAGE);
         const { cwd: _cwd, project: _project, ...options } = parsed.data;
         return JSON.stringify(
           await service.query(

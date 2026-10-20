@@ -55,6 +55,8 @@ export class CodeMapService {
   private readonly statuses = new Map<string, CodeMapStatus>();
   private readonly configured = new Map<string, string>();
   private readonly worktrees = new Map<string, { projectId: string; root: string; projectRoot: string }>();
+  /** The latest registration request per worktree; removal revokes it even while it waits in the queue. */
+  private readonly worktreeRequests = new Map<string, symbol>();
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
 
@@ -182,9 +184,14 @@ export class CodeMapService {
   }
   async registerWorktree(projectId: string, taskId: string, root: string): Promise<string> {
     const checkoutId = `worktree:${taskId}`;
+    const request = Symbol(checkoutId);
+    this.worktreeRequests.set(checkoutId, request);
     await this.enqueue(async () => {
+      if (this.worktreeRequests.get(checkoutId) !== request) return;
       const project = this.project(projectId);
-      this.worktrees.set(checkoutId, { projectId, root: await realpath(root), projectRoot: project.rootPath });
+      const canonical = await realpath(root);
+      if (this.worktreeRequests.get(checkoutId) !== request) return;
+      this.worktrees.set(checkoutId, { projectId, root: canonical, projectRoot: project.rootPath });
       this.owners.set(checkoutId, projectId);
       await this.sync();
     });
@@ -192,6 +199,7 @@ export class CodeMapService {
   }
   removeWorktree(taskId: string): Promise<void> {
     // Revoke immediately, before any queued host operation or filesystem deletion.
+    this.worktreeRequests.delete(`worktree:${taskId}`);
     this.worktrees.delete(`worktree:${taskId}`);
     return this.enqueue(() => this.sync());
   }

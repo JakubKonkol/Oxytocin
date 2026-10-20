@@ -6,7 +6,8 @@ import {
   CodeMapSymbolSchema,
 } from '@shared/domain/code-map';
 
-export const EXTRACTOR_VERSION = 2;
+/** Bump on every change of extracted records: cached records of another version are reparsed. */
+export const EXTRACTOR_VERSION = 3;
 /** A dotted C# name: each segment is `Name` or `Name/arity` for generic names. */
 const CSharpNameSchema = z.array(z.string().min(1).max(1024)).min(1).max(32);
 export const CSharpTypeRefSchema = z.object({ name: CSharpNameSchema, scope: z.string() });

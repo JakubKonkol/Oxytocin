@@ -148,7 +148,8 @@ export async function copyLocalFiles(o: { from: string; to: string; files: strin
   return copied;
 }
 
-const CODE_PATHS = [':/', ':(exclude,glob)**/.oxy/**'];
+// `top`: the exclusion covers the whole worktree even when the project (cwd) is a subfolder of it.
+const CODE_PATHS = [':/', ':(top,exclude,glob)**/.oxy/**'];
 const isOxyPath = (path: string) => path.split('/').includes('.oxy');
 
 /** Commits code in the worktree (a checkpoint); local Oxytocin data is excluded even when tracked by the base. */

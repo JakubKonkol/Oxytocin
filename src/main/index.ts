@@ -437,8 +437,9 @@ function bootstrap(): void {
     project: (id) => {
       const project = projects.get(id);
       if (project) return project;
+      // Ensemble worktrees are registered whether or not Code Map is enabled; files open in them either way.
       const checkout = codeMap.registeredCheckouts().find((c) => c.id === id && c.id !== c.projectId);
-      return checkout ? { rootPath: codeMap.checkoutRoot(checkout.projectId, id), missing: false } : undefined;
+      return checkout ? { rootPath: checkout.rootPath, missing: false } : undefined;
     },
     settings: () => settings.get(),
     trash: (path) => shell.trashItem(path),
@@ -496,7 +497,7 @@ function bootstrap(): void {
         return {
           id: tree.projectId,
           checkoutId: tree.id,
-          rootPath: codeMap.checkoutRoot(tree.projectId, tree.id),
+          rootPath: tree.rootPath,
           ...(owner?.settings.editorCommand ? { editorCommand: owner.settings.editorCommand } : {}),
         };
       }

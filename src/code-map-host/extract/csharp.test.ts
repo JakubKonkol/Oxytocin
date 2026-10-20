@@ -36,7 +36,7 @@ async function extract(path: string, input: string) {
 }
 const generator = {
   oxytocin: 'test',
-  extractors: { csharp: 2, files: 1, typescript: 2 },
+  extractors: { csharp: 3, files: 1, typescript: 3 },
   grammars: {},
   settingsHash: `sha256:${'0'.repeat(64)}`,
 };
@@ -157,6 +157,30 @@ describe('C# extraction and binding', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+  it('indexes enum members in every branch of #if directives', async () => {
+    // The pinned grammar cannot recover a member that follows `#endif` after a trailing comma.
+    const record = await extract('E.cs', 'enum E { A, C,\n#if X\n B,\n#elif Y\n D,\n#else\n F,\n#endif\n}\n');
+    expect(
+      record.symbols
+        .filter((symbol) => symbol.kind === 'property')
+        .map((symbol) => symbol.name)
+        .sort(),
+    ).toEqual(['A', 'B', 'C', 'D', 'F']);
+  });
+  it('follows a project reference whose path differs from the project file only in case', async () => {
+    const graph = await graphOf({
+      'src/Core/Core.csproj': '<Project Sdk="Microsoft.NET.Sdk"></Project>',
+      'src/Core/Repo.cs': 'namespace Core { public class Repo { public void Save() {} } }',
+      'src/App/App.csproj':
+        '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="..\\core\\core.csproj" /></ItemGroup></Project>',
+      'src/App/Program.cs': 'using Core; class Program { void Go(Repo repo) { repo.Save(); } }',
+    });
+    expect(graph.edges).toContainEqual(
+      expect.objectContaining({ from: 'c:src/App/App.csproj', to: 'c:src/Core/Core.csproj', rel: 'imports' }),
+    );
+    expect(calls(graph)).toEqual([['Go', 'Save', 'binding']]);
+    expect(graph.unresolved.filter((entry) => entry.from.startsWith('c:'))).toEqual([]);
   });
   it('resolves aliases, static imports, nested and generic types without guessing ambiguous names', async () => {
     const graph = await graphOf({

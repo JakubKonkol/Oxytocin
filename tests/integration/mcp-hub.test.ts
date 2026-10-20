@@ -316,7 +316,12 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
       ),
     );
   }
-  expect((await call('oxy_find_code', { query: 'afterEdit', project: 'unknown' }))['isError']).toBe(true);
+  const unknown = await call('oxy_find_code', { query: 'afterEdit', project: 'unknown' });
+  expect(unknown['isError']).toBe(true);
+  // A selector the agent can fix is explained instead of reported as a generic failure.
+  expect(text(unknown)).toContain('Project is unknown or ambiguous');
+  const invalid = await call('oxy_find_code', { query: 'afterEdit', limit: 51 });
+  expect(text(invalid)).toContain('Invalid Code Map arguments');
   enabled = false;
   // Cached registry entry is still listed until the change event; dispatch checks the current opt-in.
   expect((await call('oxy_find_code', { query: 'afterEdit' }))['isError']).toBe(true);

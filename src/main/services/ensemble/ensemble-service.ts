@@ -345,7 +345,10 @@ export class EnsembleService implements Disposable {
     for (const [id, c] of this.commands)
       if (c.taskId === taskId) await this.deps.terminals.close(id).catch(() => undefined);
     const ws = r.run.worktree;
-    await this.deps.codeMap?.remove(taskId);
+    // Access is revoked synchronously; a failing host must not keep the task from being deleted.
+    await this.deps.codeMap
+      ?.remove(taskId)
+      .catch((error: unknown) => this.deps.logger.warn(`Removing the Code Map of ${taskId} failed`, error));
     if (ws?.mode === 'worktree' && ws.repoRoot && !r.run.finished)
       await this.deps
         .workspace('ensemble:removeWorktree', {
@@ -528,7 +531,11 @@ export class EnsembleService implements Disposable {
       }
       const current = this.records.get(taskId);
       if (current?.run.status !== 'preparing') return;
-      if (worktree.mode === 'worktree') await this.deps.codeMap?.ready(task.projectId, taskId, worktree.path);
+      // Code Map is optional for a task: without its map the worktree's agents only lose the Code Map tools.
+      if (worktree.mode === 'worktree')
+        await this.deps.codeMap
+          ?.ready(task.projectId, taskId, worktree.path)
+          .catch((error: unknown) => this.deps.logger.warn(`Registering the Code Map of ${taskId} failed`, error));
       this.dispatch(taskId, { type: 'workspace-ready', worktree });
     } catch (e) {
       this.dispatch(taskId, { type: 'workspace-failed', error: e instanceof Error ? e.message : String(e) });
@@ -1164,7 +1171,9 @@ export class EnsembleService implements Disposable {
     if (!ws || ws.mode !== 'worktree' || !ws.repoRoot || !ws.branch || !ws.baseRef)
       throw new OxyError('INVALID', 'This task worked in your checkout: there is no branch to finish.');
     await this.stopAll(taskId, false);
-    await this.deps.codeMap?.remove(taskId);
+    await this.deps.codeMap
+      ?.remove(taskId)
+      .catch((error: unknown) => this.deps.logger.warn(`Removing the Code Map of ${taskId} failed`, error));
     const result = await this.deps
       .workspace(
         'ensemble:finish',

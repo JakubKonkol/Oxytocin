@@ -297,7 +297,13 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
       (await client.call('oxy_file_outline', { path: 'api.ts', cwd: project })).result?.content?.[0]?.text,
     ).toContain('afterEdit');
     await win.getByTestId('code-map-enabled').click();
-    expect((await client.call('oxy_find_code', { query: 'afterEdit', cwd: project })).result?.isError).toBe(true);
+    // Refused either by the call's own opt-in check or, once the list changed, as an unknown tool.
+    await expect
+      .poll(async () => {
+        const refused = await client!.call('oxy_find_code', { query: 'afterEdit', cwd: project });
+        return refused.result?.isError === true || refused.error !== undefined;
+      })
+      .toBe(true);
     await expect.poll(() => client!.tools()).not.toContain('oxy_find_code');
     await win.evaluate(() => window.oxy.invoke('settings:update', { 'mcp.enabled': false }));
     await expect(win.getByTestId('code-map-mcp-status')).toContainText('enable Code Map');

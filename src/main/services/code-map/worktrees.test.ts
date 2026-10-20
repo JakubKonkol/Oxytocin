@@ -99,3 +99,72 @@ it('registers isolated worktrees, inherits options and revokes in-flight readers
     await rm(root, { recursive: true, force: true });
   }
 });
+
+it('never registers a worktree removed while its registration waited, and lists worktrees of disabled projects', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'oxy-worktrees-')));
+  await Promise.all(['one', 'two', 'p1'].map((name) => mkdir(join(root, name))));
+  type Deps = ConstructorParameters<typeof CodeMapService>[0];
+  const project: Project = {
+    id: 'p1',
+    name: 'p1',
+    rootPath: join(root, 'p1'),
+    color: 0,
+    pinned: false,
+    order: 0,
+    createdAt: 0,
+    settings: { codeMap: { enabled: true, ignoreInGit: false, excludedPaths: [] } },
+  };
+  let unblock: (() => void) | undefined;
+  const call = vi.fn<Deps['host']['call']>().mockImplementation((method, input) => {
+    const status = initialCodeMapStatus((input as { checkoutId: string }).checkoutId);
+    if (method === 'checkout:configure' && status.checkoutId === 'p1')
+      return new Promise((resolve) => {
+        unblock = () => resolve(status);
+      }) as never;
+    return Promise.resolve(method === 'checkout:remove' ? null : status) as never;
+  });
+  const service = new CodeMapService({
+    host: {
+      state: 'running',
+      start: () => {},
+      stop: () => Promise.resolve(),
+      call,
+      onEvent: () => ({ dispose() {} }),
+      onDidBecomeReady: () => ({ dispose() {} }),
+      onDidChangeState: () => ({ dispose() {} }),
+    },
+    projects: {
+      get: (id) => (id === project.id ? project : undefined),
+      list: () => [project],
+      update: () => Promise.resolve(project),
+      onDidChange: () => ({ dispose() {} }),
+    },
+    gitPath: () => 'git',
+    logger: { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+  });
+  try {
+    // The project's own configuration keeps the queue busy while the worktree registration waits behind it.
+    const started = service.start();
+    await vi.waitFor(() => expect(unblock).toBeDefined());
+    const registered = service.registerWorktree('p1', 'one', join(root, 'one'));
+    const removed = service.removeWorktree('one');
+    unblock!();
+    await Promise.all([started, registered, removed]);
+    expect(service.registeredCheckouts().map((c) => c.id)).toEqual(['p1']);
+    expect(call).not.toHaveBeenCalledWith(
+      'checkout:configure',
+      expect.objectContaining({ checkoutId: 'worktree:one' }),
+      expect.anything(),
+    );
+
+    project.settings = { codeMap: { enabled: false, ignoreInGit: false, excludedPaths: [] } };
+    await service.registerWorktree('p1', 'two', join(root, 'two'));
+    expect(service.registeredCheckouts()).toContainEqual(
+      expect.objectContaining({ id: 'worktree:two', projectId: 'p1', rootPath: join(root, 'two') }),
+    );
+    expect(() => service.checkoutRoot('p1', 'worktree:two')).toThrow('disabled');
+  } finally {
+    await service.dispose();
+    await rm(root, { recursive: true, force: true });
+  }
+});

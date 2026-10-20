@@ -42,6 +42,8 @@ test('visualizer explores a symbol by keyboard, opens source and updates after e
     await frame.getByRole('button', { name: 'Open in editor' }).click();
     await expect(win.getByTestId('code-panel')).toContainText('visualizerApi');
     await writeFile(join(project, 'api.ts'), 'export function visualizerChanged() {}\n');
+    // The source opened as a tab in front of the visualizer.
+    await win.locator('.dv-tab').filter({ hasText: 'Code Map' }).click();
     await frame.getByRole('textbox', { name: 'Search code' }).fill('visualizerChanged');
     await frame.getByRole('button', { name: 'Find', exact: true }).click();
     await expect(frame.getByRole('button', { name: 'visualizerChanged', exact: true })).toBeVisible();

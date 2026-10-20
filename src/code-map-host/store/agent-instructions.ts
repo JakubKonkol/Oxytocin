@@ -1,8 +1,8 @@
-import { lstat, realpath, unlink } from 'node:fs/promises';
+import { chmod, lstat, realpath, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { codeMapInstructionBlock } from '@shared/domain/code-map-instructions';
 import { hasCode, rejectLink } from './paths';
-import { atomicWrite } from './writer';
+import { atomicWrite, sha256 } from './writer';
 import { fingerprint } from '../fingerprint';
 
 /** Called only for a root authorized by main and an explicit user action. Never called by indexing. */
@@ -28,6 +28,9 @@ export async function editAgentInstructions(
     });
     await rejectLink(path);
     if (value && Buffer.byteLength(value.source) > 256 * 1024) throw new Error('Agent instructions exceed 256 KiB');
+    // Writing back a lossy decoding would replace every byte that is not UTF-8.
+    if (value && sha256(Buffer.from(value.source, 'utf8')) !== value.fingerprint.sha256)
+      throw new Error('Agent instructions must be UTF-8 text');
     return value?.source ?? null;
   };
   const before = info ? await read() : null;
@@ -38,6 +41,10 @@ export async function editAgentInstructions(
   const current = await read();
   if (current !== before) throw new Error('Agent instructions changed during the operation; retry.');
   if (after === null) await unlink(path);
-  else await atomicWrite(path, after);
+  else {
+    await atomicWrite(path, after);
+    // The temporary file is private; keep the permissions of the file it replaces.
+    await chmod(path, info ? info.mode & 0o7777 : 0o644);
+  }
   return { changed: true };
 }

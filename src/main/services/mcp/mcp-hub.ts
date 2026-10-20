@@ -18,7 +18,7 @@ import type { Logger } from '@shared/logging/logger';
 import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { type CallerDeps, resolveCaller, resolveCodeMapCaller, type ResolvedCaller } from './caller-context';
-import { buildCodeMapTools, isCodeMapTool } from './code-map-tools';
+import { buildCodeMapTools, CodeMapToolInputError, isCodeMapTool } from './code-map-tools';
 import type { CodeMapService } from '../code-map/code-map-service';
 import { CODE_MAP_MCP_INSTRUCTIONS } from '@shared/domain/code-map';
 import {
@@ -482,11 +482,12 @@ export class McpHub implements Disposable {
         : undefined;
       return finish(normalized.isError ? 'error' : 'ok', normalized, text);
     } catch (e) {
-      const message = isCodeMapTool(name)
-        ? 'Code Map request failed or access was revoked. Check selectors, project settings and indexing status.'
-        : e instanceof Error
-          ? e.message
-          : String(e);
+      const message =
+        isCodeMapTool(name) && !(e instanceof CodeMapToolInputError)
+          ? 'Code Map request failed or access was revoked. Check selectors, project settings and indexing status.'
+          : e instanceof Error
+            ? e.message
+            : String(e);
       return finish('error', toolError(message), message);
     } finally {
       clearTimeout(timer);

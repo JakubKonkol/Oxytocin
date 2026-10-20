@@ -169,10 +169,21 @@ export class CSharpResolver {
   private loadProjects(): void {
     const props = new Map<string, DotnetProject>();
     const solutions = new Map<string, string[]>();
+    // Windows resolves project paths case-insensitively: match a project file that differs only in case, if unique.
+    const byLowerPath = new Map<string, string[]>();
+    for (const [path, config] of this.configs)
+      if (config.kind === 'dotnet-project')
+        byLowerPath.set(path.toLowerCase(), [...(byLowerPath.get(path.toLowerCase()) ?? []), path]);
+    const canonical = (reference: string): string => {
+      if (this.configs.get(reference)?.kind === 'dotnet-project') return reference;
+      const matches = byLowerPath.get(reference.toLowerCase());
+      return matches?.length === 1 ? matches[0]! : reference;
+    };
     for (const [path, config] of [...this.configs].sort(([left], [right]) => comparePaths(left, right))) {
       if (config.kind === 'dotnet-props') props.set(posix.dirname(path), config.data);
       if (config.kind === 'dotnet-solution')
-        for (const project of config.data.projects) solutions.set(project, [...(solutions.get(project) ?? []), path]);
+        for (const project of config.data.projects.map(canonical))
+          solutions.set(project, [...(solutions.get(project) ?? []), path]);
     }
     const inherited = (directory: string): DotnetProject | null => {
       for (let current = directory; ; current = posix.dirname(current)) {
@@ -188,6 +199,7 @@ export class CSharpResolver {
       const own = config.data;
       const data: DotnetProject = {
         ...own,
+        projectReferences: own.projectReferences.map(canonical),
         rootNamespace: own.rootNamespace ?? base?.rootNamespace ?? null,
         targetFrameworks: own.targetFrameworks.length ? own.targetFrameworks : (base?.targetFrameworks ?? []),
         implicitUsings: own.implicitUsings ?? base?.implicitUsings ?? null,

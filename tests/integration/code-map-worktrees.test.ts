@@ -74,3 +74,25 @@ it('keeps divergent worktree maps and Git ignores separate, and excludes tracked
     await rm(base, { recursive: true, force: true });
   }
 });
+
+it('excludes .oxy data anywhere in the worktree from checkpoints of a project in a subfolder', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'oxy-map-subfolder-'));
+  const git = async (...args: string[]) =>
+    (await promisify(execFile)('git', ['--no-optional-locks', ...args], { cwd: repo, windowsHide: true })).stdout;
+  try {
+    await git('init', '-b', 'main');
+    await git('config', 'user.name', 'Test');
+    await git('config', 'user.email', 'test@example.invalid');
+    for (const dir of ['.oxy', 'app/.oxy', 'other/.oxy']) await mkdir(join(repo, dir), { recursive: true });
+    await writeFile(join(repo, 'app/api.ts'), 'base');
+    await git('add', '-A');
+    await git('commit', '-qm', 'fixture', '--allow-empty');
+    await writeFile(join(repo, 'app/api.ts'), 'changed');
+    for (const dir of ['.oxy', 'app/.oxy', 'other/.oxy']) await writeFile(join(repo, dir, 'map.json'), 'map');
+    const checkpoint = await commitAll({ gitPath: 'git', cwd: join(repo, 'app'), message: 'checkpoint' });
+    expect(checkpoint.files).toBe(1);
+    expect((await git('show', '--pretty=', '--name-only', 'HEAD')).trim()).toBe('app/api.ts');
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
+});
