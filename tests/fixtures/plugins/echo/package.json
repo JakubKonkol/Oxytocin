@@ -7,7 +7,7 @@
     "id": "test.echo",
     "displayName": "Echo (test)",
     "publisher": "oxytocin-tests",
-    "engine": "^0.1.0",
+    "engine": ">=0.1.0 <0.3.0",
     "activationEvents": [
       "onStartup"
     ],

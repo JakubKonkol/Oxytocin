@@ -7,6 +7,6 @@
     "id": "Broken Id",
     "displayName": "Broken",
     "publisher": "tests",
-    "engine": "^0.1.0"
+    "engine": ">=0.1.0 <0.3.0"
   }
 }

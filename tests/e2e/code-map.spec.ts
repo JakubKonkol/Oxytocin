@@ -7,6 +7,67 @@ import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { activeProjectId } from './helpers/terminal';
 import { connect, freePort } from './helpers/mcp';
+import { userDataWithPlugins } from './helpers/plugins';
+import { CodeMapPluginResultSchema } from '../../src/shared/domain/code-map-plugin';
+
+test('public Code Map plugin API opens verified source and rejects disabled projects', async () => {
+  const project = await mkdtemp(join(tmpdir(), 'oxy-map-plugin-ui-'));
+  await writeFile(join(project, 'api.ts'), 'export function pluginSource() {}\n');
+  const userData = await userDataWithPlugins(['code-map'], { 'editor.preset': 'oxytocin' });
+  const { app, win } = await launchApp({ project, userData });
+  try {
+    const id = await activeProjectId(win);
+    await win.evaluate(
+      (projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true, ignoreInGit: true }),
+      id,
+    );
+    await expect
+      .poll(
+        async () =>
+          (
+            (await win.evaluate((projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }), id)) as {
+              state: string;
+            }
+          ).state,
+      )
+      .toBe('ready');
+    const result = CodeMapPluginResultSchema.parse(
+      await win.evaluate(
+        (projectId) =>
+          window.oxy.invoke('plugins:executeCommand', {
+            id: 'map.query',
+            args: [{ projectId, checkoutId: projectId, kind: 'slice', view: 'file', root: { path: 'api.ts' } }],
+          }),
+        id,
+      ),
+    );
+    if (result.data?.kind !== 'slice') throw new Error('Expected a slice');
+    const node = result.data.nodes.find((n) => n.kind === 'symbol')!;
+    await win.evaluate((locator) => window.oxy.invoke('plugins:executeCommand', { id: 'map.open', args: [locator] }), {
+      projectId: id,
+      checkoutId: id,
+      generation: result.freshness.generation,
+      path: node.path,
+      sha256: node.sha256,
+      span: node.span,
+      symbolId: node.id,
+    });
+    await expect(win.getByTestId('code-panel')).toContainText('pluginSource');
+    await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: false }), id);
+    await expect(
+      win.evaluate(
+        (projectId) =>
+          window.oxy.invoke('plugins:executeCommand', {
+            id: 'map.query',
+            args: [{ projectId, checkoutId: projectId, kind: 'search', query: 'pluginSource' }],
+          }),
+        id,
+      ),
+    ).rejects.toThrow();
+  } finally {
+    await app.close();
+  }
+});
 
 test('Code Map settings build, update, pause, rebuild, preserve settings and delete disabled data', async () => {
   const project = join(await mkdtemp(join(tmpdir(), 'oxy-map-ui-')), 'map-project');

@@ -7,6 +7,8 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Added
 
+- **Plugin API 0.2.0:** `oxy.codeMap` (`code-map.read`) lists checkouts, reports status, serves bounded graph slices,
+  search, outlines and relations, delivers invalidations and opens verified source locations, including worktrees.
 - **Code Map:** Ensemble worktrees get separate maps and authenticated agents query their own checkout. Add or remove
   the agent guidance in `CLAUDE.md` or `AGENTS.md` from Code Map settings. Ensemble diffs and checkpoint commits exclude
   `.oxy` data, including files already tracked by a worktree's base commit.

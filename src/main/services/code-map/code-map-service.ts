@@ -16,6 +16,20 @@ import { DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
+import { join } from 'node:path';
+import { z } from 'zod';
+import {
+  CodeMapHostQuerySchema,
+  CodeMapHostQueryResultSchema,
+  CodeMapPluginRequestSchema,
+  CodeMapLocatorSchema,
+  CodeMapSourceLocationSchema,
+  CodeMapCheckoutInfoSchema,
+  type CodeMapChangeSchema,
+  type CodeMapHostQueryInput,
+  type CodeMapHostQueryResult,
+  type CodeMapPluginRequest,
+} from '@shared/domain/code-map-plugin';
 import {
   CodeMapQueryResultSchema,
   CodeMapQuerySchema,
@@ -35,6 +49,9 @@ export class CodeMapService {
   private readonly subscriptions = new DisposableStore();
   private readonly changed = new Emitter<CodeMapStatus>();
   readonly onDidChangeStatus = this.changed.event;
+  private readonly checkoutChanged = new Emitter<z.infer<typeof CodeMapChangeSchema>>();
+  readonly onDidChangeCheckout = this.checkoutChanged.event;
+  private readonly owners = new Map<string, string>();
   private readonly statuses = new Map<string, CodeMapStatus>();
   private readonly configured = new Map<string, string>();
   private readonly worktrees = new Map<string, { projectId: string; root: string; projectRoot: string }>();
@@ -70,10 +87,10 @@ export class CodeMapService {
       deps.host.onDidChangeState(({ state }) => {
         if (state === 'running' || state === 'starting' || state === 'stopped') return;
         this.configured.clear();
-        for (const project of deps.projects.list())
-          if (project.settings.codeMap?.enabled)
+        for (const checkout of this.registeredCheckouts())
+          if (deps.projects.get(checkout.projectId)?.settings.codeMap?.enabled)
             this.publish({
-              ...this.status(project.id),
+              ...(this.statuses.get(checkout.id) ?? initialCodeMapStatus(checkout.id)),
               state: 'error',
               error:
                 state === 'failed'
@@ -134,6 +151,7 @@ export class CodeMapService {
       if (!ids.has(id)) {
         this.publish(initialCodeMapStatus(id));
         this.statuses.delete(id);
+        this.owners.delete(id);
       }
     if (!enabled.length) {
       if (this.deps.host.state !== 'stopped') await this.deps.host.stop();
@@ -167,6 +185,7 @@ export class CodeMapService {
     await this.enqueue(async () => {
       const project = this.project(projectId);
       this.worktrees.set(checkoutId, { projectId, root: await realpath(root), projectRoot: project.rootPath });
+      this.owners.set(checkoutId, projectId);
       await this.sync();
     });
     return checkoutId;
@@ -218,6 +237,12 @@ export class CodeMapService {
   private publish(status: CodeMapStatus): CodeMapStatus {
     this.statuses.set(status.checkoutId, status);
     this.changed.fire(structuredClone(status));
+    this.checkoutChanged.fire({
+      projectId: this.owners.get(status.checkoutId) ?? status.checkoutId,
+      checkoutId: status.checkoutId,
+      generation: status.generation,
+      state: status.state,
+    });
     return status;
   }
 
@@ -275,7 +300,64 @@ export class CodeMapService {
     });
   }
   async query(id: string, input: CodeMapQueryInput, signal: AbortSignal, checkoutId = id): Promise<CodeMapQueryResult> {
-    const query = CodeMapQuerySchema.parse(input);
+    return CodeMapQueryResultSchema.parse(await this.runQuery(id, CodeMapQuerySchema.parse(input), signal, checkoutId));
+  }
+  async pluginQuery(input: CodeMapPluginRequest, signal: AbortSignal): Promise<CodeMapHostQueryResult> {
+    const { projectId, checkoutId, ...query } = CodeMapPluginRequestSchema.parse(input);
+    const result = await this.runQuery(projectId, query, signal, checkoutId);
+    if (query.kind === 'slice' && result.data) {
+      const current = CodeMapStatusSchema.parse(await this.deps.host.call('checkout:status', { checkoutId }));
+      this.checkoutRoot(projectId, checkoutId);
+      signal.throwIfAborted();
+      if (current.generation !== result.freshness.generation)
+        return {
+          ...result,
+          data: undefined,
+          code: 'SNAPSHOT_CHANGED',
+          freshness: { ...result.freshness, stale: true },
+          hint: 'The generation changed while the response was in flight; refresh the view.',
+        };
+    }
+    return result;
+  }
+  listCheckouts(projectId: string) {
+    this.project(projectId);
+    if (!this.deps.projects.get(projectId)?.settings.codeMap?.enabled) return [];
+    return z.array(CodeMapCheckoutInfoSchema).parse(
+      this.registeredCheckouts()
+        .filter((c) => c.projectId === projectId)
+        .map((c) => ({
+          projectId,
+          checkoutId: c.id,
+          label: c.id === projectId ? 'Main checkout' : c.name,
+          mode: c.id === projectId ? 'project' : 'worktree',
+        })),
+    );
+  }
+  checkoutStatus(projectId: string, checkoutId: string): CodeMapStatus {
+    this.checkoutRoot(projectId, checkoutId);
+    return structuredClone(this.statuses.get(checkoutId) ?? initialCodeMapStatus(checkoutId));
+  }
+  async locateSource(
+    input: z.input<typeof CodeMapLocatorSchema>,
+  ): Promise<{ path: string; line: number; column: number }> {
+    const locator = CodeMapLocatorSchema.parse(input),
+      root = this.checkoutRoot(locator.projectId, locator.checkoutId);
+    await this.enqueue(() => this.sync());
+    if (this.checkoutRoot(locator.projectId, locator.checkoutId) !== root)
+      throw new OxyError('UNAVAILABLE', 'Code Map checkout changed');
+    const location = CodeMapSourceLocationSchema.parse(await this.deps.host.call('source:locate', locator));
+    if (this.checkoutRoot(locator.projectId, locator.checkoutId) !== root)
+      throw new OxyError('UNAVAILABLE', 'Code Map checkout changed');
+    return { path: join(root, ...location.path.split('/')), line: location.line, column: location.column + 1 };
+  }
+  private async runQuery(
+    id: string,
+    input: CodeMapHostQueryInput,
+    signal: AbortSignal,
+    checkoutId: string,
+  ): Promise<CodeMapHostQueryResult> {
+    const query = CodeMapHostQuerySchema.parse(input);
     const authorize = () => {
       return this.checkoutRoot(id, checkoutId);
     };
@@ -291,13 +373,17 @@ export class CodeMapService {
     };
     signal.addEventListener('abort', abort, { once: true });
     try {
-      const result = CodeMapQueryResultSchema.parse(
+      const result = CodeMapHostQueryResultSchema.parse(
         await this.deps.host.call('query:run', { checkoutId, requestId, query }, { timeoutMs: 10_000 }),
       );
       signal.throwIfAborted();
       if (authorize() !== root || result.checkoutId !== checkoutId)
         throw new OxyError('UNAVAILABLE', 'Code Map checkout changed');
-      if (JSON.stringify(result).length > query.maxChars)
+      if (
+        query.kind === 'slice'
+          ? Buffer.byteLength(JSON.stringify(result)) > 512 * 1024
+          : JSON.stringify(result).length > query.maxChars
+      )
         throw new OxyError('INVALID', 'Code Map response exceeds the character budget');
       return result;
     } finally {
@@ -333,5 +419,6 @@ export class CodeMapService {
     await this.queue;
     this.closed = true;
     this.changed.dispose();
+    this.checkoutChanged.dispose();
   }
 }

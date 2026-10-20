@@ -17,7 +17,16 @@ import { ParserClient } from './parse/client';
 import { hasCode } from './store/paths';
 import { isMapGitIgnored } from './store/gitignore';
 import { dataSize } from './store/writer';
-import { CodeMapQuerySchema, type CodeMapQueryInput, type CodeMapQueryResult } from '@shared/domain/code-map-query';
+import {
+  CodeMapHostQuerySchema,
+  CodeMapLocatorSchema,
+  type CodeMapHostQueryInput,
+  type CodeMapHostQueryResult,
+} from '@shared/domain/code-map-plugin';
+import type { z } from 'zod';
+import { fingerprint } from './fingerprint';
+import { normalizedSource } from './extract/files';
+import { sha256 } from './store/writer';
 import { CodeSearch } from './query/search';
 import { CodeRelations } from './query/relations';
 import { fileOutline } from './query/outline';
@@ -25,6 +34,8 @@ import { repoMap } from './query/repo-map';
 import { boundResult } from './query/budget';
 import { waitForCheckpoint } from './query/freshness';
 import { editAgentInstructions } from './store/agent-instructions';
+import { graphSlice } from './query/slice';
+import { boundSliceResult } from './query/slice-budget';
 
 export { initialCodeMapStatus } from '@shared/domain/code-map';
 
@@ -175,8 +186,8 @@ export class CodeMapCheckouts {
   cancelQuery(requestId: string): void {
     this.queries.get(requestId)?.controller.abort();
   }
-  async query(checkoutId: string, requestId: string, input: CodeMapQueryInput): Promise<CodeMapQueryResult> {
-    const query = CodeMapQuerySchema.parse(input),
+  async query(checkoutId: string, requestId: string, input: CodeMapHostQueryInput): Promise<CodeMapHostQueryResult> {
+    const query = CodeMapHostQuerySchema.parse(input),
       checkout = this.get(checkoutId);
     if (this.queries.has(requestId)) throw new Error('Duplicate Code Map query ID');
     if (this.queries.size >= 100) throw new Error('Too many concurrent Code Map queries');
@@ -207,7 +218,7 @@ export class CodeMapCheckouts {
       const snapshot = checkout.graph?.snapshot(),
         status = this.status(checkoutId);
       const stale = !verified || !!status.pendingFiles || !['ready', 'degraded'].includes(status.state);
-      const result: CodeMapQueryResult = {
+      const result: CodeMapHostQueryResult = {
         checkoutId,
         code: 'OK',
         truncated: false,
@@ -230,7 +241,15 @@ export class CodeMapCheckouts {
           ],
         },
       };
-      if (query.kind === 'status') {
+      if (
+        query.kind === 'slice' &&
+        query.generation !== undefined &&
+        snapshot &&
+        query.generation !== snapshot.manifest.generation
+      ) {
+        result.code = 'SNAPSHOT_CHANGED';
+        result.hint = 'The graph generation changed; refresh the view before expanding it.';
+      } else if (query.kind === 'status') {
         const { owner: _owner, error: _error, ...safeStatus } = status;
         result.data = { kind: 'status', status: safeStatus };
       } else if (!snapshot || (stale && query.freshness !== 'allow-stale')) {
@@ -251,7 +270,15 @@ export class CodeMapCheckouts {
           index = { maps: new Map() };
           this.indexes.set(graph, index);
         }
-        if (query.kind === 'search') {
+        if (query.kind === 'slice') {
+          const slice = graphSlice(
+            graph,
+            query,
+            query.view === 'overview' ? undefined : (index.relations ??= new CodeRelations(graph)),
+          );
+          result.data = slice.data ?? undefined;
+          result.reasons.push(...slice.reasons);
+        } else if (query.kind === 'search') {
           const found = (index.search ??= new CodeSearch(graph)).search(query.query, query.pathPrefix, query.limit);
           result.data = { kind: 'search', matches: found.matches };
           if (found.truncated) result.reasons.push('RESULT_LIMIT');
@@ -282,10 +309,48 @@ export class CodeMapCheckouts {
         }
         result.truncated = result.reasons.length > 0;
       }
-      return boundResult(result, query.maxChars);
+      return query.kind === 'slice'
+        ? boundSliceResult(result)
+        : boundResult(result as Parameters<typeof boundResult>[0], query.maxChars);
     } finally {
       this.queries.delete(requestId);
     }
+  }
+  async locateSource(input: z.input<typeof CodeMapLocatorSchema>) {
+    const locator = CodeMapLocatorSchema.parse(input),
+      checkout = this.get(locator.checkoutId),
+      snapshot = checkout.graph?.snapshot();
+    if (
+      checkout.config.projectId !== locator.projectId ||
+      !snapshot ||
+      snapshot.manifest.generation !== locator.generation
+    )
+      throw new Error('SNAPSHOT_CHANGED');
+    const file = snapshot.graph.files.find((file) => file.path === locator.path);
+    if (!file || file.stale || file.sha256 !== locator.sha256) throw new Error('Source is excluded or stale');
+    let span = locator.span;
+    if (locator.symbolId) {
+      const symbol = snapshot.graph.symbols.find((symbol) => symbol.id === locator.symbolId);
+      const actual =
+        symbol?.file === file.id ? symbol.span : symbol?.parts?.find((part) => part.file === file.id)?.span;
+      if (!symbol || symbol.stale || !actual || (span && JSON.stringify(span) !== JSON.stringify(actual)))
+        throw new Error('Source symbol range is stale');
+      span = actual;
+    }
+    const source = normalizedSource((await fingerprint(checkout.config.root, locator.path)).source);
+    if (
+      sha256(source) !== locator.sha256 ||
+      checkout.graph?.snapshot()?.manifest.generation !== locator.generation ||
+      this.checkouts.get(locator.checkoutId) !== checkout
+    )
+      throw new Error('SNAPSHOT_CHANGED');
+    const lines = source.split('\n');
+    if (
+      span &&
+      (span[2] > lines.length || span[1] > lines[span[0] - 1]!.length || span[3] > lines[span[2] - 1]!.length)
+    )
+      throw new Error('Source range is stale');
+    return { path: locator.path, line: span?.[0] ?? 1, column: span?.[1] ?? 0 };
   }
   pause(checkoutId: string): CodeMapStatus {
     const checkout = this.get(checkoutId);

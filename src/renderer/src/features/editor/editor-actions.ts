@@ -42,7 +42,9 @@ export function openFile(
   const api = opts.api ?? getWorkspaceApi(projectId);
   if (!api) return null;
   const pinned = opts.pinned ?? false;
-  const existing = codePanels(api).find((p) => (p.params as CodePanelParams).path === path);
+  const existing = codePanels(api).find(
+    (p) => (p.params as CodePanelParams).path === path && (p.params as CodePanelParams).projectId === projectId,
+  );
   if (existing && !opts.side) {
     if (pinned && (existing.params as CodePanelParams).preview)
       existing.api.updateParameters({ ...(existing.params as CodePanelParams), preview: false });
@@ -74,10 +76,14 @@ export function openFile(
 }
 
 /** Opens a file of a project in its workspace (activating the project when needed). */
-export async function showFile(projectId: string, path: string, at: { line?: number; column?: number } = {}) {
+export async function showFile(
+  projectId: string,
+  path: string,
+  at: { line?: number; column?: number; checkoutId?: string } = {},
+) {
   const api = await workspaceFor(projectId);
   if (!api) return;
-  openFile(projectId, path, { pinned: true, api, ...at });
+  openFile(at.checkoutId ?? projectId, path, { pinned: true, api, ...at });
 }
 
 /** Pins a preview code panel. */

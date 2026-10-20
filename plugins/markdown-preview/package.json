@@ -10,7 +10,7 @@
     "displayName": "File Preview",
     "description": "Live preview of Markdown and code files next to the terminal or in the right sidebar — opened from terminal links and the Changes list.",
     "publisher": "oxytocin",
-    "engine": "^0.1.4",
+    "engine": "^0.2.0",
     "main": "dist/host.js",
     "activationEvents": [
       "onPanel:markdown.preview",

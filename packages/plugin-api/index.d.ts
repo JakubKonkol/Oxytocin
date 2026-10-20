@@ -43,7 +43,7 @@ export interface Logger {
 }
 
 export interface OxytocinApi {
-  /** API version, e.g. "0.1.0". */
+  /** API version, e.g. "0.2.0". */
   readonly version: string;
   readonly env: {
     appVersion: string;
@@ -61,6 +61,211 @@ export interface OxytocinApi {
   readonly settings: SettingsApi;
   /** Tools for AI agents through Oxytocin's MCP server (since 0.1.5). */
   readonly mcp: McpApi;
+  /** Bounded Code Map reads and source navigation (permission: code-map.read, since 0.2.0). */
+  readonly codeMap: CodeMapApi;
+}
+
+export interface CodeMapRef {
+  projectId: string;
+  checkoutId: string;
+}
+export type CodeMapRelation = 'contains' | 'imports' | 'exports' | 'calls' | 'references' | 'extends' | 'implements';
+/** Lines are 1-based; columns are 0-based UTF-16. */
+export type CodeMapSpan = [number, number, number, number];
+export type CodeMapState = 'disabled' | 'indexing' | 'ready' | 'updating' | 'paused' | 'degraded' | 'error' | 'limit';
+export type CodeMapFreshnessMode = 'latest' | 'allow-stale' | 'verified';
+export interface CodeMapCoverage {
+  files: { indexed: number; unsupported: number; skipped: number; failed: number };
+  byLanguage: Record<string, number>;
+  unresolved: { imports: number; calls: number };
+}
+export interface CodeMapFreshness {
+  generation: number;
+  state: CodeMapState;
+  stale: boolean;
+  verification: 'metadata' | 'content-hash';
+  checkedAt: string | null;
+  lastFullHashAt: string | null;
+  pendingFiles: number;
+  coverage: CodeMapCoverage;
+  warnings: string[];
+}
+export interface CodeMapChange extends CodeMapRef {
+  generation: number;
+  state: CodeMapState;
+}
+export interface CodeMapCheckout extends CodeMapRef {
+  label: string;
+  mode: 'project' | 'worktree';
+}
+export interface CodeMapFile {
+  id: string;
+  path: string;
+  group: string;
+  language: string;
+  bytes: number;
+  lines: number;
+  sha256: string;
+  status: 'ok' | 'syntax-errors' | 'skipped-too-large' | 'unsupported' | 'failed';
+  test: boolean;
+  stale?: boolean;
+}
+export interface CodeMapSymbol {
+  id: string;
+  file: string;
+  kind: string;
+  name: string;
+  owner: string | null;
+  exported: boolean;
+  signature: string;
+  span: CodeMapSpan;
+  stale?: boolean;
+  visibility?: string;
+  parts?: { file: string; span: CodeMapSpan }[];
+}
+export interface CodeMapEdge {
+  from: string;
+  to: string;
+  rel: CodeMapRelation;
+  prov: 'syntax' | 'binding' | 'heuristic';
+  at?: [number, number];
+  typeOnly?: boolean;
+}
+export interface CodeMapSliceNode {
+  id: string;
+  kind: 'file' | 'symbol' | 'group' | 'package';
+  label: string;
+  path?: string;
+  files?: number;
+  symbolKind?: string;
+  signature?: string;
+  span?: CodeMapSpan;
+  sha256?: string;
+  stale?: boolean;
+  whyIncluded: string;
+}
+export interface CodeMapSliceEdge extends CodeMapEdge {
+  count?: number;
+  whyIncluded: string;
+}
+export interface CodeMapSlice {
+  kind: 'slice';
+  view: 'overview' | 'file' | 'neighborhood';
+  nodes: CodeMapSliceNode[];
+  edges: CodeMapSliceEdge[];
+  visitedNodes: number;
+  visitedEdges: number;
+  exhaustive: false;
+}
+export interface CodeMapSearchMatch {
+  id: string;
+  path: string;
+  name: string;
+  kind: string;
+  signature?: string;
+  span?: CodeMapSpan;
+  stale: boolean;
+  score: number;
+  whyIncluded: string[];
+}
+export interface CodeMapStatus {
+  checkoutId: string;
+  state: CodeMapState;
+  generation: number;
+  counts: { files: number; symbols: number; edges: number };
+  coverage: CodeMapCoverage;
+  languages: Record<string, { level: 'Files' | 'Symbols' | 'Imports' | 'Calls'; description: string }>;
+  progress: { completed: number; total: number } | null;
+  updatedAt: string | null;
+  bytes: number;
+  pendingFiles: number;
+  readOnly: boolean;
+  gitIgnored?: boolean;
+  limits: { files: number; symbols: number; edges: number; bytes: number };
+}
+export type CodeMapData =
+  | CodeMapSlice
+  | { kind: 'search'; matches: CodeMapSearchMatch[] }
+  | { kind: 'outline'; file: CodeMapFile; definitions: CodeMapSymbol[]; imports: CodeMapEdge[] }
+  | { kind: 'status'; status: CodeMapStatus }
+  | { kind: 'repo-map'; markdown: string }
+  | {
+      kind: 'relations';
+      nodes: (
+        | { kind: 'file'; value: CodeMapFile; whyIncluded: string }
+        | { kind: 'symbol'; value: CodeMapSymbol; whyIncluded: string }
+        | {
+            kind: 'group';
+            value: {
+              id: string;
+              path: string;
+              parent?: string | null;
+              files: number;
+              kind?: 'project' | 'solution';
+              name?: string;
+            };
+            whyIncluded: string;
+          }
+        | {
+            kind: 'package';
+            value: { id: string; name: string; external: boolean; ecosystem?: 'npm' | 'nuget' };
+            whyIncluded: string;
+          }
+      )[];
+      edges: (CodeMapEdge & { whyIncluded: string })[];
+      visitedNodes: number;
+      visitedEdges: number;
+      exhaustive: false;
+    };
+export interface CodeMapResponse {
+  checkoutId: string;
+  code: 'OK' | 'INDEX_UPDATING' | 'INDEX_PAUSED' | 'INDEX_UNAVAILABLE' | 'NOT_FOUND' | 'BUDGET' | 'SNAPSHOT_CHANGED';
+  freshness: CodeMapFreshness;
+  data?: CodeMapData;
+  truncated: boolean;
+  reasons: string[];
+  hint: string;
+}
+export interface CodeMapQueryOptions {
+  freshness?: CodeMapFreshnessMode;
+  maxChars?: number;
+}
+export interface CodeMapTraversal {
+  direction?: 'incoming' | 'outgoing' | 'both';
+  relations?: CodeMapRelation[];
+  depth?: number;
+  includeHeuristic?: boolean;
+}
+export type CodeMapRequest = CodeMapRef &
+  (
+    | ({ kind: 'search'; query: string; pathPrefix?: string; limit?: number } & CodeMapQueryOptions)
+    | ({ kind: 'outline'; path: string } & CodeMapQueryOptions)
+    | ({ kind: 'relations'; path?: string; symbolId?: string } & CodeMapTraversal & CodeMapQueryOptions)
+    | ({
+        kind: 'slice';
+        view: 'overview' | 'file' | 'neighborhood';
+        root?: { path: string } | { symbolId: string };
+        pathPrefix?: string;
+        generation?: number;
+        maxNodes?: number;
+        maxEdges?: number;
+        freshness?: CodeMapFreshnessMode;
+      } & CodeMapTraversal)
+  );
+export interface CodeMapLocator extends CodeMapRef {
+  path: string;
+  generation: number;
+  sha256: string;
+  symbolId?: string;
+  span?: CodeMapSpan;
+}
+export interface CodeMapApi {
+  listCheckouts(projectId: string): Promise<CodeMapCheckout[]>;
+  status(ref: CodeMapRef): Promise<CodeMapResponse>;
+  query(request: CodeMapRequest, options?: { signal?: AbortSignal }): Promise<CodeMapResponse>;
+  onDidChange: Event<CodeMapChange>;
+  /** Validates current generation, file hash, containment and range before opening the editor. */
+  openSource(locator: CodeMapLocator): Promise<void>;
 }
 
 // ── Projects ───────────────────────────────────────────── (permission: projects.read)

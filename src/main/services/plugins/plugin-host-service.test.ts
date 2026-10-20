@@ -3,7 +3,7 @@ import { resolveSettings } from '@shared/domain/settings';
 import { type PluginDescriptor, PluginManifestSchema } from '@shared/domain/plugin';
 import { toDisposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
-import { PluginHostService, type PluginCorePort } from './plugin-host-service';
+import { PluginHostService, type PluginCorePort, type PluginHostServiceDeps } from './plugin-host-service';
 
 const descriptor = (id: string, manifest: Record<string, unknown> = {}): PluginDescriptor => ({
   id,
@@ -22,7 +22,9 @@ const descriptor = (id: string, manifest: Record<string, unknown> = {}): PluginD
   }),
 });
 
-function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) {
+function setup(
+  opts: { list?: PluginDescriptor[]; envBarrierMs?: number; codeMap?: PluginHostServiceDeps['codeMap'] } = {},
+) {
   const ready = new Emitter<{ pid: number; restarted: boolean }>();
   const events = new Map<string, (p: unknown) => void>();
   let served: Record<string, (p: never) => unknown> = {};
@@ -46,13 +48,14 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
   };
   const list = opts.list ?? [descriptor('a.one', { permissions: ['projects.read'] }), descriptor('b.two')];
   const runtime = new Map<string, string>();
+  const changedPlugins = new Emitter<PluginDescriptor[]>();
   const plugins = {
     enabled: () => list.filter((p) => runtime.get(p.id) !== 'failed'),
     get: (id: string) => {
       const d = list.find((p) => p.id === id);
       return d && runtime.get(id) === 'failed' ? { ...d, state: 'failed' as const } : d;
     },
-    onDidChange: new Emitter<PluginDescriptor[]>().event,
+    onDidChange: changedPlugins.event,
     setRuntimeState: vi.fn((id: string, state: string) => runtime.set(id, state)),
   };
   const toRenderer = vi.fn();
@@ -140,6 +143,7 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
     env: { appVersion: '1', platform: 'linux', locale: 'en', homeDir: '/h', userDataDir: '/u' },
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     ...(opts.envBarrierMs !== undefined ? { envBarrierMs: opts.envBarrierMs } : {}),
+    ...(opts.codeMap ? { codeMap: opts.codeMap } : {}),
   });
   const api = (pluginId: string, method: string, params: unknown = {}) =>
     (served['api:call'] as unknown as (r: unknown) => Promise<unknown>)({ pluginId, method, params });
@@ -156,10 +160,40 @@ function setup(opts: { list?: PluginDescriptor[]; envBarrierMs?: number } = {}) 
     quickPick,
     notifyWithActions,
     agentMocks,
+    changedPlugins,
   };
 }
 
 describe('PluginHostService', () => {
+  it('guards Code Map dispatch and cancels pending reads when permission is revoked', async () => {
+    const list = [descriptor('map.reader', { permissions: ['code-map.read'] }), descriptor('map.denied')];
+    let waiting: AbortSignal | undefined;
+    const maps: NonNullable<PluginHostServiceDeps['codeMap']> = {
+      listCheckouts: () => [],
+      query: vi.fn(),
+      locateSource: vi.fn(),
+      pluginQuery: (_input, signal) => {
+        waiting = signal;
+        return new Promise((_, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }),
+        );
+      },
+      onDidChangeCheckout: new Emitter<never>().event,
+    };
+    const s = setup({ list, codeMap: maps });
+    await expect(s.api('map.denied', 'codeMap.listCheckouts', { projectId: 'p' })).rejects.toThrow('code-map.read');
+    expect(await s.api('map.reader', 'codeMap.listCheckouts', { projectId: 'p' })).toEqual([]);
+    const pending = s.api('map.reader', 'codeMap.query', {
+      requestId: 'req',
+      request: { projectId: 'p', checkoutId: 'p', kind: 'search', query: 'x' },
+    });
+    await vi.waitFor(() => expect(waiting).toBeDefined());
+    list[0] = descriptor('map.reader', { permissions: [] });
+    s.changedPlugins.fire(list);
+    await expect(pending).rejects.toThrow('cancelled');
+    expect(waiting!.aborted).toBe(true);
+    s.service.dispose();
+  });
   it('forwards sidebar panel placement and drops unknown placements', async () => {
     const s = setup({
       list: [

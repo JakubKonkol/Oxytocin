@@ -8,7 +8,7 @@
     "id": "test.mcp",
     "displayName": "MCP Tools (test)",
     "publisher": "oxytocin-tests",
-    "engine": "^0.1.5",
+    "engine": ">=0.1.0 <0.3.0",
     "main": "host.js",
     "activationEvents": [
       "onMcpTool:tests_echo",

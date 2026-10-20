@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- `oxy.codeMap` (`code-map.read`): list registered checkouts, read status, query search/outline/relations and bounded
+  graph slices, subscribe to compact invalidations, and open verified source locations. Query cancellation uses
+  `AbortSignal`; stale slice expansions return `SNAPSHOT_CHANGED`. Source spans use one-based lines and zero-based
+  UTF-16 columns. Projects must explicitly enable Code Map; queries cannot enable indexing.
+- Update plugin manifests to `engine: "^0.2.0"` after checking compatibility.
+
 ## 0.1.10
 
 - `oxy.agents.launch({ claudeArgs, env })`: arguments added to a new Claude Code session's launch command (quoted for

@@ -23,8 +23,12 @@ export function subscribeShellEvents(): () => void {
     ipc.on('editor:openInTerminal', (req) => void openEditorInTerminal(req)),
     ipc.on(
       'editor:openBuiltin',
-      ({ projectId, path, line, column }) =>
-        void showFile(projectId, path, { ...(line ? { line } : {}), ...(column ? { column } : {}) }),
+      ({ projectId, path, line, column, checkoutId }) =>
+        void showFile(projectId, path, {
+          ...(line ? { line } : {}),
+          ...(column ? { column } : {}),
+          ...(checkoutId ? { checkoutId } : {}),
+        }),
     ),
     ipc.on('terminals:openPanel', (req) => void openPluginTerminal(req)),
     ipc.on('terminals:closePanel', (req) => closePluginTerminalPanel(req)),

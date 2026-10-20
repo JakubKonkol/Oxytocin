@@ -101,13 +101,13 @@ export class PluginRuntime {
     this.events.fire('settings.changed', changedKeys);
   }
 
-  dispatch(name: string, payload: unknown): void {
+  dispatch(name: string, payload: unknown, pluginId?: string): void {
     if (name === 'settings.changed') {
       const { settings, keys } = payload as { settings: Record<string, unknown>; keys: string[] };
       this.updateSettings(settings, keys);
       return;
     }
-    this.events.fire(name as ApiEventName, payload);
+    this.events.fire(name as ApiEventName, payload, pluginId);
   }
 
   /** Activates plugins whose activation events match (`*` matches everything). */

@@ -35,7 +35,7 @@ const manifest = (id: string, extra: Record<string, unknown> = {}) => ({
   id,
   displayName: id,
   publisher: 'test',
-  engine: '^0.1.0',
+  engine: '>=0.1.0 <0.3.0',
   ...extra,
 });
 
@@ -116,6 +116,8 @@ describe('plugin discovery', () => {
     expect(isEngineCompatible('^0.1.0', '0.1.0')).toBe(true);
     expect(isEngineCompatible('>=0.1 <0.3', '0.2.4')).toBe(true);
     expect(isEngineCompatible('^0.2.0', '0.1.0')).toBe(false);
+    expect(isEngineCompatible('^0.1.0', '0.2.0')).toBe(false);
+    expect(isEngineCompatible('^0.2.0', '0.2.0')).toBe(true);
     expect(isEngineCompatible('not a range', '0.1.0')).toBe(false);
   });
 

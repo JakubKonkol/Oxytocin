@@ -1,0 +1,40 @@
+{
+  "name": "oxytocin-test-code-map",
+  "version": "1.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "oxytocin": {
+    "id": "test.code-map",
+    "displayName": "Code Map API (test)",
+    "publisher": "oxytocin-tests",
+    "engine": "^0.2.0",
+    "main": "host.js",
+    "permissions": [
+      "code-map.read"
+    ],
+    "activationEvents": [
+      "onStartup"
+    ],
+    "contributes": {
+      "commands": [
+        {
+          "id": "map.checkouts",
+          "title": "Map: Checkouts"
+        },
+        {
+          "id": "map.query",
+          "title": "Map: Query"
+        },
+        {
+          "id": "map.open",
+          "title": "Map: Open source"
+        },
+        {
+          "id": "map.changes",
+          "title": "Map: Changes"
+        }
+      ]
+    }
+  }
+}

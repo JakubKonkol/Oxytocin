@@ -72,6 +72,7 @@ import { EditorLauncher } from './services/editor/editor-launcher';
 import { ProjectService } from './services/projects/project-service';
 import { CodeMapActivityHints } from './services/code-map/activity-hints';
 import { CodeMapService } from './services/code-map/code-map-service';
+import { isWithin } from './services/projects/path-utils';
 import { projectPathsFromArgv } from './app/argv';
 import { WorkspaceStateService } from './services/workspace-state/workspace-state-service';
 import { sessionRestoredLabel } from './services/terminals/scrollback-format';
@@ -433,7 +434,12 @@ function bootstrap(): void {
   void projectsReady.then(() => git.start());
   const files = new FileService({
     host: hosts.workspace,
-    project: (id) => projects.get(id),
+    project: (id) => {
+      const project = projects.get(id);
+      if (project) return project;
+      const checkout = codeMap.registeredCheckouts().find((c) => c.id === id && c.id !== c.projectId);
+      return checkout ? { rootPath: codeMap.checkoutRoot(checkout.projectId, id), missing: false } : undefined;
+    },
     settings: () => settings.get(),
     trash: (path) => shell.trashItem(path),
   });
@@ -481,6 +487,19 @@ function bootstrap(): void {
     settings: () => settings.get(),
     projectFor: (path) => {
       const p = projects.findByPath(path);
+      const tree = codeMap
+        .registeredCheckouts()
+        .filter((c) => c.id !== c.projectId && isWithin(path, c.rootPath, process.platform))
+        .sort((a, b) => b.rootPath.length - a.rootPath.length)[0];
+      if (tree && (!p || tree.rootPath.length > p.rootPath.length)) {
+        const owner = projects.get(tree.projectId);
+        return {
+          id: tree.projectId,
+          checkoutId: tree.id,
+          rootPath: codeMap.checkoutRoot(tree.projectId, tree.id),
+          ...(owner?.settings.editorCommand ? { editorCommand: owner.settings.editorCommand } : {}),
+        };
+      }
       return p
         ? {
             id: p.id,
@@ -594,6 +613,7 @@ function bootstrap(): void {
   );
 
   const pluginDeps: Omit<PluginHostServiceDeps, 'host' | 'plugins' | 'logger'> = {
+    codeMap,
     env: {
       appVersion,
       platform: process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux',

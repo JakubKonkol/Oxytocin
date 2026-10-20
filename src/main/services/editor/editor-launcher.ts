@@ -15,19 +15,21 @@ export type LaunchPlan =
   | { kind: 'system'; path: string }
   | { kind: 'terminal'; projectId: string | null; cwd: string; command: string }
   /** Oxytocin's own code editor (files inside a project). */
-  | { kind: 'builtin'; projectId: string; path: string; line?: number; column?: number };
+  | { kind: 'builtin'; projectId: string; path: string; line?: number; column?: number; checkoutId?: string };
 
 export interface EditorLauncherDeps {
   settings: () => Settings;
   /** Project containing the file (root, id and its own editor command). */
-  projectFor: (path: string) => { id: string; rootPath: string; editorCommand?: string } | undefined;
+  projectFor: (
+    path: string,
+  ) => { id: string; rootPath: string; editorCommand?: string; checkoutId?: string } | undefined;
   which: (name: string) => Promise<string | null>;
   isFile: (path: string) => Promise<boolean>;
   spawn: (file: string, args: string[], opts: { verbatim: boolean }) => void;
   openPath: (path: string) => Promise<string>;
   openInTerminal: (req: { projectId: string | null; cwd: string; command: string }) => void;
   /** Shows a project file in the built-in code editor. */
-  openBuiltin: (req: { projectId: string; path: string; line?: number; column?: number }) => void;
+  openBuiltin: (req: { projectId: string; path: string; line?: number; column?: number; checkoutId?: string }) => void;
   platform: NodeJS.Platform;
   logger: Logger;
   /** Record launches instead of running them (E2E). */
@@ -116,6 +118,7 @@ export class EditorLauncher {
         return {
           kind: 'builtin',
           projectId: project.id,
+          ...(project.checkoutId ? { checkoutId: project.checkoutId } : {}),
           path,
           ...(req.line ? { line: req.line } : {}),
           ...(req.column ? { column: req.column } : {}),

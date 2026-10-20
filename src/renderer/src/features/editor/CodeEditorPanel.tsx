@@ -45,7 +45,7 @@ function Breadcrumb({ path }: { path: string }) {
 /** Center panel: a project file in the built-in code editor (view, edit, save). A preview tab shows another file
  * by changing its params: the editor starts over for it. */
 export function CodeEditorPanel(props: IDockviewPanelProps<CodePanelParams>) {
-  return <CodeEditor key={props.params.path} {...props} />;
+  return <CodeEditor key={`${props.params.projectId}:${props.params.path}`} {...props} />;
 }
 
 function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
@@ -205,6 +205,7 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
   };
 
   const askAboutCode = () => {
+    if (!project) return;
     const selection = viewApi.current?.selection();
     askAgent({
       projectId,
@@ -268,6 +269,7 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
     >
       <div className="flex h-8 flex-none items-center gap-2 border-b border-line-subtle px-2 text-small">
         <Breadcrumb path={path} />
+        {projectId.startsWith('worktree:') && <span className="text-small text-fg-muted">Worktree</span>}
         {dirty && (
           <span title="Unsaved changes" data-testid="code-dirty" className="size-2 flex-none rounded-full bg-accent" />
         )}
@@ -302,6 +304,7 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
           shortcut="Ctrl+L"
           icon={<Sparkles size={13} />}
           onClick={askAboutCode}
+          disabled={!project}
         />
         <IconButton
           data-testid="code-save"
@@ -334,6 +337,7 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
         />
         <IconButton
           label="Reveal in FILES"
+          disabled={!project}
           icon={<FolderTree size={13} />}
           onClick={() => revealInFiles(projectId, path)}
         />

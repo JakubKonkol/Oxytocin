@@ -10,7 +10,7 @@
     "displayName": "Task",
     "description": "A lightweight task: plan with one agent, approve the document, implement with another, and optionally review. Reuses your agent profiles and terminals.",
     "publisher": "oxytocin",
-    "engine": "^0.1.10",
+    "engine": "^0.2.0",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup",

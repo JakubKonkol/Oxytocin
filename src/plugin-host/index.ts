@@ -60,7 +60,7 @@ const { rpc, log } = startHostRuntime<PluginHostEvents, PluginHostInboundEvents>
   exit: (code) => process.exit(code),
 });
 ref.rpc = rpc;
-rpc.onEvent('api:event', ({ name, payload }) => runtime.dispatch(name, payload));
+rpc.onEvent('api:event', ({ name, payload, pluginId }) => runtime.dispatch(name, payload, pluginId));
 rpc.onEvent('mcp:cancel', ({ callId }) => runtime.cancelMcpCall(callId));
 
 // Errors thrown asynchronously by plugin code: blame the plugin (by stack) instead of crashing the host.

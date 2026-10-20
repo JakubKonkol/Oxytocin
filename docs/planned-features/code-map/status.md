@@ -111,6 +111,16 @@ Updated: 2026-10-20. Base revision: `bd1355d`. Working branch: `main`.
 
 ## Resume checkpoint
 
+### Stage 08 implementation
+
+- Public API 0.2.0, `code-map.read`, validated/cancellable plugin queries and targeted metadata invalidations.
+  Overview/file/neighborhood slices have node, edge and UTF-8 envelope caps; late generations discard old data.
+- Verified source navigation preserves worktree identity through editor routing. Documentation and fixture plugin
+  integration cover permissions, opt-in, agent/plugin consistency, source edits and editor column conversion.
+- Full check and build passed. Validation logs and E2E exception: `results/2026-10-20-plugin-api.md`. Added Electron E2E was
+  not executed under the user's authorization; it remains a release gate.
+- Next: stage 09 renderer spike and built-in visualizer, then 10–14 in order. Paid evaluation remains deferred.
+
 ### Stage 06 validation
 
 - `npm run check` green: 1,354 unit tests passed / 3 skipped, 66 integration passed / 66 skipped by platform/resource

@@ -92,6 +92,7 @@ export const eventContract = {
   /** "Open in editor" with the built-in editor (`editor.preset: oxytocin`): show a project file. */
   'editor:openBuiltin': z.object({
     projectId: ProjectIdSchema,
+    checkoutId: ProjectIdSchema.optional(),
     path: z.string().min(1),
     line: z.number().int().optional(),
     column: z.number().int().optional(),

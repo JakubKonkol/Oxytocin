@@ -127,6 +127,23 @@ describe('EditorLauncher', () => {
     expect(relativeTo('/proj', '/proj', false)).toBeNull();
   });
 
+  it('keeps worktree identity when opening a source location in the built-in editor', async () => {
+    const { launcher: l, deps } = launcher(
+      { 'editor.preset': 'oxytocin' },
+      {
+        projectFor: () => ({ id: 'p', checkoutId: 'worktree:task', rootPath: '/worktree' }),
+      },
+    );
+    await l.open({ path: '/worktree/src/a.ts', line: 2, column: 8 });
+    expect(deps.openBuiltin).toHaveBeenCalledWith({
+      projectId: 'p',
+      checkoutId: 'worktree:task',
+      path: 'src/a.ts',
+      line: 2,
+      column: 8,
+    });
+  });
+
   it('refuses missing files', async () => {
     const { launcher: l } = launcher({}, { isFile: () => Promise.resolve(false) });
     await expect(l.open(req)).rejects.toThrow(/File not found/);

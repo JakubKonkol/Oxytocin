@@ -34,6 +34,7 @@ const checkouts = new CodeMapCheckouts(
 
 type Impl = { [K in keyof Omit<CodeMapHostMethods, 'ping' | 'shutdown'>]: (params: unknown) => unknown };
 const impl: Impl = {
+  'source:locate': (input) => checkouts.locateSource(CodeMapHostContracts['source:locate'].params.parse(input)),
   'instructions:edit': (input) => {
     const params = CodeMapHostContracts['instructions:edit'].params.parse(input);
     return checkouts.editInstructions(params.root, params.file, params.action);

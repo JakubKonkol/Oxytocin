@@ -105,7 +105,7 @@ export type PluginHostEvents = HostBaseEvents & {
 
 /** Events main sends to the host (API events: projects, terminals, agents, git, settings). */
 export type PluginHostInboundEvents = {
-  'api:event': { name: string; payload: unknown };
+  'api:event': { name: string; payload: unknown; pluginId?: string };
   /** The agent cancelled an MCP tool call (or it timed out in main). */
   'mcp:cancel': { callId: string };
 };

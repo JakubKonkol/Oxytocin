@@ -10,6 +10,7 @@ import { McpHub, type McpHubDeps } from '../../src/main/services/mcp/mcp-hub';
 import { CodeMapCheckouts } from '../../src/code-map-host/checkouts';
 import { fileRecord } from '../../src/code-map-host/extract/files';
 import { copyCodeMapAssets } from '../../scripts/code-map-assets';
+import { CodeMapQueryResultSchema } from '../../src/shared/domain/code-map-query';
 import type { PluginToolSource } from '../../src/main/services/mcp/tool-registry';
 import { PluginRuntime } from '../../src/plugin-host/runtime';
 import { silentLogger } from '../helpers/logger';
@@ -259,7 +260,7 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
     service: {
       query: async (id, query) => {
         if (!enabled || id !== 'p1') throw new Error('Code Map disabled');
-        return checkouts.query(id, crypto.randomUUID(), query);
+        return CodeMapQueryResultSchema.parse(await checkouts.query(id, crypto.randomUUID(), query));
       },
     },
   });

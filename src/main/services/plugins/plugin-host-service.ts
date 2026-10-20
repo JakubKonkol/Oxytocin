@@ -28,6 +28,14 @@ import type {
 } from '@shared/rpc/contracts/plugin-host';
 import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
+import type { CodeMapService } from '../code-map/code-map-service';
+import {
+  CodeMapRefSchema,
+  CodeMapPluginRequestSchema,
+  CodeMapPluginResultSchema,
+  CodeMapLocatorSchema,
+  CodeMapChangeSchema,
+} from '@shared/domain/code-map-plugin';
 import type { UtilityHost } from '../../hosts/utility-host';
 import { collectContributions } from './discovery';
 import { configDefaults, validateConfigValue } from './contributions';
@@ -129,6 +137,7 @@ export interface PluginCorePort {
 }
 
 export interface PluginHostServiceDeps {
+  codeMap?: Pick<CodeMapService, 'listCheckouts' | 'query' | 'pluginQuery' | 'locateSource' | 'onDidChangeCheckout'>;
   host: Pick<
     UtilityHost<PluginHostMethods, PluginHostEvents>,
     'call' | 'onEvent' | 'onDidBecomeReady' | 'serve' | 'emit' | 'state'
@@ -249,6 +258,7 @@ function toHostInfo(p: PluginDescriptor): HostPluginInfo | null {
  * events and attributes hangs to the plugin that was running.
  */
 export class PluginHostService implements Disposable {
+  private readonly codeMapRequests = new Map<string, AbortController>();
   private readonly store = new DisposableStore();
   private busy: string | null = null;
   private readonly incidents = new Map<string, number>();
@@ -277,6 +287,15 @@ export class PluginHostService implements Disposable {
 
   constructor(private readonly deps: PluginHostServiceDeps) {
     const host = deps.host;
+    if (deps.codeMap)
+      this.store.add(
+        deps.codeMap.onDidChangeCheckout((change) => {
+          const payload = CodeMapChangeSchema.parse(change);
+          for (const plugin of deps.plugins.enabled())
+            if (plugin.manifest?.permissions.includes('code-map.read'))
+              host.emit('api:event', { name: 'codeMap.changed', payload, pluginId: plugin.id });
+        }),
+      );
     this.store.add(
       host.serve({ 'api:call': (req: { pluginId: string; method: string; params: unknown }) => this.apiCall(req) }),
     );
@@ -297,10 +316,20 @@ export class PluginHostService implements Disposable {
         void this.reload();
       }),
     );
-    this.store.add(deps.plugins.onDidChange(() => void this.reload()));
+    this.store.add(
+      deps.plugins.onDidChange(() => {
+        for (const [key, controller] of this.codeMapRequests) {
+          const id = key.split('\0')[0]!;
+          if (!deps.plugins.enabled().some((p) => p.id === id && p.manifest?.permissions.includes('code-map.read')))
+            controller.abort();
+        }
+        void this.reload();
+      }),
+    );
   }
 
   private onHostRestarted(): void {
+    for (const controller of this.codeMapRequests.values()) controller.abort();
     this.deps.mcp?.dropDynamicTools(this.deps.plugins.enabled().map((p) => p.id));
     const suspect = this.busy;
     this.busy = null;
@@ -642,6 +671,7 @@ export class PluginHostService implements Disposable {
   // ── plugin UI state (rendered by the renderer, M5-T4) ──
 
   private clearPluginUi(pluginId: string): void {
+    for (const [key, controller] of this.codeMapRequests) if (key.startsWith(`${pluginId}\0`)) controller.abort();
     this.stopOutputWatches(pluginId);
     // Its questions can no longer be answered.
     for (const [key, controller] of [...this.withdrawableNotifications]) {
@@ -718,6 +748,69 @@ export class PluginHostService implements Disposable {
     const plugin = this.deps.plugins.get(pluginId);
     if (!plugin || !plugin.manifest) throw new OxyError('NOT_FOUND', `Unknown plugin ${pluginId}`);
     const p = (params ?? {}) as Record<string, unknown>;
+    if (method.startsWith('codeMap.')) {
+      const authorize = () => {
+        const current = this.deps.plugins.get(pluginId);
+        if (!current || !this.deps.plugins.enabled().some((p) => p.id === pluginId))
+          throw new OxyError('PERMISSION', 'Plugin is no longer enabled');
+        this.permission(current, 'code-map.read');
+        if (!this.deps.codeMap) throw new OxyError('UNAVAILABLE', 'Code Map is unavailable');
+        return this.deps.codeMap;
+      };
+      if (method === 'codeMap.cancel') {
+        const { requestId } = z
+          .object({ requestId: z.string().min(1).max(200) })
+          .strict()
+          .parse(params);
+        this.codeMapRequests.get(`${pluginId}\0${requestId}`)?.abort();
+        return null;
+      }
+      const maps = authorize();
+      if (method === 'codeMap.listCheckouts')
+        return maps.listCheckouts(
+          z
+            .object({ projectId: z.string().min(1).max(64) })
+            .strict()
+            .parse(params).projectId,
+        );
+      if (method === 'codeMap.openSource') {
+        const location = await maps.locateSource(CodeMapLocatorSchema.parse(params));
+        authorize();
+        await core.openInEditor(location);
+        return null;
+      }
+      if (method === 'codeMap.status') {
+        const ref = CodeMapRefSchema.parse(params);
+        const result = await maps.query(
+          ref.projectId,
+          { kind: 'status', maxChars: 24000 },
+          new AbortController().signal,
+          ref.checkoutId,
+        );
+        authorize();
+        return CodeMapPluginResultSchema.parse(result);
+      }
+      if (method === 'codeMap.query') {
+        const request = z
+          .object({ requestId: z.string().min(1).max(200), request: CodeMapPluginRequestSchema })
+          .strict()
+          .parse(params);
+        const key = `${pluginId}\0${request.requestId}`;
+        if (this.codeMapRequests.has(key) || this.codeMapRequests.size >= 100)
+          throw new OxyError('INVALID', 'Too many concurrent Code Map requests');
+        const controller = new AbortController();
+        this.codeMapRequests.set(key, controller);
+        try {
+          const result = await maps.pluginQuery(request.request, controller.signal);
+          controller.signal.throwIfAborted();
+          authorize();
+          return CodeMapPluginResultSchema.parse(result);
+        } finally {
+          this.codeMapRequests.delete(key);
+        }
+      }
+      throw new OxyError('NOT_FOUND', 'Unknown Code Map method');
+    }
     switch (method) {
       case 'projects.list':
         this.permission(plugin, 'projects.read');
@@ -994,6 +1087,7 @@ export class PluginHostService implements Disposable {
   }
 
   dispose(): void {
+    for (const controller of this.codeMapRequests.values()) controller.abort();
     this.store.dispose();
     this.statusEmitter.dispose();
     this.envEmitter.dispose();

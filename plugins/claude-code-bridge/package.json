@@ -10,7 +10,7 @@
     "displayName": "Claude Code Bridge",
     "description": "Exact Claude Code states (working, waiting for permission, finished) through Claude Code hooks.",
     "publisher": "oxytocin",
-    "engine": "^0.1.2",
+    "engine": "^0.2.0",
     "main": "dist/host.js",
     "activationEvents": [
       "onStartup"

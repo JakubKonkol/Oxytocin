@@ -6,6 +6,7 @@ import type {
   AgentLimits,
   AgentSnapshot,
   CommandsApi,
+  CodeMapChange,
   Disposable,
   EnvironmentCollection,
   EnvScope,
@@ -25,8 +26,18 @@ import { OxyError } from '@shared/errors';
 import type { HostApiEnv, HostPluginInfo } from '@shared/rpc/contracts/plugin-host';
 import { toDisposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
+import { z } from 'zod';
+import {
+  CodeMapRefSchema,
+  CodeMapCheckoutInfoSchema,
+  CodeMapPluginRequestSchema,
+  CodeMapPluginResultSchema,
+  CodeMapLocatorSchema,
+  CodeMapChangeSchema,
+} from '@shared/domain/code-map-plugin';
 
 export type ApiEventName =
+  | 'codeMap.changed'
   | 'projects.changed'
   | 'projects.active'
   | 'terminals.open'
@@ -41,19 +52,20 @@ export type ApiEventName =
 
 /** Events from main, fanned out to plugin listeners. */
 export class ApiEvents {
-  private readonly emitters = new Map<ApiEventName, Emitter<unknown>>();
+  private readonly emitters = new Map<string, Emitter<unknown>>();
 
-  emitter(name: ApiEventName): Emitter<unknown> {
-    let e = this.emitters.get(name);
+  emitter(name: ApiEventName, pluginId?: string): Emitter<unknown> {
+    const key = pluginId ? `${name}:${pluginId}` : name;
+    let e = this.emitters.get(key);
     if (!e) {
       e = new Emitter<unknown>();
-      this.emitters.set(name, e);
+      this.emitters.set(key, e);
     }
     return e;
   }
 
-  fire(name: ApiEventName, payload: unknown): void {
-    this.emitters.get(name)?.fire(payload);
+  fire(name: ApiEventName, payload: unknown, pluginId?: string): void {
+    this.emitters.get(pluginId ? `${name}:${pluginId}` : name)?.fire(payload);
   }
 }
 
@@ -100,7 +112,7 @@ export function createApi(deps: ApiDeps): OxytocinApi {
     <T>(name: ApiEventName, permission?: string): Event<T> =>
     (listener) => {
       if (permission) require(permission);
-      const d = deps.events.emitter(name).event((payload) => {
+      const d = deps.events.emitter(name, name === 'codeMap.changed' ? plugin.id : undefined).event((payload) => {
         try {
           const r = listener(payload as T);
           if (r instanceof Promise) r.catch((e: unknown) => deps.reportError(`${name} listener`, e));
@@ -306,6 +318,42 @@ export function createApi(deps: ApiDeps): OxytocinApi {
         return (await call<RepoStatusLite | null>('git.getStatus', { projectId })) ?? undefined;
       },
       onDidChangeStatus: event<RepoStatusLite>('git.status', 'git.read'),
+    },
+    codeMap: {
+      listCheckouts: async (projectId) => {
+        require('code-map.read');
+        return z
+          .array(CodeMapCheckoutInfoSchema)
+          .parse(await call('codeMap.listCheckouts', { projectId: z.string().min(1).max(64).parse(projectId) }));
+      },
+      status: async (ref) => {
+        require('code-map.read');
+        return CodeMapPluginResultSchema.parse(await call('codeMap.status', CodeMapRefSchema.parse(ref)));
+      },
+      query: async (request, options) => {
+        require('code-map.read');
+        const parsed = CodeMapPluginRequestSchema.parse(request),
+          requestId = randomUUID(),
+          signal = options?.signal;
+        signal?.throwIfAborted();
+        const abort = () => {
+          void call('codeMap.cancel', { requestId }).catch(() => undefined);
+        };
+        signal?.addEventListener('abort', abort, { once: true });
+        try {
+          const result = CodeMapPluginResultSchema.parse(await call('codeMap.query', { requestId, request: parsed }));
+          signal?.throwIfAborted();
+          return result;
+        } finally {
+          signal?.removeEventListener('abort', abort);
+        }
+      },
+      onDidChange: (listener) =>
+        event<CodeMapChange>('codeMap.changed', 'code-map.read')((value) => listener(CodeMapChangeSchema.parse(value))),
+      openSource: async (locator) => {
+        require('code-map.read');
+        z.null().parse(await call('codeMap.openSource', CodeMapLocatorSchema.parse(locator)));
+      },
     },
     ui: {
       registerViewProvider: (viewId, provider) => {
