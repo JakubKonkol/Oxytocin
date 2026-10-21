@@ -18,9 +18,34 @@ export function terms(text: string): string[] {
   ];
 }
 
+const stopWords = new Set(
+  'where how what which is are the a an in of to for do does we our this that application app gdzie jak co jest sa w z do na mamy aplikacji'.split(
+    ' ',
+  ),
+);
+// Small, explicit vocabulary normalization, not semantic inference. Keep identifiers intact in `terms`.
+const normalize = (term: string) =>
+  /^(settings|configuration|configure|configured|configurations|konfiguracj\p{L}*|ustawieni\p{L}*)$/u.test(term)
+    ? 'config'
+    : term;
+export const searchTerms = (text: string): string[] => [
+  ...new Set(
+    terms(text)
+      .filter((t) => !stopWords.has(t))
+      .map(normalize),
+  ),
+];
+
 /** An inverted index belongs to exactly one immutable published graph. */
 export class CodeSearch {
-  private readonly entries: { match: Match; name: string; path: string; test: boolean; terms: Set<string> }[] = [];
+  private readonly entries: {
+    match: Match;
+    name: string;
+    path: string;
+    test: boolean;
+    terms: Set<string>;
+    names: Set<string>;
+  }[] = [];
   private readonly postings = new Map<string, Set<number>>();
   constructor(graph: CodeMapGraph) {
     const files = new Map(graph.files.map((f) => [f.id, f]));
@@ -30,7 +55,8 @@ export class CodeSearch {
         name: match.name.toLowerCase(),
         path: match.path.toLowerCase(),
         test,
-        terms: new Set(terms(`${match.name} ${match.path} ${match.signature ?? ''}`)),
+        terms: new Set(searchTerms(`${match.name} ${match.path} ${match.signature ?? ''}`)),
+        names: new Set(searchTerms(match.name)),
       };
       const index = this.entries.push(entry) - 1;
       for (const term of entry.terms) {
@@ -72,17 +98,34 @@ export class CodeSearch {
     }
   }
   search(query: string, prefix: string | undefined, limit: number): { matches: Match[]; truncated: boolean } {
-    const wanted = terms(query),
-      exact = query.toLowerCase();
+    // A stop word can itself be a valid symbol name (e.g. `is` or `app`).
+    const wanted = searchTerms(query),
+      exact = query.trim().toLowerCase();
     const candidates = new Set<number>();
     for (const term of wanted) for (const index of this.postings.get(term) ?? []) candidates.add(index);
+    if (!wanted.length)
+      this.entries.forEach((entry, i) => {
+        if (entry.name === exact || entry.path === exact) candidates.add(i);
+      });
+    const exactMatches = [...candidates].filter((i) => {
+      const entry = this.entries[i]!;
+      return withinPrefix(entry.match.path, prefix) && (entry.name === exact || entry.path === exact);
+    });
     const ranked: Match[] = [];
-    for (const index of candidates) {
+    for (const index of exactMatches.length ? exactMatches : candidates) {
       const entry = this.entries[index]!;
       if (!withinPrefix(entry.match.path, prefix)) continue;
       const matched = wanted.filter((term) => entry.terms.has(term));
       const why = matched.map((term) => `term:${term}`);
-      let score = matched.length * 10 + (matched.length === wanted.length ? 30 : 0);
+      // Rare identifiers carry more information than a directory term shared by thousands of symbols.
+      let score = matched.reduce(
+        (sum, term) =>
+          sum +
+          (1 + Math.log(1 + this.entries.length / (this.postings.get(term)?.size ?? 1))) *
+            (entry.names.has(term) ? 12 : 4),
+        0,
+      );
+      score *= wanted.length ? matched.length / wanted.length : 1;
       if (entry.name === exact) {
         score += 120;
         why.push('exact name');
@@ -95,6 +138,11 @@ export class CodeSearch {
         score *= 0.65;
         why.push('test file ranked lower');
       }
+      if (
+        /\.(md|txt|json)$/i.test(entry.path) &&
+        !/\b(docs?|readme|json|documentation|dokumentacj\p{L}*)\b/u.test(exact)
+      )
+        score *= 0.7;
       ranked.push({ ...entry.match, score, whyIncluded: why });
     }
     ranked.sort((a, b) => b.score - a.score || comparePaths(a.path, b.path) || comparePaths(a.id, b.id));

@@ -37,7 +37,6 @@ export function entryPoints(graph: CodeMapGraph, configs: ReadonlyMap<string, Pr
   for (const entry of graph.unresolved)
     if (entry.rel === 'calls' && entry.from.startsWith('f:') && entry.from.endsWith('.cs'))
       entries.add(entry.from.slice(2));
-  for (const file of graph.files) if (file.test) entries.add(file.path);
   return [...entries].sort(comparePaths);
 }
 function dotnetProjects(graph: CodeMapGraph, configs: ReadonlyMap<string, ProjectConfig>): string[] {
@@ -92,7 +91,7 @@ function boundedLines(lines: string[], budget: number): string[] {
 export function renderMapMarkdown(
   graph: CodeMapGraph,
   configs: ReadonlyMap<string, ProjectConfig> = new Map(),
-  maxBytes = 32 * 1024,
+  maxBytes = 6 * 1024,
   graphHash = sha256(`${JSON.stringify(graph)}\n`),
 ): string {
   const scale = Math.min(1, maxBytes / (32 * 1024));

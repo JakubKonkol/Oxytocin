@@ -379,6 +379,27 @@ it('preserves complete claims within the output budget, caps reuse at three and 
     code: 'BUDGET_TOO_SMALL',
   });
 });
+it('keeps a simple lookup small and expands only when explicitly requested', async () => {
+  const { graph, freshness } = await fixture();
+  graph.files.push(...Array.from({ length: 20 }, (_, i) => fileRecord(`protocol-${i}.ts`, '').file));
+  const query = (limit?: number) =>
+    taskContext(
+      TaskContextQuerySchema.parse({ question: 'protocol configuration', ...(limit ? { limit } : {}) }),
+      graph,
+      freshness(),
+      { records: [], memoryRevision: 0, total: 0 },
+      'ready',
+      'p',
+      'receipt',
+    );
+  expect(query().nodes).toHaveLength(6);
+  expect(query().relations).toEqual([]);
+  expect(query().truncated).toBe(true);
+  expect(query().warnings).toContain('Search result limit reached; narrow the question or increase limit.');
+  expect(query(2).nodes).toHaveLength(2);
+  expect(query(10).nodes.length).toBeGreaterThan(6);
+  expect(TaskContextQuerySchema.safeParse({ question: 'protocol', limit: 0 }).success).toBe(false);
+});
 it('enforces 50 proposals per checkout/hour while allowing a keyed retry and preserving reads', async () => {
   const { run, draft, context } = await fixture();
   for (let i = 0; i < 50; i++)

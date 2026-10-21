@@ -301,7 +301,7 @@ it('uses three learning tools over real HTTP with independent sessions, review a
   const proposed = decode(await call(firstSession, 'oxy_propose_learning', proposal));
   expect(proposed).toMatchObject({ kind: 'propose', code: 'OK', review: 'proposed' });
   if (proposed.kind !== 'propose') throw new Error('Expected a proposal');
-  expect(decode(await call(firstSession, 'oxy_task_context', { question: 'protocol' }))).toMatchObject({
+  expect(decode(await call(firstSession, 'oxy_task_context', { question: 'protocol', format: 'json' }))).toMatchObject({
     learnings: [],
   });
   await memory.run(authority, {
@@ -311,7 +311,12 @@ it('uses three learning tools over real HTTP with independent sessions, review a
     decision: 'accept',
     idempotencyKey: 'http-review',
   });
-  const context = decode(await call(secondSession, 'oxy_task_context', { question: 'protocol', paths: ['api.ts'] }));
+  const compact = await call(secondSession, 'oxy_task_context', { question: 'protocol', paths: ['api.ts'] });
+  expect((compact['content'] as { text: string }[])[0]!.text).toContain('receipt=');
+  expect((compact['content'] as { text: string }[])[0]!.text).toContain('Use the protocol.');
+  const context = decode(
+    await call(secondSession, 'oxy_task_context', { question: 'protocol', paths: ['api.ts'], format: 'json' }),
+  );
   if (context.kind !== 'task-context') throw new Error(JSON.stringify(context));
   expect(context.learnings[0]).toMatchObject({
     id: proposed.id,
@@ -341,15 +346,19 @@ it('uses three learning tools over real HTTP with independent sessions, review a
     code: 'BUDGET_TOO_SMALL',
   });
   await writeFile(join(root, 'api.ts'), 'export const protocol = 2;\n');
-  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol' }))).toMatchObject({
-    learnings: [],
-  });
+  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol', format: 'json' }))).toMatchObject(
+    {
+      learnings: [],
+    },
+  );
   mode = 'off';
   tools.revoke('p1');
-  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol' }))).toMatchObject({
-    memory: 'off',
-    learnings: [],
-  });
+  expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol', format: 'json' }))).toMatchObject(
+    {
+      memory: 'off',
+      learnings: [],
+    },
+  );
   expect(decode(await call(secondSession, 'oxy_propose_learning', proposal))).toMatchObject({ code: 'MEMORY_OFF' });
   changed.fire();
   expect(hub.registry.resolve('oxy_propose_learning')).toBeUndefined();
@@ -432,7 +441,7 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
   expect(updated).toContain('afterEdit');
   expect(updated.length).toBeLessThanOrEqual(2000);
   expect(text(await call('oxy_file_outline', { path: 'api.ts' }))).toContain('afterEdit');
-  expect(text(await call('oxy_code_relations', { path: 'api.ts' }))).toContain('whyIncluded');
+  expect(text(await call('oxy_code_relations', { path: 'api.ts', format: 'json' }))).toContain('whyIncluded');
   expect(text(await call('oxy_repo_map', {}))).toContain('## Layout');
   expect(text(await call('oxy_code_map_status', {}))).toContain('coverage');
   if (process.env['OXYTOCIN_CODE_MAP_QUERY_BENCHMARK'] === '1') {

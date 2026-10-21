@@ -55,7 +55,9 @@ test('MCP learning proposal is reviewed in the core manager and reused only whil
     expect(proposed).toMatchObject({ kind: 'propose', review: 'proposed' });
     if (proposed.kind !== 'propose') throw new Error('Expected a proposal');
     expect(
-      decode(await first.call('oxy_task_context', { cwd: project, question: 'protocol compatibility' })),
+      decode(
+        await first.call('oxy_task_context', { format: 'json', cwd: project, question: 'protocol compatibility' }),
+      ),
     ).toMatchObject({ learnings: [] });
     await win.getByRole('button', { name: 'Code Map status' }).click();
     const dialog = win.getByTestId('project-settings'),
@@ -68,7 +70,12 @@ test('MCP learning proposal is reviewed in the core manager and reused only whil
     const later = await connect(port, token);
     clients.push(later);
     const selected = decode(
-      await later.call('oxy_task_context', { cwd: project, question: 'protocol compatibility', paths: ['api.ts'] }),
+      await later.call('oxy_task_context', {
+        format: 'json',
+        cwd: project,
+        question: 'protocol compatibility',
+        paths: ['api.ts'],
+      }),
     );
     if (selected.kind !== 'task-context') throw new Error(JSON.stringify(selected));
     expect(selected.learnings[0]).toMatchObject({
@@ -89,13 +96,20 @@ test('MCP learning proposal is reviewed in the core manager and reused only whil
     await writeFile(join(project, 'api.ts'), 'export function protocol() { return 2; }\n');
     expect(
       decode(
-        await later.call('oxy_task_context', { cwd: project, question: 'protocol compatibility', paths: ['api.ts'] }),
+        await later.call('oxy_task_context', {
+          format: 'json',
+          cwd: project,
+          question: 'protocol compatibility',
+          paths: ['api.ts'],
+        }),
       ),
     ).toMatchObject({ learnings: [] });
     await dialog.getByRole('button', { name: 'Refresh learnings' }).click();
     await expect(list).toContainText('needs-review');
     await dialog.getByLabel('Memory mode').selectOption('off');
-    expect(decode(await later.call('oxy_task_context', { cwd: project, question: 'protocol' }))).toMatchObject({
+    expect(
+      decode(await later.call('oxy_task_context', { format: 'json', cwd: project, question: 'protocol' })),
+    ).toMatchObject({
       memory: 'off',
       learnings: [],
     });
@@ -645,7 +659,7 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
     await writeFile(join(project, 'api.ts'), 'export function afterEdit() {}\n');
     const found = await client.call('oxy_find_code', { query: 'afterEdit', cwd: project });
     expect(found.result?.content?.[0]?.text).toContain('afterEdit');
-    expect(found.result?.content?.[0]?.text).toContain('"stale":false');
+    expect(found.result?.content?.[0]?.text).toContain('stale=false');
     expect(
       (await client.call('oxy_file_outline', { path: 'api.ts', cwd: project })).result?.content?.[0]?.text,
     ).toContain('afterEdit');

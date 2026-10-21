@@ -62,6 +62,72 @@ it('outlines only indexed paths and filters repo map at path boundaries', () => 
   expect(map).toContain('src/login.ts');
   expect(map).not.toContain('loginExtra');
 });
+it('ranks configuration declarations ahead of directory-only matches in English and Polish', () => {
+  const graph = fixture();
+  const settings = fileRecord('src/domain/code-map.ts', '').file;
+  graph.files.push(
+    settings,
+    ...Array.from({ length: 30 }, (_, i) => fileRecord(`docs/code-map/plan-${i}.md`, '').file),
+  );
+  graph.symbols.push({
+    id: 's:settings',
+    file: settings.id,
+    name: 'CodeMapSettingsSchema',
+    kind: 'variable',
+    owner: null,
+    exported: true,
+    signature: 'const CodeMapSettingsSchema',
+    span: [3, 0, 20, 1],
+  });
+  const search = new CodeSearch(graph);
+  for (const query of ['code map configuration', 'Gdzie w aplikacji mamy konfigurację code map']) {
+    expect(search.search(query, undefined, 6).matches[0]?.id).toBe('s:settings');
+  }
+  expect(search.search('CodeMapSettingsSchema', undefined, 8).matches.map((m) => m.id)).toEqual(['s:settings']);
+  expect(search.search('docs/code-map/plan-0.md', undefined, 8).matches.map((m) => m.path)).toEqual([
+    'docs/code-map/plan-0.md',
+  ]);
+});
+
+it('keeps useful edges with their endpoints when a relation response is budgeted', () => {
+  const graph = fixture();
+  graph.files.push(...Array.from({ length: 20 }, (_, i) => fileRecord(`src/dependent-${i}.ts`, '').file));
+  graph.edges.push(
+    ...graph.files
+      .slice(4)
+      .map((f) => ({ from: f.id, to: graph.files[0]!.id, rel: 'imports' as const, prov: 'binding' as const })),
+  );
+  const request = CodeMapQuerySchema.parse({ kind: 'relations', path: graph.files[0]!.path, direction: 'incoming' });
+  if (request.kind !== 'relations') throw new Error('wrong kind');
+  const data = new CodeRelations(graph).query(request).data!;
+  const bounded = boundResult(
+    {
+      checkoutId: 'test',
+      code: 'OK',
+      freshness: {
+        generation: 1,
+        state: 'ready',
+        stale: false,
+        verification: 'metadata',
+        checkedAt: null,
+        lastFullHashAt: null,
+        pendingFiles: 0,
+        coverage: graph.coverage,
+        warnings: [],
+      },
+      data,
+      truncated: false,
+      reasons: [],
+      hint: '',
+    },
+    2000,
+  );
+  expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(2000);
+  if (bounded.data?.kind !== 'relations') throw new Error('lost relations');
+  expect(bounded.data.edges.length).toBeGreaterThan(0);
+  const ids = new Set(bounded.data.nodes.map((n) => n.value.id));
+  expect(bounded.data.edges.every((e) => ids.has(e.from) && ids.has(e.to))).toBe(true);
+});
 it('returns explicit nodes, evidence and provenance-filtered bounded relations', () => {
   const relations = new CodeRelations(fixture());
   const request = CodeMapQuerySchema.parse({ kind: 'relations', path: 'src/user_service.ts', direction: 'incoming' });

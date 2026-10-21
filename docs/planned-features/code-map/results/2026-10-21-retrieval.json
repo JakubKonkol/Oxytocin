@@ -1,0 +1,187 @@
+{
+  "baseline": "7c4f694d949b12238ede33fffb19f1fe3c842b7a",
+  "graphSha256": "e87c94e0d2b177558bc818a9a90a486284113f7a10bf8df0f215a363518ee319",
+  "files": 1158,
+  "symbols": 14021,
+  "units": "UTF-16 characters in complete tool response; no tokenizer or agent billing measurement",
+  "mapBeforeBytes": 27149,
+  "mapAfterBytes": 6043,
+  "rows": [
+    {
+      "question": "code map configuration",
+      "beforeSearchChars": 2760,
+      "afterSearchChars": 1538,
+      "beforeContextChars": 7601,
+      "afterContextChars": 1668,
+      "beforeTop": [
+        "docs/planned-features/code-map/README.md:README.md",
+        "docs/planned-features/code-map/etap-00-spike-parsera.md:etap-00-spike-parsera.md",
+        "docs/planned-features/code-map/etap-01-fundament-host-i-katalog-oxy.md:etap-01-fundament-host-i-katalog-oxy.md",
+        "docs/planned-features/code-map/etap-02-enumeracja-watcher-harmonogram.md:etap-02-enumeracja-watcher-harmonogram.md",
+        "docs/planned-features/code-map/etap-03-graf-typescript-i-map-md.md:etap-03-graf-typescript-i-map-md.md",
+        "docs/planned-features/code-map/etap-04-serwis-ipc-ui-wydanie-1a.md:etap-04-serwis-ipc-ui-wydanie-1a.md",
+        "docs/planned-features/code-map/etap-05-csharp.md:etap-05-csharp.md",
+        "docs/planned-features/code-map/etap-06-narzedzia-mcp.md:etap-06-narzedzia-mcp.md"
+      ],
+      "afterTop": [
+        "src/shared/domain/code-map.ts:CodeMapSettings",
+        "src/shared/rpc/contracts/code-map-host.ts:ConfigureCodeMapCheckout",
+        "src/renderer/src/features/projects/project-settings-model.ts:codeMap",
+        "src/renderer/src/features/projects/settings/CodeMapTab.tsx:CodeMapTab.tsx",
+        "scripts/code-map-parser-spike.ts:config",
+        "scripts/lib/code-map-evaluation.ts:EvaluationConfig",
+        "src/code-map-host/checkouts.ts:configure",
+        "src/code-map-host/resolve/config.ts:config.ts"
+      ]
+    },
+    {
+      "question": "Gdzie w aplikacji mamy konfigurację code map",
+      "beforeSearchChars": 2760,
+      "afterSearchChars": 1538,
+      "beforeContextChars": 7601,
+      "afterContextChars": 1668,
+      "beforeTop": [
+        "docs/planned-features/code-map/README.md:README.md",
+        "docs/planned-features/code-map/etap-00-spike-parsera.md:etap-00-spike-parsera.md",
+        "docs/planned-features/code-map/etap-01-fundament-host-i-katalog-oxy.md:etap-01-fundament-host-i-katalog-oxy.md",
+        "docs/planned-features/code-map/etap-02-enumeracja-watcher-harmonogram.md:etap-02-enumeracja-watcher-harmonogram.md",
+        "docs/planned-features/code-map/etap-03-graf-typescript-i-map-md.md:etap-03-graf-typescript-i-map-md.md",
+        "docs/planned-features/code-map/etap-04-serwis-ipc-ui-wydanie-1a.md:etap-04-serwis-ipc-ui-wydanie-1a.md",
+        "docs/planned-features/code-map/etap-05-csharp.md:etap-05-csharp.md",
+        "docs/planned-features/code-map/etap-06-narzedzia-mcp.md:etap-06-narzedzia-mcp.md"
+      ],
+      "afterTop": [
+        "src/shared/domain/code-map.ts:CodeMapSettings",
+        "src/shared/rpc/contracts/code-map-host.ts:ConfigureCodeMapCheckout",
+        "src/renderer/src/features/projects/project-settings-model.ts:codeMap",
+        "src/renderer/src/features/projects/settings/CodeMapTab.tsx:CodeMapTab.tsx",
+        "scripts/code-map-parser-spike.ts:config",
+        "scripts/lib/code-map-evaluation.ts:EvaluationConfig",
+        "src/code-map-host/checkouts.ts:configure",
+        "src/code-map-host/resolve/config.ts:config.ts"
+      ]
+    },
+    {
+      "question": "getSettings",
+      "beforeSearchChars": 3323,
+      "afterSearchChars": 372,
+      "beforeContextChars": 7892,
+      "afterContextChars": 556,
+      "beforeTop": [
+        "src/renderer/src/stores/settings-store.ts:getSettings",
+        "src/main/services/settings/keybindings-service.ts:state",
+        "src/main/services/settings/settings-service.ts:get",
+        "src/main/services/terminals/profiles.ts:constructor",
+        "tests/e2e/settings.spec.ts:__oxyTest",
+        "packages/plugin-api/index.d.ts:getLimits",
+        "packages/plugin-sdk/src/index.ts:visible",
+        "plugins/claude-code-bridge/src/host/events.ts:size"
+      ],
+      "afterTop": [
+        "src/renderer/src/stores/settings-store.ts:getSettings"
+      ],
+      "plainSearch": {
+        "command": [
+          "rg",
+          "-n",
+          "-F",
+          "--glob",
+          "!*.test.*",
+          "--glob",
+          "!*.spec.*",
+          "getSettings",
+          "src"
+        ],
+        "chars": 2185
+      }
+    },
+    {
+      "question": "terminal profiles",
+      "beforeSearchChars": 3726,
+      "afterSearchChars": 2043,
+      "beforeContextChars": 7584,
+      "afterContextChars": 1961,
+      "beforeTop": [
+        "plugins/project-runner/src/host/profiles.ts:newTerminal",
+        "src/main/services/plugins/contributions.ts:pluginTerminalProfiles",
+        "src/main/services/terminals/profiles.ts:argsFor",
+        "src/main/services/terminals/shell-detect/agents.ts:detectAgentProfiles",
+        "src/main/services/terminals/shell-detect/posix.ts:detectPosixProfiles",
+        "src/main/services/terminals/shell-detect/win.ts:detectWindowsProfiles",
+        "src/main/services/terminals/terminal-service.ts:profiles",
+        "src/renderer/src/features/projects/ProjectSettingsDialog.tsx:ProfileSelect"
+      ],
+      "afterTop": [
+        "src/main/services/plugins/contributions.ts:pluginTerminalProfiles",
+        "src/main/services/terminals/profiles.ts:profiles",
+        "src/main/services/terminals/shell-detect/agents.ts:detectAgentProfiles",
+        "src/main/services/terminals/shell-detect/posix.ts:detectPosixProfiles",
+        "src/main/services/terminals/shell-detect/win.ts:detectWindowsProfiles",
+        "src/main/services/terminals/terminal-service.ts:profiles",
+        "src/renderer/src/features/projects/ProjectSettingsDialog.tsx:profiles",
+        "plugins/project-runner/src/host/profiles.ts:newTerminal"
+      ]
+    },
+    {
+      "question": "CodeMapService",
+      "beforeSearchChars": 3750,
+      "afterSearchChars": 368,
+      "beforeContextChars": 7668,
+      "afterContextChars": 552,
+      "beforeTop": [
+        "src/main/services/code-map/code-map-service.ts:CodeMapService",
+        "src/main/services/ensemble/ensemble-service.ts:codeMap",
+        "src/main/services/mcp/code-map-learning-tools.ts:buildLearningTools",
+        "src/main/services/mcp/code-map-tools.ts:buildCodeMapTools",
+        "src/main/services/mcp/mcp-hub.ts:codeMap",
+        "src/main/services/plugins/plugin-host-service.ts:codeMapKnowledgeRequests",
+        "src/main/services/code-map/code-map-service.test.ts:code-map-service.test.ts",
+        "src/main/services/code-map/worktrees.test.ts:Deps"
+      ],
+      "afterTop": [
+        "src/main/services/code-map/code-map-service.ts:CodeMapService"
+      ],
+      "plainSearch": {
+        "command": [
+          "rg",
+          "-n",
+          "-F",
+          "--glob",
+          "!*.test.*",
+          "--glob",
+          "!*.spec.*",
+          "CodeMapService",
+          "src"
+        ],
+        "chars": 1588
+      }
+    },
+    {
+      "question": "where is MCP server configuration",
+      "beforeSearchChars": 3270,
+      "afterSearchChars": 1615,
+      "beforeContextChars": 7892,
+      "afterContextChars": 1591,
+      "beforeTop": [
+        "src/main/services/mcp/http-server.ts:isAllowedHost",
+        "plugins/project-runner/src/host/index.ts:legacyMcp",
+        "plugins/project-runner/src/host/mcp.ts:McpServer",
+        "src/main/services/ensemble/adapters.ts:mcpServerJson",
+        "src/main/services/mcp/client-registration.ts:isConnectedToClaude",
+        "src/main/services/mcp/code-map-learning-tools.ts:isLearningTool",
+        "src/main/services/mcp/code-map-tools.ts:isCodeMapTool",
+        "src/main/services/mcp/codex-registration.ts:codexServer"
+      ],
+      "afterTop": [
+        "src/main/services/mcp/codex-registration.ts:codexServer",
+        "src/main/services/mcp/mcp-hub.ts:serverKey",
+        "plugins/project-runner/src/host/mcp.ts:McpServer",
+        "src/main/services/ensemble/adapters.ts:mcpServerJson",
+        "src/main/services/mcp/http-server.ts:McpHttpServer",
+        "src/shared/domain/mcp.ts:MCP_SERVER_NAME",
+        "src/shared/ensemble/clis.ts:ENSEMBLE_MCP_SERVER",
+        "src/main/services/mcp/client-registration.ts:mcpConfigJson"
+      ]
+    }
+  ]
+}

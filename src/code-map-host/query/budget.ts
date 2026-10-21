@@ -15,9 +15,11 @@ export function boundResult(input: CodeMapQueryResult, maxChars: number): CodeMa
       data.definitions.length = Math.floor(data.definitions.length * 0.8);
     else if (data.kind === 'outline' && data.imports.length)
       data.imports.length = Math.floor(data.imports.length * 0.8);
-    else if (data.kind === 'relations' && data.edges.length) data.edges.length = Math.floor(data.edges.length * 0.8);
-    else if (data.kind === 'relations' && data.nodes.length > 1)
-      data.nodes.length = Math.max(1, Math.floor(data.nodes.length * 0.8));
+    else if (data.kind === 'relations' && data.nodes.length > 1) {
+      // Keep a useful connected prefix instead of spending the budget on orphan nodes.
+      const removed = data.nodes.pop()!;
+      data.edges = data.edges.filter((edge) => edge.from !== removed.value.id && edge.to !== removed.value.id);
+    } else if (data.kind === 'relations' && data.edges.length) data.edges.pop();
     else if (data.kind === 'repo-map' && data.markdown.length > 100)
       data.markdown = data.markdown.slice(0, Math.floor(data.markdown.length * 0.8));
     else {

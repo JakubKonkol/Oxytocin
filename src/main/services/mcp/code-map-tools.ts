@@ -3,6 +3,7 @@ import { CodeMapQuerySchemas, type CodeMapQueryInput } from '@shared/domain/code
 import type { CodeMapService } from '../code-map/code-map-service';
 import type { CoreTool } from './core-tools';
 import { NO_PROJECT_MESSAGE } from './caller-context';
+import { formatCodeMap } from './code-map-format';
 
 export const CODE_MAP_TOOL_KINDS = {
   oxy_code_map_status: 'status',
@@ -29,7 +30,13 @@ const descriptions: Record<keyof typeof CODE_MAP_TOOL_KINDS, string> = {
 };
 export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreTool[] {
   return Object.entries(CODE_MAP_TOOL_KINDS).map(([name, kind]) => {
-    const schema = CodeMapQuerySchemas[kind].safeExtend(selectors);
+    const schema = CodeMapQuerySchemas[kind].safeExtend({
+      ...selectors,
+      format: z
+        .enum(['compact', 'json'])
+        .default('compact')
+        .describe('Compact reading output by default; json returns the full inspection envelope.'),
+    });
     const inputSchema = { ...z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' }), type: 'object' as const };
     delete inputSchema['$schema'];
     return {
@@ -49,15 +56,14 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
           );
         if (caller.projectError || !caller.context.projectId)
           throw new CodeMapToolInputError(caller.projectError ?? NO_PROJECT_MESSAGE);
-        const { cwd: _cwd, project: _project, ...options } = parsed.data;
-        return JSON.stringify(
-          await service.query(
-            caller.context.projectId,
-            { ...options, kind } as CodeMapQueryInput,
-            signal,
-            caller.context.checkoutId,
-          ),
+        const { cwd: _cwd, project: _project, format, ...options } = parsed.data;
+        const result = await service.query(
+          caller.context.projectId,
+          { ...options, kind } as CodeMapQueryInput,
+          signal,
+          caller.context.checkoutId,
         );
+        return format === 'json' ? JSON.stringify(result) : formatCodeMap(result);
       },
     } satisfies CoreTool;
   });

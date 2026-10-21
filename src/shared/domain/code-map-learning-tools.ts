@@ -13,6 +13,7 @@ export const TaskContextQuerySchema = z
     question: z.string().trim().min(1).max(2000),
     paths: z.array(CodeMapRelativePathSchema).max(8).default([]),
     symbolIds: z.array(z.string().min(1).max(8192)).max(8).default([]),
+    limit: z.number().int().min(1).max(30).default(6),
     maxChars: z.number().int().min(1).max(24000).default(8000),
     freshness: CodeMapFreshnessModeSchema.default('latest'),
   })

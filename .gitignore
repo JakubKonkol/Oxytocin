@@ -20,3 +20,5 @@ perf-results.json
 /tests/fixtures/plugins/*/oxy-theme.css
 /plugins/*/dist/
 /plugins/*/oxytocin-checksums.json
+# Oxytocin local data (Code Map)
+/.oxy/

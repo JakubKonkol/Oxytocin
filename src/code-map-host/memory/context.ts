@@ -10,7 +10,7 @@ import type { z } from 'zod';
 import { CodeSearch, terms } from '../query/search';
 import { CodeRelations } from '../query/relations';
 
-const indexes = new WeakMap<CodeMapGraph, { search: CodeSearch; relations: CodeRelations }>();
+const indexes = new WeakMap<CodeMapGraph, { search: CodeSearch; relations?: CodeRelations }>();
 const lookups = new WeakMap<
   CodeMapGraph,
   { files: Map<string, CodeMapGraph['files'][number]>; symbols: Map<string, CodeMapGraph['symbols'][number]> }
@@ -96,7 +96,7 @@ export function taskContext(
   if (graph && (!freshness.stale || query.freshness === 'allow-stale')) {
     let index = indexes.get(graph);
     if (!index) {
-      index = { search: new CodeSearch(graph), relations: new CodeRelations(graph) };
+      index = { search: new CodeSearch(graph) };
       indexes.set(graph, index);
     }
     const add = (id: string, why: string) => {
@@ -107,7 +107,12 @@ export function taskContext(
     for (const id of query.symbolIds) add(id, 'exact symbol anchor');
     if (nodes.length < new Set([...query.paths.map((p) => `f:${p}`), ...query.symbolIds]).size)
       result.warnings.push('Some requested anchors are absent or excluded in this generation; use normal search.');
-    const found = index.search.search(query.question, undefined, 30).matches;
+    const search = index.search.search(query.question, undefined, query.limit);
+    if (search.truncated) {
+      result.truncated = true;
+      result.warnings.push('Search result limit reached; narrow the question or increase limit.');
+    }
+    const found = search.matches;
     // Prefer file diversity before additional symbols from the same file.
     const paths = new Set(nodes.map((n) => n.path));
     for (const item of found)
@@ -117,7 +122,13 @@ export function taskContext(
       }
     for (const item of found) add(item.id, 'lexical match');
     const first = nodes[0];
-    if (first) {
+    if (
+      first &&
+      (query.paths.length ||
+        query.symbolIds.length ||
+        /\b(callers?|depends?|dependencies|relations?|impact|wywoł|zależno)/iu.test(query.question))
+    ) {
+      index.relations ??= new CodeRelations(graph);
       const related = index.relations.query({
         kind: 'relations',
         ...(first.kind === 'symbol' ? { symbolId: first.id } : { path: first.path! }),
@@ -128,9 +139,17 @@ export function taskContext(
         freshness: query.freshness,
         maxChars: 24000,
       });
-      for (const node of related.data?.nodes ?? []) add(node.value.id, 'one supported relation hop');
       relationCandidates = related.data?.edges.length ?? 0;
-      relations.push(...(related.data?.edges ?? []).slice(0, 100));
+      relations.push(...(related.data?.edges ?? []).slice(0, 4));
+      const neighbors = new Set(relations.flatMap((edge) => [edge.from, edge.to]));
+      for (const node of related.data?.nodes ?? [])
+        if (neighbors.has(node.value.id)) add(node.value.id, 'one supported relation hop');
+      // Reserve early slots for the actual neighborhood, before unrelated lexical matches.
+      nodes.sort(
+        (a, b) =>
+          Number(b.id === first.id) - Number(a.id === first.id) ||
+          Number(neighbors.has(b.id)) - Number(neighbors.has(a.id)),
+      );
       if (related.truncated) {
         result.truncated = true;
         result.warnings.push(
@@ -175,7 +194,7 @@ export function taskContext(
     spent += size;
     return true;
   };
-  for (const node of nodes) addNode(node, codeBudget);
+  for (const node of nodes) addNode(node, relations.length ? Math.floor(codeBudget * 0.7) : codeBudget);
   const addEdge = (edge: TaskContextResult['relations'][number], limit: number) => {
     const size = JSON.stringify(edge).length + 1;
     if (

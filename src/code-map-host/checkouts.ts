@@ -104,6 +104,13 @@ export class CodeMapCheckouts {
       status.gitIgnored = await isMapGitIgnored(config.root, config.gitPath);
       status.error = prepared.warning;
       checkout.warning = prepared.warning;
+      if (prepared.lease) {
+        for (const file of ['CLAUDE.md', 'AGENTS.md'] as const) {
+          // Opted-in generated instructions evolve with the tools. Unsafe, read-only or user-edited
+          // files remain untouched and must not prevent code indexing.
+          await editAgentInstructions(config.root, file, 'refresh').catch(() => undefined);
+        }
+      }
       checkout.graph = new GraphEngine({
         root: config.root,
         assets: this.runtime.assets,
