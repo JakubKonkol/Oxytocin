@@ -41,6 +41,7 @@ function App() {
   const positions = useRef(new Map<string, { x: number; y: number }>()),
     current = useRef(selection),
     refresh = useRef<() => void>(() => {});
+  const camera = useRef<{ zoom: number; pan: { x: number; y: number } } | undefined>(undefined);
   useEffect(() => {
     current.current = selection;
   }, [selection]);
@@ -215,6 +216,8 @@ function App() {
         elements: [],
         layout: { name: 'preset' },
         pixelRatio: 1,
+        minZoom: 0.15,
+        maxZoom: 2.5,
         hideEdgesOnViewport: true,
         textureOnViewport: true,
         style: [
@@ -225,6 +228,11 @@ function App() {
               'background-color': color('--accent'),
               color: color('--text-primary'),
               'font-size': 11,
+              width: 12,
+              height: 12,
+              'text-valign': 'bottom',
+              'text-margin-y': 6,
+              'min-zoomed-font-size': 9,
               'text-max-width': '140px',
               'text-wrap': 'ellipsis',
             },
@@ -232,14 +240,43 @@ function App() {
           {
             selector: 'edge',
             style: {
-              label: 'data(rel)',
+              label: '',
               width: 1,
               'line-color': color('--text-muted'),
               'target-arrow-color': color('--text-muted'),
               'target-arrow-shape': 'triangle',
               'curve-style': 'bezier',
               'font-size': 9,
+              opacity: 0.3,
+              'arrow-scale': 0.6,
               color: color('--text-muted'),
+            },
+          },
+          {
+            selector: 'node[kind = "group"]',
+            style: { 'background-color': color('--map-folder'), width: 20, height: 20 },
+          },
+          { selector: 'node[kind = "file"]', style: { 'background-color': color('--map-file') } },
+          { selector: 'node[kind = "symbol"]', style: { 'background-color': color('--map-symbol') } },
+          { selector: '.muted-node', style: { opacity: 0.15 } },
+          {
+            selector: 'edge.focus-edge',
+            style: {
+              opacity: 0.9,
+              label: 'data(rel)',
+              width: 1.5,
+              'text-background-opacity': 1,
+              'text-background-color': color('--bg-card'),
+              'text-background-padding': '3px',
+            },
+          },
+          {
+            selector: 'node.focus-node',
+            style: {
+              'min-zoomed-font-size': 0,
+              'text-outline-width': 2,
+              'text-outline-color': color('--bg-card'),
+              'z-index': 10,
             },
           },
           { selector: 'edge[rel = "contains"]', style: { 'line-style': 'dotted', 'target-arrow-shape': 'none' } },
@@ -295,7 +332,14 @@ function App() {
       });
       cy.current = instance;
       instance.on('tap', 'node', (e) => setSelected((e.target as NodeSingular).id()));
+      instance.on('tap', (e) => {
+        if (e.target === instance) setSelected(undefined);
+      });
+      const resize = new ResizeObserver(() => instance.resize());
+      resize.observe(graph.current);
       return () => {
+        resize.disconnect();
+        camera.current = { zoom: instance.zoom(), pan: { ...instance.pan() } };
         for (const node of instance.nodes()) positions.current.set(node.id(), { ...node.position() });
         instance.destroy();
         cy.current = null;
@@ -313,6 +357,7 @@ function App() {
     const visibleNodes = JSON.parse(nodesKey) as CodeMapSliceNode[],
       visibleEdges = JSON.parse(edgesKey) as CodeMapSliceEdge[];
     for (const node of instance.nodes()) positions.current.set(node.id(), { ...node.position() });
+    const needsLayout = visibleNodes.some((n) => !positions.current.has(n.id));
     const next = stablePositions(
         visibleNodes.map((n) => n.id),
         positions.current,
@@ -320,12 +365,57 @@ function App() {
       first = instance.nodes().length === 0;
     instance.batch(() => {
       instance.elements().remove();
-      instance.add(visibleNodes.map((n) => ({ data: { ...n }, position: next.get(n.id) })));
+      instance.add(
+        visibleNodes.map((n) => ({
+          data: { ...n, label: n.kind === 'file' ? n.label.split('/').at(-1) : n.label },
+          position: next.get(n.id),
+        })),
+      );
       instance.add(visibleEdges.map((e, i) => ({ data: { ...e, id: `edge:${i}`, source: e.from, target: e.to } })));
     });
     positions.current = next;
-    if (first) instance.fit(undefined, 40);
+    if (first && visibleNodes.length) {
+      if (!needsLayout && camera.current) {
+        instance.zoom(camera.current.zoom);
+        instance.pan(camera.current.pan);
+        return;
+      }
+      instance
+        .layout({
+          name: 'cose',
+          animate: false,
+          randomize: false,
+          fit: false,
+          nodeDimensionsIncludeLabels: true,
+          nodeRepulsion: () => 12000,
+          idealEdgeLength: () => 140,
+          nodeOverlap: 20,
+          componentSpacing: 80,
+          gravity: 0.25,
+          numIter: 500,
+        })
+        .run();
+      instance.fit(undefined, 65);
+      if (instance.zoom() > 1.2) {
+        instance.zoom(1.2);
+        instance.center();
+      }
+    }
   }, [nodesKey, edgesKey, listOnly, theme, available]);
+  useEffect(() => {
+    const instance = cy.current;
+    if (!instance) return;
+    instance.elements().removeClass('muted-node focus-node focus-edge');
+    instance.nodes().unselect();
+    if (!selected) return;
+    const node = instance.getElementById(selected);
+    if (!node.length) return;
+    node.select();
+    const neighbors = node.closedNeighborhood();
+    instance.elements().difference(neighbors).addClass('muted-node');
+    neighbors.nodes().addClass('focus-node');
+    neighbors.edges().addClass('focus-edge');
+  }, [selected, nodesKey, edgesKey, listOnly, theme, available]);
   const navigate = (next: Selection) => {
     gate.current.invalidate();
     setSelected(undefined);
@@ -380,7 +470,7 @@ function App() {
     <main className="map">
       <header>
         <h1>Code Map · {model.project?.name ?? 'No project'}</h1>
-        <span>
+        <span className="snapshot" title="Index snapshot">
           {model.checkouts.find((c) => c.checkoutId === response?.checkoutId)?.label ?? 'Main checkout'} ·{' '}
           {response?.freshness.state ?? 'Unavailable'} · Generation {response?.freshness.generation ?? '—'}
         </span>
@@ -420,202 +510,245 @@ function App() {
         </section>
       ) : (
         <>
-          <nav aria-label="Code Map views">
-            {(
-              ['overview', 'file', 'neighborhood', 'search', 'changes', 'impact', 'knowledge', 'task-context'] as const
-            ).map((mode) => (
+          <div className="toolbar">
+            <div className="mode-tabs" aria-label="Display mode">
               <button
-                key={mode}
-                aria-current={selection.view === mode ? 'page' : undefined}
-                disabled={
-                  ((mode === 'file' || mode === 'neighborhood') && !selection.root) ||
-                  (mode === 'impact' && !selection.root && (!chosen?.path || chosen.kind === 'group'))
-                }
-                onClick={() =>
-                  navigate({
-                    ...selection,
-                    view: mode,
-                    generation: undefined,
-                    ...(mode === 'impact' && chosen
-                      ? {
-                          root:
-                            chosen.kind === 'symbol'
-                              ? { symbolId: chosen.id }
-                              : chosen.path
-                                ? { path: chosen.path }
-                                : selection.root,
-                        }
-                      : {}),
-                  })
-                }
+                aria-pressed={knowledge && !listOnly}
+                onClick={() => {
+                  setListOnly(false);
+                  navigate({ ...selection, view: 'knowledge', generation: undefined });
+                }}
               >
-                {mode === 'task-context' ? 'Task context' : mode[0]!.toUpperCase() + mode.slice(1)}
+                Context
               </button>
-            ))}
-            <button disabled={history.at === 0} onClick={() => travel(-1)}>
-              Back
-            </button>
-            <button disabled={history.at >= history.entries.length - 1} onClick={() => travel(1)}>
-              Forward
-            </button>
-            <button onClick={() => refresh.current()}>Refresh</button>
-            <label>
-              <input type="checkbox" checked={listOnly} onChange={(e) => setListOnly(e.target.checked)} />
-              List only
-            </label>
-          </nav>
-          {knowledge && (
-            <section className="knowledge-controls" aria-label="Learning inspection">
-              <p role="note">
-                Reference findings and recorded evidence. Matching evidence does not verify a claim. Reviewed findings,
-                pending proposals and findings needing review have distinct shapes.
-              </p>
-              <button onClick={() => void view?.executeCommand('oxytocin.codeMap.openLearnings', model.project?.id)}>
-                Open Learnings manager
+              <button
+                aria-pressed={!knowledge && !listOnly}
+                onClick={() => {
+                  setListOnly(false);
+                  navigate({ ...initial(), checkoutId: selection.checkoutId });
+                }}
+              >
+                Code
               </button>
-              {selection.view === 'knowledge' ? (
-                <label>
-                  Findings{' '}
-                  <select
-                    aria-label="Learning filter"
-                    value={selection.learningState}
-                    onChange={(e) =>
-                      navigate({
-                        ...selection,
-                        learningState: e.target.value as Selection['learningState'],
-                        generation: undefined,
-                      })
-                    }
-                  >
-                    <option value="active">Applicable reviewed</option>
-                    <option value="pending">Pending proposals</option>
-                    <option value="stale">Needs review</option>
-                    <option value="all">All (inspection)</option>
-                  </select>
-                </label>
-              ) : (
-                <div>
-                  <label>
-                    Context receipt{' '}
-                    <input
-                      aria-label="Context receipt"
-                      maxLength={200}
-                      value={receiptText}
-                      onChange={(e) => setReceiptText(e.target.value)}
-                    />
-                  </label>
-                  <button
-                    disabled={!receiptText.trim()}
-                    onClick={() =>
-                      void view?.executeCommand('oxytocin.codeMap.openReceipt', {
-                        projectId: model.project!.id,
-                        checkoutId: selection.checkoutId ?? model.project!.id,
-                        receipt: receiptText.trim(),
-                      })
-                    }
-                  >
-                    Open context receipt
-                  </button>
-                  <p role="status">
-                    {!selection.receipt
-                      ? 'Enter a receipt returned by oxy_task_context.'
-                      : response?.code && response.code !== 'OK'
-                        ? `Task context unavailable: ${response.code}. ${response.hint}`
-                        : 'Selected items only; the original question is not retained.'}
-                  </p>
-                </div>
-              )}
-              {response?.code === 'MEMORY_OFF' && (
-                <p role="status">Memory is off. Findings remain in the core Learnings manager.</p>
-              )}
-            </section>
-          )}
-          {!knowledge && (
-            <>
-              <div className="controls">
-                <input
-                  aria-label="Search code"
-                  placeholder="Symbol or path"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter')
-                      navigate({ ...selection, view: 'search', query: searchText, generation: undefined });
-                  }}
-                />
+              <button aria-pressed={listOnly} onClick={() => setListOnly(!listOnly)}>
+                Outline
+              </button>
+            </div>
+            <div
+              className="search"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter')
+                  navigate({ ...selection, view: 'search', query: searchText, generation: undefined });
+              }}
+            >
+              <input
+                aria-label="Search code"
+                placeholder="Search symbols or files…"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+              />
+              <button
+                onClick={() => navigate({ ...selection, view: 'search', query: searchText, generation: undefined })}
+              >
+                Find
+              </button>
+            </div>
+            <span className="counts">
+              {nodes.length} nodes · {edges.length} links
+            </span>
+          </div>
+          <details className="filters">
+            <summary>
+              Views &amp; filters{' '}
+              <span>
+                {selection.view}
+                {selection.root && 'path' in selection.root ? ` / ${selection.root.path}` : ''}
+              </span>
+            </summary>
+            <nav aria-label="Code Map views">
+              {(
+                [
+                  'overview',
+                  'file',
+                  'neighborhood',
+                  'search',
+                  'changes',
+                  'impact',
+                  'knowledge',
+                  'task-context',
+                ] as const
+              ).map((mode) => (
                 <button
-                  onClick={() => navigate({ ...selection, view: 'search', query: searchText, generation: undefined })}
+                  key={mode}
+                  aria-current={selection.view === mode ? 'page' : undefined}
+                  disabled={
+                    ((mode === 'file' || mode === 'neighborhood') && !selection.root) ||
+                    (mode === 'impact' && !selection.root && (!chosen?.path || chosen.kind === 'group'))
+                  }
+                  onClick={() =>
+                    navigate({
+                      ...selection,
+                      view: mode,
+                      generation: undefined,
+                      ...(mode === 'impact' && chosen
+                        ? {
+                            root:
+                              chosen.kind === 'symbol'
+                                ? { symbolId: chosen.id }
+                                : chosen.path
+                                  ? { path: chosen.path }
+                                  : selection.root,
+                          }
+                        : {}),
+                    })
+                  }
                 >
-                  Find
+                  {mode === 'task-context' ? 'Task context' : mode[0]!.toUpperCase() + mode.slice(1)}
                 </button>
-              </div>
-              <div className="controls">
-                <label>
-                  Direction
-                  <select
-                    value={
-                      selection.view === 'impact' || selection.view === 'changes' ? 'incoming' : selection.direction
-                    }
-                    disabled={selection.view === 'impact' || selection.view === 'changes'}
-                    onChange={(e) => navigate({ ...selection, direction: e.target.value as Selection['direction'] })}
-                  >
-                    {['both', 'incoming', 'outgoing'].map((v) => (
-                      <option key={v}>{v}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Depth
-                  <select
-                    value={selection.depth}
-                    onChange={(e) => navigate({ ...selection, depth: Number(e.target.value) })}
-                  >
-                    {[1, 2, 3].map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Evidence
-                  <select value={provenance} onChange={(e) => setProvenance(e.target.value)}>
-                    {['all', 'syntax', 'binding', 'heuristic'].map((p) => (
-                      <option key={p}>{p}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={selection.includeHeuristic}
-                    onChange={(e) => navigate({ ...selection, includeHeuristic: e.target.checked })}
-                  />
-                  Include heuristic edges
-                </label>
-              </div>
-              <div className="controls" aria-label="Relation filters">
-                {relationTypes.map((rel) => (
-                  <label key={rel}>
+              ))}
+              <button disabled={history.at === 0} onClick={() => travel(-1)}>
+                Back
+              </button>
+              <button disabled={history.at >= history.entries.length - 1} onClick={() => travel(1)}>
+                Forward
+              </button>
+              <button onClick={() => refresh.current()}>Refresh</button>
+              <label>
+                <input type="checkbox" checked={listOnly} onChange={(e) => setListOnly(e.target.checked)} />
+                List only
+              </label>
+            </nav>
+            {knowledge && (
+              <section className="knowledge-controls" aria-label="Learning inspection">
+                <p role="note">
+                  Reference findings and recorded evidence. Matching evidence does not verify a claim. Reviewed
+                  findings, pending proposals and findings needing review have distinct shapes.
+                </p>
+                <button onClick={() => void view?.executeCommand('oxytocin.codeMap.openLearnings', model.project?.id)}>
+                  Open Learnings manager
+                </button>
+                {selection.view === 'knowledge' ? (
+                  <label>
+                    Findings{' '}
+                    <select
+                      aria-label="Learning filter"
+                      value={selection.learningState}
+                      onChange={(e) =>
+                        navigate({
+                          ...selection,
+                          learningState: e.target.value as Selection['learningState'],
+                          generation: undefined,
+                        })
+                      }
+                    >
+                      <option value="active">Applicable reviewed</option>
+                      <option value="pending">Pending proposals</option>
+                      <option value="stale">Needs review</option>
+                      <option value="all">All (inspection)</option>
+                    </select>
+                  </label>
+                ) : (
+                  <div>
+                    <label>
+                      Context receipt{' '}
+                      <input
+                        aria-label="Context receipt"
+                        maxLength={200}
+                        value={receiptText}
+                        onChange={(e) => setReceiptText(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      disabled={!receiptText.trim()}
+                      onClick={() =>
+                        void view?.executeCommand('oxytocin.codeMap.openReceipt', {
+                          projectId: model.project!.id,
+                          checkoutId: selection.checkoutId ?? model.project!.id,
+                          receipt: receiptText.trim(),
+                        })
+                      }
+                    >
+                      Open context receipt
+                    </button>
+                    <p role="status">
+                      {!selection.receipt
+                        ? 'Enter a receipt returned by oxy_task_context.'
+                        : response?.code && response.code !== 'OK'
+                          ? `Task context unavailable: ${response.code}. ${response.hint}`
+                          : 'Selected items only; the original question is not retained.'}
+                    </p>
+                  </div>
+                )}
+                {response?.code === 'MEMORY_OFF' && (
+                  <p role="status">Memory is off. Findings remain in the core Learnings manager.</p>
+                )}
+              </section>
+            )}
+            {!knowledge && (
+              <>
+                <div className="controls">
+                  <label>
+                    Direction
+                    <select
+                      value={
+                        selection.view === 'impact' || selection.view === 'changes' ? 'incoming' : selection.direction
+                      }
+                      disabled={selection.view === 'impact' || selection.view === 'changes'}
+                      onChange={(e) => navigate({ ...selection, direction: e.target.value as Selection['direction'] })}
+                    >
+                      {['both', 'incoming', 'outgoing'].map((v) => (
+                        <option key={v}>{v}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Depth
+                    <select
+                      value={selection.depth}
+                      onChange={(e) => navigate({ ...selection, depth: Number(e.target.value) })}
+                    >
+                      {[1, 2, 3].map((n) => (
+                        <option key={n}>{n}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Evidence
+                    <select value={provenance} onChange={(e) => setProvenance(e.target.value)}>
+                      {['all', 'syntax', 'binding', 'heuristic'].map((p) => (
+                        <option key={p}>{p}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     <input
                       type="checkbox"
-                      checked={selection.relations.includes(rel)}
-                      onChange={(e) => {
-                        const relations = e.target.checked
-                          ? [...selection.relations, rel]
-                          : selection.relations.filter((r) => r !== rel);
-                        if (relations.length) navigate({ ...selection, relations });
-                      }}
+                      checked={selection.includeHeuristic}
+                      onChange={(e) => navigate({ ...selection, includeHeuristic: e.target.checked })}
                     />
-                    {rel}
+                    Include heuristic edges
                   </label>
-                ))}
-              </div>
-            </>
-          )}
-          <div className="controls">
-            <button onClick={() => cy.current?.zoom(cy.current.zoom() * 1.2)}>Zoom in</button>
-            <button onClick={() => cy.current?.zoom(cy.current.zoom() / 1.2)}>Zoom out</button>
-            <button onClick={() => cy.current?.fit(undefined, 40)}>Fit</button>
-          </div>
+                </div>
+                <div className="controls" aria-label="Relation filters">
+                  {relationTypes.map((rel) => (
+                    <label key={rel}>
+                      <input
+                        type="checkbox"
+                        checked={selection.relations.includes(rel)}
+                        onChange={(e) => {
+                          const relations = e.target.checked
+                            ? [...selection.relations, rel]
+                            : selection.relations.filter((r) => r !== rel);
+                          if (relations.length) navigate({ ...selection, relations });
+                        }}
+                      />
+                      {rel}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </details>
           {grouped && (
             <p role="note">
               Potential dependents in indexed code. This list is not exhaustive; missing edges do not prove code is
@@ -654,35 +787,83 @@ function App() {
           <div className="body">
             <section className="content">
               {!listOnly && <div className="graph" ref={graph} aria-label="Code dependency graph" />}
-              <div className={`list ${listOnly ? 'full' : ''}`}>
-                <table aria-label="Code Map nodes">
-                  <thead>
-                    <tr>
-                      <th>Node</th>
-                      <th>Kind</th>
-                      <th>Relations / direction / evidence</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orderedNodes.map((n, i) => (
-                      <NodeRow
-                        key={n.id}
-                        node={n}
-                        edges={edges}
-                        setSelected={setSelected}
-                        expand={expand}
-                        folder={
-                          grouped
-                            ? n.path?.slice(0, n.path.lastIndexOf('/') < 0 ? 0 : n.path.lastIndexOf('/')) || '.'
-                            : undefined
+              {!listOnly && (
+                <>
+                  <div className="graph-caption">
+                    {selection.view === 'overview' ? 'PROJECT STRUCTURE' : selection.view.toUpperCase()}
+                    <span>Click to inspect · double-click a node in Outline to explore</span>
+                  </div>
+                  <div className="graph-legend" aria-label="Node types">
+                    <span className="group-key">Folder</span>
+                    <span className="file-key">File</span>
+                    <span className="symbol-key">Symbol</span>
+                    {knowledge && <span>◇ Finding</span>}
+                  </div>
+                  <div className="zoom-controls">
+                    <button aria-label="Zoom in" onClick={() => cy.current?.zoom(cy.current.zoom() * 1.2)}>
+                      +
+                    </button>
+                    <button aria-label="Zoom out" onClick={() => cy.current?.zoom(cy.current.zoom() / 1.2)}>
+                      −
+                    </button>
+                    <button
+                      aria-label="Fit graph"
+                      onClick={() => {
+                        const c = cy.current;
+                        if (c) {
+                          c.fit(undefined, 65);
+                          if (c.zoom() > 1.2) {
+                            c.zoom(1.2);
+                            c.center();
+                          }
                         }
-                        previousPath={i ? orderedNodes[i - 1]?.path : undefined}
-                        first={i === 0}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      }}
+                    >
+                      ⊙
+                    </button>
+                  </div>
+                  {!nodes.length && !busy && (
+                    <div className="empty-graph">
+                      {selection.view === 'search'
+                        ? 'No matches. Try a symbol or file name.'
+                        : knowledge
+                          ? 'No findings in this view.'
+                          : 'No nodes in this scope.'}
+                    </div>
+                  )}
+                </>
+              )}
+              {listOnly && (
+                <div className="list full">
+                  <table aria-label="Code Map nodes">
+                    <thead>
+                      <tr>
+                        <th>Node</th>
+                        <th>Kind</th>
+                        <th>Relations / direction / evidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orderedNodes.map((n, i) => (
+                        <NodeRow
+                          key={n.id}
+                          node={n}
+                          edges={edges}
+                          setSelected={setSelected}
+                          expand={expand}
+                          folder={
+                            grouped
+                              ? n.path?.slice(0, n.path.lastIndexOf('/') < 0 ? 0 : n.path.lastIndexOf('/')) || '.'
+                              : undefined
+                          }
+                          previousPath={i ? orderedNodes[i - 1]?.path : undefined}
+                          first={i === 0}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </section>
             <aside aria-label="Node details">
               {chosen ? (
@@ -699,6 +880,25 @@ function App() {
                     {edges.filter((e) => e.from === chosen.id).length}
                   </p>
                   <p>{chosen.whyIncluded}</p>
+                  {edges.some((e) => e.from === chosen.id || e.to === chosen.id) && (
+                    <section className="connections" aria-label="Node connections">
+                      <h3>Connections</h3>
+                      {edges
+                        .filter((e) => e.from === chosen.id || e.to === chosen.id)
+                        .map((e, i) => {
+                          const other = nodes.find((n) => n.id === (e.from === chosen.id ? e.to : e.from));
+                          return (
+                            <button key={i} onClick={() => setSelected(other?.id)}>
+                              {e.from === chosen.id ? '→' : '←'} {other?.label ?? 'Unknown'}
+                              <small>
+                                {e.rel} · {e.prov}
+                                {e.count ? ` ×${e.count}` : ''}
+                              </small>
+                            </button>
+                          );
+                        })}
+                    </section>
+                  )}
                   {chosen.learning && (
                     <section aria-label="Learning details">
                       <p>
@@ -749,7 +949,7 @@ function App() {
                   </button>
                 </>
               ) : (
-                <p>Select a node for source, relations and evidence.</p>
+                <p className="empty-details">Select a node to view details</p>
               )}
             </aside>
           </div>
@@ -762,19 +962,25 @@ function App() {
         </p>
       )}
       <footer>
-        {response ? (
-          <>
-            {response.truncated ? `Truncated: ${response.reasons.join(', ')}. ` : ''}
-            {response.freshness.stale ? 'Snapshot may be stale. ' : ''}Coverage:{' '}
-            {response.freshness.coverage.files.indexed} indexed · {response.freshness.coverage.files.unsupported}{' '}
-            unsupported · {response.freshness.coverage.files.skipped} skipped ·{' '}
-            {response.freshness.coverage.files.failed} failed. Unresolved:{' '}
-            {response.freshness.coverage.unresolved.imports} imports · {response.freshness.coverage.unresolved.calls}{' '}
-            calls. {response.hint} {response.freshness.warnings.join(' ')}
-          </>
-        ) : (
-          'Code Map is a partial index. Missing edges do not prove code is unused.'
-        )}
+        <details>
+          <summary>
+            {response?.freshness.state ?? 'Unavailable'} · {response?.freshness.coverage.files.indexed ?? 0} indexed
+            {response?.truncated ? ' · Partial view' : ''} · Coverage details
+          </summary>
+          {response ? (
+            <>
+              {response.truncated ? `Truncated: ${response.reasons.join(', ')}. ` : ''}
+              {response.freshness.stale ? 'Snapshot may be stale. ' : ''}Coverage:{' '}
+              {response.freshness.coverage.files.indexed} indexed · {response.freshness.coverage.files.unsupported}{' '}
+              unsupported · {response.freshness.coverage.files.skipped} skipped ·{' '}
+              {response.freshness.coverage.files.failed} failed. Unresolved:{' '}
+              {response.freshness.coverage.unresolved.imports} imports · {response.freshness.coverage.unresolved.calls}{' '}
+              calls. {response.hint} {response.freshness.warnings.join(' ')}
+            </>
+          ) : (
+            'Code Map is a partial index. Missing edges do not prove code is unused.'
+          )}
+        </details>
       </footer>
     </main>
   );

@@ -3,6 +3,16 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Fixed
+
+- **Code Map retrieval:** focused lookups return compact source pointers with better identifier and configuration ranking.
+  Task context defaults to six matches and adds a small neighborhood only when needed. Full JSON remains available
+  with `format: "json"`. Smaller maps and refreshed generated instructions avoid mandatory broad context for simple questions.
+- **Code Map Visualizer:** a force layout, quieter edges, neighborhood highlighting and a directional connection inspector
+  make dependencies easier to read. The graph has more space; the accessible outline and additional filters open on demand.
+
 ## [0.9.11] - 2026-10-20
 
 ### Added

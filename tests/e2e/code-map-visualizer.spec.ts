@@ -35,7 +35,8 @@ test('Knowledge inspects pending, reviewed and stale findings; Task context open
       projectId,
     );
     const frame = win.frameLocator('iframe[src*="oxytocin.code-map-visualizer"]');
-    await frame.getByRole('checkbox', { name: 'List only', exact: true }).check();
+    await frame.getByRole('button', { name: 'Outline', exact: true }).click();
+    await frame.locator('.filters > summary').click();
     await frame.getByRole('button', { name: 'Knowledge', exact: true }).click();
     await win.evaluate(
       (projectId) => window.oxy.invoke('codeMap:setMemoryMode', { projectId, mode: 'off' }),
@@ -100,6 +101,7 @@ test('Knowledge inspects pending, reviewed and stale findings; Task context open
       JSON.parse(
         (
           await client.call('oxy_task_context', {
+            format: 'json',
             cwd: project,
             question: 'private original question protocol',
             paths: ['api.ts'],
@@ -160,7 +162,10 @@ test('visualizer explores a symbol by keyboard, opens source and updates after e
     );
     const frame = win.frameLocator('iframe[src*="oxytocin.code-map-visualizer"]');
     await expect(frame.getByRole('heading', { name: /Code Map/ })).toBeVisible();
-    await frame.getByRole('checkbox', { name: 'List only', exact: true }).check();
+    await expect(frame.getByLabel('Code dependency graph')).toBeVisible();
+    await expect(frame.getByRole('table', { name: 'Code Map nodes' })).toHaveCount(0);
+    await frame.getByRole('button', { name: 'Outline', exact: true }).click();
+    await frame.locator('.filters > summary').click();
     await frame.getByRole('textbox', { name: 'Search code' }).fill('visualizerApi');
     await frame.getByRole('button', { name: 'Find', exact: true }).click();
     const symbol = frame.getByRole('button', { name: 'visualizerApi', exact: true });
@@ -169,6 +174,10 @@ test('visualizer explores a symbol by keyboard, opens source and updates after e
     await win.keyboard.press('Enter');
     await frame.getByRole('button', { name: 'Explore one step' }).click();
     await symbol.click();
+    await frame.getByRole('button', { name: 'Outline', exact: true }).click();
+    await expect(frame.getByLabel('Code dependency graph')).toBeVisible();
+    await expect(frame.getByRole('region', { name: 'Node connections' })).toContainText('api.ts');
+    await frame.getByRole('button', { name: 'Outline', exact: true }).click();
     await frame.getByRole('button', { name: 'Open in editor' }).click();
     await expect(win.getByTestId('code-panel')).toContainText('visualizerApi');
     await writeFile(join(project, 'api.ts'), 'export function visualizerChanged() {}\n');
@@ -226,7 +235,8 @@ test('Changes and Impact show bounded incoming dependencies and compare an Ensem
       id,
     );
     const frame = win.frameLocator('iframe[src*="oxytocin.code-map-visualizer"]');
-    await frame.getByRole('checkbox', { name: 'List only', exact: true }).check();
+    await frame.getByRole('button', { name: 'Outline', exact: true }).click();
+    await frame.locator('.filters > summary').click();
     await frame.getByRole('button', { name: 'Changes', exact: true }).click();
     const table = frame.getByRole('table', { name: 'Code Map nodes' });
     await expect(table.getByRole('row').filter({ hasText: 'api.ts' })).toContainText('Changed');

@@ -1,6 +1,6 @@
 /** Tests shipped view assets with the public SDK protocol under an offline, opaque iframe. */
 import { createServer } from 'node:http';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 import { chromium, expect } from '@playwright/test';
 
@@ -11,8 +11,8 @@ const file={id:'f:api.ts',kind:'file',label:'api.ts',path:'api.ts',sha256:'0'.re
 const symbol={id:'s:api',kind:'symbol',label:'api',path:'api.ts',sha256:'0'.repeat(64),span:[2,7,2,30],whyIncluded:'contains'};
 window.addEventListener('message',e=>{if(e.data?.type!=='oxy:hello')return;const c=new MessageChannel();window.ports.push(c.port1);
 c.port1.onmessage=async({data:m})=>{if(m.t!=='req'&&m.t!=='shell')return;window.requests.push(m);let result=null;
-if(m.method==='model')result={project:{id:project,name:project==='p'?'Fixture':'Other project'},checkouts:[{projectId:project,checkoutId:project,label:'Main checkout',mode:'project'}]};
-if(m.method==='query'){const s=m.payload;const nodes=s.view==='overview'?[file]:[file,symbol];result={projectId:project,response:{checkoutId:project,code:'OK',truncated:false,reasons:[],hint:'Missing edges do not prove code is unused.',freshness:{generation,state:'ready',stale:false,coverage:{files:{indexed:2,unsupported:0,skipped:0,failed:0},unresolved:{imports:0,calls:0}},warnings:[]},data:s.view==='search'?{kind:'search',matches:[{id:'s:api',path:'api.ts',name:'api',kind:'function',stale:false,score:1,whyIncluded:['exact'] }]}:{kind:'slice',view:s.view,nodes,edges:s.view==='overview'?[]:[{from:file.id,to:symbol.id,rel:'contains',prov:'syntax',whyIncluded:'membership'}],visitedNodes:2,visitedEdges:1,exhaustive:false}}};}
+if(m.method==='model')result={project:{id:project,name:window.previewSlice?'Oxytocin':project==='p'?'Fixture':'Other project'},checkouts:[{projectId:project,checkoutId:project,label:'Main checkout',mode:'project'}]};
+if(m.method==='query'){const s=m.payload;const nodes=s.view==='overview'?[file]:[file,symbol];result={projectId:project,response:{checkoutId:project,code:'OK',truncated:false,reasons:[],hint:'Missing edges do not prove code is unused.',freshness:{generation,state:'ready',stale:false,coverage:{files:{indexed:2,unsupported:0,skipped:0,failed:0},unresolved:{imports:0,calls:0}},warnings:[]},data:window.previewSlice??(s.view==='search'?{kind:'search',matches:[{id:'s:api',path:'api.ts',name:'api',kind:'function',stale:false,score:1,whyIncluded:['exact'] }]}:{kind:'slice',view:s.view,nodes,edges:s.view==='overview'?[]:[{from:file.id,to:symbol.id,rel:'contains',prov:'syntax',whyIncluded:'membership'}],visitedNodes:2,visitedEdges:1,exhaustive:false})}};}
 if(m.method==='open')window.opens.push(m.payload);
 c.port1.postMessage({t:'res',id:m.id,ok:true,result});};
 e.source.postMessage({type:'oxy:init',protocol:1,viewId:'map',kind:'panel',locale:'en',theme:{'--accent':'#4f8cff','--text-primary':'#e6e8eb','--text-muted':'#9fa9b8','--bg-card':'#151a20','--border-default':'#2c333d'},reservedKeybindings:[],visible:true},'*',[c.port2]);});
@@ -66,8 +66,12 @@ window.invalidate=()=>{generation++;window.ports.forEach(p=>p.postMessage({t:'ms
     await page.goto(`http://127.0.0.1:${address.port}`);
     const frame = page.frameLocator('iframe');
     await expect(frame.getByRole('heading', { name: 'Code Map · Fixture' })).toBeVisible();
+    await expect(frame.getByRole('table', { name: 'Code Map nodes' })).toHaveCount(0);
+    await expect(frame.getByLabel('Code dependency graph')).toBeVisible();
+    await mkdir('test-results', { recursive: true });
+    await page.screenshot({ path: 'test-results/code-map-visualizer-overview.png' });
+    await frame.getByRole('button', { name: 'Outline', exact: true }).click();
     await expect(frame.getByRole('button', { name: 'api.ts', exact: true })).toBeVisible();
-    await frame.getByRole('checkbox', { name: 'List only', exact: true }).check();
     await frame.getByRole('textbox', { name: 'Search code' }).fill('api');
     await frame.getByRole('button', { name: 'Find', exact: true }).click();
     const symbolButton = frame.getByRole('button', { name: 'api', exact: true });
@@ -95,6 +99,31 @@ window.invalidate=()=>{generation++;window.ports.forEach(p=>p.postMessage({t:'ms
     await page.evaluate('window.visibility(true)');
     await page.evaluate('window.switchProject()');
     await expect(frame.getByRole('heading', { name: 'Code Map · Other project' })).toBeVisible();
+    const preview = await readFile('test-results/code-map-preview-slice.json', 'utf8').catch(() => undefined);
+    if (preview) {
+      await page.evaluate((slice) => {
+        Object.assign(window, { previewSlice: JSON.parse(slice) as unknown });
+      }, preview);
+      await frame.getByRole('textbox', { name: 'Search code' }).fill('');
+      await frame.getByRole('button', { name: 'Code', exact: true }).click();
+      await expect(frame.locator('.counts')).not.toContainText('1 nodes');
+      const canvas = frame.getByLabel('Code dependency graph');
+      const bounds = await canvas.boundingBox();
+      expect(bounds!.height).toBeGreaterThan(500);
+      await page.screenshot({ path: 'test-results/code-map-visualizer-services.png' });
+      // Select from the accessible outline, then return to the same graph and inspect its neighborhood.
+      await frame.getByRole('button', { name: 'Outline', exact: true }).click();
+      await frame.getByRole('table').getByRole('button', { name: 'code-map', exact: true }).click();
+      await frame.getByRole('button', { name: 'Outline', exact: true }).click();
+      await expect(frame.getByRole('heading', { name: 'Connections', exact: true })).toBeVisible();
+      await page.locator('iframe').screenshot({ path: 'test-results/code-map-visualizer-selected.png' });
+      await page.locator('iframe').evaluate((element) => {
+        element.style.width = '600px';
+        element.style.height = '600px';
+      });
+      await expect(canvas).toBeVisible();
+      await page.screenshot({ path: 'test-results/code-map-visualizer-narrow.png' });
+    }
     expect(errors).toEqual([]);
     expect(remote).toEqual([]);
     await writeFile(

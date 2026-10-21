@@ -6,10 +6,14 @@ and `git.read`.
 
 Overview groups folders and aggregates indexed dependencies. Select a folder to explore it, a file for declarations,
 or search for a symbol and explore its neighborhood. Filter directions, relation types, evidence and depth (1–3).
-The graph supports dragging, pan, zoom and fit; surviving node positions persist across refreshes. There is no
+The graph uses a force layout that accounts for labels. Select a node to highlight its neighbors and show directional
+connections in the inspector. Edge labels appear only in that neighborhood. The graph supports dragging, pan, zoom
+and fit; surviving positions persist across refreshes and switching to Outline. There is no
 continuous layout animation. Hidden panels cancel reads and stop graph updates.
 
-Select **List only** for keyboard navigation. Tab to a node and press Enter, then choose **Explore one step** or
+Use **Code** for the structural graph, **Context** for findings, and **Outline** for keyboard navigation. Advanced
+views and relation filters are under **Views & filters**, with coverage diagnostics in the footer. Tab to a node in
+Outline and press Enter, then choose **Explore one step** or
 **Open in editor** in the details. Graph labels and line styles distinguish relation types and heuristic evidence.
 The footer reports generation, coverage, omissions and truncation. Missing edges do not establish that code is unused.
 Source opening verifies the generation/hash/range and uses the user's configured editor.
