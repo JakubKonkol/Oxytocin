@@ -25,12 +25,12 @@ started.
 | Phase | Step | Status | Commit | Notes |
 | ----- | ---- | ------ | ------ | ----- |
 | 0 | Frozen corpus (44 questions: 22 train, 22 held-out) + `scripts/code-map-retrieval-eval.ts` | done | `423ba66` | Baseline below. |
-| 0 | Per-session Code Map call accounting in the Hub / Usage Monitor | not started | | |
+| 0 | Per-session Code Map call accounting in the Hub / Usage Monitor | in progress | | Delegated to a sub-agent (worktree). |
 | 0 | Paid A/B (D1) | not started | | Needs owner approval and budget. |
 | 1 | Remove agent overhead (one locate tool, schemas, instructions, quiet output, stale-tolerant answers) | done | `8aa0555` | Default tool schemas 4,372 → 1,533 chars; all 8 tools 9,788 → 5,214. Open: Review memory defaults to on, so `oxy_task_context` + learning tools stay listed by default (rules then point to task_context only). |
 | 2 | Body-aware BM25F ranking | in progress | | Delegated to a sub-agent (worktree). |
 | 3 | Source excerpts in `oxy_find_code` | not started | | Depends on 1 and 2. |
-| 4 | Prompt-time pointers via Claude Code Bridge | not started | | Depends on 2 (confidence signal). |
+| 4 | Prompt-time pointers via Claude Code Bridge | in progress | | Delegated; core command `oxytocin.codeMap.promptContext`, per-project setting default off, reads optional `coverage`/`strong` from phase 2. |
 | 5 | Targeted refresh on query, incremental resolution | not started | | |
 | 6 | TypeScript receiver types | in progress | | Delegated to a sub-agent (worktree). |
 | 7 | Decide on defaults after the A/B | not started | | |
