@@ -54,8 +54,7 @@ test('left sidebar sections close with "×", come back from "+" and stay closed 
     for (const id of ['projects', 'changes', 'files', USAGE]) await closeSection(win, id);
     await expect(win.getByTestId('sidebar-empty')).toBeVisible();
     // Closed sections keep their height for when they come back.
-    await win.waitForTimeout(700);
-    expect((await paneview(win)).paneview.sizes['changes']).toBeGreaterThan(80);
+    await expect.poll(async () => (await paneview(win)).paneview.sizes['changes']).toBeGreaterThan(80);
     await win.getByTestId('sidebar-add-section').click();
     await win.getByTestId('left-sidebar-add-menu').getByTestId('add-section-projects').click();
     await expect(win.getByTestId('section-header-projects')).toBeVisible();
@@ -72,7 +71,6 @@ test('left sidebar sections close with "×", come back from "+" and stay closed 
     await win.getByTestId('left-sidebar-add-menu').getByTestId('add-tool-scratchpad').click();
     await expect(win.getByTestId('sidebar').getByTestId('scratchpad-input')).toBeVisible();
     await expect.poll(async () => (await paneview(win)).primaryTools.map((t) => t.kind)).toEqual(['scratchpad']);
-    await win.waitForTimeout(700); // debounced persistence
   } finally {
     await first.app.close();
   }

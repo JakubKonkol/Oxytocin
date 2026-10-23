@@ -8,7 +8,7 @@ workflow (`.github/workflows/release.yml`) then does everything:
    (`.github/scripts/prepare-release.sh`). It refuses a version that is not newer, an existing tag or an empty
    `[Unreleased]` section. When `package.json` already has the version (bumped by hand), it releases `main` as it is.
 2. Per platform runs the full test suite (`full-tests.yml`: typecheck, lint, unit and integration tests, plus E2E on
-   Windows and Linux), packages the app (`package.yml`: Windows NSIS, macOS dmg + zip, Linux AppImage + deb), checks
+   Windows and Linux in three shards on separate machines, next to the other checks), packages the app (`package.yml`: Windows NSIS, macOS dmg + zip, Linux AppImage + deb), checks
    that the update manifests point at the packages (`scripts/verify-update-manifests.ts`), checks the Electron fuses
    and smoke-tests each packaged app (on Windows after a silent install).
 3. Tags the release commit `vx.y.z` and **publishes** the GitHub Release with the matching `CHANGELOG.md` section.

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp } from './helpers/launch';
+import { withinBudget } from './helpers/perf';
 import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 async function folder(name: string): Promise<string> {
@@ -61,7 +62,7 @@ test('switching projects keeps processes running and buffers complete; the title
     expect(seen.length).toBeGreaterThan(20);
     const avg = times.reduce((a, b) => a + b, 0) / times.length;
     console.log(`project switch avg ${avg.toFixed(1)} ms (${times.map((x) => x.toFixed(0)).join(', ')})`);
-    expect(avg).toBeLessThan(150);
+    await withinBudget('projectSwitchMountedAverage', avg, 150);
   } finally {
     await app.close();
   }

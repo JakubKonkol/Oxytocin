@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
 import { makeRepo } from './helpers/git';
 import { launchApp } from './helpers/launch';
+import { withinBudget } from './helpers/perf';
 import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 // 1×1 transparent PNG.
@@ -95,11 +96,11 @@ test('Markdown Preview: opened from CHANGES, live reload, images, links and movi
     const before = await renders();
     await run(win, nodeCmd("require('fs').appendFileSync('README.md', '\\n# Appended heading\\n')"));
     const typed = Date.now();
-    await expect.poll(content, { timeout: 5_000, intervals: [50] }).toContain('Appended heading');
+    await expect.poll(content, { timeout: 10_000, intervals: [50] }).toContain('Appended heading');
     const latency = Date.now() - typed;
     console.log(`preview refreshed ${latency} ms after the command was submitted`);
-    // Includes starting node for the write; shared CI runners (Windows especially) get more headroom.
-    expect(latency).toBeLessThan(process.env['CI'] ? 2_500 : 1_000);
+    // Includes starting node for the write.
+    await withinBudget('markdownPreviewRefresh', latency, 1_000);
     expect(await renders()).toBeGreaterThan(before);
     await expect(win.getByTestId('tab-plugin-badge')).toHaveText('changed');
     await expect(win.getByTestId('tab-plugin-badge')).toHaveCount(0, { timeout: 5_000 });

@@ -22,6 +22,15 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   Changes → Send to review, plugins) receives it on its command line instead of having it typed once the agent is
   ready (Plugin API 0.2.2, which also adds `addDirs`).
 
+### Fixed
+
+- **Sidebars:** a section collapsed, moved or resized right before quitting is remembered.
+- **Tests:** E2E tests no longer depend on the machine they run on: the app window has the same size on every screen,
+  terminals are typed into once their prompt is shown, AI agent variables of the test runner's environment (an API
+  base URL, a surrounding Claude Code session) are not passed on, and latency budgets fail only on a gross
+  regression (measurements are still recorded in `perf-results.json`). CI runs E2E next to the other checks in three
+  shards per platform and records traces only for retried tests, which shortens a release run considerably.
+
 ## [0.9.12] - 2026-10-21
 
 ### Fixed

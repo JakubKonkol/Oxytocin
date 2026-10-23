@@ -62,8 +62,20 @@ function persist(patch: UiStatePatch): void {
   }, 300);
 }
 
+const beforeFlush = new Set<() => void>();
+
+/**
+ * Registers a component's own delayed write (e.g. a sidebar's layout, written a moment after it changes), run before
+ * pending changes are sent on quit. Returns the unregistration.
+ */
+export function onUiFlush(write: () => void): () => void {
+  beforeFlush.add(write);
+  return () => beforeFlush.delete(write);
+}
+
 /** Sends pending changes now (quitting: the last keystrokes in the scratchpad must not be lost). */
 export async function flushUiState(): Promise<void> {
+  for (const write of beforeFlush) write();
   if (!timer) return;
   clearTimeout(timer);
   timer = undefined;

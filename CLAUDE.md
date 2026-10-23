@@ -53,6 +53,10 @@ a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Moni
 - No synchronous I/O in the main process after startup. Heavy work goes to hosts / worker threads.
 - Colors and sizes only via CSS tokens (`src/renderer/src/styles/tokens.css`); Tailwind utilities map to them (`bg-card`, `text-fg-muted`, `border-line`…).
 - Every behavior change gets a test (unit/integration) plus an E2E test for user-visible features.
+- E2E tests follow `docs/e2e-tests.md`: wait for states, never for times (no `waitForTimeout` to let something
+  happen); type into a terminal only once its prompt or agent waits for input; no hard timing budgets
+  (`withinBudget`); nothing from the machine (ports, home folder, environment). Extend an existing E2E test before
+  adding one, and check new ones with `--repeat-each=5`.
 - Primary platform: Windows 11. Platform-specific code lives in `*.win.ts` / `*.posix.ts`.
 
 ## Pitfalls (verified during research)

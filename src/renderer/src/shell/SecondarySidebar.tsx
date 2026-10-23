@@ -12,7 +12,7 @@ import type { PaneviewState, SidebarTool } from '@shared/domain/ui-state';
 import { cn } from '../lib/cn';
 import { SectionHeader } from '../ui/Section';
 import { Button } from '../ui/Button';
-import { useUiStore } from '../stores/ui-store';
+import { onUiFlush, useUiStore } from '../stores/ui-store';
 import { shieldIframesWhileDragging } from '../features/layout/drag-shield';
 import { SidebarAddToolMenu } from '../features/tools/AddMenus';
 import {
@@ -136,6 +136,9 @@ export function SecondarySidebar() {
     return () => el.removeEventListener('dragstart', onDragStart, true);
   }, []);
 
+  const pendingLayout = useRef<() => void>(undefined);
+  useEffect(() => onUiFlush(() => pendingLayout.current?.()), []);
+
   const onReady = (event: PaneviewReadyEvent) => {
     // Tabs dragged from a workspace (scratchpad, plugin panels) can be dropped between the sections.
     // Tools of the left sidebar (section headers) too.
@@ -143,20 +146,28 @@ export function SecondarySidebar() {
       if (draggedWorkspacePanel() || toolDraggedFrom('left', getPaneData()?.paneId)) e.accept();
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const write = () => {
+      timer = undefined;
+      const ui = useUiStore.getState();
+      ui.setSecondaryPaneview(readPaneviewState(event.api));
+      // Sections reordered by drag and drop: the tool list follows.
+      const order = event.api.panels.map((p) => p.id);
+      const tools = ui.state.secondaryTools;
+      if (order.length === tools.length && order.join('\n') !== tools.map((t) => t.id).join('\n')) {
+        const next = order.map((id) => toolOf(id)).filter((t): t is SidebarTool => !!t);
+        if (next.length === tools.length) ui.setSecondaryTools(next);
+      }
+    };
     event.api.onDidLayoutChange(() => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        const ui = useUiStore.getState();
-        ui.setSecondaryPaneview(readPaneviewState(event.api));
-        // Sections reordered by drag and drop: the tool list follows.
-        const order = event.api.panels.map((p) => p.id);
-        const tools = ui.state.secondaryTools;
-        if (order.length === tools.length && order.join('\n') !== tools.map((t) => t.id).join('\n')) {
-          const next = order.map((id) => toolOf(id)).filter((t): t is SidebarTool => !!t);
-          if (next.length === tools.length) ui.setSecondaryTools(next);
-        }
-      }, 200);
+      timer = setTimeout(write, 200);
     });
+    // Quitting right after a change keeps it.
+    pendingLayout.current = () => {
+      if (!timer) return;
+      clearTimeout(timer);
+      write();
+    };
     setApi(event.api);
   };
 

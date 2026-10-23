@@ -1,29 +1,10 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { launchApp, repoRoot } from './helpers/launch';
+import { launchApp } from './helpers/launch';
+import { record, withinBudget } from './helpers/perf';
 import { oxyTest, waitForTerminal } from './helpers/terminal';
-
-/** Records a metric in perf-results.json (CI artifact). */
-async function record(name: string, value: number, unit: string, budget?: number): Promise<void> {
-  const file = join(repoRoot, 'perf-results.json');
-  let results: Record<string, unknown>;
-  try {
-    results = JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
-  } catch {
-    results = {};
-  }
-  results[name] = {
-    value,
-    unit,
-    ...(budget !== undefined ? { budget } : {}),
-    platform: process.platform,
-    at: new Date().toISOString(),
-  };
-  await writeFile(file, `${JSON.stringify(results, null, 2)}\n`);
-  console.log(`perf ${name}: ${value} ${unit}${budget !== undefined ? ` (CI budget ${budget})` : ''}`);
-}
 
 test('performance budgets: start-up, mounted project switch and memory of 3 projects × 3 terminals', async () => {
   test.setTimeout(120_000);
@@ -41,8 +22,7 @@ test('performance budgets: start-up, mounted project switch and memory of 3 proj
     expect(startup).not.toBeNull();
     // Windows runners: the PowerShell cold start alone takes 1–2 s and varies a lot (10 §5, M7-T2 journal).
     const startupBudget = process.platform === 'win32' ? 4000 : 3000;
-    await record('startToFirstTerminalOutput', startup!, 'ms', startupBudget);
-    expect(startup!).toBeLessThan(startupBudget);
+    await withinBudget('startToFirstTerminalOutput', startup!, startupBudget);
 
     // Three projects with three terminals each.
     const t = oxyTest(win);
@@ -60,8 +40,6 @@ test('performance budgets: start-up, mounted project switch and memory of 3 proj
         await expect.poll(async () => (await t.workspace())?.panels.length).toBe(n + 1);
       }
     }
-    await win.waitForTimeout(1500);
-
     // Mounted project switches (renderer mark: activation → workspace painted).
     const times: number[] = [];
     for (let i = 0; i < 9; i++) {
@@ -81,8 +59,7 @@ test('performance budgets: start-up, mounted project switch and memory of 3 proj
     }
     const sorted = [...times].sort((a, b) => a - b);
     const median = Math.round(sorted[Math.floor(sorted.length / 2)]!);
-    await record('projectSwitchMountedMedian', median, 'ms', 150);
-    expect(median).toBeLessThan(150);
+    await withinBudget('projectSwitchMountedMedian', median, 150);
 
     // Memory of all processes (report only): private memory — resident sizes count shared libraries once per process.
     const metrics = await app.evaluate(({ app: electronApp }) =>

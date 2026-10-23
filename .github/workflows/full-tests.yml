@@ -1,8 +1,10 @@
 name: Full tests
 
-# The complete suite per platform: typecheck, lint, unit and integration tests, then E2E (Windows and Linux; the
-# app is not E2E-tested on macOS). Started by hand (Actions → Full tests → Run workflow) and called by release.yml,
-# once per group of platforms so that each platform's tests gate only its own packages.
+# The complete suite per platform: typecheck, lint, unit and integration tests (`checks`), and E2E on Windows and
+# Linux (the app is not E2E-tested on macOS). E2E runs next to the checks, split into three shards per platform on
+# machines of their own (one Electron app per machine, so no test slows another down). Started by hand
+# (Actions → Full tests → Run workflow) and called by release.yml, once per group of platforms so that each
+# platform's tests gate only its own packages.
 on:
   workflow_dispatch:
     inputs:
@@ -23,8 +25,8 @@ on:
         default: ''
 
 jobs:
-  test:
-    name: test (${{ matrix.os }})
+  checks:
+    name: checks (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -33,7 +35,7 @@ jobs:
           || inputs.platforms == 'linux-macos' && '["ubuntu-latest","macos-latest"]'
           || '["windows-latest","ubuntu-latest","macos-latest"]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
         with:
@@ -55,26 +57,56 @@ jobs:
       - run: npx vitest run --project integration
       # Latency tests (git watcher) alone: under the parallel load of the other integration tests they measure the runner.
       - run: npx vitest run --project integration-latency
+
+  e2e:
+    name: e2e (${{ matrix.os }}, ${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: >-
+          ${{ fromJSON(inputs.platforms == 'windows' && '["windows-latest"]'
+          || inputs.platforms == 'linux-macos' && '["ubuntu-latest"]'
+          || '["windows-latest","ubuntu-latest"]') }}
+        shard: [1, 2, 3]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
       - name: Install system dependencies for Electron (Linux)
         if: runner.os == 'Linux'
         run: npx playwright install-deps chromium
+      # The app's window keeps its size in E2E whatever the screen; a full-HD screen also keeps dialogs and toasts
+      # where a developer's screen has them. Best effort: older images lack the cmdlet.
+      - name: Screen resolution (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          try { Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Stop } catch { Write-Host "Resolution unchanged: $_" }
+          Get-CimInstance Win32_VideoController | Format-Table Name, CurrentHorizontalResolution, CurrentVerticalResolution
       - name: E2E (Linux, virtual display)
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm run e2e
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" npm run e2e -- --shard=${{ matrix.shard }}/3
       - name: E2E (Windows)
         if: runner.os == 'Windows'
-        run: npm run e2e
+        run: npm run e2e -- --shard=${{ matrix.shard }}/3
       - uses: actions/upload-artifact@v5
         if: failure()
         with:
-          name: e2e-${{ matrix.os }}
+          name: e2e-${{ matrix.os }}-${{ matrix.shard }}
           path: |
             test-results/
             playwright-report/
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v5
-        if: always() && runner.os != 'macOS'
+        if: always()
         with:
-          name: perf-${{ matrix.os }}
+          name: perf-${{ matrix.os }}-${{ matrix.shard }}
           path: perf-results.json
           if-no-files-found: ignore

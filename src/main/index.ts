@@ -1460,7 +1460,11 @@ function bootstrap(): void {
   });
 
   mainWindow = createMainWindow({
-    bounds: resolveWindowBounds(initialUi.window, screen.getAllDisplays(), screen.getPrimaryDisplay()),
+    // E2E: the saved size whatever the screen (Windows CI runners have 1024×768), so that every machine lays the
+    // window out alike. Windows and Linux allow windows larger than the screen.
+    bounds: e2e
+      ? { width: initialUi.window.width, height: initialUi.window.height }
+      : resolveWindowBounds(initialUi.window, screen.getAllDisplays(), screen.getPrimaryDisplay()),
     maximized: initialUi.window.maximized,
   });
   const win = mainWindow;

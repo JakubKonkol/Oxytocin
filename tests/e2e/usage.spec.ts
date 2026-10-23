@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
 import { launchApp, repoRoot } from './helpers/launch';
+import { withinBudget } from './helpers/perf';
 import { waitForTerminal } from './helpers/terminal';
 
 interface Expected {
@@ -99,10 +100,10 @@ test('Usage Monitor: today from fixtures, live update, dashboard and budget noti
     const start = Date.now();
     await appendFile(edge, '\n');
     const next = total + 999 * 0.00002;
-    await expect(today).toHaveText(`$${next.toFixed(2)}`, { timeout: 5_000 });
+    await expect(today).toHaveText(`$${next.toFixed(2)}`, { timeout: 10_000 });
     const latency = Date.now() - start;
     console.log(`usage sidebar updated ${latency} ms after the append`);
-    expect(latency).toBeLessThan(2_000);
+    await withinBudget('usageSidebarUpdate', latency, 2_000);
 
     // Dashboard from the status bar item.
     await win.getByTestId('status-item-usage.today').click();

@@ -63,12 +63,34 @@ export const oxyTest = (page: Page) => ({
     ] as const),
 });
 
-/** Waits for the n-th terminal panel (default: the first) and its shell prompt; returns its id. */
+const PROMPT_END = /[>$#%]\s*$/;
+
+/**
+ * Whether a terminal is ready for typed input: its shell reported a prompt (shell integration), or its text ends
+ * like a prompt (a shell without integration, an agent's input line). Keys typed before that can be lost (PowerShell's
+ * PSReadLine drops them) or echoed twice.
+ */
+async function promptShown(page: Page, id: string): Promise<boolean> {
+  const info = (
+    (await page.evaluate(() => window.oxy.invoke('terminals:list'))) as { id: string; shellIntegration?: boolean }[]
+  ).find((t) => t.id === id);
+  if (info?.shellIntegration) return true;
+  return PROMPT_END.test((await oxyTest(page).text(id)).trimEnd());
+}
+
+/**
+ * Waits for the n-th terminal panel (default: the first), its first output and, for up to 15 s, its prompt (see
+ * `promptShown`; a terminal that never shows one is returned once the time is up). Returns its id.
+ */
 export async function waitForTerminal(page: Page, index = 0): Promise<string> {
   const panel = page.locator('[data-terminal-id]').nth(index);
   await expect(panel).toBeVisible({ timeout: 15_000 });
   const id = (await panel.getAttribute('data-terminal-id'))!;
   await expect.poll(() => oxyTest(page).text(id), { timeout: 15_000 }).not.toBe('');
+  await expect
+    .poll(() => promptShown(page, id), { timeout: 15_000 })
+    .toBe(true)
+    .catch(() => undefined);
   return id;
 }
 
@@ -77,8 +99,6 @@ export async function run(page: Page, command: string): Promise<void> {
   await page.keyboard.type(command);
   await page.keyboard.press('Enter');
 }
-
-const PROMPT_END = /[>$#%]\s*$/;
 
 /** Waits until the terminal shows a shell prompt (keys typed earlier may be echoed twice or lost). */
 export async function waitForPrompt(page: Page, id: string): Promise<void> {

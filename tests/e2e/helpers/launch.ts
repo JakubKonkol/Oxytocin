@@ -29,6 +29,19 @@ export interface LaunchedApp {
 
 export const repoRoot = resolve(__dirname, '../../..');
 
+/**
+ * The test runner's environment without what would make the app behave differently on the machine running the
+ * tests: AI agent configuration (an API base URL, keys, a Claude Code session the tests run inside of). Tests that
+ * need such a variable pass it in `env`.
+ */
+export function hermeticEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env))
+    if (value !== undefined && !/^(ANTHROPIC_|CLAUDE|OPENAI_|CODEX_|GEMINI_|GOOGLE_(API|GENAI|CLOUD))/i.test(key))
+      env[key] = value;
+  return env;
+}
+
 /** Launches the built app (out/) with an isolated userData directory. */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const userData = opts.userData ?? (await mkdtemp(join(tmpdir(), 'oxy-e2e-')));
@@ -67,7 +80,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     // No prefers-color-scheme emulation: the app's theme follows nativeTheme (appearance.theme).
     colorScheme: null,
     env: {
-      ...(process.env as Record<string, string>),
+      ...hermeticEnv(),
       OXYTOCIN_E2E: '1',
       // A default E2E instance must not read real usage or install/remove the user's Claude status line.
       // Tests with an explicit fixture home keep deriving the CLI folders from that home as before.

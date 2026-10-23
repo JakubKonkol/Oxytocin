@@ -18,7 +18,7 @@ import { ChangesCount, ChangesHeaderActions, ChangesSection } from '../features/
 import { FilesHeaderActions, FilesSection } from '../features/editor/FilesSection';
 import { addProjectViaDialog } from '../features/projects/project-actions';
 import { useProjectsStore } from '../stores/projects-store';
-import { useUiStore } from '../stores/ui-store';
+import { onUiFlush, useUiStore } from '../stores/ui-store';
 import { usePluginsStore } from '../stores/plugins-store';
 import { type PluginPaneParams, PluginSidebarView, sidebarViewInstanceId } from '../features/plugins/PluginSidebarView';
 import { LeftSidebarAddMenu } from '../features/tools/AddMenus';
@@ -267,6 +267,8 @@ export function Sidebar() {
   const saved = useUiStore((s) => s.state.paneview);
   const setPaneview = useUiStore((s) => s.setPaneview);
   const savedRef = useRef(saved);
+  const pendingLayout = useRef<() => void>(undefined);
+  useEffect(() => onUiFlush(() => pendingLayout.current?.()), []);
   const [api, setApi] = useState<PaneviewApi | null>(null);
   // Layout restored at start-up (later changes are written by the paneview itself).
   const [initialLayout] = useState(saved);
@@ -314,10 +316,20 @@ export function Sidebar() {
     });
     setApi(event.api);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const write = () => {
+      timer = undefined;
+      setPaneview(readPaneviewState(event.api));
+    };
     event.api.onDidLayoutChange(() => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => setPaneview(readPaneviewState(event.api)), 200);
+      timer = setTimeout(write, 200);
     });
+    // Quitting right after a change keeps it.
+    pendingLayout.current = () => {
+      if (!timer) return;
+      clearTimeout(timer);
+      write();
+    };
   };
 
   const onDidDrop = (e: PaneviewDidDropEvent) => {

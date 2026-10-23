@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 
-test('the shell shows the prototype layout', async () => {
+test('the main window opens with the Oxytocin title and the shell layout', async () => {
   const { app, win } = await launchApp();
   try {
+    await expect(win).toHaveTitle(/Oxytocin/);
+    expect(app.windows()).toHaveLength(1);
     await expect(win.getByTestId('titlebar')).toContainText('Oxytocin');
     for (const id of ['projects', 'changes', 'plugin:oxytocin.usage-monitor:usage.sidebar']) {
       await expect(win.getByTestId(`section-header-${id}`)).toBeVisible();
@@ -29,7 +31,7 @@ test('sidebar width and collapsed sections persist across restarts', async () =>
     await expect.poll(async () => (await win.getByTestId('sidebar').boundingBox())?.width).toBe(380);
     await win.getByTestId('section-header-changes').getByRole('button', { name: 'CHANGES', exact: true }).click();
     await expect(win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
-    await win.waitForTimeout(700); // debounced persistence
+    // Closing the app writes what is still pending (ui-state.json is otherwise written with a short delay).
   } finally {
     await first.app.close();
   }
@@ -50,7 +52,6 @@ test('Ctrl+Shift+B toggles the sidebar and the state persists', async () => {
     await expect(first.win.getByTestId('sidebar')).toBeVisible();
     await first.win.keyboard.press('Control+Shift+KeyB');
     await expect(first.win.getByTestId('sidebar')).toHaveCount(0);
-    await first.win.waitForTimeout(700);
   } finally {
     await first.app.close();
   }
