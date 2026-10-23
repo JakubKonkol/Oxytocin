@@ -70,6 +70,18 @@ export const AgentLaunchRequestSchema = z.object({
     )
     .max(16)
     .optional(),
+  /** Directories a new session may use besides the project (Claude Code, Codex CLI, Gemini CLI, Qwen Code). */
+  addDirs: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(4096)
+        // eslint-disable-next-line no-control-regex
+        .regex(/^[^\u0000-\u001f\u007f]+$/, 'Paths cannot contain control characters.'),
+    )
+    .max(8)
+    .optional(),
   /** Environment variables of a new session's terminal. */
   env: z
     .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/), z.string().max(4096))

@@ -3,12 +3,16 @@ import type { AgentLaunchRequest, AgentLaunchResult } from '@shared/domain/agent
 import type { TerminalInfo } from '@shared/domain/terminal';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { OxyError } from '@shared/errors';
+import type { ShellKind } from '@shared/utils/shell-command';
 
 export interface AgentLauncherDeps {
   profile(id: string): Promise<TerminalProfile | undefined>;
   agents(): AgentInfoWithTerminal[];
   terminals(projectId: string): TerminalInfo[];
-  /** `launch`: the command typed into the new terminal (its arguments quoted for the shell) and extra variables. */
+  /**
+   * `launch`: the command typed into the new terminal (its arguments are quoted for the terminal's shell, which
+   * `command` receives) and extra variables.
+   */
   create(projectId: string, profileId: string, launch?: NewSessionLaunch): Promise<TerminalInfo>;
   show(terminalId: string, projectId: string): void;
   send(terminalId: string, prompt: string): Promise<{ ok: true } | { ok: false; error: string }>;
@@ -17,9 +21,41 @@ export interface AgentLauncherDeps {
 }
 
 export interface NewSessionLaunch {
-  command?: { head: string; args: string[] };
+  command?: (shell: ShellKind) => { head: string; args: string[] };
   env?: Record<string, string>;
 }
+
+/** CLIs that take their first prompt on the command line and open an interactive session with it. */
+const STARTUP_PROMPT: Record<string, (prompt: string) => string[]> = {
+  claude: (prompt) => [prompt],
+  codex: (prompt) => [prompt],
+  gemini: (prompt) => ['--prompt-interactive', prompt],
+  qwen: (prompt) => ['--prompt-interactive', prompt],
+};
+/** Directories a new session may use besides the project (Codex reads anywhere; its flag adds a writable root). */
+const ADD_DIR: Record<string, string> = {
+  claude: '--add-dir',
+  codex: '--add-dir',
+  gemini: '--include-directories',
+  qwen: '--include-directories',
+};
+export const MAX_STARTUP_PROMPT = 2000;
+
+/**
+ * The prompt as arguments of a new session's command line, when the CLI takes one and the prompt survives the shell
+ * as typed: one line, no control characters, and nothing cmd.exe expands inside quotes (`%`, `!`). The agent then
+ * starts with the prompt: no waiting for it to be ready and nothing typed into its input box.
+ */
+export function startupPromptArgs(cli: string, prompt: string, shell: ShellKind): string[] | undefined {
+  const args = STARTUP_PROMPT[cli];
+  // eslint-disable-next-line no-control-regex
+  if (!args || prompt.length > MAX_STARTUP_PROMPT || /[\u0000-\u001f\u007f]/.test(prompt)) return undefined;
+  if (shell === 'cmd' && /[%!]/.test(prompt)) return undefined;
+  return args(prompt);
+}
+
+/** The CLI a profile starts (`claude`, `codex`…), from its icon (`agent-<id>`). */
+const cliOf = (profile: TerminalProfile) => (profile.icon?.startsWith('agent-') ? profile.icon.slice(6) : '');
 
 /** Launches ordinary workspace terminals. Serializes requests so two clicks cannot spawn duplicates. */
 export class AgentLauncherService {
@@ -51,16 +87,32 @@ export class AgentLauncherService {
     // A matching busy or starting session is shown instead of spawning a duplicate.
     terminal ??= matching[0];
     const reused = !!terminal;
+    let passed = false;
     if (!terminal) {
-      const claude = profile.icon === 'agent-claude';
-      const args = claude ? [...(o.planMode ? ['--permission-mode', 'plan'] : []), ...(o.claudeArgs ?? [])] : [];
+      const cli = cliOf(profile);
+      const args = [
+        ...(cli === 'claude' ? [...(o.planMode ? ['--permission-mode', 'plan'] : []), ...(o.claudeArgs ?? [])] : []),
+        ...(ADD_DIR[cli] ? (o.addDirs ?? []).flatMap((dir) => [ADD_DIR[cli]!, dir]) : []),
+      ];
+      const prompt = o.prompt;
+      const head = profile.command ?? cli;
       terminal = await this.deps.create(o.projectId, o.launchId, {
-        ...(args.length > 0 ? { command: { head: profile.command ?? 'claude', args } } : {}),
+        ...(args.length > 0 || (prompt && STARTUP_PROMPT[cli])
+          ? {
+              command: (shell: ShellKind) => {
+                const promptArgs = prompt ? startupPromptArgs(cli, prompt, shell) : undefined;
+                passed = !!promptArgs;
+                return { head, args: [...args, ...(promptArgs ?? [])] };
+              },
+            }
+          : {}),
         ...(o.env && Object.keys(o.env).length > 0 ? { env: o.env } : {}),
       });
     }
     this.deps.show(terminal.id, o.projectId);
     if (!o.prompt) return { terminalId: terminal.id, reused, sent: false };
+    // The new session received the prompt as an argument of its command line.
+    if (passed) return { terminalId: terminal.id, reused, sent: true };
     const now = this.deps.now ?? Date.now;
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
     const deadline = now() + 15_000;

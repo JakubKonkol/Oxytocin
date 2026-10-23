@@ -3,7 +3,7 @@ import '@oxytocin/plugin-sdk/theme.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AgentLauncher, AgentSnapshot, TerminalMeta } from '@oxytocin/plugin-api';
-import type { PlanVersion, Role, Task, TaskInput } from '../shared/task';
+import type { PlanVersion, Role, RoleName, Task, TaskInput } from '../shared/task';
 import { renderPlan } from './markdown';
 import './task.css';
 
@@ -11,6 +11,7 @@ interface Model {
   project: { id: string; name: string } | null;
   tasks: Pick<Task, 'id' | 'description' | 'phase'>[];
   task: Task | null;
+  planWaiting: boolean;
   launchers: AgentLauncher[];
   agents: AgentSnapshot[];
   terminals: TerminalMeta[];
@@ -71,6 +72,8 @@ function RolePicker({
   const matching = model.terminals.filter(
     (t) => t.profileId === value?.launchId && t.status === 'running' && model.agents.some((a) => a.terminalId === t.id),
   );
+  // A session chosen earlier that is no longer running falls back to a fresh one.
+  const chosen = matching.some((t) => t.id === value?.terminalId) ? value?.terminalId : undefined;
   return (
     <div className="role-card">
       <span className="eyebrow">
@@ -94,20 +97,12 @@ function RolePicker({
       {value && (
         <select
           aria-label={`${label} session`}
-          value={value.newSession && !value.terminalId ? 'new' : (value.terminalId ?? '')}
+          value={chosen ?? ''}
           onChange={(e) =>
-            onChange({
-              launchId: value.launchId,
-              ...(e.target.value === 'new'
-                ? { newSession: true }
-                : e.target.value
-                  ? { terminalId: e.target.value }
-                  : {}),
-            })
+            onChange({ launchId: value.launchId, ...(e.target.value ? { terminalId: e.target.value } : {}) })
           }
         >
-          <option value="">Reuse matching session, or open one</option>
-          <option value="new">Open a fresh session</option>
+          <option value="">New session (clean context)</option>
           {matching.map((t) => (
             <option key={t.id} value={t.id}>
               {t.title} · {model.agents.find((a) => a.terminalId === t.id)?.state}
@@ -198,6 +193,8 @@ function TaskPanel() {
   const index = task ? phaseIndex(task) : 0;
   const awaiting = !!task && !task.approvedPlan && (task.phase === 'planning' || task.phase === 'ready');
   const hooked = !!task?.hookTerminalId && task.planner.terminalId === task.hookTerminalId;
+  const roleName = (role: RoleName) => model.launchers.find((a) => a.launchId === task?.[role]?.launchId)?.name ?? role;
+  const outbox = task?.outbox;
   const versions = task?.versions ?? [];
   const viewed = shownVersion !== null ? versions[shownVersion] : undefined;
   const heading = !task
@@ -269,6 +266,27 @@ function TaskPanel() {
           {error || task?.error}
         </div>
       )}
+      {task && outbox && (
+        <div className="delivery" role="status" data-testid="task-delivery">
+          <span>
+            Waiting to hand the {outbox.role === 'planner' ? 'feedback' : 'prompt'} to the {outbox.role} (
+            {roleName(outbox.role)}){outbox.waiting ? `: ${outbox.waiting}` : '.'} It is sent as soon as the agent is
+            ready.
+          </span>
+          <span className="toolbar-actions">
+            <button
+              className="subtle"
+              disabled={pending}
+              onClick={() => void action('show', { id: task.id, role: outbox.role })}
+            >
+              Show terminal
+            </button>
+            <button className="subtle" disabled={pending} onClick={() => void action('cancelDelivery', task.id)}>
+              Cancel
+            </button>
+          </span>
+        </div>
+      )}
       {!model.project ? (
         <p className="muted">Open a project to plan a task.</p>
       ) : !task ? (
@@ -296,15 +314,15 @@ function TaskPanel() {
             Start new Claude sessions in plan mode
           </label>
           <p className="muted hint">
-            A Claude planner opens a new session in plan mode (Opus, high effort) with bypass permissions available,
-            edits in the project blocked and its finished plan sent here instead of a question in the terminal. A chosen
-            existing session keeps its context and mode.
+            Each role gets a new session with a clean context unless you choose a running one. A Claude planner starts
+            in plan mode (Opus, high effort) with edits in the project blocked; its finished plan appears here and
+            Claude waits for your decision. The implementer receives only the task and the approved plan.
           </p>
           {model.launchers.length === 0 && (
             <p className="muted">No agents available. Detect or configure them in Settings → AI Agents.</p>
           )}
           <div className="footer">
-            <span className="muted">Ordinary terminals. One plan per hand-off.</span>
+            <span className="muted">Ordinary terminals. Every stage starts when you say so.</span>
             <button
               className="primary"
               data-testid="task-start"
@@ -377,9 +395,11 @@ function TaskPanel() {
             <p className="muted hint">
               {task.approvedPlan
                 ? 'The implementer received this exact plan. Conversations stay in their own terminals.'
-                : hooked
-                  ? 'Claude Code sends its finished plan here instead of asking in the terminal. Approve it, send feedback to revise it, or reject it.'
-                  : 'Claude’s native plan document is captured automatically. You can also paste or refine a plan below before approving it.'}
+                : model.planWaiting
+                  ? 'Claude is waiting for your decision. Approve the plan, send feedback (Claude revises it right away) or reject it.'
+                  : hooked
+                    ? 'Claude sends its finished plan here and waits for your decision. If it stopped waiting (Esc in its terminal), feedback is typed into its terminal once it is ready.'
+                    : 'The planner’s plan document is captured automatically. You can also paste or refine a plan below before approving it.'}
             </p>
             {(viewed?.source ?? task.source) && (
               <p className="document-path" title={viewed?.source ?? task.source}>
@@ -419,7 +439,7 @@ function TaskPanel() {
                 <textarea
                   aria-label="Feedback for the planner"
                   data-testid="task-feedback"
-                  placeholder="What should the planner change? Your feedback is pasted into its terminal."
+                  placeholder="What should the planner change?"
                   maxLength={8000}
                   rows={3}
                   value={feedback}
@@ -442,11 +462,18 @@ function TaskPanel() {
                 {deleteArmed ? 'Confirm deletion' : 'Delete task'}
               </button>
               <div className="toolbar-actions">
-                {awaiting && !(task.phase === 'ready' && plan) && (
-                  <button disabled={pending} onClick={() => void action('retryPlan', task.id)}>
-                    Retry planning prompt
-                  </button>
-                )}
+                {awaiting &&
+                  !(task.phase === 'ready' && plan) &&
+                  !outbox &&
+                  (!!task.error || !model.agents.some((a) => a.terminalId === task.planner.terminalId)) && (
+                    <button
+                      data-testid="task-retry-plan"
+                      disabled={pending}
+                      onClick={() => void action('retryPlan', task.id)}
+                    >
+                      Retry planning prompt
+                    </button>
+                  )}
                 {awaiting && plan && (
                   <button data-testid="task-reject" disabled={pending} onClick={() => void action('reject', task.id)}>
                     Reject
@@ -475,26 +502,28 @@ function TaskPanel() {
                     Approve & implement →
                   </button>
                 )}
-                {task.approvedPlan && task.phase === 'ready' && (
-                  <button
-                    className="primary"
-                    data-testid="task-implement"
-                    disabled={pending}
-                    onClick={() => void action('implement', task.id)}
-                  >
-                    Retry implementation →
-                  </button>
-                )}
-                {task.phase === 'implementing' && task.reviewer && (
-                  <button
-                    className="primary"
-                    data-testid="task-review"
-                    disabled={pending}
-                    onClick={() => void action('review', task.id)}
-                  >
-                    Implementation ready · Review →
-                  </button>
-                )}
+                {task.approvedPlan &&
+                  (task.phase === 'ready' || (task.phase === 'implementing' && !!task.error && !outbox)) && (
+                    <button
+                      className="primary"
+                      data-testid="task-implement"
+                      disabled={pending}
+                      onClick={() => void action('implement', task.id)}
+                    >
+                      Retry implementation →
+                    </button>
+                  )}
+                {task.reviewer &&
+                  (task.phase === 'implementing' || (task.phase === 'reviewing' && !!task.error && !outbox)) && (
+                    <button
+                      className="primary"
+                      data-testid="task-review"
+                      disabled={pending}
+                      onClick={() => void action('review', task.id)}
+                    >
+                      Implementation ready · Review →
+                    </button>
+                  )}
                 {['implementing', 'reviewing'].includes(task.phase) && (
                   <button data-testid="task-done" disabled={pending} onClick={() => void action('done', task.id)}>
                     Mark done ✓

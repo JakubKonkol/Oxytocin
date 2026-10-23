@@ -317,7 +317,10 @@ export function createApi(deps: ApiDeps): OxytocinApi {
       },
       sendPrompt: async (terminalId, text) => {
         require('terminals.write');
-        return call<{ ok: true } | { ok: false; error: string }>('agents.sendPrompt', { id: terminalId, text });
+        return call<{ ok: true } | { ok: false; error: string; pasted?: boolean }>('agents.sendPrompt', {
+          id: terminalId,
+          text,
+        });
       },
     },
     git: {

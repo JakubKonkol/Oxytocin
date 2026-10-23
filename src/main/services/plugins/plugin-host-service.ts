@@ -109,7 +109,10 @@ export interface PluginCorePort {
     accountOf(terminalProfileId: string, agentId: string): string | undefined;
     limits(): AgentLimits[];
     reportLimits(limits: unknown): void;
-    sendPrompt(terminalId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
+    sendPrompt(
+      terminalId: string,
+      text: string,
+    ): Promise<{ ok: true } | { ok: false; error: string; pasted?: boolean }>;
   };
   git: {
     status(projectId: string): RepoStatus | null;

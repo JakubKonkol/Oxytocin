@@ -3,11 +3,18 @@ import { z } from 'zod';
 export const MAX_PLAN = 90_000;
 export const MAX_VERSIONS = 30;
 
+/**
+ * An agent for one role. Without `terminalId` Task opens a fresh session of `launchId` (a clean context for each
+ * role); `terminalId` is the role's session once started, or a running session the user chose.
+ */
 export const RoleSchema = z.object({
   launchId: z.string().startsWith('ai:').max(200),
+  /** Kept for tasks saved by Task 0.3: every role without a chosen session opens a fresh one. */
   newSession: z.boolean().optional(),
   terminalId: z.string().min(1).max(64).optional(),
 });
+export const ROLES = ['planner', 'implementer', 'reviewer'] as const;
+export type RoleName = (typeof ROLES)[number];
 export const TaskInputSchema = z.object({
   description: z.string().trim().min(1).max(8000),
   planner: RoleSchema,
@@ -29,6 +36,21 @@ export const PlanVersionSchema = z.object({
   feedback: z.string().max(8000).optional(),
 });
 export type PlanVersion = z.infer<typeof PlanVersionSchema>;
+/**
+ * A prompt Task types into a role's existing session as soon as its agent waits for input (it is never typed over
+ * a running turn or a question on screen). New sessions get their prompt on the command line instead.
+ */
+export const OutboxSchema = z.object({
+  role: z.enum(ROLES),
+  prompt: z
+    .string()
+    .min(1)
+    .max(MAX_PLAN + 9000),
+  at: z.number(),
+  /** Why it has not been delivered yet (the agent is busy, a question is open…). */
+  waiting: z.string().max(500).optional(),
+});
+export type Outbox = z.infer<typeof OutboxSchema>;
 export const TaskSchema = TaskInputSchema.extend({
   id: z.uuid(),
   projectId: z.string().min(1).max(64),
@@ -39,6 +61,7 @@ export const TaskSchema = TaskInputSchema.extend({
   hookTerminalId: z.string().max(64).optional(),
   approvedPlan: z.string().max(MAX_PLAN).optional(),
   approvedAt: z.number().optional(),
+  outbox: OutboxSchema.optional(),
   startedAt: z.number(),
   updatedAt: z.number(),
   source: z.string().optional(),
@@ -65,24 +88,57 @@ export function addVersion(
   if (version.source) task.source = version.source;
 }
 
-export function plannerPrompt(task: Task, document: string, hooked: boolean): string {
+/**
+ * The files Task gives the agents (in its own storage, outside the repository): the description, the plan document
+ * of a planner that is not Claude Code, and the brief that the implementer and the reviewer read.
+ */
+export interface TaskFiles {
+  task: string;
+  plan: string;
+  brief: string;
+}
+
+/** `path` as the prompts spell it: in backticks, which no shell expands inside a quoted argument. */
+const file = (path: string) => `\`${path}\``;
+
+/** The description itself when it reads well in the prompt's single line, else only the file holding it. */
+function taskLine(task: Task, files: TaskFiles): string {
+  const d = task.description.trim();
+  return /^[^\n\r\t%!`]{1,400}$/.test(d)
+    ? `Task: ${d} (also saved in ${file(files.task)}).`
+    : `The task is described in ${file(files.task)}; read it first.`;
+}
+
+/**
+ * The planner's first prompt: one line, so that a new session receives it on its command line. `hooked`: a Claude
+ * Code session started with Task's plan hook.
+ */
+export function plannerPrompt(task: Task, files: TaskFiles, hooked: boolean): string {
+  const common = `Plan this task; do not implement it. ${taskLine(task, files)} Explore the code and ask the user in this terminal when something is unclear.`;
   if (hooked)
-    return `Plan this task; do not implement it. Explore the code and discuss questions with the user in this terminal. When the plan is complete, finish it with ExitPlanMode: Oxytocin hands it to the user for approval, and a separate agent implements it.\n\nTask:\n${task.description}`;
-  return `Plan this task; do not implement it. Discuss questions with the user in this terminal. ${task.planMode ? 'Use plan mode. ' : ''}If you are Claude Code, save the final plan in your native plan document; Oxytocin will capture it. Otherwise save the final Markdown plan to ${JSON.stringify(document)}. Stop after planning: the user approves the plan in Task and a separate agent implements it.\n\nTask:\n${task.description}`;
+    return `${common} When the plan is complete, finish it with ExitPlanMode: Oxytocin shows it to the user for approval and a separate agent implements it.`;
+  return `${common} ${task.planMode ? 'Use plan mode if you have one. ' : ''}Write the final plan as a Markdown document to ${file(files.plan)} (Claude Code may use its native plan document instead; Oxytocin captures it), then stop: the user approves the plan in Oxytocin and a separate agent implements it.`;
 }
 
-/** The user's feedback for the planner. A hooked Claude session was told how to finish the revision already. */
-export function revisionPrompt(feedback: string, document: string, hooked: boolean): string {
-  if (hooked) return feedback;
-  return `Revise the plan with the feedback below, then save the whole revised Markdown plan again (Claude Code: your native plan document; other agents: ${JSON.stringify(document)}). Do not implement it.\n\nFeedback:\n${feedback}`;
+/** The user's feedback typed into a planner whose plan hook no longer waits (or that has none). */
+export function revisionPrompt(feedback: string, files: TaskFiles, hooked: boolean): string {
+  if (hooked)
+    return `The user reviewed your plan and asks for changes. Revise it in plan mode and finish the whole revised plan with ExitPlanMode again. Feedback: ${feedback}`;
+  return `The user reviewed your plan and asks for changes. Revise it and write the whole revised Markdown plan to ${file(files.plan)} again (Claude Code: your native plan document). Do not implement it. Feedback: ${feedback}`;
 }
 
-export function implementationPrompt(task: Task): string {
+/** The brief the implementer and the reviewer read: the task and the approved plan, nothing from the planner's chat. */
+export function briefDocument(task: Task): string {
   if (!task.approvedPlan?.trim()) throw new Error('Approve a non-empty plan first.');
-  return `Implement the following user-approved plan. Follow the project's instructions and run the relevant checks.\n\nTask:\n${task.description}\n\nApproved plan:\n${task.approvedPlan}`;
+  return `# Task\n\n${task.description.trim()}\n\n# Approved plan\n\n${task.approvedPlan.trim()}\n`;
 }
 
-export function reviewPrompt(task: Task): string {
-  if (!task.approvedPlan) throw new Error('Approve a plan first.');
-  return `Review the current changes against the approved plan below. Check for bugs, regressions and missing requirements. Report actionable findings as a concise list with file and line references. Do not edit files.\n\nTask:\n${task.description}\n\nApproved plan:\n${task.approvedPlan}`;
+export function implementationPrompt(task: Task, files: TaskFiles): string {
+  if (!task.approvedPlan?.trim()) throw new Error('Approve a non-empty plan first.');
+  return `Implement the user-approved plan in ${file(files.brief)}. Read the whole file first; it holds the task and the plan, which was written and approved before you started. Follow the project's instructions and run the relevant checks.`;
+}
+
+export function reviewPrompt(task: Task, files: TaskFiles): string {
+  if (!task.approvedPlan?.trim()) throw new Error('Approve a plan first.');
+  return `Review the current changes in this repository against the task and the user-approved plan in ${file(files.brief)} (read it first). Check for bugs, regressions and missing requirements. Report actionable findings as a concise list with file and line references. Do not edit files.`;
 }

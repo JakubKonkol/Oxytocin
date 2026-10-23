@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.2
+
+- `oxy.agents.launch` gives a new Claude Code, Codex CLI, Gemini CLI or Qwen Code session a one-line prompt (up to
+  2000 characters) as an argument of its command line: the agent starts with it, nothing is typed into its input box
+  and `sent` is true at once. Longer or multi-line prompts are typed once the agent is ready, as before.
+- `AgentLaunchRequest.addDirs`: directories a new session may use besides the project (`--add-dir`,
+  `--include-directories`).
+- `oxy.agents.sendPrompt` reports `pasted: true` when the text reached the agent's input box but the agent did not
+  start working, so that a caller does not send it twice.
+
 ## 0.2.1
 
 - `knowledge` and `context-receipt` slices require **both** `code-map.read` and `code-map.knowledge.read`. Structural

@@ -510,6 +510,11 @@ export interface AgentLaunchRequest {
   claudeArgs?: string[];
   /** Environment variables of a new session's terminal (at most 16). Reused sessions keep theirs. Since API 0.1.10. */
   env?: Record<string, string>;
+  /**
+   * Directories a new session may read and write besides the project (at most 8): `--add-dir` for Claude Code and
+   * Codex CLI, `--include-directories` for Gemini CLI and Qwen Code. Reused sessions keep theirs. Since API 0.2.2.
+   */
+  addDirs?: string[];
 }
 export interface AgentLaunchResult {
   terminalId: string;
@@ -524,6 +529,9 @@ export interface AgentsApi {
    * agents.read + terminals.create + terminals.write ? reuses a matching session or opens an ordinary terminal.
    * Reveals and focuses the terminal in its project's workspace (since API 0.1.9).
    * Sends the optional prompt only when ready; inspect sent/error and let the user retry if it is busy or waiting.
+   * A new session of Claude Code, Codex CLI, Gemini CLI or Qwen Code receives a one-line prompt (up to 2000
+   * characters) as an argument of its command line instead: it starts with the prompt and `sent` is true at once
+   * (since API 0.2.2).
    * terminalId explicitly selects a running session of this profile and project. Since API 0.1.8.
    */
   launch(options: AgentLaunchRequest): Promise<AgentLaunchResult>;
@@ -559,9 +567,10 @@ export interface AgentsApi {
   /**
    * terminals.write — types a prompt into the agent of a terminal and submits it, only while the agent waits for
    * input (idle) and no question (trust, login, yes/no) is on screen; resolves once the agent started working, or with
-   * the reason it was not sent. Slash commands are refused. Since API 0.1.7.
+   * the reason it was not sent. Slash commands are refused. `pasted`: the text reached the agent's input box but it
+   * did not start working (do not send it again; since API 0.2.2). Since API 0.1.7.
    */
-  sendPrompt(terminalId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  sendPrompt(terminalId: string, text: string): Promise<{ ok: true } | { ok: false; error: string; pasted?: boolean }>;
 }
 
 // ── Git ─────────────────────────────────────────────────── (git.read)

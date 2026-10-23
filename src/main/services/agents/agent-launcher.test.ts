@@ -2,13 +2,21 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AgentInfoWithTerminal } from '@shared/domain/agent';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
-import { AgentLauncherService } from './agent-launcher';
+import type { ShellKind } from '@shared/utils/shell-command';
+import { AgentLauncherService, type NewSessionLaunch, startupPromptArgs } from './agent-launcher';
 
-function setup() {
+function setup(shell: ShellKind = 'bash') {
   const terms: TerminalInfo[] = [];
   const agents: AgentInfoWithTerminal[] = [];
-  const profile = { id: 'ai:claude', icon: 'agent-claude', command: 'claude --model opusplan' } as TerminalProfile;
-  const create = vi.fn((projectId: string, profileId: string) => {
+  const profiles = [
+    { id: 'ai:claude', icon: 'agent-claude', command: 'claude --model opusplan' },
+    { id: 'ai:codex', icon: 'agent-codex', command: 'codex' },
+    { id: 'ai:aider', icon: 'agent-aider', command: 'aider' },
+  ] as TerminalProfile[];
+  /** The command line of each new session, as its shell receives it ({ head, args }). */
+  const commands: ({ head: string; args: string[] } | undefined)[] = [];
+  const create = vi.fn((projectId: string, profileId: string, launch?: NewSessionLaunch) => {
+    commands.push(launch?.command?.(shell));
     const t = { id: `t${terms.length}`, projectId, profileId, state: 'running' } as TerminalInfo;
     terms.push(t);
     agents.push({ terminalId: t.id, projectId, state: 'idle' } as AgentInfoWithTerminal);
@@ -17,27 +25,58 @@ function setup() {
   const send = vi.fn(() => Promise.resolve({ ok: true as const }));
   const show = vi.fn();
   const service = new AgentLauncherService({
-    profile: (id) => Promise.resolve(id === profile.id ? profile : undefined),
+    profile: (id) => Promise.resolve(profiles.find((p) => p.id === id)),
     terminals: (id) => terms.filter((t) => t.projectId === id),
     agents: () => agents,
     create,
     send,
     show,
   });
-  return { service, create, send, show, terms, agents };
+  return { service, create, send, show, terms, agents, commands };
 }
 
 describe('AgentLauncherService', () => {
-  it('starts a normal profile terminal with plan mode and preserves the custom command', async () => {
+  it('starts a new session with its prompt on the command line, in plan mode, with the custom command', async () => {
     const s = setup();
     expect(
       await s.service.launch({ projectId: 'p', launchId: 'ai:claude', planMode: true, prompt: 'Plan this' }),
     ).toEqual({ terminalId: 't0', reused: false, sent: true });
-    expect(s.create).toHaveBeenCalledWith('p', 'ai:claude', {
-      command: { head: 'claude --model opusplan', args: ['--permission-mode', 'plan'] },
+    expect(s.commands[0]).toEqual({
+      head: 'claude --model opusplan',
+      args: ['--permission-mode', 'plan', 'Plan this'],
     });
     expect(s.show).toHaveBeenCalledWith('t0', 'p');
-    expect(s.send).toHaveBeenCalledWith('t0', 'Plan this');
+    // Nothing is typed: the agent starts with the prompt.
+    expect(s.send).not.toHaveBeenCalled();
+  });
+  it('types a prompt the command line cannot carry once the new session is ready', async () => {
+    const s = setup();
+    expect(await s.service.launch({ projectId: 'p', launchId: 'ai:claude', prompt: 'Line one\nLine two' })).toEqual({
+      terminalId: 't0',
+      reused: false,
+      sent: true,
+    });
+    expect(s.commands[0]).toEqual({ head: 'claude --model opusplan', args: [] });
+    expect(s.send).toHaveBeenCalledWith('t0', 'Line one\nLine two');
+    // CLIs without a startup prompt start with their configured command.
+    await s.service.launch({ projectId: 'p', launchId: 'ai:aider', prompt: 'Fix it' });
+    expect(s.commands[1]).toBeUndefined();
+    expect(s.send).toHaveBeenLastCalledWith('t1', 'Fix it');
+  });
+  it('passes Codex its prompt and extra directories', async () => {
+    const s = setup();
+    await s.service.launch({ projectId: 'p', launchId: 'ai:codex', prompt: 'Implement it', addDirs: ['/data/task'] });
+    expect(s.commands[0]).toEqual({ head: 'codex', args: ['--add-dir', '/data/task', 'Implement it'] });
+    expect(s.send).not.toHaveBeenCalled();
+  });
+  it('never puts what cmd.exe would expand on its command line', async () => {
+    const s = setup('cmd');
+    await s.service.launch({ projectId: 'p', launchId: 'ai:codex', prompt: 'Use 100% of %PATH%' });
+    expect(s.commands[0]).toEqual({ head: 'codex', args: [] });
+    expect(s.send).toHaveBeenCalledWith('t0', 'Use 100% of %PATH%');
+    expect(startupPromptArgs('gemini', 'Plan it', 'pwsh')).toEqual(['--prompt-interactive', 'Plan it']);
+    expect(startupPromptArgs('claude', 'x'.repeat(2001), 'bash')).toBeUndefined();
+    expect(startupPromptArgs('claude', 'tab\there', 'bash')).toBeUndefined();
   });
   it('adds Claude arguments and variables to a new session only', async () => {
     const s = setup();
@@ -46,22 +85,23 @@ describe('AgentLauncherService', () => {
       launchId: 'ai:claude',
       planMode: true,
       claudeArgs: ['--allow-dangerously-skip-permissions', '--settings', 'C:\\Users\\Jane Doe\\task.json'],
+      addDirs: ['C:\\Users\\Jane Doe\\task'],
       env: { OXYTOCIN_TASK_ID: 'task-1' },
     };
     await s.service.launch(request);
-    expect(s.create).toHaveBeenCalledWith('p', 'ai:claude', {
-      command: {
-        head: 'claude --model opusplan',
-        args: [
-          '--permission-mode',
-          'plan',
-          '--allow-dangerously-skip-permissions',
-          '--settings',
-          'C:\\Users\\Jane Doe\\task.json',
-        ],
-      },
-      env: { OXYTOCIN_TASK_ID: 'task-1' },
+    expect(s.commands[0]).toEqual({
+      head: 'claude --model opusplan',
+      args: [
+        '--permission-mode',
+        'plan',
+        '--allow-dangerously-skip-permissions',
+        '--settings',
+        'C:\\Users\\Jane Doe\\task.json',
+        '--add-dir',
+        'C:\\Users\\Jane Doe\\task',
+      ],
     });
+    expect(s.create.mock.calls[0]![2]).toMatchObject({ env: { OXYTOCIN_TASK_ID: 'task-1' } });
     // A reused session keeps its own command line and environment.
     expect((await s.service.launch(request)).reused).toBe(true);
     expect(s.create).toHaveBeenCalledTimes(1);
@@ -79,7 +119,8 @@ describe('AgentLauncherService', () => {
       reused: true,
     });
     expect(s.create).toHaveBeenCalledTimes(1);
-    expect(s.send).toHaveBeenCalledTimes(2);
+    // The new session got the prompt on its command line; only the reused one had it typed.
+    expect(s.send).toHaveBeenCalledTimes(1);
   });
   it('supports a fresh session and rejects a session from another project or profile', async () => {
     const s = setup();

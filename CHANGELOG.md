@@ -3,6 +3,25 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Changed
+
+- **Task:** reworked so that planner → approval → implementer works without manual hand-offs.
+  - A Claude planner hands its finished plan to Task and **waits for your decision** in its plan hook: Approve ends its
+    turn, Revise sends your feedback as its answer (Claude revises at once, nothing is typed into its terminal), Reject
+    ends the task. Press Esc in its terminal to talk to it instead.
+  - Every role starts in a **new session with a clean context** unless you choose a running one; the implicit reuse
+    of a matching session is gone. New sessions start with their prompt on the command line, so "the agent is not
+    ready" no longer happens.
+  - A prompt for a session that already runs is typed as soon as its agent waits for input, never over a turn or a
+    question; Task shows what it waits for instead of an error, and there is nothing to retry.
+  - The implementer and the reviewer read a brief (the task and the approved plan) from Task's folder, so the plan
+    keeps its formatting on Windows too.
+- **AI agents:** a new Claude Code, Codex CLI, Gemini CLI or Qwen Code session started by Oxytocin with a prompt (Task,
+  Changes → Send to review, plugins) receives it on its command line instead of having it typed once the agent is
+  ready (Plugin API 0.2.2, which also adds `addDirs`).
+
 ## [0.9.12] - 2026-10-21
 
 ### Fixed

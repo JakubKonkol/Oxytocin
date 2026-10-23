@@ -276,6 +276,17 @@ textarea:focus-visible {
   color: var(--danger);
   background: var(--bg-elevated);
 }
+.delivery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-control, 6px);
+  background: var(--bg-elevated);
+}
 @media (max-width: 680px) {
   .task-panel {
     padding: 16px;

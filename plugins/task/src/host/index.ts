@@ -5,22 +5,27 @@ import type { AgentSnapshot, PluginContext, PluginView, ProjectInfo } from '@oxy
 import { z } from 'zod';
 import {
   addVersion,
+  briefDocument,
   implementationPrompt,
   MAX_PLAN,
   plannerPrompt,
   reviewPrompt,
   revisionPrompt,
+  ROLES,
   TaskInputSchema,
   TaskSchema,
+  type RoleName,
   type Task,
-  type Role,
+  type TaskFiles,
 } from '../shared/task';
-import { handedOver, HOOK_PATH, PlanHookServer, plannerSettings, TASK_VAR } from './hook';
+import { decision, DECISION_REASONS, HOOK_PATH, PlanHookServer, plannerSettings, TASK_VAR } from './hook';
 import { captureClaudePlan, readPlan } from './plans';
 
 const HookStateSchema = z.object({ port: z.number().int().min(0).max(65535), token: z.string().min(32).max(128) });
 /** New Claude planning sessions: Opus with high effort, unless an API profile chooses its own model. */
 const PLANNER_MODEL = ['--model', 'opus', '--effort', 'high'];
+/** How long a queued prompt waits for a session whose agent has not been detected yet before Task gives up. */
+const AGENT_START_GRACE_MS = 60_000;
 
 export async function activate(ctx: PluginContext): Promise<void> {
   const { oxy } = ctx;
@@ -35,10 +40,18 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const stored = z.array(TaskSchema).max(100).safeParse(raw);
   const tasks = stored.success ? stored.data : [];
   const busy = new Set<string>();
+  const delivering = new Set<string>();
+  const recheck = new Set<string>();
   let disposed = false;
   const taskDir = (t: Task) => join(ctx.storage.projectDir(t.projectId), t.id);
-  const document = (t: Task) => join(taskDir(t), 'plan.md');
+  const files = (t: Task): TaskFiles => ({
+    task: join(taskDir(t), 'task.md'),
+    plan: join(taskDir(t), 'plan.md'),
+    brief: join(taskDir(t), 'brief.md'),
+  });
   const hooked = (t: Task) => !!t.hookTerminalId && t.planner.terminalId === t.hookTerminalId;
+  /** Claude Code sessions waiting in Task's plan hook for the user's decision, by task id. */
+  const held = new Map<string, { resolve: (output: object | undefined) => void }>();
   let writes = Promise.resolve();
   const persist = () => {
     const snapshot = JSON.stringify(tasks);
@@ -53,18 +66,23 @@ export async function activate(ctx: PluginContext): Promise<void> {
   };
   let active: ProjectInfo | undefined;
   const projectOf = (view: PluginView) => view.projectId ?? active?.id;
-  const model = async (projectId: string | undefined, selected?: string) => ({
-    project: projectId
-      ? { id: projectId, name: (await oxy.projects.list()).find((p) => p.id === projectId)?.name ?? projectId }
-      : null,
-    tasks: tasks
-      .filter((t) => t.projectId === projectId)
-      .map((t) => ({ id: t.id, description: t.description.slice(0, 160), phase: t.phase })),
-    task: tasks.find((t) => t.projectId === projectId && (!selected || t.id === selected)) ?? null,
-    launchers: await oxy.agents.listLaunchers(),
-    agents: projectId ? (await oxy.agents.list()).filter((a) => a.projectId === projectId) : [],
-    terminals: projectId ? await oxy.terminals.list({ projectId }) : [],
-  });
+  const model = async (projectId: string | undefined, selected?: string) => {
+    const task = tasks.find((t) => t.projectId === projectId && (!selected || t.id === selected)) ?? null;
+    return {
+      project: projectId
+        ? { id: projectId, name: (await oxy.projects.list()).find((p) => p.id === projectId)?.name ?? projectId }
+        : null,
+      tasks: tasks
+        .filter((t) => t.projectId === projectId)
+        .map((t) => ({ id: t.id, description: t.description.slice(0, 160), phase: t.phase })),
+      task,
+      /** The planner waits in Task's hook for the decision on the current plan. */
+      planWaiting: !!task && held.has(task.id),
+      launchers: await oxy.agents.listLaunchers(),
+      agents: projectId ? (await oxy.agents.list()).filter((a) => a.projectId === projectId) : [],
+      terminals: projectId ? await oxy.terminals.list({ projectId }) : [],
+    };
+  };
   const push = async () => {
     for (const [view, state] of views) {
       if (!view.visible) continue;
@@ -76,13 +94,14 @@ export async function activate(ctx: PluginContext): Promise<void> {
       else delete state.shown;
     }
   };
+  const pushLater = () => void push().catch((e: unknown) => ctx.log.warn(String(e)));
   let projectEvents = 0;
   ctx.subscriptions.push(
     oxy.projects.onDidChangeActive((project) => {
       projectEvents++;
       active = project;
       for (const [view, state] of views) if (!view.projectId) delete state.selected;
-      void push().catch((e: unknown) => ctx.log.warn(String(e)));
+      pushLater();
     }),
   );
   const initialEvents = projectEvents;
@@ -100,9 +119,17 @@ export async function activate(ctx: PluginContext): Promise<void> {
     return task;
   };
   const awaitingPlan = (t: Task) => !t.approvedPlan && (t.phase === 'planning' || t.phase === 'ready');
+  /** Answers the planner waiting in the plan hook, if one waits. */
+  const decide = (t: Task, output: object | undefined) => {
+    const waiting = held.get(t.id);
+    if (!waiting) return false;
+    held.delete(t.id);
+    waiting.resolve(output);
+    return true;
+  };
 
-  // Claude Code hands its finished plan to Task through a PreToolUse hook (see ./hook). Port and token survive
-  // restarts so planning sessions that are still open keep reaching Task.
+  // Claude Code hands its finished plan to Task through a PreToolUse hook (see ./hook) and waits there for the
+  // user's decision. Port and token survive restarts so planning sessions that are still open keep reaching Task.
   const hookFile = join(ctx.storage.globalDir, 'hook.json');
   const savedHook = HookStateSchema.safeParse(
     await readFile(hookFile, 'utf8')
@@ -110,11 +137,13 @@ export async function activate(ctx: PluginContext): Promise<void> {
       .catch(() => null),
   );
   const token = savedHook.success ? savedHook.data.token : randomBytes(24).toString('hex');
-  const server = new PlanHookServer(token, async (taskId, input) => {
+  const server = new PlanHookServer(token, async (taskId, input, closed) => {
     const t = tasks.find((task) => task.id === taskId);
     if (!t || !awaitingPlan(t)) return undefined;
     const plan = input.tool_input.plan;
     if (!plan.trim() || plan.length > MAX_PLAN) return undefined;
+    // A request that is still open belongs to an earlier plan: Claude Code asks about that one in its terminal.
+    decide(t, undefined);
     addVersion(t, {
       plan,
       at: Date.now(),
@@ -123,19 +152,31 @@ export async function activate(ctx: PluginContext): Promise<void> {
     });
     t.phase = 'ready';
     delete t.error;
+    // Feedback still waiting to be typed belongs to the plan this one replaces.
+    if (t.outbox?.role === 'planner') delete t.outbox;
+    const entry = { resolve: (_output: object | undefined) => {} };
+    const answer = new Promise<object | undefined>((resolve) => (entry.resolve = resolve));
+    held.set(t.id, entry);
+    closed.addEventListener('abort', () => {
+      // Esc in the terminal, or the session ended: the plan stays in Task; feedback is typed from now on.
+      if (held.get(t.id) !== entry) return;
+      held.delete(t.id);
+      entry.resolve(undefined);
+      pushLater();
+    });
     await save(t);
     // Someone looking at the task sees the plan arrive; anyone else is told where it is.
-    if ([...views.keys()].some((view) => view.visible && projectOf(view) === t.projectId)) return handedOver();
-    void oxy.ui
-      .showNotification({
-        level: 'info',
-        message: 'A plan is ready for your approval in Task.',
-        detail: t.description.slice(0, 120),
-        actions: [{ id: 'open', title: 'Open Task' }],
-      })
-      .then((action) => (action === 'open' ? oxy.ui.openPanel('task.panel', { placement: 'sidebar' }) : undefined))
-      .catch(() => undefined);
-    return handedOver();
+    if (![...views.keys()].some((view) => view.visible && projectOf(view) === t.projectId))
+      void oxy.ui
+        .showNotification({
+          level: 'info',
+          message: 'A plan is ready for your approval in Task.',
+          detail: t.description.slice(0, 120),
+          actions: [{ id: 'open', title: 'Open Task' }],
+        })
+        .then((action) => (action === 'open' ? oxy.ui.openPanel('task.panel', { placement: 'sidebar' }) : undefined))
+        .catch(() => undefined);
+    return answer;
   });
   let hookUrl: string | undefined;
   try {
@@ -179,8 +220,8 @@ export async function activate(ctx: PluginContext): Promise<void> {
     busy.add(t.id);
     try {
       let found: { path: string; text: string } | null = null;
-      const text = await readPlan(document(t), t.startedAt);
-      if (text) found = { path: document(t), text };
+      const text = await readPlan(files(t).plan, t.startedAt);
+      if (text) found = { path: files(t).plan, text };
       const agent = agents.find((a) => a.terminalId === t.planner.terminalId && a.projectId === t.projectId);
       if (!found && agent?.agentId === 'claude-code' && agent.sessionId) {
         const accounts = await oxy.agents.listAccounts();
@@ -196,41 +237,112 @@ export async function activate(ctx: PluginContext): Promise<void> {
       busy.delete(t.id);
     }
   };
-  /** `prompt` gets whether the planner's session hands its plan over through Task's hook. */
-  const send = async (t: Task, role: Role, prompt: string | ((hooked: boolean) => string), planMode = false) => {
-    // Saved terminal ids may no longer exist after a restart or after the user closed a terminal.
-    if (
-      role.terminalId &&
-      !(await oxy.terminals.list({ projectId: t.projectId })).some(
-        (terminal) => terminal.id === role.terminalId && terminal.status === 'running',
-      )
-    )
-      delete role.terminalId;
-    const previousRoles = role === t.planner ? [] : role === t.implementer ? [t.planner] : [t.planner, t.implementer];
-    if (role.terminalId && previousRoles.some((r) => r.terminalId === role.terminalId))
+
+  const agentOf = async (t: Task, terminalId: string | undefined) =>
+    terminalId
+      ? (await oxy.agents.list()).find((a) => a.terminalId === terminalId && a.projectId === t.projectId)
+      : undefined;
+  const queue = (t: Task, role: RoleName, prompt: string) => {
+    t.outbox = { role, prompt, at: Date.now() };
+  };
+  /**
+   * Hands a prompt to a role. A role without a running agent gets a fresh session that starts with the prompt on its
+   * command line (nothing to wait for); the role's existing session is revealed and the prompt is typed as soon as
+   * its agent waits for input (see `deliver`). `prompt` gets whether the session hands its plan over through Task's
+   * hook.
+   */
+  const start = async (t: Task, name: RoleName, prompt: (hooked: boolean) => string) => {
+    const role = t[name]!;
+    if (role.terminalId && !(await agentOf(t, role.terminalId))) delete role.terminalId;
+    if (role.terminalId && ROLES.some((other) => other !== name && t[other]?.terminalId === role.terminalId))
       throw new Error(
-        'Choose a separate terminal for each role so planning and implementation keep separate contexts.',
+        'Choose a separate session for each role so that planning and implementation keep separate contexts.',
       );
-    // A Claude planner opens its own session with Task's hook, unless the user chose a particular one: only a session
-    // started with the hook hands its plan over.
-    const planner = role === t.planner && !role.terminalId ? await plannerLaunch(t, role.launchId) : undefined;
-    const reuse = !planner && !role.newSession && !previousRoles.some((r) => r.launchId === role.launchId);
-    const viaHook = !!planner || (!!role.terminalId && role.terminalId === t.hookTerminalId);
+    if (t.outbox?.role === name) delete t.outbox;
+    delete t.error;
+    if (role.terminalId) {
+      await oxy.agents.launch({ projectId: t.projectId, launchId: role.launchId, terminalId: role.terminalId });
+      queue(t, name, prompt(hooked(t)));
+      return;
+    }
+    const planner = name === 'planner' ? await plannerLaunch(t, role.launchId) : undefined;
+    const text = prompt(!!planner);
     const result = await oxy.agents.launch({
       projectId: t.projectId,
       launchId: role.launchId,
-      reuse,
-      ...(role.terminalId ? { terminalId: role.terminalId } : {}),
-      prompt: typeof prompt === 'string' ? prompt : prompt(viaHook),
-      planMode,
+      reuse: false,
+      prompt: text,
+      addDirs: [taskDir(t)],
+      ...(name === 'planner' ? { planMode: t.planMode } : {}),
       ...(planner ?? {}),
     });
     role.terminalId = result.terminalId;
-    if (planner) t.hookTerminalId = result.terminalId;
-    if (result.sent) delete t.error;
-    else t.error = result.error ?? 'Open the agent terminal and retry when it is ready.';
-    return result.sent;
+    if (name === 'planner') {
+      if (planner) t.hookTerminalId = result.terminalId;
+      else delete t.hookTerminalId;
+    }
+    if (!result.sent) queue(t, name, text);
   };
+
+  /** Types a queued prompt once its session's agent waits for input; never over a turn or a question. */
+  const deliver = async (t: Task): Promise<void> => {
+    const box = t.outbox;
+    if (!box || disposed) return;
+    // A state change during a delivery is looked at once the delivery is over.
+    if (delivering.has(t.id)) {
+      recheck.add(t.id);
+      return;
+    }
+    delivering.add(t.id);
+    try {
+      const role = t[box.role];
+      const agent = await agentOf(t, role?.terminalId);
+      let waiting: string;
+      if (!agent) {
+        const running = (await oxy.terminals.list({ projectId: t.projectId })).some(
+          (terminal) => terminal.id === role?.terminalId && terminal.status === 'running',
+        );
+        if (running && Date.now() - box.at < AGENT_START_GRACE_MS) waiting = 'The agent is starting.';
+        else {
+          if (t.outbox !== box) return;
+          delete t.outbox;
+          if (role) delete role.terminalId;
+          t.error = `The ${box.role}'s session ended before it received the prompt. Retry to open a new session.`;
+          await save(t);
+          return;
+        }
+      } else if (agent.state !== 'idle')
+        waiting =
+          agent.state === 'waiting'
+            ? 'It waits for an answer in its terminal.'
+            : agent.state === 'working'
+              ? 'It is finishing its current turn.'
+              : 'The agent is starting.';
+      else {
+        const result = await oxy.agents.sendPrompt(agent.terminalId, box.prompt);
+        if (result.ok || result.pasted) {
+          if (t.outbox === box) delete t.outbox;
+          if (result.ok) delete t.error;
+          else t.error = 'The prompt was typed, but the agent did not start working. Check its terminal.';
+          await save(t);
+          return;
+        }
+        waiting = result.error;
+      }
+      if (box.waiting !== waiting) {
+        box.waiting = waiting;
+        await save(t);
+      }
+    } finally {
+      delivering.delete(t.id);
+    }
+    if (recheck.delete(t.id)) await deliver(t);
+  };
+  const deliverAll = () => {
+    for (const t of tasks)
+      if (t.outbox) void deliver(t).catch((e: unknown) => ctx.log.warn('Could not hand a prompt over', String(e)));
+  };
+
   const locked = async <T>(id: string, action: () => Promise<T>): Promise<T> => {
     if (busy.has(id)) throw new Error('This task is busy. Try again in a moment.');
     busy.add(id);
@@ -240,6 +352,24 @@ export async function activate(ctx: PluginContext): Promise<void> {
       busy.delete(id);
     }
   };
+  /** Runs a stage change; a failure to start the agent is kept on the task, the stage stays retryable. */
+  const stage = async (t: Task, action: () => Promise<void>) => {
+    await locked(t.id, async () => {
+      try {
+        await action();
+      } catch (e) {
+        t.error = e instanceof Error ? e.message : String(e);
+      }
+      await save(t);
+    });
+    deliverAll();
+  };
+  const implement = async (t: Task) => {
+    await writeFile(files(t).brief, briefDocument(t));
+    await start(t, 'implementer', () => implementationPrompt(t, files(t)));
+    t.phase = 'implementing';
+  };
+
   ctx.subscriptions.push(
     oxy.ui.registerPanelProvider('task.panel', {
       resolve(view) {
@@ -256,7 +386,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
         };
         view.onDidDispose(() => views.delete(view));
         view.onDidChangeVisibility((visible) => {
-          if (visible) void push().catch((e: unknown) => ctx.log.warn(String(e)));
+          if (visible) pushLater();
         });
         view.onRequest('model', async () => {
           const projectId = projectOf(view);
@@ -294,25 +424,16 @@ export async function activate(ctx: PluginContext): Promise<void> {
           tasks.unshift(t);
           state.selected = t.id;
           await mkdir(taskDir(t), { recursive: true });
+          await writeFile(files(t).task, `${t.description.trim()}\n`);
           await persist();
-          await locked(t.id, async () => {
-            try {
-              await send(t, t.planner, (viaHook) => plannerPrompt(t, document(t), viaHook), t.planMode);
-            } catch (e) {
-              t.error = String(e);
-            }
-            await save(t);
-          });
+          await stage(t, () => start(t, 'planner', (viaHook) => plannerPrompt(t, files(t), viaHook)));
           return t.id;
         });
         view.onRequest('retryPlan', async (raw: unknown) => {
           const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           if (!awaitingPlan(t)) throw new Error('This task is no longer waiting for a plan.');
-          await locked(t.id, async () => {
-            await send(t, t.planner, (viaHook) => plannerPrompt(t, document(t), viaHook), t.planMode);
-            await save(t);
-          });
+          await stage(t, () => start(t, 'planner', (viaHook) => plannerPrompt(t, files(t), viaHook)));
         });
         view.onRequest('revise', async (raw: unknown) => {
           const projectId = await currentProject();
@@ -320,20 +441,12 @@ export async function activate(ctx: PluginContext): Promise<void> {
           const t = requireTask(projectId, input.id);
           await locked(t.id, async () => {
             if (t.phase !== 'ready' || t.approvedPlan) throw new Error('There is no plan waiting for feedback.');
-            const terminalId = t.planner.terminalId;
-            const running = (await oxy.terminals.list({ projectId: t.projectId })).some(
-              (terminal) => terminal.id === terminalId && terminal.status === 'running',
-            );
-            if (!terminalId || !running)
-              throw new Error('The planner terminal is closed. Retry the planning prompt to open a new session.');
-            const result = await oxy.agents.sendPrompt(
-              terminalId,
-              revisionPrompt(input.feedback, document(t), hooked(t)),
-            );
-            if (!result.ok) {
-              t.error = result.error;
-              await save(t);
-              return;
+            // A planner waiting in the hook gets the feedback as its answer; any other one has it typed.
+            if (!decide(t, decision(DECISION_REASONS.revise(input.feedback)))) {
+              const terminalId = t.planner.terminalId;
+              if (!(await agentOf(t, terminalId)))
+                throw new Error('The planner session has ended. Retry the planning prompt to open a new session.');
+              queue(t, 'planner', revisionPrompt(input.feedback, files(t), hooked(t)));
             }
             const current = t.versions.findLast((v) => v.status === 'pending');
             if (current) {
@@ -343,16 +456,19 @@ export async function activate(ctx: PluginContext): Promise<void> {
             t.phase = 'planning';
             delete t.error;
             await save(t);
-            await oxy.terminals.show(terminalId, { placement: 'right' });
+            if (t.planner.terminalId) await oxy.terminals.show(t.planner.terminalId, { placement: 'right' });
           });
+          deliverAll();
         });
         view.onRequest('reject', async (raw: unknown) => {
           const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           await locked(t.id, async () => {
             if (!awaitingPlan(t)) throw new Error('This plan can no longer be rejected.');
+            decide(t, decision(DECISION_REASONS.rejected));
             const current = t.versions.findLast((v) => v.status === 'pending');
             if (current) current.status = 'rejected';
+            if (t.outbox?.role === 'planner') delete t.outbox;
             t.phase = 'rejected';
             delete t.error;
             await save(t);
@@ -362,9 +478,9 @@ export async function activate(ctx: PluginContext): Promise<void> {
           const projectId = await currentProject();
           const input = z.object({ id: z.uuid(), plan: z.string().trim().min(1).max(MAX_PLAN) }).parse(raw);
           const t = requireTask(projectId, input.id);
-          await locked(t.id, async () => {
-            if (t.approvedPlan) throw new Error('This plan has already been approved.');
-            if (!awaitingPlan(t)) throw new Error('This task is no longer waiting for a plan.');
+          if (t.approvedPlan) throw new Error('This plan has already been approved.');
+          if (!awaitingPlan(t)) throw new Error('This task is no longer waiting for a plan.');
+          await stage(t, async () => {
             const current = t.versions.at(-1);
             if (current?.status === 'pending' && current.plan.trim() === input.plan) current.status = 'approved';
             else addVersion(t, { plan: input.plan, at: Date.now(), origin: 'edit' }, 'approved');
@@ -372,29 +488,29 @@ export async function activate(ctx: PluginContext): Promise<void> {
             t.approvedPlan = input.plan;
             t.approvedAt = Date.now();
             t.phase = 'ready';
+            if (t.outbox?.role === 'planner') delete t.outbox;
+            decide(t, decision(DECISION_REASONS.approved));
             await writeFile(join(taskDir(t), 'approved-plan.md'), input.plan);
             await persist();
-            if (await send(t, t.implementer, implementationPrompt(t))) t.phase = 'implementing';
-            await save(t);
+            await implement(t);
           });
         });
         view.onRequest('implement', async (raw: unknown) => {
           const projectId = await currentProject();
           const t = requireTask(projectId, raw);
-          if (t.phase !== 'ready' || !t.approvedPlan) throw new Error('Approve a plan before starting implementation.');
-          await locked(t.id, async () => {
-            if (await send(t, t.implementer, implementationPrompt(t))) t.phase = 'implementing';
-            await save(t);
-          });
+          if (!t.approvedPlan || !['ready', 'implementing'].includes(t.phase))
+            throw new Error('Approve a plan before starting implementation.');
+          await stage(t, () => implement(t));
         });
         view.onRequest('review', async (raw: unknown) => {
           const projectId = await currentProject();
           const t = requireTask(projectId, raw);
-          if (t.phase !== 'implementing' || !t.reviewer)
+          if (!['implementing', 'reviewing'].includes(t.phase) || !t.reviewer)
             throw new Error('Finish implementation before requesting the configured review.');
-          await locked(t.id, async () => {
-            if (await send(t, t.reviewer!, reviewPrompt(t))) t.phase = 'reviewing';
-            await save(t);
+          await stage(t, async () => {
+            await writeFile(files(t).brief, briefDocument(t));
+            await start(t, 'reviewer', () => reviewPrompt(t, files(t)));
+            t.phase = 'reviewing';
           });
         });
         view.onRequest('done', async (raw: unknown) => {
@@ -404,7 +520,16 @@ export async function activate(ctx: PluginContext): Promise<void> {
             throw new Error('This task has not started implementation.');
           await locked(t.id, async () => {
             t.phase = 'done';
+            delete t.outbox;
             delete t.error;
+            await save(t);
+          });
+        });
+        view.onRequest('cancelDelivery', async (raw: unknown) => {
+          const projectId = await currentProject();
+          const t = requireTask(projectId, raw);
+          await locked(t.id, async () => {
+            delete t.outbox;
             await save(t);
           });
         });
@@ -412,6 +537,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           const projectId = await currentProject();
           const t = requireTask(projectId, raw);
           await locked(t.id, async () => {
+            decide(t, decision(DECISION_REASONS.deleted));
             tasks.splice(tasks.indexOf(t), 1);
             await persist();
             await push();
@@ -419,7 +545,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
         });
         view.onRequest('show', async (raw: unknown) => {
           const projectId = await currentProject();
-          const input = z.object({ id: z.uuid(), role: z.enum(['planner', 'implementer', 'reviewer']) }).parse(raw);
+          const input = z.object({ id: z.uuid(), role: z.enum(ROLES) }).parse(raw);
           const t = requireTask(projectId, input.id);
           const id = t[input.role]?.terminalId;
           if (id) await oxy.terminals.show(id, { placement: 'right' });
@@ -429,10 +555,17 @@ export async function activate(ctx: PluginContext): Promise<void> {
     oxy.commands.register('task.show', async () => {
       await oxy.ui.openPanel('task.panel', { placement: 'sidebar' });
     }),
+    // Agent states drive queued prompts and the sessions shown in Task.
+    oxy.agents.onDidChange(() => {
+      if (disposed) return;
+      deliverAll();
+      if (tasks.length > 0) pushLater();
+    }),
   );
   let polling = false;
   const timer = setInterval(() => {
     if (polling || disposed) return;
+    deliverAll();
     if (!tasks.some((t) => awaitingPlan(t) && !hooked(t)) && ![...views.keys()].some((view) => view.visible)) return;
     polling = true;
     void (async () => {
@@ -449,6 +582,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
     dispose: () => {
       disposed = true;
       clearInterval(timer);
+      for (const t of tasks) decide(t, undefined);
     },
   });
 }

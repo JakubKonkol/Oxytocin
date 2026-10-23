@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { captureClaudePlan, planReferences, readPlan } from './plans';
-import { implementationPrompt, reviewPrompt, TaskSchema } from '../shared/task';
+import { briefDocument, implementationPrompt, plannerPrompt, reviewPrompt, TaskSchema } from '../shared/task';
 
 describe('Task plans', () => {
   it('extracts document references without copying the conversation or tool results', () => {
@@ -65,10 +65,27 @@ describe('Task plans', () => {
       plan: 'Later unapproved edit',
       approvedPlan: 'Implement keyboard search',
     });
-    expect(implementationPrompt(task)).toContain('Implement keyboard search');
-    expect(implementationPrompt(task)).not.toContain('Later unapproved edit');
-    expect(reviewPrompt(task)).toContain('Do not edit files');
+    const files = { task: '/data/t/task.md', plan: '/data/t/plan.md', brief: '/data/t/brief.md' };
+    expect(briefDocument(task)).toBe('# Task\n\nAdd search\n\n# Approved plan\n\nImplement keyboard search\n');
+    expect(briefDocument(task)).not.toContain('Later unapproved edit');
+    // One line each, so that a new session receives it on its command line.
+    expect(implementationPrompt(task, files)).toContain('`/data/t/brief.md`');
+    expect(reviewPrompt(task, files)).toContain('Do not edit files');
+    for (const prompt of [
+      implementationPrompt(task, files),
+      reviewPrompt(task, files),
+      plannerPrompt(task, files, true),
+      plannerPrompt(task, files, false),
+    ])
+      expect(prompt).not.toMatch(/[\n%!]/);
+    expect(plannerPrompt(task, files, true)).toContain('Task: Add search');
+    expect(plannerPrompt(task, files, false)).toContain('`/data/t/plan.md`');
+    // A long or multi-line description is read from its file.
+    expect(plannerPrompt({ ...task, description: 'Line one\nLine two' }, files, true)).toContain(
+      'The task is described in `/data/t/task.md`',
+    );
     delete task.approvedPlan;
-    expect(() => implementationPrompt(task)).toThrow(/Approve/);
+    expect(() => briefDocument(task)).toThrow(/Approve/);
+    expect(() => implementationPrompt(task, files)).toThrow(/Approve/);
   });
 });

@@ -327,7 +327,12 @@ function bootstrap(): void {
       terminals.create(
         { projectId, profileId, ...(launch?.env ? { env: launch.env } : {}) },
         launch?.command
-          ? { initialCommandFor: (shell) => commandLine(launch.command!.head, launch.command!.args, shell) }
+          ? {
+              initialCommandFor: (shell) => {
+                const command = launch.command!(shell);
+                return commandLine(command.head, command.args, shell);
+              },
+            }
           : {},
       ),
     show: (terminalId, projectId) => {
