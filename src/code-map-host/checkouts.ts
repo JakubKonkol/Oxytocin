@@ -1,5 +1,6 @@
 import { realpath } from 'node:fs/promises';
 import {
+  type CodeMapGraph,
   codeMapLanguageSupport,
   initialCodeMapStatus,
   CodeMapStatusSchema,
@@ -28,6 +29,7 @@ import { fingerprint } from './fingerprint';
 import { normalizedSource } from './extract/files';
 import { sha256 } from './store/writer';
 import { CodeSearch } from './query/search';
+import type { SearchCorpus } from './query/corpus';
 import { CodeRelations } from './query/relations';
 import { fileOutline } from './query/outline';
 import { repoMap } from './query/repo-map';
@@ -51,10 +53,12 @@ interface Checkout {
 
 /** Host-owned checkout lifetimes. Parsing and scheduling are added in subsequent internal stages. */
 export class CodeMapCheckouts {
-  memorySnapshot(checkoutId: string) {
+  memorySnapshot(checkoutId: string): { graph: CodeMapGraph; corpus?: SearchCorpus; generation: number } | undefined {
     const checkout = this.checkouts.get(checkoutId);
     const snapshot = checkout?.graph?.snapshot();
-    return snapshot ? { graph: snapshot.graph, generation: snapshot.manifest.generation } : undefined;
+    return snapshot
+      ? { graph: snapshot.graph, corpus: snapshot.corpus, generation: snapshot.manifest.generation }
+      : undefined;
   }
   private readonly checkouts = new Map<string, Checkout>();
   private mutation: Promise<unknown> = Promise.resolve();
@@ -294,8 +298,16 @@ export class CodeMapCheckouts {
             result.hint =
               'Potential dependents in indexed code, not exhaustive. File impact projects symbol dependencies to their files. Deleted or excluded files have no current indexed dependents; use normal search and review the Git diff.';
         } else if (query.kind === 'search') {
-          const found = (index.search ??= new CodeSearch(graph)).search(query.query, query.pathPrefix, query.limit);
-          result.data = { kind: 'search', matches: found.matches };
+          const found = (index.search ??= new CodeSearch(graph, snapshot.corpus)).search(
+            query.query,
+            query.pathPrefix,
+            query.limit,
+          );
+          result.data = {
+            kind: 'search',
+            matches: found.matches,
+            ...(found.coverage === undefined ? {} : { coverage: found.coverage, strong: found.strong }),
+          };
           if (found.truncated) result.reasons.push('RESULT_LIMIT');
           if (!found.matches.length)
             result.hint = 'No indexed matches. Try normal text search; check coverage and pathPrefix.';

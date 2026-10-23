@@ -8,6 +8,7 @@ import {
 } from '@shared/domain/code-map-learning-tools';
 import type { z } from 'zod';
 import { CodeSearch, terms } from '../query/search';
+import type { SearchCorpus } from '../query/corpus';
 import { CodeRelations } from '../query/relations';
 
 const indexes = new WeakMap<CodeMapGraph, { search: CodeSearch; relations?: CodeRelations }>();
@@ -64,6 +65,7 @@ export function taskContext(
   memoryState: TaskContextResult['memory'],
   checkoutId: string,
   receipt?: string,
+  corpus?: SearchCorpus,
 ): TaskContextResult {
   const result: TaskContextResult = {
     kind: 'task-context',
@@ -96,7 +98,7 @@ export function taskContext(
   if (graph && (!freshness.stale || query.freshness === 'allow-stale')) {
     let index = indexes.get(graph);
     if (!index) {
-      index = { search: new CodeSearch(graph) };
+      index = { search: new CodeSearch(graph, corpus) };
       indexes.set(graph, index);
     }
     const add = (id: string, why: string) => {

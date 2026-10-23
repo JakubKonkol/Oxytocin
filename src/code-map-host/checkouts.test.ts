@@ -1,8 +1,13 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { copyCodeMapAssets } from '../../scripts/code-map-assets';
 import { CodeMapCheckouts } from './checkouts';
+import { normalizedSource } from './extract/files';
+import { buildSearchData } from './extract/search-data';
+import { extractTypeScript } from './extract/typescript';
+import { ParserRuntime } from './parse/runtime';
 
 let root: string;
 let checkouts: CodeMapCheckouts;
@@ -68,5 +73,72 @@ describe('Code Map checkout lifetimes', () => {
     await expect(checkouts.deleteData('checkout', root)).resolves.toMatchObject({ state: 'disabled' });
     await expect(readFile(join(root, '.oxy/code-map/graph.json'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(checkouts.deleteData('checkout', root)).resolves.toMatchObject({ state: 'disabled' });
+  });
+  describe('search over published generations', () => {
+    let assets: string;
+    let runtime: ParserRuntime;
+    beforeAll(async () => {
+      assets = await mkdtemp(join(tmpdir(), 'oxy-map-search-assets-'));
+      await copyCodeMapAssets(assets);
+      runtime = new ParserRuntime(assets);
+    });
+    afterAll(async () => {
+      runtime?.dispose();
+      if (assets) await rm(assets, { recursive: true, force: true });
+    });
+    it('ranks by body terms, reports confidence and answers each generation from its own index', async () => {
+      root = await mkdtemp(join(tmpdir(), 'oxy-map-search-'));
+      await mkdir(join(root, 'src'));
+      await writeFile(join(root, 'src/handler.ts'), 'export function handle() { return bodyonlyalpha; }\n');
+      await writeFile(join(root, 'src/other.ts'), 'export function other() { return 1; }\n');
+      checkouts = new CodeMapCheckouts('Oxytocin test', () => {}, {
+        assets,
+        parserEntry: '/unused',
+        parser: {
+          parse: async (path: string, source: string) => {
+            const text = normalizedSource(source);
+            const tree = await runtime.parse(text, 'typescript');
+            try {
+              const record = extractTypeScript(path, text, tree);
+              record.search = buildSearchData(text, record.symbols);
+              return record;
+            } finally {
+              tree.delete();
+            }
+          },
+          dispose: () => Promise.resolve(),
+        },
+      });
+      await checkouts.configure({
+        checkoutId: 'checkout',
+        projectId: 'project',
+        root,
+        mode: 'project',
+        gitPath: 'git',
+        ignoreInGit: false,
+      });
+      await vi.waitFor(() => expect(checkouts.status('checkout')).toMatchObject({ state: 'ready', pendingFiles: 0 }));
+      const ask = async (id: string, query: string, freshness: 'allow-stale' | 'verified' = 'allow-stale') => {
+        const result = await checkouts.query('checkout', id, { kind: 'search', query, limit: 5, freshness });
+        if (result.data?.kind !== 'search') throw new Error(`Unexpected answer ${result.code}`);
+        return { ...result.data, generation: result.freshness.generation };
+      };
+      const first = await ask('q1', 'bodyonlyalpha');
+      expect(first.matches[0]).toMatchObject({ path: 'src/handler.ts', name: 'handle' });
+      expect(first.coverage).toBe(1);
+      expect(first.strong).toBe(false);
+      expect((await ask('q2', 'handle')).strong).toBe(true);
+      const empty = await ask('q3', 'nonexistentword');
+      expect(empty).toMatchObject({ matches: [] });
+      expect(empty.coverage).toBeUndefined();
+
+      await writeFile(join(root, 'src/handler.ts'), 'export function handle() { return bodyonlybeta; }\n');
+      await vi.waitFor(async () => {
+        const next = await ask('q4', 'bodyonlybeta', 'verified');
+        expect(next.generation).toBeGreaterThan(first.generation);
+        expect(next.matches[0]?.path).toBe('src/handler.ts');
+      });
+      expect((await ask('q5', 'bodyonlyalpha')).matches).toEqual([]);
+    });
   });
 });

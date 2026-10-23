@@ -10,7 +10,8 @@ import {
 import { GrammarManifestSchema } from '@shared/domain/code-map-grammars';
 import { CodeMapLimitError, comparePaths } from '../enumerate';
 import { EXTRACTOR_VERSION, FileRecordSchema, type FileRecord } from '../extract/record';
-import { fileRecord } from '../extract/files';
+import { fileRecord, normalizedSource } from '../extract/files';
+import { buildSearchData } from '../extract/search-data';
 import { parserLanguage } from '../extract/languages';
 import type { ParserClient } from '../parse/client';
 import { parseProjectConfig, type ProjectConfig } from '../resolve/config';
@@ -19,6 +20,7 @@ import { atomicWrite, CacheStore, loadSnapshot, publishSnapshot, sha256 } from '
 import { safeDirectory } from '../store/paths';
 import type { InventorySnapshot } from '../indexer';
 import { buildGraph } from './build';
+import { buildSearchCorpus, type SearchCorpus } from '../query/corpus';
 
 export interface PublishedGraph {
   graph: CodeMapGraph;
@@ -41,6 +43,8 @@ export class GraphEngine {
   private grammarVersions: Record<string, string> = {};
   private manifest: CodeMapManifest | undefined;
   private graph: CodeMapGraph | undefined;
+  /** Search terms of the published graph; replaced together with it, never mutated. */
+  private corpus: SearchCorpus = new Map();
   private publishedConfigs: ReadonlyMap<string, ProjectConfig> = new Map();
   private directory = '';
   private rebuildVersion = 0;
@@ -103,6 +107,7 @@ export class GraphEngine {
           this.store(file.path, fallback);
         }
       }
+      this.corpus = buildSearchCorpus(this.records);
     } else {
       try {
         this.manifest = CodeMapManifestSchema.parse(
@@ -148,7 +153,12 @@ export class GraphEngine {
       if (config) this.configs.set(path, config);
       const cached = this.activeRebuild === this.appliedRebuild ? await this.cached(path, base.file.sha256) : null;
       if (cached && cached.file.status !== 'failed') record = cached;
-      else record = parserLanguage(path) ? await this.options.parser.parse(path, source, signal) : base;
+      else if (parserLanguage(path)) record = await this.options.parser.parse(path, source, signal);
+      else {
+        // Files without a parser are found by name, path and their bounded text prefix.
+        base.search = buildSearchData(normalizedSource(source), []);
+        record = base;
+      }
       if (record.syntaxErrors) {
         this.failures.set(
           path,
@@ -175,6 +185,7 @@ export class GraphEngine {
       if (error instanceof CodeMapLimitError) throw error;
       this.configs.delete(path);
       const reason = error instanceof Error ? error.message : String(error);
+      base.search ??= buildSearchData(normalizedSource(source), []);
       this.failed(path, reason, base);
       return false;
     }
@@ -253,6 +264,8 @@ export class GraphEngine {
       },
       inventory.skippedCount,
     );
+    // Captured with the graph, before any await: both describe the same records.
+    const corpus = buildSearchCorpus(this.records);
     const graphText = `${JSON.stringify(graph)}\n`;
     const hash = sha256(graphText);
     const same = this.graph && hash === this.manifest?.graphSha256 && this.dirtyCache.size === 0;
@@ -305,6 +318,7 @@ export class GraphEngine {
       this.bytes = published.bytes;
     }
     this.graph = graph;
+    this.corpus = corpus;
     this.publishedConfigs = new Map(this.configs);
     this.appliedRebuild = this.activeRebuild;
     this.dirtyCache.clear();
@@ -337,9 +351,15 @@ export class GraphEngine {
     this.failures.clear();
     this.symbolCount = this.relationCount = 0;
   }
-  snapshot(): { graph: CodeMapGraph; manifest: CodeMapManifest; configs: ReadonlyMap<string, ProjectConfig> } | null {
+  /** One published generation: graph, manifest and the search corpus built from the same records. */
+  snapshot(): {
+    graph: CodeMapGraph;
+    manifest: CodeMapManifest;
+    configs: ReadonlyMap<string, ProjectConfig>;
+    corpus: SearchCorpus;
+  } | null {
     return this.graph && this.manifest
-      ? { graph: this.graph, manifest: this.manifest, configs: this.publishedConfigs }
+      ? { graph: this.graph, manifest: this.manifest, configs: this.publishedConfigs, corpus: this.corpus }
       : null;
   }
   private store(path: string, record: FileRecord): void {
