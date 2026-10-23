@@ -1,22 +1,30 @@
 import type { CodeMapEdge, CodeMapGraph, CodeMapSymbol } from '@shared/domain/code-map';
-import type { FileRecord, RelationIntent } from '../extract/record';
+import type { FileRecord, RelationIntent, TypeRef } from '../extract/record';
 import type { ModuleResolver } from './modules';
 import { CodeMapLimitError } from '../enumerate';
 
-type Target =
-  | { kind: 'symbol'; id: string; typeOnly: boolean }
+/** What a name or export stands for: never a bare typed value (that is not a graph node). */
+type Resolved =
+  | { kind: 'symbol'; id: string; typeOnly: boolean; instance?: boolean }
   | { kind: 'namespace'; path: string; typeOnly: boolean }
   | { kind: 'package'; name: string; typeOnly: boolean }
   | { kind: 'unknown'; reason: string };
-const unknown = (reason: string): Target => ({ kind: 'unknown', reason });
+/** A value whose declared type is `type` (a class, interface, alias or property that owns the members). */
+type Target = Resolved | { kind: 'instance'; type: string };
+const unknown = (reason: string): Resolved & { kind: 'unknown' } => ({ kind: 'unknown', reason });
 const key = (value: Target) =>
   value.kind === 'symbol'
     ? value.id
-    : value.kind === 'namespace'
-      ? value.path
-      : value.kind === 'package'
-        ? `p:${value.name}`
-        : `?:${value.reason}`;
+    : value.kind === 'instance'
+      ? `i:${value.type}`
+      : value.kind === 'namespace'
+        ? value.path
+        : value.kind === 'package'
+          ? `p:${value.name}`
+          : `?:${value.reason}`;
+const OWNER_KINDS = ['class', 'interface', 'namespace', 'enum'];
+/** Bounds the chain of declared types followed for one receiver (`this.a.b.c`, aliases, return types). */
+const TYPE_DEPTH = 24;
 
 export class BindingResolver {
   readonly exportedSymbols = new Set<string>();
@@ -24,10 +32,21 @@ export class BindingResolver {
   private readonly scopes = new Map<string, Map<string, FileRecord['scopes'][number]>>();
   private readonly bindings = new Map<string, Map<string, FileRecord['bindings']>>();
   private readonly members = new Map<string, FileRecord['members']>();
-  private readonly exports = new Map<string, Target>();
+  private readonly exports = new Map<string, Resolved>();
+  private readonly symbolTypes = new Map<string, { path: string; scope: string; type: TypeRef }>();
+  private readonly bases = new Map<string, { path: string; scope: string; target: string[] | null; rel: string }[]>();
+  private readonly owners = new Map<string, string>();
   constructor(private readonly modules: ModuleResolver) {
     for (const [path, record] of modules.records) {
       for (const symbol of record.symbols) this.symbols.set(symbol.id, symbol);
+      for (const entry of record.symbolTypes ?? [])
+        this.symbolTypes.set(entry.symbol, { path, scope: entry.scope, type: entry.type });
+      for (const relation of record.relations)
+        if (relation.rel === 'extends' || relation.rel === 'implements') {
+          const list = this.bases.get(relation.from) ?? [];
+          list.push({ path, scope: relation.scope, target: relation.target, rel: relation.rel });
+          this.bases.set(relation.from, list);
+        }
       this.scopes.set(path, new Map(record.scopes.map((scope) => [scope.id, scope])));
       const bindings = new Map<string, FileRecord['bindings']>();
       for (const binding of record.bindings) {
@@ -52,7 +71,7 @@ export class BindingResolver {
     }
     return null;
   }
-  private imported(path: string, module: string, name: string, typeOnly: boolean, visiting: Set<string>): Target {
+  private imported(path: string, module: string, name: string, typeOnly: boolean, visiting: Set<string>): Resolved {
     const resolved = this.modules.resolve(path, module);
     if (resolved.kind === 'unresolved') return unknown(resolved.reason);
     if (resolved.kind === 'package') return { ...resolved, typeOnly };
@@ -74,15 +93,17 @@ export class BindingResolver {
       if (binding.imported.require && this.local(path, scope, 'require')) return unknown('shadowed-require');
       return this.imported(path, binding.imported.module, binding.imported.name, binding.imported.typeOnly, visiting);
     }
-    return binding.symbol ? { kind: 'symbol', id: binding.symbol, typeOnly: false } : unknown('unknown-value-type');
+    if (binding.symbol) return { kind: 'symbol', id: binding.symbol, typeOnly: false };
+    const type = binding.type ? this.owner(path, binding.scope, binding.type, visiting) : null;
+    return type ? { kind: 'instance', type } : unknown('unknown-value-type');
   }
-  private unique(targets: Target[]): Target {
+  private unique(targets: Resolved[]): Resolved {
     const matches = [
       ...new Map(targets.filter((target) => target.kind !== 'unknown').map((target) => [key(target), target])).values(),
     ];
     return matches.length === 1 ? matches[0]! : unknown(matches.length ? 'ambiguous-export' : 'export-not-found');
   }
-  private exported(path: string, name: string, visiting: Set<string>): Target {
+  private exported(path: string, name: string, visiting: Set<string>): Resolved {
     const marker = `export:${path}:${name}`;
     const cached = this.exports.get(marker);
     if (cached) return cached;
@@ -96,9 +117,12 @@ export class BindingResolver {
       : name === 'default'
         ? []
         : record.exports.filter((entry) => entry.name === '*');
-    const targets = choices.map((entry): Target => {
+    const targets = choices.map((entry): Resolved => {
       if (entry.symbol) return { kind: 'symbol', id: entry.symbol, typeOnly: entry.typeOnly };
-      if (entry.local) return this.binding(path, 'file', entry.local, visiting);
+      if (entry.local) {
+        const local = this.binding(path, 'file', entry.local, visiting);
+        return local.kind === 'instance' ? unknown('unknown-value-type') : local;
+      }
       if (entry.module)
         return this.imported(
           path,
@@ -113,36 +137,168 @@ export class BindingResolver {
     if (result.kind !== 'unknown') this.exports.set(marker, result);
     return result;
   }
-  private member(value: Target, name: string, instance: boolean, visiting: Set<string>): Target {
+  /** The class, interface, alias or property whose members describe values of the declared type `ref`. */
+  private owner(path: string, scope: string, ref: TypeRef, visiting: Set<string>): string | null {
+    if ('shape' in ref || visiting.size > TYPE_DEPTH) return null;
+    const cacheKey = `${path}\0${scope}\0${JSON.stringify(ref)}`;
+    const cached = this.owners.get(cacheKey);
+    if (cached) return cached;
+    let result: string | null = null;
+    if ('name' in ref) {
+      // `Promise<T>` is a promise, not a `T`; only `await` unwraps it (see `call` below).
+      // A utility wrapper only counts when the name is not declared by the project itself.
+      const shadowed = (ref.wrappers ?? []).some((name) => {
+        const wrapper = this.evaluate(path, scope, [name], visiting);
+        return wrapper.kind !== 'unknown' || wrapper.reason !== 'unbound-name';
+      });
+      const value = ref.promise || shadowed ? unknown('promise') : this.evaluate(path, scope, ref.name, visiting);
+      if (value.kind === 'symbol' && !value.instance) result = this.typeOwner(value.id, visiting);
+    } else if ('value' in ref) {
+      const value = this.evaluate(path, scope, ref.value, visiting);
+      if (value.kind === 'instance') result = value.type;
+      else if (value.kind === 'symbol' && !value.instance) {
+        const kind = this.symbols.get(value.id)?.kind;
+        if (kind === 'property' || kind === 'variable') result = this.valueOwner(value.id, visiting);
+      }
+    } else {
+      const callee = this.evaluate(path, scope, ref.call, visiting);
+      const kind = callee.kind === 'symbol' ? this.symbols.get(callee.id)?.kind : undefined;
+      const declared = callee.kind === 'symbol' ? this.symbolTypes.get(callee.id) : undefined;
+      if (declared && 'name' in declared.type && (kind === 'function' || kind === 'method' || kind === 'component'))
+        if (!declared.type.promise || ref.await)
+          result = this.owner(
+            declared.path,
+            declared.scope,
+            { name: declared.type.name, ...(declared.type.wrappers ? { wrappers: declared.type.wrappers } : {}) },
+            visiting,
+          );
+    }
+    if (result) this.owners.set(cacheKey, result);
+    return result;
+  }
+  /** A type symbol as the owner of its instances' members; aliases are followed to what they name. */
+  private typeOwner(id: string, visiting: Set<string>): string | null {
+    const kind = this.symbols.get(id)?.kind;
+    if (kind === 'class' || kind === 'interface') return id;
+    if (kind !== 'type') return null;
+    const marker = `type:${id}`;
+    const declared = this.symbolTypes.get(id);
+    if (!declared || visiting.has(marker)) return null;
+    if ('shape' in declared.type) return id;
+    return this.owner(declared.path, declared.scope, declared.type, new Set(visiting).add(marker));
+  }
+  /** The owner of the members of a property or exported variable, from its declared type. */
+  private valueOwner(id: string, visiting: Set<string>): string | null {
+    const declared = this.symbolTypes.get(id);
+    if (!declared) return null;
+    if ('shape' in declared.type) return this.symbols.get(id)?.kind === 'property' ? id : null;
+    const marker = `value:${id}`;
+    if (visiting.has(marker)) return null;
+    return this.owner(declared.path, declared.scope, declared.type, new Set(visiting).add(marker));
+  }
+  /** Members named `name` of `ownerId` and of what it extends; `blocked` when a base type is not indexed. */
+  private collect(
+    ownerId: string,
+    name: string,
+    instance: boolean,
+    visiting: Set<string>,
+  ): { symbols: Set<string>; blocked: boolean; ambiguous: boolean } {
+    const found = { symbols: new Set<string>(), blocked: false, ambiguous: false };
+    const owner = this.symbols.get(ownerId);
+    if (!owner) return { ...found, blocked: true };
+    const keepsStatics = owner.kind === 'namespace' || owner.kind === 'enum';
+    let members = (this.members.get(ownerId) ?? []).filter(
+      (member) => member.name === name && (keepsStatics || member.static === !instance),
+    );
+    // Anonymous object types (`deps: { run(): void }`) have no implementation to prefer over their signatures.
+    if (owner.kind !== 'property' && members.some((member) => member.implementation))
+      members = members.filter((member) => member.implementation);
+    if (members.length) {
+      for (const member of members) found.symbols.add(member.symbol);
+      found.ambiguous = members.length > 1;
+      return found;
+    }
+    const marker = `members:${ownerId}`;
+    if ((owner.kind !== 'class' && owner.kind !== 'interface') || visiting.has(marker) || visiting.size > TYPE_DEPTH)
+      return found;
+    const inner = new Set(visiting).add(marker);
+    const bases = this.bases.get(ownerId) ?? [];
+    const baseOwner = (base: (typeof bases)[number]): string | null => {
+      const value = base.target ? this.evaluate(base.path, base.scope, base.target, inner) : null;
+      const id = value?.kind === 'symbol' && !value.instance ? value.id : null;
+      const kind = id ? this.symbols.get(id)?.kind : undefined;
+      return kind === 'class' || kind === 'interface' ? id : null;
+    };
+    const merge = (list: typeof bases, strict: boolean): void => {
+      for (const base of list) {
+        const id = baseOwner(base);
+        if (!id) {
+          if (strict) found.blocked = true;
+          continue;
+        }
+        const next = this.collect(id, name, instance, inner);
+        for (const symbol of next.symbols) found.symbols.add(symbol);
+        found.blocked ||= next.blocked;
+        found.ambiguous ||= next.ambiguous;
+      }
+    };
+    merge(
+      bases.filter((base) => base.rel === 'extends'),
+      true,
+    );
+    // A class that neither declares nor inherits the member may still get it from an interface it implements
+    // (abstract classes); an unindexed interface does not hide an implementation, so it does not block.
+    if (!found.symbols.size && !found.blocked)
+      merge(
+        bases.filter((base) => base.rel === 'implements'),
+        false,
+      );
+    return found;
+  }
+  private member(value: Target, name: string, visiting: Set<string>): Target {
     if (value.kind === 'unknown' || value.kind === 'package') return value;
     if (value.kind === 'namespace') {
       const next = this.exported(value.path, name, visiting);
       return next.kind === 'unknown' ? next : { ...next, typeOnly: next.typeOnly || value.typeOnly };
     }
-    const owner = this.symbols.get(value.id);
-    if (!owner || !['class', 'interface', 'namespace', 'enum'].includes(owner.kind))
-      return unknown('unknown-member-receiver-type');
-    let members = (this.members.get(value.id) ?? []).filter(
-      (member) =>
-        member.name === name && (owner.kind === 'namespace' || owner.kind === 'enum' || member.static === !instance),
-    );
-    if (members.some((member) => member.implementation)) members = members.filter((member) => member.implementation);
-    return members.length === 1
-      ? { kind: 'symbol', id: members[0]!.symbol, typeOnly: value.typeOnly }
-      : unknown(members.length ? 'ambiguous-member' : 'member-not-resolved');
+    let ownerId: string | null;
+    let instance = true;
+    let typeOnly = false;
+    if (value.kind === 'instance') {
+      ownerId = value.type;
+    } else {
+      const kind = this.symbols.get(value.id)?.kind ?? '';
+      typeOnly = value.typeOnly;
+      if (OWNER_KINDS.includes(kind)) {
+        ownerId = value.id;
+        instance = value.instance ?? false;
+      } else ownerId = kind === 'property' || kind === 'variable' ? this.valueOwner(value.id, visiting) : null;
+    }
+    if (!ownerId) return unknown('unknown-member-receiver-type');
+    const found = this.collect(ownerId, name, instance, visiting);
+    if (found.symbols.size === 1 && !found.blocked && !found.ambiguous)
+      return { kind: 'symbol', id: [...found.symbols][0]!, typeOnly };
+    return unknown(found.ambiguous || found.symbols.size > 1 ? 'ambiguous-member' : 'member-not-resolved');
   }
-  resolve(path: string, relation: RelationIntent): Target {
-    const target = relation.target;
-    if (!target?.length) return unknown('dynamic-or-computed-expression');
-    const [name, ...members] = target;
-    const scope = this.scopes.get(path)?.get(relation.scope);
+  /** Follows `names` (`a`, `this.a.b`, `ns.T`) from `scope`: bindings, then members, through declared types. */
+  private evaluate(path: string, scope: string, names: string[], visiting: Set<string>): Target {
+    const [name, ...members] = names;
+    const info = this.scopes.get(path)?.get(scope);
     let value: Target =
       name === 'this'
-        ? scope?.thisClass
-          ? { kind: 'symbol', id: scope.thisClass, typeOnly: false }
+        ? info?.thisClass
+          ? { kind: 'symbol', id: info.thisClass, typeOnly: false, instance: !info.staticThis }
           : unknown('dynamic-this')
-        : this.binding(path, relation.scope, name!, new Set());
-    for (const member of members) value = this.member(value, member, name === 'this' && !scope?.staticThis, new Set());
+        : this.binding(path, scope, name!, visiting);
+    for (const member of members) value = this.member(value, member, visiting);
+    return value;
+  }
+  resolve(path: string, relation: RelationIntent): Resolved {
+    const target = relation.target;
+    if (!target?.length) return unknown('dynamic-or-computed-expression');
+    const evaluated = this.evaluate(path, relation.scope, target, new Set());
+    // A typed value is not a symbol; keep the reason a plain value had before declared types were followed.
+    const value: Resolved = evaluated.kind === 'instance' ? unknown('unknown-value-type') : evaluated;
     if (relation.rel === 'calls') {
       if (value.kind !== 'unknown' && value.typeOnly) return unknown('type-only-import');
       if (value.kind === 'namespace') return unknown('namespace-is-not-callable');

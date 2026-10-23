@@ -203,3 +203,345 @@ describe('TypeScript syntax and binding extraction', () => {
     expect(renderMapMarkdown(graph)).toBe(renderMapMarkdown(graph));
   });
 });
+
+/** Declared-type receiver resolution: `x.m()`, `this.x.m()` and `this.x.y.m()` through indexed types. */
+describe('TypeScript declared-type receivers', () => {
+  async function analyze(files: Record<string, string>) {
+    const records = new Map<string, FileRecord>();
+    for (const [path, source] of Object.entries(files)) records.set(path, await extract(path, source));
+    const graph = buildGraph(records, new Map(), generator);
+    const byId = new Map(graph.symbols.map((symbol) => [symbol.id, symbol]));
+    const label = (id: string) => {
+      const symbol = byId.get(id);
+      const owner = symbol?.owner ? byId.get(symbol.owner) : undefined;
+      return symbol ? (owner ? `${owner.name}.${symbol.name}` : symbol.name) : id;
+    };
+    return {
+      graph,
+      calls: graph.edges
+        .filter((edge) => edge.rel === 'calls')
+        .map((edge) => `${label(edge.from)} -> ${label(edge.to)}`),
+      references: graph.edges
+        .filter((edge) => edge.rel === 'references')
+        .map((edge) => `${label(edge.from)} -> ${label(edge.to)}`),
+      reasons: (target: string) =>
+        graph.unresolved
+          .filter((entry) => entry.target === target && entry.rel === 'calls')
+          .map((entry) => entry.reason),
+    };
+  }
+  it('resolves constructor parameter properties, class fields and nested object-literal member types', async () => {
+    const { calls, references } = await analyze({
+      'a.ts': `
+        export class Service { query() {} get() {} }
+        export class Settings { getSettings() {} }
+        export interface Logger { warn(message: string): void }
+        type Deps = { service: Service; logger: Logger };
+        export class Host {
+          private readonly cache = new Service();
+          private inline: { service: Service; nested: { logger: Logger } };
+          constructor(private readonly settings: Settings, private readonly deps: Deps, public logger?: Logger, readonly options?: { service: Service }) {}
+          run() {
+            this.settings.getSettings();
+            this.deps.service.query();
+            this.deps.logger.warn('x');
+            this.cache.get();
+            this.inline.service.query();
+            this.options?.service.query();
+            this.inline.nested.logger.warn('y');
+            this.logger?.warn('z');
+            this.consume(this.deps.service);
+          }
+          consume(value: Service) {}
+        }`,
+    });
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        'Host.run -> Settings.getSettings',
+        'Host.run -> Service.query',
+        'Host.run -> Logger.warn',
+        'Host.run -> Service.get',
+      ]),
+    );
+    expect(calls.filter((call) => call === 'Host.run -> Service.query')).toHaveLength(3);
+    expect(calls.filter((call) => call === 'Host.run -> Logger.warn')).toHaveLength(3);
+    expect(references).toContain('Host.run -> Deps.service');
+  });
+  it('resolves parameters, annotated and new-initialized variables, including unions with null and undefined', async () => {
+    const { calls } = await analyze({
+      'store.ts': 'export class JsonFileStore { read() {} write() {} }',
+      'use.ts': `
+        import { JsonFileStore } from './store';
+        import * as ns from './store';
+        export function f(store: JsonFileStore, maybe?: JsonFileStore, other: ns.JsonFileStore | null = null) {
+          store.read();
+          maybe?.write();
+          other?.read();
+          const annotated: JsonFileStore = store;
+          annotated.write();
+          const created = new JsonFileStore();
+          created.read();
+          let later: JsonFileStore | undefined;
+          later?.write();
+          const cast = (store as JsonFileStore | undefined)!;
+          cast.read();
+          const viaNs = new ns.JsonFileStore();
+          viaNs.write();
+        }`,
+    });
+    expect(calls.filter((call) => call === 'f -> JsonFileStore.read')).toHaveLength(4);
+    expect(calls.filter((call) => call === 'f -> JsonFileStore.write')).toHaveLength(4);
+  });
+  it('resolves exported variables through their declared type across files', async () => {
+    const { calls } = await analyze({
+      'a.ts':
+        'export class Store { read() {} } export const store: Store = new Store(); export const other = new Store();',
+      'b.ts': "import { store, other } from './a'; export function f() { store.read(); other.read(); }",
+    });
+    expect(calls.filter((call) => call === 'f -> Store.read')).toHaveLength(2);
+  });
+  it('follows return type annotations of resolved functions and methods, and unwraps Promise only after await', async () => {
+    const { calls, reasons } = await analyze({
+      'a.ts': `
+        export class Repo { find() {} }
+        export class Factory { create(): Repo { return new Repo(); } async load(): Promise<Repo> { return new Repo(); } }
+        export function make(): Repo { return new Repo(); }
+        export async function load(): Promise<Repo> { return new Repo(); }
+        export function maybe(): Repo | undefined { return undefined; }
+        export function run(factory: Factory) {
+          const a = make();
+          a.find();
+          const b = factory.create();
+          b.find();
+        }
+        export async function runAsync(factory: Factory) {
+          const c = await load();
+          c.find();
+          const d = await factory.load();
+          d.find();
+          const pending = load();
+          pending.find();
+          const e = maybe();
+          e?.find();
+        }`,
+    });
+    expect(calls.filter((call) => call === 'run -> Repo.find')).toHaveLength(2);
+    expect(calls.filter((call) => call === 'runAsync -> Repo.find')).toHaveLength(3);
+    expect(reasons('pending.find')).toEqual(['unknown-value-type']);
+  });
+  it('resolves inherited members through extends and implements, preferring the nearest declaration', async () => {
+    const { calls, reasons } = await analyze({
+      'a.ts': `
+        export interface Named { name(): string }
+        export interface Closable extends Named { close(): void }
+        export class Base { shared() {} overridden() {} }
+        export class Mid extends Base { overridden() {} }
+        export class Leaf extends Mid { own() {} }
+        export abstract class Abstract implements Closable { abstract close(): void }
+        export class External extends Unknown { local() {} }
+        export function f(leaf: Leaf, closable: Closable, abs: Abstract, external: External) {
+          leaf.shared();
+          leaf.overridden();
+          leaf.own();
+          closable.name();
+          abs.name();
+          external.local();
+          external.fromUnknown();
+        }`,
+    });
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        'f -> Base.shared',
+        'f -> Mid.overridden',
+        'f -> Leaf.own',
+        'f -> Named.name',
+        'f -> External.local',
+      ]),
+    );
+    expect(calls).not.toContain('f -> Base.overridden');
+    expect(calls.filter((call) => call === 'f -> Named.name')).toHaveLength(2);
+    expect(reasons('external.fromUnknown')).toEqual(['member-not-resolved']);
+  });
+  it('resolves through type aliases and survives cyclic aliases and recursive types', async () => {
+    const { calls, reasons } = await analyze({
+      'a.ts': `
+        class Service { query() {} }
+        type Alias = Service;
+        type Again = Alias;
+        type Loop1 = Loop2;
+        type Loop2 = Loop1;
+        interface Node { next: Node; touch(): void }
+        export function f(a: Again, loop: Loop1, node: Node) {
+          a.query();
+          loop.query();
+          node.next.next.touch();
+        }`,
+    });
+    expect(calls.filter((call) => call === 'f -> Service.query')).toHaveLength(1);
+    expect(calls).toContain('f -> Node.touch');
+    expect(reasons('loop.query')).toEqual(['unknown-value-type']);
+  });
+  it('terminates on cyclic or self-referential inheritance without resolving anything through it', async () => {
+    const { calls, reasons } = await analyze({
+      'a.ts': `
+        class A extends B { own() {} }
+        class B extends A {}
+        class C extends C.Inner {}
+        export function f(a: A, c: C) {
+          a.own();
+          a.missing();
+          c.missing();
+        }`,
+    });
+    expect(calls).toEqual(['f -> A.own']);
+    expect(reasons('a.missing')).toEqual(['member-not-resolved']);
+    expect(reasons('c.missing')).toEqual(['member-not-resolved']);
+  });
+  it('keeps same-named methods of unrelated classes apart', async () => {
+    const { calls } = await analyze({
+      'a.ts': `
+        class A { run() {} }
+        class B { run() {} }
+        export function f(a: A, b: B) { a.run(); b.run(); }`,
+    });
+    expect(calls.filter((call) => call.startsWith('f ->')).sort()).toEqual(['f -> A.run', 'f -> B.run']);
+  });
+  it('never resolves unions, any, unknown, arrays, generics, type parameters or unindexed types', async () => {
+    const { calls, reasons } = await analyze({
+      'a.ts': `
+        class A { run() {} }
+        class B { run() {} }
+        export function f<T extends A>(
+          either: A | B, loose: any, opaque: unknown, list: A[], boxed: Promise<A>, typed: T, lib: Map<string, A>,
+          external: Unknown, fn: () => A, both: A & B,
+        ) {
+          either.run(); loose.run(); opaque.run(); list.run(); boxed.run(); typed.run(); lib.run(); external.run();
+          fn.run(); both.run();
+        }`,
+    });
+    expect(calls).toEqual([]);
+    for (const target of [
+      'either.run',
+      'loose.run',
+      'opaque.run',
+      'list.run',
+      'boxed.run',
+      'typed.run',
+      'lib.run',
+      'both.run',
+    ])
+      expect(reasons(target)).toEqual(['unknown-value-type']);
+  });
+  it('lets the nearest binding win: shadowing parameters, loop variables, catch clauses and switch cases', async () => {
+    const { calls } = await analyze({
+      'a.ts': `
+        class A { run() {} }
+        class B { run() {} }
+        export function f(item: A, items: B[], other: unknown) {
+          const nested = (item) => item.run();
+          for (const item of items) item.run();
+          try { other; } catch (item) { item.run(); }
+          switch (items.length) { case 1: { const item = items[0]; item.run(); } }
+          function inner(item: B) { item.run(); }
+          item.run();
+        }`,
+    });
+    expect(calls.filter((call) => call.startsWith('f ->'))).toEqual(['f -> A.run']);
+    expect(calls).toContain('f.inner -> B.run');
+  });
+  it('drops return types of overloaded declarations and ignores computed access', async () => {
+    const { calls } = await analyze({
+      'a.ts': `
+        class A { run() {} }
+        class B { run() {} }
+        function pick(kind: 'a'): A;
+        function pick(kind: 'b'): B;
+        function pick(kind: string): A | B { return new A(); }
+        class Holder { private a = new A(); get(key: string) { this[key].run(); this['a'].run(); } }
+        export function f() { const x = pick('a'); x.run(); }`,
+    });
+    expect(calls.filter((call) => call.endsWith('.run'))).toEqual([]);
+  });
+  it('does not treat this inside an object-literal method as the enclosing class', async () => {
+    const { calls } = await analyze({
+      'a.ts': `
+        class Service { query() {} }
+        export class Host {
+          private service = new Service();
+          make() { return { run() { this.service.query(); } }; }
+        }`,
+    });
+    expect(calls.filter((call) => call.endsWith('.query'))).toEqual([]);
+  });
+  it('follows aliases and object destructuring of typed values, but not renamed or computed sources', async () => {
+    const { calls, reasons } = await analyze({
+      'a.ts': `
+        class Service { query() {} }
+        class Logger { warn() {} }
+        class Other { query() {} warn() {} }
+        interface Deps { service: Service; logger: Logger }
+        export class Host {
+          constructor(private readonly deps: Deps, private readonly service: Service) {}
+          run(param: Service) {
+            const { service, logger: log } = this.deps;
+            service.query();
+            log.warn();
+            const alias = this.service;
+            alias.query();
+            const again = param;
+            again.query();
+            const [first] = [param];
+            first.query();
+            const { missing } = this.deps;
+            missing.query();
+            const { service: Other } = this.deps;
+            const dynamic = this.deps[param.toString()];
+            dynamic.query();
+          }
+        }`,
+    });
+    expect(calls.filter((call) => call === 'Host.run -> Service.query')).toHaveLength(3);
+    expect(calls.filter((call) => call === 'Host.run -> Logger.warn')).toHaveLength(1);
+    expect(reasons('first.query')).toEqual(['unknown-value-type']);
+    expect(reasons('missing.query')).toEqual(['unknown-value-type']);
+    expect(reasons('dynamic.query')).toEqual(['unknown-value-type']);
+  });
+  it('unwraps member-preserving utility types unless the project declares a type of that name', async () => {
+    const { calls } = await analyze({
+      'a.ts': `
+        class Service { query() {} close() {} }
+        type Narrow = Pick<Service, 'query'>;
+        export function f(a: Pick<Service, 'query'>, b: Readonly<Narrow>, c: Partial<Service> | undefined) {
+          a.query();
+          b.query();
+          c?.close();
+        }`,
+      'b.ts': `
+        class Service { query() {} }
+        class Mine { other() {} }
+        type Pick<T, K> = Mine;
+        export function g(a: Pick<Service, 'query'>) { a.query(); }`,
+    });
+    expect(calls.filter((call) => call.startsWith('f ->')).sort()).toEqual([
+      'f -> Service.close',
+      'f -> Service.query',
+      'f -> Service.query',
+    ]);
+    expect(calls.filter((call) => call.startsWith('g ->'))).toEqual([]);
+  });
+  it('infers types from initializers in TypeScript but only from const initializers in JavaScript', async () => {
+    const source = `
+      class A { run() {} }
+      class B { run() {} }
+      export function f() {
+        const a = new A();
+        let b = new B();
+        a.run();
+        b.run();
+      }`;
+    const ts = await analyze({ 'a.ts': source });
+    expect(ts.calls.filter((call) => call.endsWith('.run')).sort()).toEqual(['f -> A.run', 'f -> B.run']);
+    const js = await analyze({ 'a.js': source });
+    expect(js.calls.filter((call) => call.endsWith('.run'))).toEqual(['f -> A.run']);
+  });
+});

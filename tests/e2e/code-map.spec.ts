@@ -334,6 +334,11 @@ test('Code Map settings build, update, pause, rebuild, preserve settings and del
   await mkdir(project);
   await promisify(execFile)('git', ['--no-optional-locks', 'init'], { cwd: project, windowsHide: true });
   await writeFile(join(project, 'api.ts'), 'export function first() { return 1 }\n');
+  await writeFile(
+    join(project, 'host.ts'),
+    'export class Settings { read() { return 1 } }\n' +
+      'export class Host { constructor(private readonly settings: Settings) {} run() { return this.settings.read() } }\n',
+  );
   const { app, win } = await launchApp({ project });
   try {
     const id = await activeProjectId(win);
@@ -341,7 +346,8 @@ test('Code Map settings build, update, pause, rebuild, preserve settings and del
     const graph = async () =>
       JSON.parse(await readFile(join(map, 'graph.json'), 'utf8')) as {
         files: { path: string }[];
-        symbols: { name: string }[];
+        symbols: { id: string; name: string }[];
+        edges: { from: string; to: string; rel: string; prov: string }[];
       };
     await win.getByTestId('projects-item-map-project').click({ button: 'right' });
     await win.getByTestId('project-menu-settings').click();
@@ -357,6 +363,12 @@ test('Code Map settings build, update, pause, rebuild, preserve settings and del
     await expect(dialog.getByTestId('code-map-state')).toHaveText('Ready', { timeout: 20_000 });
     expect(await readFile(join(project, '.gitignore'), 'utf8')).toContain('/.oxy/');
     expect((await graph()).symbols.map((s) => s.name)).toContain('first');
+    // A call through a constructor parameter property resolves via the declared type, as a binding.
+    const built = await graph();
+    const named = (name: string) => built.symbols.find((s) => s.name === name)?.id;
+    expect(built.edges).toContainEqual(
+      expect.objectContaining({ from: named('run'), to: named('read'), rel: 'calls', prov: 'binding' }),
+    );
     await dialog.getByRole('button', { name: 'Copy agent instructions' }).click();
     expect(((await win.evaluate(() => window.oxy.invoke('clipboard:read'))) as { text: string }).text).toContain(
       'MAP.md',
