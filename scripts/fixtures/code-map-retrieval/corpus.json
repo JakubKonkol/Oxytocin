@@ -1,0 +1,285 @@
+{
+  "format": "oxytocin.code-map.retrieval-corpus",
+  "version": 1,
+  "revision": "685a79d",
+  "notes": "Expected files were chosen with text search before any ranking run. train: questions used in the 2026-10-23 diagnosis. heldout: written before any ranking change; never use them for tuning.",
+  "questions": [
+    {
+      "id": "q01",
+      "split": "train",
+      "question": "Where does Shift+Enter in the terminal send a newline to Claude Code?",
+      "expected": ["src/renderer/src/features/terminals/key-handler.ts"]
+    },
+    {
+      "id": "q02",
+      "split": "train",
+      "question": "How do we strip CLAUDECODE env variables before spawning terminals?",
+      "expected": ["src/main/services/terminals/env-composer.ts"]
+    },
+    {
+      "id": "q03",
+      "split": "train",
+      "question": "How is terminal output flow control with ACKs implemented?",
+      "expected": ["src/pty-host/flow-control.ts"]
+    },
+    {
+      "id": "q04",
+      "split": "train",
+      "question": "Where is the headless terminal mirror serialized for reattach?",
+      "expected": ["src/pty-host/headless-mirror.ts"]
+    },
+    {
+      "id": "q05",
+      "split": "train",
+      "question": "Where are IPC sender checks and validation done for handlers?",
+      "expected": ["src/main/ipc/router.ts"]
+    },
+    {
+      "id": "q06",
+      "split": "train",
+      "question": "How are utility host processes restarted after a crash?",
+      "expected": ["src/main/hosts/utility-host.ts"]
+    },
+    {
+      "id": "q07",
+      "split": "train",
+      "question": "Where do we read the HEAD version of a file for diffs?",
+      "expected": ["src/workspace-host/git/file-diff.ts"]
+    },
+    {
+      "id": "q08",
+      "split": "train",
+      "question": "Where is the git status refresh debounced?",
+      "expected": ["src/workspace-host/git/refresh-scheduler.ts"]
+    },
+    {
+      "id": "q09",
+      "split": "train",
+      "question": "How does the Usage Monitor compute the cost of tokens?",
+      "expected": [
+        "plugins/usage-monitor/src/host/pricing/cost.ts",
+        "plugins/usage-monitor/src/host/pricing/pricing-service.ts"
+      ]
+    },
+    {
+      "id": "q10",
+      "split": "train",
+      "question": "Where is the Codex MCP server registration written?",
+      "expected": ["src/main/services/mcp/codex-registration.ts"]
+    },
+    {
+      "id": "q11",
+      "split": "train",
+      "question": "Where are plugin manifests discovered and validated?",
+      "expected": ["src/main/services/plugins/discovery.ts"]
+    },
+    {
+      "id": "q12",
+      "split": "train",
+      "question": "Where are terminal shell profiles detected?",
+      "expected": [
+        "src/main/services/terminals/profiles.ts",
+        "src/main/services/terminals/shell-detect/posix.ts",
+        "src/main/services/terminals/shell-detect/win.ts"
+      ]
+    },
+    {
+      "id": "q13",
+      "split": "train",
+      "question": "How does the app check for updates?",
+      "expected": [
+        "src/main/services/updates/update-service.ts",
+        "src/main/services/updates/electron-updater-backend.ts"
+      ]
+    },
+    {
+      "id": "q14",
+      "split": "train",
+      "question": "Where are desktop notifications shown when an agent needs attention?",
+      "expected": ["src/main/services/notifications/notification-service.ts"]
+    },
+    {
+      "id": "q15",
+      "split": "train",
+      "question": "How are dropped files converted to paths in the preload?",
+      "expected": ["src/preload/index.ts"]
+    },
+    {
+      "id": "q16",
+      "split": "train",
+      "question": "Where does Ensemble create checkpoint commits?",
+      "expected": ["src/main/services/ensemble/ensemble-service.ts", "src/workspace-host/git/ensemble-git.ts"]
+    },
+    {
+      "id": "q17",
+      "split": "train",
+      "question": "Where is the project activity indicator computed?",
+      "expected": ["src/main/services/activity/activity.ts", "src/main/services/activity/activity-service.ts"]
+    },
+    {
+      "id": "q18",
+      "split": "train",
+      "question": "How does code map search rank results?",
+      "expected": ["src/code-map-host/query/search.ts"]
+    },
+    {
+      "id": "q19",
+      "split": "train",
+      "question": "Where is the MCP tools list changed notification sent?",
+      "expected": ["src/main/services/mcp/mcp-hub.ts", "src/main/services/mcp/http-server.ts"]
+    },
+    {
+      "id": "q20",
+      "split": "train",
+      "question": "Where are keyboard shortcuts defined?",
+      "expected": ["src/renderer/src/features/keybindings/shortcuts-model.ts"]
+    },
+    {
+      "id": "q21",
+      "split": "train",
+      "question": "How is the terminal link provider for file paths implemented?",
+      "expected": [
+        "src/renderer/src/features/terminals/link-provider.ts",
+        "src/renderer/src/features/terminals/file-link-open.ts"
+      ]
+    },
+    {
+      "id": "q22",
+      "split": "train",
+      "question": "Where is the Claude Code plan hook that waits for the user's decision?",
+      "expected": ["plugins/task/src/host/hook.ts"]
+    },
+    {
+      "id": "q23",
+      "split": "heldout",
+      "question": "How are SQL queries checked to be read-only before they run against a database?",
+      "expected": ["src/connections-host/guard/sql-guard.ts"]
+    },
+    {
+      "id": "q24",
+      "split": "heldout",
+      "question": "Where are database connection strings parsed into host, port and password?",
+      "expected": ["src/connections-host/import/connection-strings.ts"]
+    },
+    {
+      "id": "q25",
+      "split": "heldout",
+      "question": "How are secrets encrypted before they are stored?",
+      "expected": ["src/main/services/secrets/secret-store.ts"]
+    },
+    {
+      "id": "q26",
+      "split": "heldout",
+      "question": "How do we read the login shell environment variables?",
+      "expected": ["src/main/services/shell-env/resolve-shell-env.ts"]
+    },
+    {
+      "id": "q27",
+      "split": "heldout",
+      "question": "Where is a file written atomically with retries on Windows?",
+      "expected": ["src/main/services/storage/atomic-write.ts", "src/code-map-host/store/writer.ts"]
+    },
+    {
+      "id": "q28",
+      "split": "heldout",
+      "question": "How do we open a file in the user's external editor at a line?",
+      "expected": ["src/main/services/editor/editor-launcher.ts"]
+    },
+    {
+      "id": "q29",
+      "split": "heldout",
+      "question": "How is the end of a log file read for agents?",
+      "expected": ["src/connections-host/logs/tail.ts"]
+    },
+    {
+      "id": "q30",
+      "split": "heldout",
+      "question": "Where are installed AI coding agents detected?",
+      "expected": ["src/main/services/ai-agents/detect.ts"]
+    },
+    {
+      "id": "q31",
+      "split": "heldout",
+      "question": "Where is the Code Map MAP.md overview generated?",
+      "expected": ["src/code-map-host/map-md.ts"]
+    },
+    {
+      "id": "q32",
+      "split": "heldout",
+      "question": "Where is the .oxy folder added to .gitignore?",
+      "expected": ["src/code-map-host/store/gitignore.ts"]
+    },
+    {
+      "id": "q33",
+      "split": "heldout",
+      "question": "Where are user settings saved and validated?",
+      "expected": ["src/main/services/settings/settings-service.ts"]
+    },
+    {
+      "id": "q34",
+      "split": "heldout",
+      "question": "How does the Usage Monitor read Claude Code JSONL session logs?",
+      "expected": ["plugins/usage-monitor/src/host/collectors/claude-jsonl.ts"]
+    },
+    {
+      "id": "q35",
+      "split": "heldout",
+      "question": "Where is the plugin iframe sandboxed?",
+      "expected": ["src/renderer/src/features/plugins/PluginFrame.tsx"]
+    },
+    {
+      "id": "q36",
+      "split": "heldout",
+      "question": "How does searching text inside a terminal work?",
+      "expected": ["src/renderer/src/features/terminals/TerminalSearch.tsx"]
+    },
+    {
+      "id": "q37",
+      "split": "heldout",
+      "question": "How is markdown rendered for the preview plugin?",
+      "expected": ["plugins/markdown-preview/src/host/render.ts", "plugins/markdown-preview/src/host/render-preview.ts"]
+    },
+    {
+      "id": "q38",
+      "split": "heldout",
+      "question": "Where does the JSON formatter format and validate JSON?",
+      "expected": ["plugins/json-formatter/src/views/json-tools.ts"]
+    },
+    {
+      "id": "q39",
+      "split": "heldout",
+      "question": "How does the project runner detect package.json scripts to run?",
+      "expected": ["plugins/project-runner/src/host/scripts.ts", "plugins/project-runner/src/host/detect.ts"]
+    },
+    {
+      "id": "q40",
+      "split": "heldout",
+      "question": "Where are C# method calls resolved using the argument count?",
+      "expected": ["src/code-map-host/resolve/csharp.ts"]
+    },
+    {
+      "id": "q41",
+      "split": "heldout",
+      "question": "Where are git porcelain v2 status lines parsed?",
+      "expected": ["src/workspace-host/git/porcelain-v2.ts"]
+    },
+    {
+      "id": "q42",
+      "split": "heldout",
+      "question": "Where does the user type the commit message in the changes panel?",
+      "expected": ["src/renderer/src/features/changes/CommitBox.tsx"]
+    },
+    {
+      "id": "q43",
+      "split": "heldout",
+      "question": "How are Ensemble git worktrees created for tasks?",
+      "expected": ["src/workspace-host/git/ensemble-git.ts", "src/main/services/ensemble/ensemble-service.ts"]
+    },
+    {
+      "id": "q44",
+      "split": "heldout",
+      "question": "How is the Usage Monitor statusline installed into Claude Code settings?",
+      "expected": ["plugins/usage-monitor/src/host/statusline-install.ts"]
+    }
+  ]
+}
