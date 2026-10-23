@@ -36,7 +36,8 @@ test('MCP learning proposal is reviewed in the core manager and reused only whil
     const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
     const first = await connect(port, token);
     clients.push(first);
-    expect(await first.tools()).toContain('oxy_propose_learning');
+    expect(await first.tools()).toEqual(expect.arrayContaining(['oxy_propose_learning', 'oxy_task_context']));
+    expect(await first.tools()).not.toContain('oxy_code_map_status');
     const decode = (value: Awaited<ReturnType<typeof first.call>>) =>
       LearningToolResultSchema.parse(JSON.parse(value.result!.content![0]!.text));
     const proposed = decode(
@@ -107,13 +108,10 @@ test('MCP learning proposal is reviewed in the core manager and reused only whil
     await dialog.getByRole('button', { name: 'Refresh learnings' }).click();
     await expect(list).toContainText('needs-review');
     await dialog.getByLabel('Memory mode').selectOption('off');
-    expect(
-      decode(await later.call('oxy_task_context', { format: 'json', cwd: project, question: 'protocol' })),
-    ).toMatchObject({
-      memory: 'off',
-      learnings: [],
-    });
+    // Without Review memory agents keep the single locating tool: task context and the learning tools disappear.
     await expect.poll(() => later.tools()).not.toContain('oxy_propose_learning');
+    expect(await later.tools()).not.toContain('oxy_task_context');
+    expect(await later.tools()).toContain('oxy_find_code');
     expect(await readFile(join(project, '.oxy/learnings/learnings.json'), 'utf8')).toContain('Use the protocol.');
   } finally {
     for (const client of clients) client.close();
@@ -359,7 +357,7 @@ test('Code Map settings build, update, pause, rebuild, preserve settings and del
     expect((await graph()).symbols.map((s) => s.name)).toContain('first');
     await dialog.getByRole('button', { name: 'Copy agent instructions' }).click();
     expect(((await win.evaluate(() => window.oxy.invoke('clipboard:read'))) as { text: string }).text).toContain(
-      'MAP.md',
+      'oxy_find_code',
     );
     await writeFile(join(project, 'api.ts'), 'export function second() { return 2 }\n');
     await expect.poll(async () => (await graph()).symbols.map((s) => s.name)).toContain('second');
@@ -659,7 +657,17 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
     await writeFile(join(project, 'api.ts'), 'export function afterEdit() {}\n');
     const found = await client.call('oxy_find_code', { query: 'afterEdit', cwd: project });
     expect(found.result?.content?.[0]?.text).toContain('afterEdit');
-    expect(found.result?.content?.[0]?.text).toContain('stale=false');
+    const foundText = found.result?.content?.[0]?.text ?? '';
+    // A fresh answer is only pointers: no header, coverage or ids.
+    expect(foundText).toMatch(/^api\.ts:1-\d+ function /);
+    for (const noise of ['stale', 'coverage', 'checkout=', 'symbolId']) expect(foundText).not.toContain(noise);
+    const tools = await client.tools();
+    expect(tools).not.toContain('oxy_code_map_status');
+    // The pointer of a find answer is a selector for oxy_code_relations.
+    const line = Number(/^api\.ts:(\d+)-/.exec(foundText)![1]);
+    expect(
+      (await client.call('oxy_code_relations', { path: 'api.ts', line, cwd: project })).result?.content?.[0]?.text,
+    ).toMatch(/^1 api\.ts:\d+-\d+ function afterEdit/);
     expect(
       (await client.call('oxy_file_outline', { path: 'api.ts', cwd: project })).result?.content?.[0]?.text,
     ).toContain('afterEdit');

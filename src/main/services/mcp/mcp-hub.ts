@@ -21,7 +21,7 @@ import { type CallerDeps, resolveCaller, resolveCodeMapCaller, type ResolvedCall
 import { buildCodeMapTools, CodeMapToolInputError, isCodeMapTool } from './code-map-tools';
 import { buildLearningTools, isLearningTool } from './code-map-learning-tools';
 import type { CodeMapService } from '../code-map/code-map-service';
-import { CODE_MAP_MCP_INSTRUCTIONS } from '@shared/domain/code-map';
+import { codeMapMcpInstructions } from '@shared/domain/code-map';
 import {
   addCommandLine,
   type ConnectResult,
@@ -131,7 +131,8 @@ export interface McpHubDeps {
   codeMap?: {
     service: Pick<CodeMapService, 'query'>;
     learningService?: Pick<CodeMapService, 'learningTool' | 'revokeLearningActor'>;
-    memoryEnabled?(): boolean;
+    /** Whether Review memory is on in this project (any project when omitted). */
+    memoryEnabled?(projectId?: string): boolean;
     enabled(projectId?: string): boolean;
     onDidChange(listener: () => void): Disposable;
   };
@@ -325,8 +326,12 @@ export class McpHub implements Disposable {
     if (this.deps.codeMap && !this.deps.codeMap.enabled())
       for (const name of this.coreTools.keys())
         if (isMapRequest(name)) hidden.set(name, 'Enable Code Map in a project to offer this tool.');
+    // Agents get one locating tool (oxy_find_code) and no status tool: the status is in the app, and a second tool that
+    // returns the same pointers costs turns. oxy_task_context joins them once reviewed learnings can be added.
+    if (this.deps.codeMap)
+      hidden.set('oxy_code_map_status', 'Code Map status is shown in the app; agents do not need it.');
     if (this.deps.codeMap?.memoryEnabled && !this.deps.codeMap.memoryEnabled())
-      for (const name of ['oxy_propose_learning', 'oxy_learning_feedback'])
+      for (const name of ['oxy_task_context', 'oxy_propose_learning', 'oxy_learning_feedback'])
         hidden.set(name, 'Enable Review memory in a Code Map project to offer this tool.');
     this.registry.setCoreHidden(hidden);
   }
@@ -347,7 +352,8 @@ export class McpHub implements Disposable {
       if (e.source.kind === 'plugin') plugins.set(e.source.pluginName, (plugins.get(e.source.pluginName) ?? 0) + 1);
     const parts = [INSTRUCTIONS];
     const terminal = terminalHeader ? this.deps.caller.terminal(terminalHeader.trim()) : undefined;
-    if (terminal && this.deps.codeMap?.enabled(terminal.projectId)) parts.push(CODE_MAP_MCP_INSTRUCTIONS);
+    if (terminal && this.deps.codeMap?.enabled(terminal.projectId))
+      parts.push(codeMapMcpInstructions(this.deps.codeMap.memoryEnabled?.(terminal.projectId) ?? false));
     if (plugins.size) {
       const lines = [...plugins].map(([name, n]) => `- ${name}: ${n} tool${n === 1 ? '' : 's'}`);
       parts.push(`Plugins with tools now:\n${lines.join('\n')}`);
@@ -571,7 +577,11 @@ export class McpHub implements Disposable {
           instructions: [
             ensemble.instructions(principal),
             ...(principal && this.deps.codeMap?.enabled(ensemble.describe(principal)?.projectId)
-              ? [CODE_MAP_MCP_INSTRUCTIONS]
+              ? [
+                  codeMapMcpInstructions(
+                    this.deps.codeMap.memoryEnabled?.(ensemble.describe(principal)?.projectId) ?? false,
+                  ),
+                ]
               : []),
           ].join('\n\n'),
         }),

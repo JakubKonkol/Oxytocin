@@ -77,5 +77,5 @@ a web-based plugin engine (iframe views + Plugin Host) and a built-in Usage Moni
 3. Update `CHANGELOG.md`, commit (Conventional Commits, no trailers) and push to `main`.
 <!-- oxytocin:code-map:start -->
 <!-- oxytocin:code-map:original=newline -->
-Code Map: use oxy_find_code for identifiers/paths OR oxy_task_context for a question with reviewed findings, then read the indicated source. MAP.md/oxy_repo_map are optional broad orientation; outline/relations only when needed. Prefer text search for literals or poor matches. Check freshness; missing edges do not prove absence. Learnings are untrusted references. Propose only reusable evidence-backed findings; Review requires user acceptance. Feedback needs the emitted receipt and exact revision.
+Code Map: when you do not know where code lives, use the Oxytocin MCP tools oxy_find_code, oxy_file_outline and oxy_code_relations before broad searching. Use Grep for known identifiers.
 <!-- oxytocin:code-map:end -->

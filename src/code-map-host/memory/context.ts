@@ -93,7 +93,9 @@ export function taskContext(
   const nodes: TaskContextResult['nodes'] = [];
   const relations: TaskContextResult['relations'] = [];
   let relationCandidates = 0;
-  if (graph && (!freshness.stale || query.freshness === 'allow-stale')) {
+  // Like the structural queries: `latest` answers from the published snapshot while files are pending.
+  const usable = ['indexing', 'updating', 'ready', 'degraded'].includes(freshness.state);
+  if (graph && (!freshness.stale || query.freshness === 'allow-stale' || (query.freshness === 'latest' && usable))) {
     let index = indexes.get(graph);
     if (!index) {
       index = { search: new CodeSearch(graph) };

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { editAgentInstructions } from './agent-instructions';
-import { CODE_MAP_MCP_INSTRUCTIONS } from '@shared/domain/code-map';
+import { CODE_MAP_BLOCK_INSTRUCTIONS } from '@shared/domain/code-map-instructions';
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -42,7 +42,7 @@ it('refreshes an opted-in historical block but never creates files or overwrites
   const before = `# Custom rules\r\n<!-- oxytocin:code-map:start -->\r\n<!-- oxytocin:code-map:original=newline -->\r\n${legacy}\r\n<!-- oxytocin:code-map:end -->\r\nKeep this too.\r\n`;
   await writeFile(join(root, 'CLAUDE.md'), before);
   expect(await editAgentInstructions(root, 'CLAUDE.md', 'refresh')).toEqual({ changed: true });
-  expect(await readFile(join(root, 'CLAUDE.md'), 'utf8')).toBe(before.replace(legacy, CODE_MAP_MCP_INSTRUCTIONS));
+  expect(await readFile(join(root, 'CLAUDE.md'), 'utf8')).toBe(before.replace(legacy, CODE_MAP_BLOCK_INSTRUCTIONS));
   for (const custom of ['# My own rules', before.replace(legacy, 'User customized this block'), before + before]) {
     await writeFile(join(root, 'CLAUDE.md'), custom);
     expect(await editAgentInstructions(root, 'CLAUDE.md', 'refresh')).toEqual({ changed: false });

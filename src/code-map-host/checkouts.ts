@@ -264,7 +264,13 @@ export class CodeMapCheckouts {
       } else if (query.kind === 'status') {
         const { owner: _owner, error: _error, ...safeStatus } = status;
         result.data = { kind: 'status', status: safeStatus };
-      } else if (!snapshot || (stale && query.freshness !== 'allow-stale')) {
+      } else if (
+        !snapshot ||
+        (stale && query.freshness === 'verified') ||
+        // `latest` waited for the freshness barrier above; if it expired, a published snapshot still answers
+        // (freshness.stale and pendingFiles say so). Only a paused or failed index withholds it.
+        (stale && query.freshness === 'latest' && !['indexing', 'updating', 'ready', 'degraded'].includes(status.state))
+      ) {
         result.code =
           status.state === 'paused'
             ? 'INDEX_PAUSED'
@@ -274,7 +280,9 @@ export class CodeMapCheckouts {
         result.hint =
           result.code === 'INDEX_PAUSED'
             ? 'Resume Code Map or explicitly request allow-stale.'
-            : 'Retry after indexing, or use normal text search. No complete query result is available.';
+            : snapshot
+              ? 'Code Map is not queryable right now; use normal text search.'
+              : 'The first index is not published yet; use normal text search until Code Map is ready.';
       } else {
         const { graph } = snapshot;
         let index = this.indexes.get(graph);

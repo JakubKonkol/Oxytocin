@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CODE_MAP_MCP_INSTRUCTIONS, CODE_MAP_MEMORY_INSTRUCTIONS } from '@shared/domain/code-map';
 import type { McpToolResult } from '@shared/domain/mcp';
 import { defaultSettings, type Settings } from '@shared/domain/settings';
 import { Emitter } from '@shared/utils/emitter';
@@ -292,6 +293,66 @@ describe('McpHub resource tools', () => {
   });
 });
 
+describe('McpHub Code Map tools', () => {
+  it('offers one locating tool and no status tool, adds oxy_task_context and the learning tools with Review memory', () => {
+    let memory = false;
+    const changed = new Emitter<void>();
+    const { hub } = setup({
+      codeMap: {
+        enabled: () => true,
+        memoryEnabled: () => memory,
+        onDidChange: (l) => changed.event(() => l()),
+        service: { query: () => Promise.reject(new Error('unused')) },
+        learningService: { learningTool: () => Promise.reject(new Error('unused')), revokeLearningActor: () => {} },
+      },
+    });
+    const listed = () =>
+      hub
+        .state()
+        .tools.filter((t) => t.name.startsWith('oxy_') && t.listed)
+        .map((t) => t.name)
+        .filter((n) => /find_code|outline|relations|repo_map|status|task_context|learning/.test(n))
+        .sort();
+    expect(listed()).toEqual(['oxy_code_relations', 'oxy_file_outline', 'oxy_find_code', 'oxy_repo_map']);
+    expect(hub.state().tools.find((t) => t.name === 'oxy_code_map_status')).toMatchObject({
+      listed: false,
+      problem: expect.stringContaining('shown in the app') as unknown,
+    });
+    memory = true;
+    changed.fire();
+    expect(listed()).toEqual([
+      'oxy_code_relations',
+      'oxy_file_outline',
+      'oxy_find_code',
+      'oxy_learning_feedback',
+      'oxy_propose_learning',
+      'oxy_repo_map',
+      'oxy_task_context',
+    ]);
+    memory = false;
+    changed.fire();
+    expect(listed()).not.toContain('oxy_task_context');
+  });
+
+  it('sends the decision rules, and the learning sentence only while the caller project has Review memory', () => {
+    const memoryProjects = new Set<string>();
+    const { hub } = setup({
+      codeMap: {
+        enabled: () => true,
+        memoryEnabled: (id) => (id ? memoryProjects.has(id) : memoryProjects.size > 0),
+        onDidChange: () => ({ dispose() {} }),
+        service: { query: () => Promise.reject(new Error('unused')) },
+      },
+    });
+    const instructions = (hub as unknown as { instructions(t?: string): string }).instructions.bind(hub);
+    expect(instructions('t-1')).toContain(CODE_MAP_MCP_INSTRUCTIONS);
+    expect(instructions('t-1')).not.toContain('oxy_task_context');
+    memoryProjects.add('p1');
+    expect(instructions('t-1')).toContain(CODE_MAP_MEMORY_INSTRUCTIONS);
+    expect(instructions('t-1')).toMatch(/only when the user asks to save one/);
+  });
+});
+
 describe('McpHub Ensemble endpoint', () => {
   it('uses authenticated role provenance for learning writes and aborts them on token revocation', async () => {
     let live = true;
@@ -357,6 +418,40 @@ describe('McpHub Ensemble endpoint', () => {
     expect((await pending).result.isError).toBe(true);
     expect(learningTool.mock.calls[0]![4].aborted).toBe(true);
     expect(revokeLearningActor).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/));
+  });
+  it('tells Ensemble agents the Code Map rules, with the learning sentence only while their project has Review memory', async () => {
+    let memory = false;
+    const { hub } = setup({
+      codeMap: {
+        enabled: () => true,
+        memoryEnabled: () => memory,
+        onDidChange: () => ({ dispose() {} }),
+        service: { query: () => Promise.reject(new Error('unused')) },
+      },
+    });
+    hub.setEnsemble({
+      describe: () => ({ label: 'A', projectId: 'p1', terminalId: 'role-terminal', checkoutId: 'worktree:a' }),
+      tools: () => [],
+      call: () => Promise.resolve(''),
+      instructions: () => 'Ensemble',
+    });
+    await hub.start();
+    const initialize = async () => {
+      const res = await fetch(hub.ensembleUrl()!, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer role-a', 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-06-18' },
+        }),
+      });
+      return ((await res.json()) as { result: { instructions: string } }).result.instructions;
+    };
+    expect(await initialize()).toBe(`Ensemble\n\n${CODE_MAP_MCP_INSTRUCTIONS}`);
+    memory = true;
+    expect(await initialize()).toContain(CODE_MAP_MEMORY_INSTRUCTIONS);
   });
   it('uses only the authenticated role checkout, ignores selectors/header and cancels revoked roles', async () => {
     let live = true;

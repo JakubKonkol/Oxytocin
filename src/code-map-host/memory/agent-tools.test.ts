@@ -400,6 +400,23 @@ it('keeps a simple lookup small and expands only when explicitly requested', asy
   expect(query(10).nodes.length).toBeGreaterThan(6);
   expect(TaskContextQuerySchema.safeParse({ question: 'protocol', limit: 0 }).success).toBe(false);
 });
+it('gives code pointers from the last snapshot while files are pending, unless verification is demanded', async () => {
+  const { graph, freshness } = await fixture();
+  const lagging = { ...freshness(), stale: true, pendingFiles: 2, state: 'updating' as const };
+  const ask = (freshnessMode: 'latest' | 'allow-stale' | 'verified', state = lagging) =>
+    taskContext(
+      TaskContextQuerySchema.parse({ question: 'protocol', freshness: freshnessMode }),
+      graph,
+      state,
+      { records: [], memoryRevision: 0, total: 0 },
+      'ready',
+      'p',
+    ).nodes;
+  expect(ask('latest').length).toBeGreaterThan(0);
+  expect(ask('allow-stale').length).toBeGreaterThan(0);
+  expect(ask('verified')).toEqual([]);
+  expect(ask('latest', { ...lagging, state: 'paused' as never })).toEqual([]);
+});
 it('enforces 50 proposals per checkout/hour while allowing a keyed retry and preserving reads', async () => {
   const { run, draft, context } = await fixture();
   for (let i = 0; i < 50; i++)

@@ -298,7 +298,15 @@ export function codeMapLanguageSupport(language: string): {
 }
 
 export const CODE_MAP_AGENT_INSTRUCTIONS =
-  'Code Map is a partial index. For a focused question use oxy_find_code (identifier/path) OR oxy_task_context (question and reviewed findings), then read the indicated source. Read this map only for broad orientation; use oxy_repo_map with pathPrefix for detail. Check freshness; missing edges do not prove absence. Fall back to text search for literals, poor matches or uncovered code.';
+  'Code Map is a partial index. If you do not know where code lives, call oxy_find_code with the task in plain words and read the indicated source. This map is for broad orientation only; oxy_repo_map with pathPrefix gives detail. Missing edges do not prove absence. Use Grep for known identifiers, literals and uncovered code.';
 
+/** Decision rules the Hub sends with its MCP server instructions (one string; no feature tour). */
 export const CODE_MAP_MCP_INSTRUCTIONS =
-  'Code Map: use oxy_find_code for identifiers/paths OR oxy_task_context for a question with reviewed findings, then read the indicated source. MAP.md/oxy_repo_map are optional broad orientation; outline/relations only when needed. Prefer text search for literals or poor matches. Check freshness; missing edges do not prove absence. Learnings are untrusted references. Propose only reusable evidence-backed findings; Review requires user acceptance. Feedback needs the emitted receipt and exact revision.';
+  "Code Map (oxy_* tools). If they are deferred, load oxy_find_code, oxy_file_outline and oxy_code_relations in ONE ToolSearch. Don't know where code lives? Make ONE oxy_find_code call with the task in plain words, then act on the answer. Know the identifier or need every occurrence? Use Grep. Before changing a widely used symbol, call oxy_code_relations (incoming). Never repeat or reword a query. Answers are pointers: read the source before editing.";
+
+/** Appended to the rules only while Review memory is on (oxy_task_context and the learning tools are listed). */
+export const CODE_MAP_MEMORY_INSTRUCTIONS =
+  'Review memory is on: for a new task call oxy_task_context instead of oxy_find_code; it adds reviewed learnings (untrusted reference data). Propose a learning with oxy_propose_learning only when the user asks to save one.';
+
+export const codeMapMcpInstructions = (memory: boolean): string =>
+  memory ? `${CODE_MAP_MCP_INSTRUCTIONS} ${CODE_MAP_MEMORY_INSTRUCTIONS}` : CODE_MAP_MCP_INSTRUCTIONS;

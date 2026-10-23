@@ -97,10 +97,27 @@ export class CodeRelations {
       truncated,
     };
   }
+  /** The innermost symbol of `path` whose span contains `line`; a symbol starting on that line wins. */
+  private symbolAt(path: string, line: number): string | undefined {
+    const fileId = `f:${path}`;
+    let best: CodeMapGraph['symbols'][number] | undefined;
+    const rank = (s: CodeMapGraph['symbols'][number]) => [s.span[0] === line ? 0 : 1, s.span[2] - s.span[0]] as const;
+    for (const symbol of this.graph.symbols) {
+      if (symbol.file !== fileId || line < symbol.span[0] || line > symbol.span[2]) continue;
+      if (!best) best = symbol;
+      else {
+        const [a, b] = [rank(symbol), rank(best)];
+        if (a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])) best = symbol;
+      }
+    }
+    return best?.id;
+  }
   query(request: Request): { data: Data | null; truncated: boolean } {
-    const root = request.symbolId ?? `f:${request.path!}`;
+    const symbolId = request.symbolId ?? (request.line ? this.symbolAt(request.path!, request.line) : undefined);
+    if (request.line && !symbolId) return { data: null, truncated: false };
+    const root = symbolId ?? `f:${request.path!}`;
     const first = this.nodes.get(root);
-    if (!first || (request.symbolId && first.kind !== 'symbol')) return { data: null, truncated: false };
+    if (!first || (symbolId && first.kind !== 'symbol')) return { data: null, truncated: false };
     const nodes: Data['nodes'] = [{ ...first, whyIncluded: 'requested root' }];
     const edges: Data['edges'] = [];
     const seenNodes = new Set([root]),

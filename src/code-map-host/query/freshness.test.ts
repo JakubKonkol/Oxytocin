@@ -101,3 +101,30 @@ it('returns INDEX_UPDATING instead of no matches and cancellation does not abort
     release?.();
   }
 }, 15000);
+it('answers from the published snapshot when the freshness wait expires, and keeps verified and paused strict', async () => {
+  let block: Promise<void> = Promise.resolve();
+  let release: () => void = () => {};
+  try {
+    await setup(() => block);
+    await vi.waitFor(() => expect(checkouts.status('p').state).toBe('ready'));
+    block = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await writeFile(join(root, 'api.ts'), 'second');
+    const lagging = await checkouts.query('p', 'lagging', { kind: 'search', query: 'first' });
+    expect(lagging.code).toBe('OK');
+    expect(lagging.freshness).toMatchObject({ stale: true, pendingFiles: 1 });
+    expect(lagging.data).toMatchObject({ kind: 'search', matches: [expect.objectContaining({ name: 'first' })] });
+    const verified = await checkouts.query('p', 'strict', { kind: 'search', query: 'first', freshness: 'verified' });
+    expect(verified.code).toBe('INDEX_UPDATING');
+    expect(verified.data).toBeUndefined();
+    release();
+    await vi.waitFor(async () => {
+      const current = await checkouts.query('p', `current-${Math.random()}`, { kind: 'search', query: 'second' });
+      expect(current.freshness.stale).toBe(false);
+      expect(current.data).toMatchObject({ kind: 'search', matches: [expect.objectContaining({ name: 'second' })] });
+    });
+  } finally {
+    release();
+  }
+}, 20000);

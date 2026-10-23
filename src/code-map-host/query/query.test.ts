@@ -185,3 +185,26 @@ it('validates limits, cross-field selectors, traversal and budgets including JSO
   expect(bounded.truncated).toBe(true);
   expect(bounded.reasons).toContain('CHAR_BUDGET');
 });
+it('selects the innermost symbol at a path and line, preferring one that starts there, instead of the file', () => {
+  const graph = fixture();
+  const file = graph.files[0]!;
+  graph.symbols.push(
+    { ...graph.symbols[0]!, id: 'outer', file: file.id, name: 'Outer', span: [10, 0, 40, 1] },
+    { ...graph.symbols[0]!, id: 'inner', file: file.id, name: 'inner', span: [20, 2, 25, 3] },
+  );
+  graph.edges.push({ from: graph.files[1]!.id, to: 'inner', rel: 'calls', prov: 'binding', at: [3, 0] });
+  const relations = new CodeRelations(graph);
+  const ask = (line: number, path = file.path) => {
+    const request = CodeMapQuerySchema.parse({ kind: 'relations', path, line, direction: 'incoming' });
+    if (request.kind !== 'relations') throw new Error('wrong kind');
+    return relations.query(request).data;
+  };
+  expect(ask(22)?.nodes[0]?.value.id).toBe('inner');
+  expect(ask(20)?.nodes[0]?.value.id).toBe('inner');
+  expect(ask(10)?.nodes[0]?.value.id).toBe('outer');
+  expect(ask(30)?.nodes[0]?.value.id).toBe('outer');
+  expect(ask(22)?.edges).toHaveLength(1);
+  expect(ask(500)).toBeNull();
+  expect(ask(22, graph.files[1]!.path)).toBeNull();
+  expect(CodeMapQuerySchema.safeParse({ kind: 'relations', symbolId: 'inner', line: 20 }).success).toBe(false);
+});

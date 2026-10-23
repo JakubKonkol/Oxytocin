@@ -34,6 +34,8 @@ export const CodeMapQuerySchemas = {
       ...options,
       path: CodeMapRelativePathSchema.optional(),
       symbolId: z.string().min(1).max(8192).optional(),
+      /** With `path`: the symbol declared at or around this 1-based line (the innermost one) instead of the file. */
+      line: z.number().int().min(1).max(10_000_000).optional(),
       direction: z.enum(['incoming', 'outgoing', 'both']).default('both'),
       relations: z
         .array(CodeMapRelationSchema)
@@ -44,7 +46,8 @@ export const CodeMapQuerySchemas = {
       includeHeuristic: z.boolean().default(false),
     })
     .strict()
-    .refine((v) => Boolean(v.path) !== Boolean(v.symbolId), 'Pass exactly one of path or symbolId'),
+    .refine((v) => Boolean(v.path) !== Boolean(v.symbolId), 'Pass exactly one of path or symbolId')
+    .refine((v) => v.line === undefined || Boolean(v.path), 'line requires path'),
 } as const;
 export const CodeMapQuerySchema = z.discriminatedUnion('kind', [
   CodeMapQuerySchemas.status.extend({ kind: z.literal('status') }),

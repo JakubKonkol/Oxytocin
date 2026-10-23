@@ -351,6 +351,7 @@ it('uses three learning tools over real HTTP with independent sessions, review a
       learnings: [],
     },
   );
+  expect(hub.registry.resolve('oxy_task_context')).toBeDefined();
   mode = 'off';
   tools.revoke('p1');
   expect(decode(await call(secondSession, 'oxy_task_context', { question: 'protocol', format: 'json' }))).toMatchObject(
@@ -362,7 +363,7 @@ it('uses three learning tools over real HTTP with independent sessions, review a
   expect(decode(await call(secondSession, 'oxy_propose_learning', proposal))).toMatchObject({ code: 'MEMORY_OFF' });
   changed.fire();
   expect(hub.registry.resolve('oxy_propose_learning')).toBeUndefined();
-  expect(hub.registry.resolve('oxy_task_context')).toBeDefined();
+  expect(hub.registry.resolve('oxy_task_context')).toBeUndefined();
   enabled = false;
   changed.fire();
   expect(hub.registry.resolve('oxy_task_context')).toBeUndefined();
@@ -435,7 +436,7 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
     (await post(port, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } }, session)).json
       .result!;
   const text = (r: Record<string, unknown>) => (r['content'] as { text: string }[])[0]!.text;
-  expect(text(await call('oxy_find_code', { query: 'beforeEdit' }))).toContain('beforeEdit');
+  expect(text(await call('oxy_find_code', { query: 'beforeEdit' }))).toBe('api.ts:1-1 function beforeEdit()');
   await writeFile(join(root, 'api.ts'), 'afterEdit');
   const updated = text(await call('oxy_find_code', { query: 'afterEdit', maxChars: 2000 }));
   expect(updated).toContain('afterEdit');
@@ -443,7 +444,12 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
   expect(text(await call('oxy_file_outline', { path: 'api.ts' }))).toContain('afterEdit');
   expect(text(await call('oxy_code_relations', { path: 'api.ts', format: 'json' }))).toContain('whyIncluded');
   expect(text(await call('oxy_repo_map', {}))).toContain('## Layout');
-  expect(text(await call('oxy_code_map_status', {}))).toContain('coverage');
+  expect(text(await call('oxy_code_relations', { path: 'api.ts', line: 1 }))).toContain(
+    '1 api.ts:1-1 function afterEdit()',
+  );
+  expect(names).not.toContain('oxy_code_map_status');
+  expect(names).not.toContain('oxy_task_context');
+  expect(hub.registry.resolve('oxy_code_map_status')).toBeUndefined();
   if (process.env['OXYTOCIN_CODE_MAP_QUERY_BENCHMARK'] === '1') {
     const timings: number[] = [];
     for (let i = 0; i < 50; i++) {
