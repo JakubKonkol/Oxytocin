@@ -24,10 +24,10 @@ started.
 
 | Phase | Step | Status | Commit | Notes |
 | ----- | ---- | ------ | ------ | ----- |
-| 0 | Frozen corpus (44 questions: 22 train, 22 held-out) + `scripts/code-map-retrieval-eval.ts` | done | (this commit) | Baseline below. |
+| 0 | Frozen corpus (44 questions: 22 train, 22 held-out) + `scripts/code-map-retrieval-eval.ts` | done | `423ba66` | Baseline below. |
 | 0 | Per-session Code Map call accounting in the Hub / Usage Monitor | not started | | |
 | 0 | Paid A/B (D1) | not started | | Needs owner approval and budget. |
-| 1 | Remove agent overhead (merged locate tool, schemas, instructions, quiet output, stale-tolerant answers) | in progress | | Delegated to a sub-agent (worktree). |
+| 1 | Remove agent overhead (one locate tool, schemas, instructions, quiet output, stale-tolerant answers) | done | `8aa0555` | Default tool schemas 4,372 → 1,533 chars; all 8 tools 9,788 → 5,214. Open: Review memory defaults to on, so `oxy_task_context` + learning tools stay listed by default (rules then point to task_context only). |
 | 2 | Body-aware BM25F ranking | in progress | | Delegated to a sub-agent (worktree). |
 | 3 | Source excerpts in `oxy_find_code` | not started | | Depends on 1 and 2. |
 | 4 | Prompt-time pointers via Claude Code Bridge | not started | | Depends on 2 (confidence signal). |
@@ -45,10 +45,13 @@ compact MCP answer). "hit@k" counts questions whose first expected file is withi
 | `685a79d` baseline | all (44) | 19 | 30 | 34 | 0.561 | 1960 |
 | `685a79d` baseline | train (22) | 12 | 17 | 19 | 0.655 | 1987 |
 | `685a79d` baseline | held-out (22) | 7 | 13 | 15 | 0.467 | 1932 |
+| `8aa0555` phase 1 | all (44) | 19 | 30 | 34 | 0.560 | 861 |
 
 ## Log
 
 - 2026-10-23 — Phase 0: corpus, metric library with tests, headless evaluation script; baseline recorded.
+- 2026-10-23 — Phase 1 merged (`8aa0555`): check green (1,473 unit, 76 integration, 3 latency), E2E code-map/visualizer/ipc-hosts 21/21; ranks unchanged, mean answer −56%.
+- Finding for phase 5: every query calls `indexer.verify()`, a full metadata audit (git enumeration) of the checkout, and any change re-resolves the whole graph — the source of the 1.6–2.7 s update latency.
 
 ## Next
 

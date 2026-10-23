@@ -3,6 +3,22 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Changed
+
+- **Code Map:** agent answers are much cheaper to use.
+  - Agents see one tool to locate code (`oxy_find_code`; `oxy_task_context` while Review memory is on) and no status
+    tool; the tool schemas and the guidance are about 60% smaller and say when plain Grep is the better choice.
+  - Answers are quiet `path:lines kind signature` pointers, about 55% shorter: no header, coverage totals or symbol
+    IDs. One line appears only when the index is updating or a cited file changed, and "Truncated" only when the size
+    budget cut results.
+  - `oxy_code_relations` accepts `path` and `line`, so a pointer from a find answer can be used directly.
+  - While files are re-indexed, queries answer from the last published map, marked as stale, instead of returning
+    "updating" without data.
+  - The `CLAUDE.md`/`AGENTS.md` instruction block is a single line; existing opted-in blocks are upgraded
+    automatically.
+
 ## [0.9.13] - 2026-10-23
 
 ### Changed
