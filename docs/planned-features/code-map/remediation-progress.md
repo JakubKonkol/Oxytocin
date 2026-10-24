@@ -25,7 +25,7 @@ started.
 | Phase | Step | Status | Commit | Notes |
 | ----- | ---- | ------ | ------ | ----- |
 | 0 | Frozen corpus (44 questions: 22 train, 22 held-out) + `scripts/code-map-retrieval-eval.ts` | done | `423ba66` | Baseline below. |
-| 0 | Per-session Code Map call accounting in the Hub / Usage Monitor | in progress | | Delegated to a sub-agent (worktree). |
+| 0 | Per-session Code Map call accounting in the Hub / Usage Monitor | done | `310c9fe` | Usage Monitor Sessions → "Code Map" column (calls · chars, tooltip stale/not OK/failed); attribution via terminal id + session time window; in-memory, counts only. Core command `oxytocin.mcp.codeMapUsage`. |
 | 0 | Paid A/B (D1) | not started | | Needs owner approval and budget. |
 | 1 | Remove agent overhead (one locate tool, schemas, instructions, quiet output, stale-tolerant answers) | done | `8aa0555` | Default tool schemas 4,372 → 1,533 chars; all 8 tools 9,788 → 5,214. Open: Review memory defaults to on, so `oxy_task_context` + learning tools stay listed by default (rules then point to task_context only). |
 | 2 | Body-aware BM25F ranking | done | `2f592ae` | Search corpus cached in records (not graph.json), pinned per generation; PageRank prior tried and rejected (no train gain). Cache +38%; index build on first query after publish 0.2–0.4 s here, 1.1–1.3 s on 10k fixture (phase 5 must address). `coverage` separates right/wrong poorly; `strong` tuned on train only. |
@@ -55,9 +55,10 @@ compact MCP answer). "hit@k" counts questions whose first expected file is withi
 - 2026-10-23 — Phase 0: corpus, metric library with tests, headless evaluation script; baseline recorded.
 - 2026-10-23 — Phase 1 merged (`8aa0555`): check green (1,473 unit, 76 integration, 3 latency), E2E code-map/visualizer/ipc-hosts 21/21; ranks unchanged, mean answer −56%.
 - 2026-10-24 — Phases 6 and 2 merged (`EXTRACTOR_VERSION` 8 for the combined record shape); check green (1,515 unit, 76 integration, 3 latency); E2E code-map + visualizer 16/16. Phase 4 and 0b agents stopped on a usage limit mid-work; their worktree branches keep the partial work.
+- 2026-10-24 — Phase 0b merged (`64c35d1`); check green (1,532 unit, 76 integration, 3 latency), E2E usage + code-map + mcp-hub 19/19. A container restart (likely memory: parallel checks/E2E) stopped the phase 3 and 5 agents; resumed. Run at most one full check/E2E at a time.
 - Finding for phase 5: every query calls `indexer.verify()`, a full metadata audit (git enumeration) of the checkout, and any change re-resolves the whole graph — the source of the 1.6–2.7 s update latency.
 
 ## Next
 
-- Resume/finish phase 4 (`worktree-agent-a13196d230750f082`) and 0b (`worktree-agent-a6153f2d9c6970ff6`) branches and merge them.
+- Review and merge phase 4 (`worktree-agent-a13196d230750f082`, finished; report lost in a restart).
 - Then phase 3 (excerpts), phase 4 (bridge pointers, off by default), phase 5 (freshness).

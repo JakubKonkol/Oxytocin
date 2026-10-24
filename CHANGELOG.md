@@ -28,6 +28,12 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   about a quarter more callers; path aliases such as `@shared/*` resolve through a solution-style `tsconfig.json` with
   project references instead of appearing as external packages.
 
+### Added
+
+- **Usage Monitor:** the Sessions table has a "Code Map" column: how many Code Map tool calls the agent in that
+  terminal made during the session and how many characters of answers it received; the tooltip adds stale, not-OK and
+  failed answers. Oxytocin keeps only counts, in memory since the app started — no queries, paths or code.
+
 ## [0.9.13] - 2026-10-23
 
 ### Changed
