@@ -9,8 +9,15 @@ type Match = Extract<CodeMapQueryData, { kind: 'search' }>['matches'][number];
 export const EXCERPT_LIMITS = {
   /** Matches that get source: the best of the ranking, which lists distinct files first. */
   hits: 3,
-  /** Shown lines per match, signature line and context included. */
+  /** Shown lines for the first match, signature line and context included. */
   hitLines: 12,
+  /**
+   * The second and third match get source only when they score at least this share of the first: a weaker match is
+   * more often a wrong file, and its lines would be paid for on every turn without answering anything.
+   */
+  followerScore: 0.6,
+  /** Shown lines for each such close second or third match. */
+  followerLines: 6,
   /** Shown lines per answer. */
   answerLines: 40,
   /** `full`: the whole definition of the first match, up to this many lines. */
@@ -118,7 +125,10 @@ export async function attachExcerpts(input: {
   signal?: AbortSignal;
 }): Promise<Match[]> {
   const { matches, mode, sources, signal } = input;
-  const chosen = matches.slice(0, mode === 'full' ? 1 : EXCERPT_LIMITS.hits).filter((m) => !m.stale);
+  const top = matches[0]?.score ?? 0;
+  const chosen = matches
+    .slice(0, mode === 'full' ? 1 : EXCERPT_LIMITS.hits)
+    .filter((m, i) => !m.stale && (i === 0 || m.score >= top * EXCERPT_LIMITS.followerScore));
   const queryTerms = new Set(searchTerms(input.query));
   const loaded = new Map<string, Promise<string[] | undefined>>();
   const load = (path: string) => {
@@ -151,8 +161,11 @@ export async function attachExcerpts(input: {
       to = span ? span[2] : lines.length;
     if (from < 1 || to < from || to > lines.length) continue;
     let overBudget = false;
+    const lead = match === matches[0];
     const attempts: number[] =
-      mode === 'full' ? [EXCERPT_LIMITS.fullLines, EXCERPT_LIMITS.hitLines] : [EXCERPT_LIMITS.hitLines];
+      mode === 'full'
+        ? [EXCERPT_LIMITS.fullLines, EXCERPT_LIMITS.hitLines]
+        : [lead ? EXCERPT_LIMITS.hitLines : EXCERPT_LIMITS.followerLines];
     for (const [attempt, cap] of attempts.entries()) {
       const room = mode === 'full' && attempt === 0 ? cap : Math.min(cap, EXCERPT_LIMITS.answerLines - used);
       if (room < 1) break;

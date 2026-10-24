@@ -138,6 +138,27 @@ describe('attachExcerpts', () => {
     expect(files.read).toHaveBeenCalledTimes(3);
   });
 
+  it('gives a weaker second or third match no source, and a close one at most six lines', async () => {
+    const wide = body(
+      'wide',
+      Array.from({ length: 30 }, (_, i) => `  call(needle, ${i});`),
+    );
+    const files = sources({ 'a.ts': wide, 'b.ts': wide, 'c.ts': wide });
+    const found = await run(
+      [
+        hit('a.ts', [1, 0, 32, 1], { score: 10 }),
+        hit('b.ts', [1, 0, 32, 1], { score: 6 }),
+        hit('c.ts', [1, 0, 32, 1], { score: 5.9 }),
+      ],
+      files,
+      'needle',
+    );
+    expect(found.map((m) => !!m.excerpt)).toEqual([true, true, false]);
+    expect(shown(found[0]!.excerpt!).length).toBe(EXCERPT_LIMITS.hitLines);
+    expect(shown(found[1]!.excerpt!).length).toBeLessThanOrEqual(EXCERPT_LIMITS.followerLines);
+    expect(files.read).toHaveBeenCalledTimes(2);
+  });
+
   it('attaches nothing when the file changed after indexing, is unreadable, stale, or too large', async () => {
     const changed = sources({ 'a.ts': `${source}// edited\n` }, { 'a.ts': source });
     expect((await run([one], changed, 'shift'))[0]!.excerpt).toBeUndefined();
