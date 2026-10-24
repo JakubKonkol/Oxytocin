@@ -1,5 +1,6 @@
 import type { PluginContext, PluginView } from '@oxytocin/plugin-api';
 import { DEFAULT_SIDEBAR_DISPLAY, type SidebarDisplay } from '../shared/sidebar-display';
+import { withCodeMapUsage } from './code-map-usage';
 import type { WorkerClient } from './worker-rpc';
 
 /** `usage.sidebar.*`: what the sidebar card shows (its ⋯ menu and the dashboard's Settings tab change them). */
@@ -61,6 +62,13 @@ export interface DashboardTarget {
 }
 
 const REFRESH_MS = 30_000;
+
+interface SessionRowLike {
+  sessionId: string;
+  terminalId: string | null;
+  firstEventAt: number | null;
+  lastEventAt: number | null;
+}
 
 interface StatusModel {
   todayUsd: number;
@@ -129,6 +137,9 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
   const { oxy } = ctx;
   const sidebars = new Set<PluginView>();
   const dashboards = new Set<PluginView>();
+  // Oxytocin counts Code Map calls from its start: older sessions have no figure.
+  const countingSince = Date.now();
+  const execute = (id: string, ...args: unknown[]) => oxy.commands.execute(id, ...args);
 
   /** The worker's sidebar model plus the card's display options. */
   const sidebarModel = async () => ({
@@ -247,8 +258,16 @@ export function registerUi(ctx: PluginContext, client: WorkerClient, extras: UiE
         view.title = 'Usage';
         view.onRequest('refreshUsage', () => client.request('usage.refresh'));
         view.onRequest('overview', () => client.request('dash.overview'));
-        view.onRequest('sessions', (opts) => client.request('dash.sessions', opts));
-        view.onRequest<{ id: string }, unknown>('session', ({ id }) => client.request('dash.session', { id }));
+        view.onRequest('sessions', async (opts) => {
+          const page = await client.request<{ rows: SessionRowLike[]; total: number }>('dash.sessions', opts);
+          return { ...page, rows: await withCodeMapUsage(page.rows, execute, countingSince) };
+        });
+        view.onRequest<{ id: string }, unknown>('session', async ({ id }) => {
+          const detail = await client.request<{ session: SessionRowLike } | null>('dash.session', { id });
+          if (!detail) return detail;
+          const [session] = await withCodeMapUsage([detail.session], execute, countingSince);
+          return { ...detail, session };
+        });
         view.onRequest('budgets', () => client.request('budgets.list'));
         view.onRequest('budget.save', (input) => client.request('budgets.save', input));
         view.onRequest<{ id: string }, unknown>('budget.delete', ({ id }) => client.request('budgets.delete', { id }));

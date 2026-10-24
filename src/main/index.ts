@@ -713,6 +713,7 @@ function bootstrap(): void {
         if (Notification.isSupported()) new Notification({ title, body, icon: appPaths.windowIcon() }).show();
       },
       agentBrief: (terminalId) => resourcesController.sessionBrief(terminalId),
+      codeMapUsage: (ranges) => mcpHub.codeMapUsageTotals(ranges),
     },
   };
   // Built-in plugins and user/developer plugins run in separate Plugin Hosts (ADR-022).

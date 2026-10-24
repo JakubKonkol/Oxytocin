@@ -10,7 +10,7 @@ import type { CodeMapService } from '../code-map/code-map-service';
 import type { CoreTool } from './core-tools';
 import { CodeMapToolInputError } from './code-map-tools';
 import { NO_PROJECT_MESSAGE } from './caller-context';
-import { formatTaskContext } from './code-map-format';
+import { formatTaskContext, isStaleTaskContext } from './code-map-format';
 
 export const LEARNING_TOOL_NAMES = ['oxy_task_context', 'oxy_propose_learning', 'oxy_learning_feedback'] as const;
 export const isLearningTool = (name: string): boolean => (LEARNING_TOOL_NAMES as readonly string[]).includes(name);
@@ -62,7 +62,7 @@ export function buildLearningTools(service: Pick<CodeMapService, 'learningTool'>
         timeoutMs: 35000,
       },
       defaultPolicy: 'allow',
-      run: async ({ args, caller, sessionId, signal, learningActor }) => {
+      run: async ({ args, caller, sessionId, signal, learningActor, report }) => {
         const parsed = schema.safeParse(args);
         if (!parsed.success)
           throw new CodeMapToolInputError(
@@ -82,6 +82,7 @@ export function buildLearningTools(service: Pick<CodeMapService, 'learningTool'>
               signal,
             ),
           );
+          if (result.kind === 'task-context') report?.({ stale: isStaleTaskContext(result) });
           return {
             content: [
               {

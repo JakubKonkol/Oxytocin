@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { emptyCodeMapCoverage } from '@shared/domain/code-map';
 import type { CodeMapQueryResult } from '@shared/domain/code-map-query';
 import type { TaskContextResult } from '@shared/domain/code-map-learning-tools';
-import { formatCodeMap, formatTaskContext } from './code-map-format';
+import { formatCodeMap, formatTaskContext, isStaleAnswer, isStaleTaskContext } from './code-map-format';
 
 const coverage = {
   ...emptyCodeMapCoverage(),
@@ -262,4 +262,21 @@ it('keeps task context learnings, relation numbering, stale notes and memory fai
   expect(formatTaskContext({ ...taskBase, nodes: [], warnings: [], receipt: undefined })).toBe(
     'No relevant context. Use Grep.',
   );
+});
+
+it('decides staleness on the structured result exactly where the formatter prints a stale line', () => {
+  const answers: CodeMapQueryResult[] = [
+    search([match('a', 1)]),
+    search([match('a', 1)], { freshness: stale }),
+    search([match('a', 1, { stale: true })]),
+    { ...base, data: { kind: 'repo-map', markdown: '# map' } },
+    { ...base, freshness: stale, data: { kind: 'repo-map', markdown: '# map' } },
+    { ...base, code: 'INDEX_UPDATING', hint: 'Indexing.', freshness: stale },
+  ];
+  for (const answer of answers)
+    expect(isStaleAnswer(answer), JSON.stringify(answer)).toBe(formatCodeMap(answer).startsWith('stale:'));
+  expect(answers.map(isStaleAnswer)).toEqual([false, true, true, false, true, false]);
+  expect(isStaleTaskContext(taskBase)).toBe(false);
+  expect(isStaleTaskContext({ ...taskBase, freshness: stale })).toBe(true);
+  expect(isStaleTaskContext({ ...taskBase, nodes: taskBase.nodes.map((n) => ({ ...n, stale: true })) })).toBe(true);
 });
