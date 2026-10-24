@@ -194,9 +194,14 @@ export function buildGraph(
   graph.groups.sort((a, b) => comparePaths(a.id, b.id));
   for (const symbol of graph.symbols) if (exportedSymbols.has(symbol.id)) symbol.exported = true;
   const children = new Map<string, typeof graph.symbols>();
-  const namespaceMembers = new Set(
-    [...records.values()].flatMap((record) => record.members.map((member) => `${member.owner}\0${member.symbol}`)),
-  );
+  // Built on first use: only namespaces (C#, Go) consult it.
+  let namespaceMembers: Set<string> | undefined;
+  const isNamespaceMember = (owner: string, child: string): boolean => {
+    namespaceMembers ??= new Set(
+      [...records.values()].flatMap((record) => record.members.map((member) => `${member.owner}\0${member.symbol}`)),
+    );
+    return namespaceMembers.has(`${owner}\0${child}`);
+  };
   for (const symbol of graph.symbols)
     if (symbol.owner) {
       const list = children.get(symbol.owner) ?? [];
@@ -217,7 +222,7 @@ export function buildGraph(
         /^(?:(?:static|readonly|abstract|override|public|async|get|set) )*(?:private|protected) /.test(child.signature)
       )
         continue;
-      if (owner.kind === 'namespace' && !namespaceMembers.has(`${owner.id}\0${child.id}`)) continue;
+      if (owner.kind === 'namespace' && !isNamespaceMember(owner.id, child.id)) continue;
       child.exported = true;
       queue.push(child);
     }
@@ -249,8 +254,14 @@ export function buildGraph(
         for (const edge of entry.edges) addedEdges.push(edge);
         for (const item of entry.unresolved) addedUnresolved.push(item);
       }
-    graph.edges = mergeSorted(previous.edges, removedEdges, addedEdges, compareEdges, true);
-    graph.unresolved = mergeSorted(previous.unresolved, removedUnresolved, addedUnresolved, compareUnresolved, false);
+    // A large change is cheaper to sort outright than to merge piece by piece.
+    const small = (changed: number, size: number) => changed <= 5_000 && changed * 5 <= size;
+    graph.edges = small(removedEdges.size + addedEdges.length, previous.edges.length)
+      ? mergeSorted(previous.edges, removedEdges, addedEdges, compareEdges, true)
+      : sortedFrom(graph.edges, compareEdges, true);
+    graph.unresolved = small(removedUnresolved.size + addedUnresolved.length, previous.unresolved.length)
+      ? mergeSorted(previous.unresolved, removedUnresolved, addedUnresolved, compareUnresolved, false)
+      : sortedFrom(graph.unresolved, compareUnresolved, false);
     cache.mergedBuilds++;
   } else {
     graph.edges = sortedFrom(graph.edges, compareEdges, true);
