@@ -36,6 +36,10 @@ export interface FileResolution {
  */
 export class ResolutionCache {
   readonly index = new BindingIndex();
+  /** Containment edges per record (without C# merging), shared by every build of the same record. */
+  readonly containment = new WeakMap<FileRecord, CodeMapEdge[]>();
+  /** The sorted edges and unresolved relations of the last build; the next one merges into them. */
+  published: { edges: CodeMapEdge[]; unresolved: CodeMapGraph['unresolved'] } | undefined;
   private entries = new Map<string, FileResolution>();
   private configs: ReadonlyMap<string, ProjectConfig> = new Map();
   private records: ReadonlyMap<string, FileRecord> = new Map();
@@ -99,6 +103,7 @@ export class ResolutionCache {
   clear(): void {
     this.entries.clear();
     this.index.clear();
+    this.published = undefined;
     this.records = new Map();
   }
 }

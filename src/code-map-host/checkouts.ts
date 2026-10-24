@@ -28,7 +28,6 @@ import type { z } from 'zod';
 import { fingerprint } from './fingerprint';
 import { normalizedSource } from './extract/files';
 import { sha256 } from './store/writer';
-import { CodeSearch } from './query/search';
 import { attachExcerpts } from './query/excerpt';
 import type { SearchCorpus } from './query/corpus';
 import { CodeRelations } from './query/relations';
@@ -66,10 +65,7 @@ export class CodeMapCheckouts {
   private readonly scheduler = new CodeMapScheduler();
   private readonly parser: Pick<ParserClient, 'parse' | 'dispose'>;
   private readonly queries = new Map<string, { checkoutId: string; controller: AbortController }>();
-  private readonly indexes = new WeakMap<
-    object,
-    { search?: CodeSearch; relations?: CodeRelations; maps: Map<string, string> }
-  >();
+  private readonly indexes = new WeakMap<object, { relations?: CodeRelations; maps: Map<string, string> }>();
   constructor(
     private readonly app: string,
     private readonly onStatus: (status: CodeMapStatus) => void,
@@ -224,6 +220,8 @@ export class CodeMapCheckouts {
       const deadline = performance.now() + 2000;
       if (checkout.indexer && !['paused', 'error', 'limit'].includes(checkout.status.state))
         verified = await this.freshnessBarrier(checkout, query.freshness, controller.signal, deadline);
+      // The index of the published generation is made before the snapshot is pinned; it may be updated in place.
+      if (query.kind === 'search') await checkout.graph?.ensureSearch();
       controller.signal.throwIfAborted();
       if (this.checkouts.get(checkoutId) !== checkout) throw new Error('Code Map checkout changed');
       // Pin both graph and manifest after the freshness barrier for the entire synchronous projection.
@@ -302,11 +300,9 @@ export class CodeMapCheckouts {
             result.hint =
               'Potential dependents in indexed code, not exhaustive. File impact projects symbol dependencies to their files. Deleted or excluded files have no current indexed dependents; use normal search and review the Git diff.';
         } else if (query.kind === 'search') {
-          const found = (index.search ??= new CodeSearch(graph, snapshot.corpus)).search(
-            query.query,
-            query.pathPrefix,
-            query.limit,
-          );
+          const found = checkout
+            .graph!.search(graph, snapshot.corpus)
+            .search(query.query, query.pathPrefix, query.limit);
           result.data = {
             kind: 'search',
             matches: found.matches,

@@ -23,6 +23,7 @@ import { buildGraph } from './build';
 import { ResolutionCache } from './resolution-cache';
 import { serializeGraph } from './serialize';
 import { buildSearchCorpus, type SearchCorpus } from '../query/corpus';
+import { CodeSearch } from '../query/search';
 
 export interface PublishedGraph {
   graph: CodeMapGraph;
@@ -75,6 +76,10 @@ export class GraphEngine {
   /** Relations resolved in earlier builds; only files whose inputs changed are resolved again. */
   private readonly resolution = new ResolutionCache();
   private readonly changedPaths = new Set<string>();
+  /** Records replaced since the published graph (and its search index) was built. */
+  private readonly searchChanged = new Set<string>();
+  private searchIndex: CodeSearch | undefined;
+  private searchBuild: { promise: Promise<void>; cancelled: boolean } | undefined;
   /** The newest published generation that is not on disk yet. */
   private pending: PersistJob | undefined;
   private pendingSince: number | undefined;
@@ -240,6 +245,7 @@ export class GraphEngine {
       this.relationCount -= intents(record);
     }
     this.changedPaths.add(path);
+    this.searchChanged.add(path);
     this.records.delete(path);
     this.configs.delete(path);
     this.failures.delete(path);
@@ -354,6 +360,7 @@ export class GraphEngine {
     this.graph = graph;
     this.corpus = corpus;
     this.publishedConfigs = job.configs;
+    this.updateSearch(graph, corpus);
     this.appliedRebuild = this.activeRebuild;
     this.dirtyCache.clear();
     if (defer) this.schedulePersist(job);
@@ -378,6 +385,50 @@ export class GraphEngine {
     };
     this.checkpoint = { revision: this.revision, diagnostics: diagnosticsKey, published };
     return published;
+  }
+  /**
+   * Keeps the search index in step with the published graph: small changes update it in place (queries never wait
+   * for it), larger ones rebuild it in the background. Nothing is built before the first search query asks.
+   */
+  private updateSearch(graph: CodeMapGraph, corpus: SearchCorpus): void {
+    const changed = new Set(this.searchChanged);
+    this.searchChanged.clear();
+    if (this.searchBuild) {
+      this.searchBuild.cancelled = true;
+      this.searchBuild = undefined;
+    }
+    if (!this.searchIndex) return;
+    const small = changed.size <= 200 && changed.size * 5 <= graph.files.length;
+    // C# files are merged and flagged across files, so a change can alter documents of other files.
+    const independent = !graph.files.some((file) => file.language === 'csharp');
+    if (small && independent && this.searchIndex.update(graph, corpus, changed)) return;
+    this.searchIndex = undefined;
+    this.buildSearch();
+  }
+  private buildSearch(): void {
+    if (this.searchIndex || this.searchBuild || !this.graph) return;
+    const graph = this.graph;
+    const build = { cancelled: false, promise: Promise.resolve() };
+    build.promise = CodeSearch.build(graph, this.corpus, () => build.cancelled)
+      .then((index) => {
+        if (index && !build.cancelled && this.graph === graph) this.searchIndex = index;
+      })
+      .finally(() => {
+        if (this.searchBuild === build) this.searchBuild = undefined;
+      });
+    this.searchBuild = build;
+  }
+  /** Resolves once the published generation has a search index; call before taking the snapshot to search. */
+  async ensureSearch(): Promise<void> {
+    while (!this.searchIndex && this.graph) {
+      this.buildSearch();
+      await this.searchBuild?.promise;
+    }
+  }
+  /** The search index of `graph`, which must be the published generation. */
+  search(graph: CodeMapGraph, corpus: SearchCorpus): CodeSearch {
+    if (graph !== this.graph) return new CodeSearch(graph, corpus);
+    return (this.searchIndex ??= new CodeSearch(graph, corpus));
   }
   /** Writes one generation: graph.json, MAP.md, the manifest and new extraction records. */
   private async persist(job: PersistJob, signal?: AbortSignal): Promise<void> {
@@ -456,6 +507,9 @@ export class GraphEngine {
   }
   dispose(): void {
     this.disposed = true;
+    if (this.searchBuild) this.searchBuild.cancelled = true;
+    this.searchBuild = undefined;
+    this.searchIndex = undefined;
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = undefined;
     this.pending = undefined;
@@ -486,6 +540,7 @@ export class GraphEngine {
     this.relationCount = relations;
     this.revision++;
     this.changedPaths.add(path);
+    this.searchChanged.add(path);
     this.records.set(path, record);
   }
 }

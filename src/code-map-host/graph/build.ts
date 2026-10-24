@@ -1,15 +1,37 @@
 import { posix } from 'node:path';
-import { CODE_MAP_LIMITS, emptyCodeMapCoverage, type CodeMapGraph } from '@shared/domain/code-map';
+import { CODE_MAP_LIMITS, emptyCodeMapCoverage, type CodeMapEdge, type CodeMapGraph } from '@shared/domain/code-map';
 import { comparePaths, CodeMapLimitError } from '../enumerate';
 import type { FileRecord } from '../extract/record';
 import type { ProjectConfig } from '../resolve/config';
 import { ModuleResolver } from '../resolve/modules';
 import { ResolutionCache } from './resolution-cache';
+import { sortedFrom } from './sorted';
 import { BindingResolver } from '../resolve/bindings';
 import { CSharpResolver } from '../resolve/csharp';
 import { GoResolver } from '../resolve/go';
 import { JavaResolver } from '../resolve/java';
 import { PythonResolver } from '../resolve/python';
+
+const compareEdges = (left: CodeMapGraph['edges'][number], right: CodeMapGraph['edges'][number]): number =>
+  comparePaths(left.from, right.from) ||
+  comparePaths(left.rel, right.rel) ||
+  comparePaths(left.to, right.to) ||
+  (left.at?.[0] ?? 0) - (right.at?.[0] ?? 0) ||
+  (left.at?.[1] ?? 0) - (right.at?.[1] ?? 0) ||
+  comparePaths(left.prov, right.prov) ||
+  Number(left.typeOnly ?? false) - Number(right.typeOnly ?? false) ||
+  Number(!!left.at) - Number(!!right.at) ||
+  (left.typeOnly === right.typeOnly ? 0 : left.typeOnly === undefined ? -1 : 1);
+const compareUnresolved = (
+  left: CodeMapGraph['unresolved'][number],
+  right: CodeMapGraph['unresolved'][number],
+): number =>
+  comparePaths(left.from, right.from) ||
+  comparePaths(left.rel, right.rel) ||
+  comparePaths(left.target, right.target) ||
+  (left.at?.[0] ?? 0) - (right.at?.[0] ?? 0) ||
+  (left.at?.[1] ?? 0) - (right.at?.[1] ?? 0) ||
+  comparePaths(left.reason, right.reason);
 
 export function buildGraph(
   records: ReadonlyMap<string, FileRecord>,
@@ -33,6 +55,8 @@ export function buildGraph(
     unresolved: [],
     coverage: emptyCodeMapCoverage(),
   };
+  // Without a cache everything is built from scratch, which is what an incremental build must equal.
+  const cache = resolution ?? new ResolutionCache();
   const groups = new Map<string, CodeMapGraph['groups'][number]>();
   const ordered = [...records].sort(([left], [right]) => comparePaths(left, right));
   const csharp =
@@ -56,14 +80,19 @@ export function buildGraph(
       group.files++;
       if (path === '.') break;
     }
-    graph.edges.push({ from: record.file.group, to: record.file.id, rel: 'contains', prov: 'syntax' });
+    // The containment edges of an unchanged record are the same objects in every build (without C# merging).
+    const reused = csharp ? undefined : cache.containment.get(record);
+    const own: CodeMapEdge[] = reused ?? [
+      { from: record.file.group, to: record.file.id, rel: 'contains', prov: 'syntax' },
+    ];
     for (const symbol of record.symbols) {
-      if (graph.symbols.length >= limits.symbols || graph.edges.length >= limits.edges) throw new CodeMapLimitError();
+      if (graph.symbols.length >= limits.symbols || graph.edges.length + own.length >= limits.edges)
+        throw new CodeMapLimitError();
       const owner = symbol.owner ? (csharp?.aliases.get(symbol.owner) ?? symbol.owner) : null;
       const primary = csharp?.aliases.get(symbol.id);
       if (primary) {
         // A further partial declaration: the merged type keeps one symbol and lists this span as a part.
-        graph.edges.push({
+        own.push({
           from: owner ?? record.file.id,
           to: primary,
           rel: 'contains',
@@ -74,14 +103,17 @@ export function buildGraph(
       }
       const parts = csharp?.parts.get(symbol.id);
       graph.symbols.push({ ...symbol, owner, ...(parts ? { parts } : {}) });
-      graph.edges.push({
-        from: owner ?? record.file.id,
-        to: symbol.id,
-        rel: 'contains',
-        prov: 'syntax',
-        at: [symbol.span[0], symbol.span[1]],
-      });
+      if (!reused)
+        own.push({
+          from: owner ?? record.file.id,
+          to: symbol.id,
+          rel: 'contains',
+          prov: 'syntax',
+          at: [symbol.span[0], symbol.span[1]],
+        });
     }
+    if (!csharp && !reused) cache.containment.set(record, own);
+    for (const edge of own) graph.edges.push(edge);
   }
   for (const group of groups.values()) {
     if (group.parent) graph.edges.push({ from: group.parent, to: group.id, rel: 'contains', prov: 'syntax' });
@@ -90,8 +122,6 @@ export function buildGraph(
   let resolver: BindingResolver | undefined;
   const exportedSymbols = new Set<string>();
   const packages = new Set<string>();
-  // Without a cache the lookup tables are built from scratch, which is what an incremental build must equal.
-  const cache = resolution ?? new ResolutionCache();
   cache.begin(records, configs);
   const index = cache.index;
   for (const [path] of ordered) {
@@ -183,33 +213,11 @@ export function buildGraph(
   graph.packages = [...packageNodes.values()].sort((left, right) => comparePaths(left.id, right.id));
   graph.files.sort((left, right) => comparePaths(left.id, right.id));
   graph.symbols.sort((left, right) => comparePaths(left.id, right.id));
-  const edges = [
-    ...new Map(
-      graph.edges.map((edge) => [
-        `${edge.from}\0${edge.to}\0${edge.rel}\0${edge.prov}\0${edge.typeOnly}\0${edge.at?.[0]}\0${edge.at?.[1]}`,
-        edge,
-      ]),
-    ).values(),
-  ];
-  graph.edges = edges.sort(
-    (left, right) =>
-      comparePaths(left.from, right.from) ||
-      comparePaths(left.rel, right.rel) ||
-      comparePaths(left.to, right.to) ||
-      (left.at?.[0] ?? 0) - (right.at?.[0] ?? 0) ||
-      (left.at?.[1] ?? 0) - (right.at?.[1] ?? 0) ||
-      comparePaths(left.prov, right.prov) ||
-      Number(left.typeOnly ?? false) - Number(right.typeOnly ?? false),
-  );
-  graph.unresolved.sort(
-    (left, right) =>
-      comparePaths(left.from, right.from) ||
-      comparePaths(left.rel, right.rel) ||
-      comparePaths(left.target, right.target) ||
-      (left.at?.[0] ?? 0) - (right.at?.[0] ?? 0) ||
-      (left.at?.[1] ?? 0) - (right.at?.[1] ?? 0) ||
-      comparePaths(left.reason, right.reason),
-  );
+  // Edges equal in every field are one edge. Files that did not change contribute the same edge objects as in the
+  // previous build, so only new edges are sorted and merged into the previous order.
+  graph.edges = sortedFrom(graph.edges, cache.published?.edges, compareEdges, true);
+  graph.unresolved = sortedFrom(graph.unresolved, cache.published?.unresolved, compareUnresolved, false);
+  cache.published = { edges: graph.edges, unresolved: graph.unresolved };
   graph.coverage.files.skipped = skipped;
   graph.coverage.byLanguage = Object.fromEntries(
     Object.entries(graph.coverage.byLanguage).sort(([left], [right]) => comparePaths(left, right)),
