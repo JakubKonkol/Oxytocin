@@ -140,5 +140,73 @@ describe('Code Map checkout lifetimes', () => {
       });
       expect((await ask('q5', 'bodyonlyalpha')).matches).toEqual([]);
     });
+
+    it('inlines verified source lines on request and drops them as soon as the file differs from the index', async () => {
+      root = await mkdtemp(join(tmpdir(), 'oxy-map-excerpt-'));
+      await mkdir(join(root, 'src'));
+      const source = [
+        '// header',
+        'export function handle() {',
+        '  const first = 1;',
+        '  return bodyonlygamma(first);',
+        '}',
+        '',
+      ].join('\r\n');
+      await writeFile(join(root, 'src/handler.ts'), `﻿${source}`);
+      checkouts = new CodeMapCheckouts('Oxytocin test', () => {}, {
+        assets,
+        parserEntry: '/unused',
+        parser: {
+          parse: async (path: string, raw: string) => {
+            const text = normalizedSource(raw);
+            const tree = await runtime.parse(text, 'typescript');
+            try {
+              const record = extractTypeScript(path, text, tree);
+              record.search = buildSearchData(text, record.symbols);
+              return record;
+            } finally {
+              tree.delete();
+            }
+          },
+          dispose: () => Promise.resolve(),
+        },
+      });
+      await checkouts.configure({
+        checkoutId: 'checkout',
+        projectId: 'project',
+        root,
+        mode: 'project',
+        gitPath: 'git',
+        ignoreInGit: false,
+      });
+      await vi.waitFor(() => expect(checkouts.status('checkout')).toMatchObject({ state: 'ready', pendingFiles: 0 }));
+      const ask = async (id: string, excerpts?: 'terms' | 'full') => {
+        const result = await checkouts.query('checkout', id, {
+          kind: 'search',
+          query: 'bodyonlygamma',
+          freshness: 'allow-stale',
+          ...(excerpts ? { excerpts } : {}),
+        });
+        if (result.data?.kind !== 'search') throw new Error(`Unexpected answer ${result.code}`);
+        return result.data.matches[0]!;
+      };
+      // Pointers only unless asked; the CRLF file with a BOM verifies against its normalized hash.
+      expect(await ask('e1')).not.toHaveProperty('excerpt');
+      const found = await ask('e2', 'terms');
+      expect(found.excerpt?.segments.flatMap((s) => s.lines)).toEqual([
+        'export function handle() {',
+        '  const first = 1;',
+        '  return bodyonlygamma(first);',
+        '}',
+      ]);
+      expect(found.excerpt?.segments[0]?.start).toBe(2);
+      expect((await ask('e3', 'full')).excerpt?.omitted).toBe(0);
+      // The map keeps the old generation while updates are paused; the file on disk is already different.
+      checkouts.pause('checkout');
+      await writeFile(join(root, 'src/handler.ts'), source.replace('bodyonlygamma', 'bodyonlydelta'));
+      const changed = await ask('e4', 'terms');
+      expect(changed).toMatchObject({ path: 'src/handler.ts', name: 'handle' });
+      expect(changed).not.toHaveProperty('excerpt');
+    });
   });
 });

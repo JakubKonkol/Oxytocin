@@ -29,6 +29,7 @@ import { fingerprint } from './fingerprint';
 import { normalizedSource } from './extract/files';
 import { sha256 } from './store/writer';
 import { CodeSearch } from './query/search';
+import { attachExcerpts } from './query/excerpt';
 import type { SearchCorpus } from './query/corpus';
 import { CodeRelations } from './query/relations';
 import { fileOutline } from './query/outline';
@@ -316,6 +317,20 @@ export class CodeMapCheckouts {
             matches: found.matches,
             ...(found.coverage === undefined ? {} : { coverage: found.coverage, strong: found.strong }),
           };
+          if (query.excerpts && found.matches.length) {
+            // Source of the best matches, verified against the indexed content; the pointers stay as they are.
+            result.data.matches = await attachExcerpts({
+              matches: found.matches,
+              query: query.query,
+              mode: query.excerpts,
+              budget: query.maxChars - JSON.stringify(result).length,
+              sources: {
+                file: (path) => graph.files.find((file) => file.path === path),
+                read: async (path, signal) => (await fingerprint(checkout.config.root, path, signal)).source,
+              },
+              signal: controller.signal,
+            });
+          }
           if (found.truncated) result.reasons.push('RESULT_LIMIT');
           if (!found.matches.length)
             result.hint = 'No indexed matches. Try normal text search; check coverage and pathPrefix.';

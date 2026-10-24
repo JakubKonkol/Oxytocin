@@ -25,7 +25,12 @@ const pathPrefix = z.string().optional().describe('Limit to this folder');
 const advertised = {
   status: z.object({ cwd }),
   'repo-map': z.object({ cwd, pathPrefix }),
-  search: z.object({ cwd, query: z.string().describe('The task or identifiers, in plain words'), pathPrefix }),
+  search: z.object({
+    cwd,
+    query: z.string().describe('The task or identifiers, in plain words'),
+    pathPrefix,
+    full: z.boolean().optional().describe('Whole definition of the top hit (80 lines max)'),
+  }),
   outline: z.object({ cwd, path: z.string() }),
   relations: z.object({
     cwd,
@@ -39,7 +44,7 @@ const descriptions: Record<keyof typeof CODE_MAP_TOOL_KINDS, string> = {
   oxy_code_map_status: 'Code Map state, coverage and freshness.',
   oxy_repo_map: 'Folder layout, entry points and public APIs.',
   oxy_find_code:
-    'Locate code from a task in plain words or identifiers: ranked path:lines with signatures. Not a text search.',
+    'Locate code from a task in plain words or identifiers: ranked path:lines with signatures and the matching source lines. Not a text search.',
   oxy_file_outline: 'Definitions with line ranges and imports of one file.',
   oxy_code_relations:
     'Dependents (incoming) and dependencies (outgoing) of a file, or of the symbol at path:line. Indexed code only; not exhaustive.',
@@ -51,6 +56,8 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
     const schema = CodeMapQuerySchemas[kind].safeExtend({
       ...selectors,
       format: z.enum(['compact', 'json']).default('compact'),
+      // `full` is the agent-facing name of `excerpts: 'full'`; every find answer carries the matching lines.
+      ...(kind === 'search' ? { full: z.boolean().optional() } : {}),
     });
     const inputSchema = {
       ...z.toJSONSchema(advertised[kind], { unrepresentable: 'any', io: 'input' }),
@@ -78,7 +85,8 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
           );
         if (caller.projectError || !caller.context.projectId)
           throw new CodeMapToolInputError(caller.projectError ?? NO_PROJECT_MESSAGE);
-        const { cwd: _cwd, project: _project, format, ...options } = parsed.data;
+        const { cwd: _cwd, project: _project, format, ...rest } = parsed.data;
+        const { full, ...options } = rest as typeof rest & { full?: boolean };
         const explicitMaxChars = typeof args === 'object' && args !== null && 'maxChars' in args;
         const result = await service.query(
           caller.context.projectId,
@@ -87,6 +95,7 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
             ...(!explicitMaxChars && kind === 'relations' && format === 'compact'
               ? { maxChars: RELATIONS_MAX_CHARS }
               : {}),
+            ...(kind === 'search' ? { excerpts: full ? 'full' : 'terms' } : {}),
             kind,
           } as CodeMapQueryInput,
           signal,
