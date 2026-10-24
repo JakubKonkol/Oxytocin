@@ -229,6 +229,20 @@ export class CodeMapService {
       return null;
     });
   }
+  /** "Suggest code locations with each prompt": takes effect with the next prompt; nothing is rebuilt. */
+  async setPromptSuggestions(id: string, enabled: boolean): Promise<null> {
+    return this.enqueue(async () => {
+      const project = this.project(id);
+      await this.deps.projects.update({
+        id,
+        settings: {
+          ...project.settings,
+          codeMap: { ...CodeMapSettingsSchema.parse(project.settings.codeMap ?? {}), promptSuggestions: enabled },
+        },
+      });
+      return null;
+    });
+  }
   async memoryCheckouts(id: string) {
     return this.enqueue(async () => {
       const project = this.project(id);

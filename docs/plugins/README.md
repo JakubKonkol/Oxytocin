@@ -768,7 +768,7 @@ subscription.dispose();
 ```
 
 Pass only `projectId` and `checkoutId` from the returned descriptor (omit `label`/`mode` in requests). Available queries
-are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`, `impact`, `knowledge`, `context-receipt`). `status(ref)` reports freshness and
+are `search`, `outline`, `relations` and `slice` (`overview`, `file`, `neighborhood`, `impact`, `knowledge`, `context-receipt`). A `search` with `excerpts: 'terms'` (or `'full'`, the first match's whole definition) adds an optional `excerpt` to its best three matches: the source lines that contain the question's terms, read from disk and attached only while the file still hashes to the indexed content. `status(ref)` reports freshness and
 coverage without reading the graph. The default `freshness: 'latest'` waits up to 2 s for pending file changes and then answers from the last published snapshot (`freshness.stale` is true, `pendingFiles` counts the changed files); `INDEX_UPDATING` means no snapshot exists yet, `INDEX_PAUSED`/`INDEX_UNAVAILABLE` a paused or failed index, and `'verified'` still withholds data until the index is verified. Slice defaults are 150 nodes / 300 edges, hard limits 500 / 1,000 and 512 KiB for
 the entire envelope. Inspect `truncated`, `reasons`, provenance and coverage; graphs are never exhaustive. Membership
 (`contains`) differs from dependencies. Heuristic edges require explicit opt-in.
@@ -824,6 +824,14 @@ Core commands callable through `oxy.commands.execute` or `view.executeCommand`:
 - `oxytocin.codeMap.openLearnings(projectId)` opens the core settings manager.
 - `oxytocin.codeMap.openReceipt({ projectId, checkoutId, receipt })` opens Task context in the enabled built-in
   visualizer. The receipt is opaque; never derive a checkout path from it.
+- `oxytocin.codeMap.promptContext({ terminalId, sessionId, prompt })` returns `{ text } | null`: up to 3 Code Map
+  pointers (`path:start-end kind name`, no source) for the prompt an agent in that terminal just received, to be added to
+  the agent's context (the built-in Claude Code Bridge returns them from its `UserPromptSubmit` hook). It returns `null`
+  unless the terminal's project has Code Map on **and** "Suggest code locations with each prompt" checked, the prompt is
+  at least 12 characters and not harness text, a snapshot is published, the answer arrives within 1 s and the search
+  reports the top match as `strong`; pointers already returned for the same `(terminalId, sessionId)` are dropped. `prompt` is at most 4,000
+  characters; it is read locally for this one lookup and never stored or logged. Requires the `code-map.read` permission.
+  `oxytocin.codeMap.forgetPromptContext({ terminalId, sessionId })` drops what a finished session was shown.
 
 ### Views
 

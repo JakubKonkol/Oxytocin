@@ -20,6 +20,12 @@ export const CodeMapSettingsSchema = z.object({
     .max(200)
     .default([]),
   ignoreInGit: z.boolean().default(true),
+  /**
+   * "Suggest code locations with each prompt": the Claude Code Bridge hands every prompt to Oxytocin, which adds up to
+   * three file pointers to Claude Code's context when the Code Map matches strongly. Off unless `true` (absent = off;
+   * optional so existing project files and settings written before this field stay valid and unchanged).
+   */
+  promptSuggestions: z.boolean().optional(),
   memory: z.object({ mode: z.enum(['off', 'review']).default('review') }).optional(),
 });
 export type CodeMapSettings = z.infer<typeof CodeMapSettingsSchema>;
@@ -302,7 +308,7 @@ export const CODE_MAP_AGENT_INSTRUCTIONS =
 
 /** Decision rules the Hub sends with its MCP server instructions (one string; no feature tour). */
 export const CODE_MAP_MCP_INSTRUCTIONS =
-  "Code Map (oxy_* tools). If they are deferred, load oxy_find_code, oxy_file_outline and oxy_code_relations in ONE ToolSearch. Don't know where code lives? Make ONE oxy_find_code call with the task in plain words, then act on the answer. Know the identifier or need every occurrence? Use Grep. Before changing a widely used symbol, call oxy_code_relations (incoming). Never repeat or reword a query. Answers are pointers: read the source before editing.";
+  "Code Map (oxy_* tools). If they are deferred, load oxy_find_code, oxy_file_outline and oxy_code_relations in ONE ToolSearch. Don't know where code lives? Make ONE oxy_find_code call with the task in plain words, then act on the answer. Know the identifier or need every occurrence? Use Grep. Before changing a widely used symbol, call oxy_code_relations (incoming). Never repeat or reword a query. Answers include the relevant lines; read a file only when you need more.";
 
 /** Appended to the rules only while Review memory is on (oxy_task_context and the learning tools are listed). */
 export const CODE_MAP_MEMORY_INSTRUCTIONS =

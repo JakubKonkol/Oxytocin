@@ -685,7 +685,12 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
       (await client.call('oxy_code_relations', { path: 'api.ts', line, cwd: project })).result?.content?.[0]?.text,
     ).toMatch(/^1 api\.ts:\d+-\d+ function afterEdit/);
     const body = await client.call('oxy_find_code', { query: 'bodyonlybeta', cwd: project });
-    expect(body.result?.content?.[0]?.text).toContain('afterEdit');
+    const bodyText = body.result?.content?.[0]?.text ?? '';
+    expect(bodyText).toContain('afterEdit');
+    // The answer carries the matching source line under its pointer, so no follow-up read is needed.
+    expect(bodyText).toContain("\n  1| export function afterEdit() { return 'bodyonlybeta'; }");
+    const whole = await client.call('oxy_find_code', { query: 'bodyonlybeta', full: true, cwd: project });
+    expect(whole.result?.content?.[0]?.text).toContain("\n  1| export function afterEdit() { return 'bodyonlybeta'; }");
     const old = await client.call('oxy_find_code', { query: 'bodyonlyalpha', cwd: project });
     expect(old.result?.content?.[0]?.text).not.toContain('afterEdit');
     expect(

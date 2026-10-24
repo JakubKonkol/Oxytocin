@@ -11,8 +11,18 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   terminal made during the session and how many characters of answers it received; the tooltip adds stale, not-OK and
   failed answers. Oxytocin keeps only counts, in memory since the app started — no queries, paths or code.
 
+- **Code Map:** a project can turn on *Suggest code locations with each prompt* (Project settings → Code Map, off by
+  default). With the Claude Code Bridge installed, Oxytocin then adds up to three file pointers to Claude Code's context
+  when a prompt matches the map strongly, and nothing otherwise; pointers already given in the session are not repeated.
+  The prompt is read locally for that one lookup and is never stored or logged.
+
 ### Changed
 
+- **Code Map:** `oxy_find_code` answers include the relevant source lines, so most lookups need no separate file
+  read. The best match shows up to 12 numbered lines (its signature and the lines with the question's terms, with
+  context); a second or third match shows up to 6 lines only when it scores close to the first. Lines are shown only
+  while the file still matches the index. `full: true` returns the whole definition of the best match (up to 80
+  lines), and plugins can ask for the same with `excerpts: 'terms' | 'full'` on a search query.
 - **Code Map:** agent answers are much cheaper to use.
   - Agents see one tool to locate code (`oxy_find_code`; `oxy_task_context` while Review memory is on) and no status
     tool; the tool schemas and the guidance are about 60% smaller and say when plain Grep is the better choice.

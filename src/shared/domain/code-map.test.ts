@@ -31,6 +31,32 @@ describe('Code Map contracts', () => {
     });
     expect(file.projects[0]!.settings.codeMap).toBeUndefined();
   });
+  it('keeps prompt suggestions off unless a project turns them on', () => {
+    expect(CodeMapSettingsSchema.parse({}).promptSuggestions).toBeUndefined();
+    expect(CodeMapSettingsSchema.parse({ promptSuggestions: false }).promptSuggestions).toBe(false);
+    expect(CodeMapSettingsSchema.parse({ enabled: true, promptSuggestions: true })).toMatchObject({
+      enabled: true,
+      promptSuggestions: true,
+    });
+    expect(CodeMapSettingsSchema.safeParse({ promptSuggestions: 'yes' }).success).toBe(false);
+    const stored = ProjectsFileSchema.parse({
+      version: 1,
+      activeProjectId: null,
+      projects: [
+        {
+          id: 'project',
+          name: 'Example',
+          rootPath: '/project',
+          color: 0,
+          pinned: false,
+          order: 0,
+          createdAt: 0,
+          settings: { codeMap: { enabled: true, promptSuggestions: true } },
+        },
+      ],
+    });
+    expect(stored.projects[0]!.settings.codeMap?.promptSuggestions).toBe(true);
+  });
   it('round-trips the versioned graph and manifest formats', () => {
     const graph = {
       format: 'oxytocin.code-map',

@@ -205,6 +205,14 @@ export interface CodeMapSearchMatch {
   stale: boolean;
   score: number;
   whyIncluded: string[];
+  /** Present only when the request asked for `excerpts`; verified against the indexed file content. */
+  excerpt?: CodeMapExcerpt;
+}
+export interface CodeMapExcerpt {
+  /** Runs of consecutive lines in file order; a gap between runs is skipped code. */
+  segments: { start: number; lines: string[] }[];
+  /** Lines of the definition (or of the file's head) that are not shown. */
+  omitted: number;
 }
 export interface CodeMapStatus {
   checkoutId: string;
@@ -286,7 +294,14 @@ export interface CodeMapTraversal {
 }
 export type CodeMapRequest = CodeMapRef &
   (
-    | ({ kind: 'search'; query: string; pathPrefix?: string; limit?: number } & CodeMapQueryOptions)
+    | ({
+        kind: 'search';
+        query: string;
+        pathPrefix?: string;
+        limit?: number;
+        /** Inline source for the best matches: question-term lines (`terms`) or the first match's whole definition (`full`). */
+        excerpts?: 'terms' | 'full';
+      } & CodeMapQueryOptions)
     | ({ kind: 'outline'; path: string } & CodeMapQueryOptions)
     | ({ kind: 'relations'; path?: string; symbolId?: string } & CodeMapTraversal & CodeMapQueryOptions)
     | ({

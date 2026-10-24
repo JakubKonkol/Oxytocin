@@ -28,7 +28,7 @@ const echo = info('echo', {
   id: 'test.echo',
   permissions: ['projects.read', 'terminals.read-metadata', 'terminals.create', 'terminals.env'],
   activationEvents: ['onStartup'],
-  commands: ['echo.hello', 'echo.projects', 'echo.terminals', 'echo.git', 'echo.store', 'echo.setEnv'],
+  commands: ['echo.hello', 'echo.projects', 'echo.terminals', 'echo.git', 'echo.store', 'echo.setEnv', 'echo.core'],
   statusBarItems: ['echo.status'],
   configurationPrefix: 'echo',
 });
@@ -91,6 +91,20 @@ describe('PluginRuntime', () => {
       entries: [{ op: 'replace', name: 'OXY_ECHO', value: 'from-echo' }],
     });
     expect(calls.some((c) => c.method === 'terminals.environmentReady')).toBe(true);
+  });
+
+  it('tells main which plugin runs a core command, so main can check its permissions', async () => {
+    const { runtime, calls } = setup();
+    await runtime.load([echo], {}, env());
+    await runtime.activateByEvent('onStartup');
+    await runtime.executeCommand('echo.core', ['oxytocin.codeMap.promptContext', { terminalId: 't' }]);
+    expect(calls.filter((c) => c.method === 'commands.executeCore')).toEqual([
+      {
+        pluginId: 'test.echo',
+        method: 'commands.executeCore',
+        params: { id: 'oxytocin.codeMap.promptContext', args: [{ terminalId: 't' }] },
+      },
+    ]);
   });
 
   it('deactivates plugins (disposing commands) and re-activates with a fresh module', async () => {

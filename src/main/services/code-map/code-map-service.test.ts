@@ -127,3 +127,44 @@ it('rejects renderer-supplied roots, invalid options and malformed operation pay
     }).success,
   ).toBe(false);
 });
+
+it('turns prompt suggestions on and off per project without touching the other settings or the index', async () => {
+  type Deps = ConstructorParameters<typeof CodeMapService>[0];
+  const project: Project = {
+    id: 'project',
+    name: 'test',
+    rootPath: '/work/test',
+    color: 0,
+    pinned: false,
+    order: 0,
+    createdAt: 0,
+    settings: { codeMap: { enabled: true, excludedPaths: ['generated/**'], ignoreInGit: false } },
+  };
+  const update = vi.fn((patch: Partial<Project>) => Promise.resolve(Object.assign(project, patch)));
+  const host = { state: 'stopped', call: vi.fn(), start: vi.fn(), stop: vi.fn() };
+  const service = new CodeMapService({
+    host: {
+      ...host,
+      onDidBecomeReady: () => ({ dispose() {} }),
+      onDidChangeState: () => ({ dispose() {} }),
+      onEvent: () => ({ dispose() {} }),
+    } as unknown as Deps['host'],
+    projects: { list: () => [project], get: () => project, update, onDidChange: () => ({ dispose() {} }) } as never,
+    gitPath: () => 'git',
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  });
+  await service.setPromptSuggestions('project', true);
+  expect(project.settings.codeMap).toEqual({
+    enabled: true,
+    excludedPaths: ['generated/**'],
+    ignoreInGit: false,
+    promptSuggestions: true,
+  });
+  await service.setPromptSuggestions('project', false);
+  expect(project.settings.codeMap?.promptSuggestions).toBe(false);
+  expect(host.call).not.toHaveBeenCalled();
+  const contract = invokeContract['codeMap:setPromptSuggestions'].req;
+  expect(contract.safeParse({ projectId: 'p', enabled: true }).success).toBe(true);
+  expect(contract.safeParse({ projectId: 'p', enabled: 'on' }).success).toBe(false);
+  expect(contract.safeParse({ projectId: 'p', enabled: true, root: '/x' }).success).toBe(false);
+});

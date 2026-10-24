@@ -436,7 +436,9 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
     (await post(port, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name, arguments: args } }, session)).json
       .result!;
   const text = (r: Record<string, unknown>) => (r['content'] as { text: string }[])[0]!.text;
-  expect(text(await call('oxy_find_code', { query: 'beforeEdit' }))).toBe('api.ts:1-1 function beforeEdit()');
+  expect(text(await call('oxy_find_code', { query: 'beforeEdit' }))).toBe(
+    'api.ts:1-1 function beforeEdit()\n  1| beforeEdit',
+  );
   await writeFile(join(root, 'api.ts'), 'afterEdit');
   const updated = text(await call('oxy_find_code', { query: 'afterEdit', maxChars: 2000 }));
   expect(updated).toContain('afterEdit');
