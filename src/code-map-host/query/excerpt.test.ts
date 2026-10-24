@@ -87,7 +87,7 @@ describe('selectExcerpt', () => {
     expect(cut).not.toMatch(/[\ud800-\udbff]…$/);
     const plain = cutLine(`${'y'.repeat(200)}`);
     expect(plain).toHaveLength(160);
-    expect(cutLine(['a\tb', '\u001b[31m', '\u2028', 'c', '\u202e', 'd  '].join(''))).toBe('a  b [31m c d');
+    expect(cutLine(['a\tb', '\u001b[31m', '\u2028', 'c', '\u202e', 'd  '].join(''))).toBe('a  b [31m cd');
     expect(cutLine('żółć 日本語 😀')).toBe('żółć 日本語 😀');
   });
 });
@@ -150,7 +150,7 @@ describe('attachExcerpts', () => {
       (await run([hit('a.ts', [1, 0, 5, 1], { stale: true })], sources({ 'a.ts': source }), 'shift'))[0],
     ).not.toHaveProperty('excerpt');
     const big = sources({ 'a.ts': source });
-    const file = big.api.file;
+    const file = big.api.file.bind(big.api);
     big.api.file = (path) => ({ ...file(path)!, bytes: EXCERPT_LIMITS.maxBytes + 1 });
     expect((await run([one], big, 'shift'))[0]!.excerpt).toBeUndefined();
     expect(big.read).not.toHaveBeenCalled();
@@ -163,11 +163,11 @@ describe('attachExcerpts', () => {
   });
 
   it('hashes normalized text: CRLF and BOM files verify and show clean lines', async () => {
-    const raw = `﻿${source.replaceAll('\n', '\r\n')}`;
+    const raw = `\ufeff${source.replaceAll('\n', '\r\n')}`;
     const files = sources({ 'a.ts': raw }, { 'a.ts': normalizedSource(raw) });
     expect(sha256(normalizedSource(raw))).toBe(files.api.file('a.ts')!.sha256);
     const found = await run([one], files, 'shift');
-    expect(found[0]!.excerpt!.segments[0]!.lines.every((l) => !l.includes('\r') && !l.includes('﻿'))).toBe(true);
+    expect(found[0]!.excerpt!.segments[0]!.lines.every((l) => !l.includes('\r') && !l.includes('\ufeff'))).toBe(true);
     expect(found[0]!.excerpt!.segments[0]!.lines[0]).toBe('export function handleKey() {');
   });
 

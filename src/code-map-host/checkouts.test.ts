@@ -152,7 +152,7 @@ describe('Code Map checkout lifetimes', () => {
         '}',
         '',
       ].join('\r\n');
-      await writeFile(join(root, 'src/handler.ts'), `﻿${source}`);
+      await writeFile(join(root, 'src/handler.ts'), `\ufeff${source}`);
       checkouts = new CodeMapCheckouts('Oxytocin test', () => {}, {
         assets,
         parserEntry: '/unused',

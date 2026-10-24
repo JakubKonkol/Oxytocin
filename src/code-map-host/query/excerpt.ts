@@ -27,13 +27,13 @@ export const EXCERPT_LIMITS = {
 const FIELD_OVERHEAD = 11;
 const SCAN_CHARS = 400;
 
-/** One printable line: control characters (including line and paragraph separators) never survive. */
-const UNSAFE = new RegExp(
-  '[\\u0000-\\u0008\\u000a-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]',
-  'g',
-);
+/** One printable line: control and separator characters become spaces, invisible format characters are removed. */
 export function cutLine(line: string): string {
-  const text = line.replace(/\t/g, '  ').replace(UNSAFE, ' ').trimEnd();
+  const text = line
+    .replace(/\t/g, '  ')
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ')
+    .replace(/\p{Cf}/gu, '')
+    .trimEnd();
   if (text.length <= EXCERPT_LIMITS.lineChars) return text;
   let end = EXCERPT_LIMITS.lineChars - 1;
   // Never split a surrogate pair.
