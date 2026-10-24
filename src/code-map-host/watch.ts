@@ -43,6 +43,7 @@ export class CodeMapWatch implements Disposable {
   private subscriptions: Awaited<ReturnType<WatchSubscribe>>[] = [];
   private disposed = false;
   private unknown = true;
+  private committed = 0;
   constructor(
     private readonly root: string,
     private readonly changed: (change: { paths: string[]; reconcile: boolean; sequence: number }) => void,
@@ -127,6 +128,34 @@ export class CodeMapWatch implements Disposable {
   commit(sequence: number): void {
     for (const [path, change] of this.pending) if (change.sequence <= sequence) this.pending.delete(path);
     if (sequence === this.sequence) this.unknown = false;
+    this.committed = Math.max(this.committed, sequence);
+  }
+  /**
+   * The event stream is trustworthy: the initial scan is committed and no overflow or error happened since. Only
+   * then does "no pending event" mean "nothing changed".
+   */
+  get healthy(): boolean {
+    return !this.unknown && !this.disposed;
+  }
+  /** Events newer than the last committed build exist (file changes, or version-control state changes). */
+  get dirty(): boolean {
+    return this.pending.size > 0 || this.sequence > this.committed;
+  }
+  get latestSequence(): number {
+    return this.sequence;
+  }
+  /**
+   * Records changes found by a metadata probe the same way as watcher events, so the next build covers them and
+   * queries wait for it. Paths are checkout-relative.
+   */
+  observe(paths: readonly string[]): void {
+    if (this.disposed || !paths.length) return;
+    for (const path of paths) {
+      const change: PendingChange = { path, type: 'update', sequence: ++this.sequence };
+      if (this.pending.size < 500 || this.pending.has(path)) this.pending.set(path, change);
+      else this.unknown = true;
+    }
+    this.changed({ paths: [...paths].slice(0, 500), reconcile: this.unknown, sequence: this.sequence });
   }
   dispose(): void {
     this.disposed = true;
