@@ -212,22 +212,8 @@ export class CodeMapCheckouts {
     try {
       let verified = false;
       const deadline = performance.now() + 2000;
-      if (checkout.indexer && !['paused', 'error', 'limit'].includes(checkout.status.state)) {
-        do {
-          const audit = checkout.indexer.verify(query.freshness === 'verified');
-          if (query.freshness === 'allow-stale') {
-            void audit.catch(() => undefined);
-            break;
-          }
-          verified = await waitForCheckpoint(audit, controller.signal, Math.max(0, deadline - performance.now())).catch(
-            () => {
-              controller.signal.throwIfAborted();
-              return false;
-            },
-          );
-          if (!verified || ['paused', 'error', 'limit'].includes(checkout.status.state)) break;
-        } while (checkout.status.pendingFiles && performance.now() < deadline);
-      }
+      if (checkout.indexer && !['paused', 'error', 'limit'].includes(checkout.status.state))
+        verified = await this.freshnessBarrier(checkout, query.freshness, controller.signal, deadline);
       controller.signal.throwIfAborted();
       if (this.checkouts.get(checkoutId) !== checkout) throw new Error('Code Map checkout changed');
       // Pin both graph and manifest after the freshness barrier for the entire synchronous projection.
@@ -350,6 +336,38 @@ export class CodeMapCheckouts {
     } finally {
       this.queries.delete(requestId);
     }
+  }
+  /**
+   * Waits, within the deadline, until the snapshot reflects the checkout and returns whether it does.
+   * - `allow-stale` never waits.
+   * - `verified` audits every file with content hashes.
+   * - `latest` audits only when the watcher cannot be trusted (see `CheckoutIndexer.prepare`); with a healthy
+   *   watcher it answers at once when nothing is pending, or waits for the incremental build of the pending events.
+   */
+  private async freshnessBarrier(
+    checkout: Checkout,
+    mode: 'latest' | 'verified' | 'allow-stale',
+    signal: AbortSignal,
+    deadline: number,
+  ): Promise<boolean> {
+    const indexer = checkout.indexer!;
+    const settled = () => ['paused', 'error', 'limit'].includes(checkout.status.state);
+    const wait = (operation: Promise<void>) =>
+      waitForCheckpoint(operation, signal, Math.max(0, deadline - performance.now())).catch(() => {
+        signal.throwIfAborted();
+        return false;
+      });
+    if (mode === 'allow-stale') return false;
+    do {
+      const step = mode === 'verified' ? 'audit' : await indexer.prepare();
+      signal.throwIfAborted();
+      if (step === 'current') return true;
+      const ok = await wait(step === 'audit' ? indexer.verify(mode === 'verified') : indexer.catchUp());
+      if (!ok || settled()) return false;
+      // An audit is complete once nothing newer is pending; a catch-up re-checks for events that arrived meanwhile.
+      if (step === 'audit' && !checkout.status.pendingFiles) return true;
+    } while (performance.now() < deadline);
+    return false;
   }
   async locateSource(input: z.input<typeof CodeMapLocatorSchema>) {
     const locator = CodeMapLocatorSchema.parse(input),

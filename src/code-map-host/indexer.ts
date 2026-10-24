@@ -1,9 +1,9 @@
-import { lstat } from 'node:fs/promises';
+import { lstat, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CodeMapDiagnostics } from '@shared/domain/code-map';
 import { CodeMapWatch, discoverGitWatchDirectories, type WatchSubscribe } from './watch';
 import type { CodeMapScheduler, BuildRequest } from './scheduler';
-import { enumerate, type Enumeration } from './enumerate';
+import { enumerate, metadataOf, type Enumeration } from './enumerate';
 import { fingerprint, sameMetadata, type Fingerprint } from './fingerprint';
 
 function bounded(skipped: ReadonlyMap<string, string>, failed: ReadonlyMap<string, string>): CodeMapDiagnostics {
@@ -19,6 +19,9 @@ function bounded(skipped: ReadonlyMap<string, string>, failed: ReadonlyMap<strin
     truncated: skipped.size > 200 || failed.size > 200,
   };
 }
+
+/** Number of most recently modified files whose metadata a query probes (a few milliseconds of stat calls). */
+const RECENT_PROBE = 64;
 
 export interface InventorySnapshot {
   files: ReadonlyMap<string, Fingerprint>;
@@ -61,6 +64,10 @@ export class CheckoutIndexer {
   private skipped: Map<string, string> | undefined;
   private probeFailures = new Map<string, string>();
   private verification: { promise: Promise<void>; resolve(): void; reject(error: unknown): void } | undefined;
+  /** Readers waiting for the build that covers a watcher sequence. */
+  private waiters: { sequence: number; resolve(): void; reject(error: unknown): void }[] = [];
+  /** The most recently modified indexed files, probed by `prepare` to cover the watcher's delivery delay. */
+  private recent: string[] = [];
   constructor(
     private readonly options: {
       checkoutId: string;
@@ -95,8 +102,10 @@ export class CheckoutIndexer {
         try {
           await operation;
           verification?.resolve();
+          this.releaseWaiters();
         } catch (error) {
           verification?.reject(error);
+          this.releaseWaiters(error);
           throw error;
         } finally {
           this.running = undefined;
@@ -125,6 +134,7 @@ export class CheckoutIndexer {
   pause(): void {
     this.verification?.reject(new Error('Code Map updates paused'));
     this.verification = undefined;
+    this.releaseWaiters(new Error('Code Map updates paused'));
     this.options.scheduler.pause(this.options.checkoutId);
   }
   resume(): void {
@@ -155,6 +165,58 @@ export class CheckoutIndexer {
       forQuery: true,
     });
     return this.verification.promise;
+  }
+  /**
+   * What a `latest` query must do before it may answer from the published snapshot:
+   * - `current`: the event stream is healthy and nothing is pending, so no audit is needed;
+   * - `catch-up`: events newer than the published build exist, so only the build they trigger is awaited;
+   * - `audit`: the stream cannot be trusted (initial scan, overflow, error, forced rebuild), so reconcile fully.
+   * A metadata probe of the most recently modified files turns an edit that the watcher has not delivered yet
+   * (inotify and ReadDirectoryChanges report after a short delay) into a pending event.
+   */
+  async prepare(): Promise<'current' | 'catch-up' | 'audit'> {
+    if (this.closed || !this.watcher.healthy || this.rebuildVersion !== this.appliedRebuild) return 'audit';
+    if (!this.watcher.dirty) await this.probeRecent();
+    return this.watcher.dirty ? 'catch-up' : 'current';
+  }
+  /** Requests the incremental build for pending events now (no debounce) and waits for it to be published. */
+  catchUp(): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('Code Map checkout closed'));
+    const waiter = {} as (typeof this.waiters)[number];
+    const promise = new Promise<void>((resolve, reject) => {
+      waiter.resolve = resolve;
+      waiter.reject = reject;
+    });
+    waiter.sequence = this.watcher.latestSequence;
+    this.waiters.push(waiter);
+    this.options.scheduler.request(this.options.checkoutId, { immediate: true, forQuery: true });
+    return promise;
+  }
+  private releaseWaiters(error?: unknown): void {
+    const committed = this.committedSequence;
+    this.waiters = this.waiters.filter((waiter) => {
+      if (error !== undefined) waiter.reject(error);
+      else if (waiter.sequence <= committed) waiter.resolve();
+      else return true;
+      return false;
+    });
+  }
+  private committedSequence = 0;
+  private async probeRecent(): Promise<void> {
+    const changed: string[] = [];
+    await Promise.all(
+      this.recent.map(async (path) => {
+        const known = this.files.get(path);
+        if (!known) return;
+        try {
+          const info = await stat(join(this.options.root, ...path.split('/')), { bigint: true });
+          if (!sameMetadata(known.metadata, metadataOf(info))) changed.push(path);
+        } catch {
+          changed.push(path);
+        }
+      }),
+    );
+    if (changed.length) this.watcher.observe(changed.sort());
   }
   private async reconcile(request: BuildRequest, signal: AbortSignal): Promise<void> {
     const rebuildVersion = this.rebuildVersion;
@@ -256,7 +318,14 @@ export class CheckoutIndexer {
     this.lastReconciled = checkedAt;
     if (fullHash) this.lastFullHash = checkedAt;
     this.watcher.commit(checkpoint.sequence);
-    if (this.watcher.checkpoint().sequence > checkpoint.sequence) this.reconcileSoon();
+    this.committedSequence = Math.max(this.committedSequence, checkpoint.sequence);
+    this.recent = [...next]
+      .sort(([, left], [, right]) => Number(right.metadata.mtimeNs) - Number(left.metadata.mtimeNs))
+      .slice(0, RECENT_PROBE)
+      .map(([path]) => path);
+    // Events that arrived during this build are covered by a path-limited follow-up, not a full scan.
+    if (this.watcher.checkpoint().sequence > checkpoint.sequence)
+      this.options.scheduler.request(this.options.checkoutId, { immediate: true });
   }
   /**
    * Watcher batches touching only known files are enumerated path by path. Directories, ignore rules and project
@@ -280,6 +349,7 @@ export class CheckoutIndexer {
     this.closed = true;
     this.verification?.reject(new Error('Code Map checkout closed'));
     this.verification = undefined;
+    this.releaseWaiters(new Error('Code Map checkout closed'));
     if (this.timer) clearInterval(this.timer);
     this.options.scheduler.remove(this.options.checkoutId);
     await this.watcher.close();
