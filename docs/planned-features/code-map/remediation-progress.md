@@ -31,7 +31,7 @@ started.
 | 2 | Body-aware BM25F ranking | done | `2f592ae` | Search corpus cached in records (not graph.json), pinned per generation; PageRank prior tried and rejected (no train gain). Cache +38%; index build on first query after publish 0.2–0.4 s here, 1.1–1.3 s on 10k fixture (phase 5 must address). `coverage` separates right/wrong poorly; `strong` tuned on train only. |
 | 3 | Source excerpts in `oxy_find_code` | done | `6141509`, `9b47be4`, tightened in main | Hash-verified excerpts (`excerpts: 'terms'|'full'` on host search, opt-in so the visualizer reads no files). Orchestrator tightened: lead hit ≤12 lines; hits 2–3 only if score ≥ 0.6× the lead, ≤6 lines (mean answer 2,778 → 1,832 chars). `oxy_task_context` still pointers only. |
 | 4 | Prompt-time pointers via Claude Code Bridge | done | `446ba7a`, `3585d8a` | Core command `oxytocin.codeMap.promptContext` (+ `forgetPromptContext`), `code-map.read` permission now checked via the calling plugin id; setting `promptSuggestions` default off; gate `strong === true` only; ≤3 pointers, per-session novelty, 1 s budget, no prompt logging. |
-| 5 | Cheap freshness barrier, faster publication, edit-latency script | in progress | | Delegated (worktree). |
+| 5 | Cheap freshness barrier, faster publication, edit-latency script | done | `e8c8fa9`…`ac10bb6` | `scripts/code-map-edit-latency.ts`. This repo: unchanged query p95 522 → 16 ms; edit→fresh p95 2,656 → 211 ms (orchestrator re-run: 277 ms, 0/6 stale). 10k fixture: edit→fresh p95 7,126 → 1,277 ms (gate 500 ms missed; O(n) buildGraph steps remain). Incremental per-facet resolution (byte-identical to full build in tests), deferred disk write for small edits on ≥300-file graphs, in-place search index (C#/project changes rebuild). Open: exports memo may drift from a cold build in contrived re-export cycles until the 50-build full sort; `verified` queries still ~0.8–1.4 s. |
 | 6 | TypeScript receiver types | done | `5fcf185`, `80938ba` | Repo-symbol call edges +27%, 40/40 spot-checked new edges correct; `unknown-value-type` only −5% (21k are references to local values). Fixed `@shared/*` aliases through solution-style tsconfig. Next gap: call-chain receivers (`this.f(id).m()`). |
 | 7 | Decide on defaults after the A/B | not started | | |
 
@@ -50,6 +50,7 @@ compact MCP answer). "hit@k" counts questions whose first expected file is withi
 | phases 1+2+6 merged | train (22) | 16 | 21 | 22 | 0.837 | 683 |
 | phases 1+2+6 merged | held-out (22) | 11 | 17 | 21 | 0.662 | 747 |
 | + phase 3 excerpts (tightened) | all (44) | 27 | 38 | 43 | 0.749 | 1832 |
+| + phase 5 | all (44) | 27 | 38 | 43 | 0.748 | 1830 |
 
 ## Log
 
@@ -59,10 +60,10 @@ compact MCP answer). "hit@k" counts questions whose first expected file is withi
 - 2026-10-24 — Phase 0b merged (`64c35d1`); check green (1,532 unit, 76 integration, 3 latency), E2E usage + code-map + mcp-hub 19/19. A container restart (likely memory: parallel checks/E2E) stopped the phase 3 and 5 agents; resumed. Run at most one full check/E2E at a time.
 - 2026-10-24 — Phase 4 merged; check green (1,571 unit, 77 integration, 3 latency), E2E claude-bridge + code-map + usage 19/19.
 - 2026-10-24 — Phase 3 merged and tightened; check green (1,596 unit, 77 integration, 3 latency), E2E code-map + mcp-hub 16/16. Answers now carry code yet stay below the original pointer-only size (1,960).
-- Finding for phase 5: every query calls `indexer.verify()`, a full metadata audit (git enumeration) of the checkout, and any change re-resolves the whole graph — the source of the 1.6–2.7 s update latency.
+- 2026-10-24 — Phase 5 merged (fast-forward to `ac10bb6`); check green (1,614 unit, 77 integration, 3 latency), E2E code-map, visualizer, ipc-hosts, claude-bridge, usage 27/27; ranking unchanged.
+- Finding for phase 5 (resolved): every query calls `indexer.verify()`, a full metadata audit (git enumeration) of the checkout, and any change re-resolves the whole graph — the source of the 1.6–2.7 s update latency.
 
 ## Next
 
-- Merge phase 5 (freshness) when its agent reports.
 - Then: phase 7 needs the owner — paid A/B (D1) and whether Review memory should default to off so agents list one locating tool.
-- Follow-ups: excerpts for `oxy_task_context`; TS call-chain receivers (`this.f(id).m()`); validate the `strong` gate on a larger corpus.
+- Follow-ups: excerpts for `oxy_task_context`; TS call-chain receivers (`this.f(id).m()`); validate the `strong` gate on a larger corpus; make the remaining O(n) `buildGraph` steps incremental (10k edit p95); share the host search index with `memory/context.ts`; make the exports memo order-independent.

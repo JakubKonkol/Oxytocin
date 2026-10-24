@@ -18,6 +18,12 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Changed
 
+- **Code Map:** answers keep up with edits. While the file watcher is healthy a query no longer audits the whole
+  checkout; it waits only for the incremental update of the files that changed, which now re-resolves just the
+  affected files and updates the search index in place. On Oxytocin's own repository an edit shows up in the next
+  answer within about 0.2 s (was about 2.6 s) and an unchanged query answers in milliseconds (was about 0.5 s). For
+  large maps, small edits are written to `.oxy/code-map` shortly after the edits settle. `freshness: "verified"` still
+  audits content hashes.
 - **Code Map:** `oxy_find_code` answers include the relevant source lines, so most lookups need no separate file
   read. The best match shows up to 12 numbered lines (its signature and the lines with the question's terms, with
   context); a second or third match shows up to 6 lines only when it scores close to the first. Lines are shown only
