@@ -245,4 +245,72 @@ describe('Graph publication pipeline', () => {
       expect(question(reopened, 'versionedword')).toEqual(['s:a.ts#function:first']);
     });
   });
+
+  describe('deferred persistence of small edits', () => {
+    const many = () =>
+      new Map(
+        Array.from({ length: 320 }, (_, index) => [`m${index}.ts`, `export function f${index}() { return ${index}; }`]),
+      );
+    const diskGraph = (root: string) => readFile(join(root, '.oxy/code-map/graph.json'), 'utf8');
+
+    it('publishes a small edit in memory first and writes byte-identical files after the burst', async () => {
+      const root = await temporary(),
+        coldRoot = await temporary();
+      const sources = many();
+      const live = await engine(root);
+      await publish(live, sources);
+      const first = await diskGraph(root);
+      sources.set('m7.ts', 'export function renamedSeven() { return 7; }');
+      const published = await publish(live, sources, ['m7.ts']);
+      expect(published.manifest.generation).toBe(2);
+      expect(live.snapshot()!.graph.symbols.map((symbol) => symbol.name)).toContain('renamedSeven');
+      // The disk still holds the previous generation until the write happens.
+      expect(await diskGraph(root)).toBe(first);
+      await live.flush();
+      const cold = await engine(coldRoot);
+      await publish(cold, sources);
+      expect(await diskGraph(root)).toBe(await diskGraph(coldRoot));
+      expect(await readFile(join(root, '.oxy/code-map/MAP.md'), 'utf8')).toBe(
+        await readFile(join(coldRoot, '.oxy/code-map/MAP.md'), 'utf8'),
+      );
+      const manifest = JSON.parse(await readFile(join(root, '.oxy/code-map/manifest.json'), 'utf8')) as {
+        generation: number;
+        graphSha256: string;
+      };
+      expect(manifest).toMatchObject({ generation: 2, graphSha256: sha256(await diskGraph(root)) });
+      // A new engine on the same data reads the flushed generation.
+      expect((await engine(root)).snapshot()!.manifest.generation).toBe(2);
+    });
+
+    it('writes immediately in small projects and for bulk changes, and nothing while held', async () => {
+      const small = await temporary();
+      const tiny = new Map([['a.ts', 'export function a() {}']]);
+      const target = await engine(small);
+      await publish(target, tiny);
+      tiny.set('a.ts', 'export function b() {}');
+      await publish(target, tiny, ['a.ts']);
+      expect(await diskGraph(small)).toContain('"name":"b"');
+
+      const root = await temporary();
+      const sources = many();
+      const live = await engine(root);
+      await publish(live, sources);
+      for (const path of sources.keys()) sources.set(path, `${sources.get(path)!} // edited`);
+      await publish(live, sources);
+      // Bulk change: persisted before publishing, so nothing is pending.
+      const before = await diskGraph(root);
+      expect(live.snapshot()!.manifest.generation).toBe(2);
+      expect(JSON.parse(await readFile(join(root, '.oxy/code-map/manifest.json'), 'utf8'))).toMatchObject({
+        generation: 2,
+      });
+      sources.set('m1.ts', 'export function held() {}');
+      live.holdPersistence(true);
+      await publish(live, sources, ['m1.ts']);
+      await live.flush();
+      expect(await diskGraph(root)).toBe(before);
+      live.holdPersistence(false);
+      await live.flush();
+      expect(await diskGraph(root)).toContain('"name":"held"');
+    });
+  });
 });

@@ -128,3 +128,28 @@ it('answers from the published snapshot when the freshness wait expires, and kee
     release();
   }
 }, 20000);
+it('audits only for verified queries or an untrusted watcher; latest answers from the snapshot otherwise', async () => {
+  const { CheckoutIndexer } = await import('../indexer');
+  const verify = vi.spyOn(CheckoutIndexer.prototype, 'verify');
+  try {
+    await setup();
+    await vi.waitFor(() => expect(checkouts.status('p').state).toBe('ready'));
+    verify.mockClear();
+    for (let i = 0; i < 5; i++) {
+      const answer = await checkouts.query('p', `idle-${i}`, { kind: 'search', query: 'first' });
+      expect(answer.freshness).toMatchObject({ stale: false, pendingFiles: 0 });
+      expect(answer.data).toMatchObject({ kind: 'search', matches: [expect.objectContaining({ name: 'first' })] });
+    }
+    expect(verify).not.toHaveBeenCalled();
+    // An edit is picked up through the pending event, still without an audit.
+    await writeFile(join(root, 'api.ts'), 'second');
+    const edited = await checkouts.query('p', 'edited', { kind: 'search', query: 'second' });
+    expect(edited.freshness.stale).toBe(false);
+    expect(edited.data).toMatchObject({ kind: 'search', matches: [expect.objectContaining({ name: 'second' })] });
+    expect(verify).not.toHaveBeenCalled();
+    await checkouts.query('p', 'strict', { kind: 'search', query: 'second', freshness: 'verified' });
+    expect(verify).toHaveBeenCalledWith(true);
+  } finally {
+    verify.mockRestore();
+  }
+});

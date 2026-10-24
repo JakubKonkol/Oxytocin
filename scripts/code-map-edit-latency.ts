@@ -36,7 +36,8 @@ const source = option('source') ?? 'repo';
 const runs = Number(option('runs') ?? 12);
 const idleQueries = Number(option('idle-queries') ?? 60);
 const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
-const git = (cwd: string, ...gitArgs: string[]) => promisify(execFile)('git', ['--no-optional-locks', ...gitArgs], { cwd, maxBuffer: 64 << 20 });
+const git = (cwd: string, ...gitArgs: string[]) =>
+  promisify(execFile)('git', ['--no-optional-locks', ...gitArgs], { cwd, maxBuffer: 64 << 20 });
 const mib = (bytes: number) => Math.round(bytes / 1048576);
 
 function percentile(values: number[], p: number): number {
@@ -139,18 +140,19 @@ async function main() {
       console.log(`Indexed ${status?.counts.files} files, ${status?.counts.symbols} symbols in ${indexMs} ms`);
 
       // 1. Queries when nothing changed.
-      const phrases = ['emitter', 'terminal output flow control', 'package module create service', 'watcher debounce', 'Input5'];
+      const phrases = [
+        'emitter',
+        'terminal output flow control',
+        'package module create service',
+        'watcher debounce',
+        'Input5',
+      ];
       const idle: number[] = [];
       const idleVerified: number[] = [];
       for (let i = 0; i < idleQueries; i++) {
         const t = performance.now();
         await ask(phrases[i % phrases.length]!);
         idle.push(performance.now() - t);
-      }
-      for (let i = 0; i < Math.min(10, idleQueries); i++) {
-        const t = performance.now();
-        await ask(phrases[i % phrases.length]!, 'verified');
-        idleVerified.push(performance.now() - t);
       }
 
       // 2. Edit, then query immediately.
@@ -184,6 +186,13 @@ async function main() {
       }
       await settled();
       const rss = process.memoryUsage().rss;
+      // Full content-hash audits last: they queue behind nothing and would delay the edits above.
+      for (let i = 0; i < Math.min(10, idleQueries); i++) {
+        const t = performance.now();
+        await ask(phrases[i % phrases.length]!, 'verified');
+        idleVerified.push(performance.now() - t);
+      }
+
       const report = {
         source,
         root: source === 'fixture' ? 'fixture-10000' : 'repo copy',
@@ -191,6 +200,7 @@ async function main() {
         symbols: status?.counts.symbols,
         indexMs,
         unchangedQueryMs: summary(idle),
+        unchangedSlowQueries: idle.map((ms, i) => [i, Math.round(ms)] as const).filter(([, ms]) => ms > 50),
         unchangedVerifiedQueryMs: summary(idleVerified),
         firstAnswerAfterEditMs: summary(firstAnswer),
         editToFreshAnswerMs: untilFresh.length ? summary(untilFresh) : null,
