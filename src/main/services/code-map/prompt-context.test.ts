@@ -83,16 +83,12 @@ function setup(
 afterEach(() => vi.useRealTimers());
 
 describe('the confidence gate', () => {
-  it('passes a strong name match or enough coverage and treats missing signals as weak', () => {
-    expect(PROMPT_CONTEXT.minCoverage).toBe(0.6);
+  it('passes only a strong top hit; coverage alone never passes and missing signals are weak', () => {
     expect(passesGate({ strong: true })).toBe(true);
-    expect(passesGate({ strong: true, coverage: 0.1 })).toBe(true);
-    expect(passesGate({ coverage: 0.6 })).toBe(true);
-    expect(passesGate({ coverage: 0.95 })).toBe(true);
-    expect(passesGate({ coverage: 0.59 })).toBe(false);
-    expect(passesGate({ strong: false, coverage: 0.2 })).toBe(false);
+    expect(passesGate({ strong: true, coverage: 0.1 } as never)).toBe(true);
+    expect(passesGate({ coverage: 1 } as never)).toBe(false);
+    expect(passesGate({ strong: false, coverage: 0.99 } as never)).toBe(false);
     expect(passesGate({ strong: false })).toBe(false);
-    expect(passesGate({ coverage: Number.NaN })).toBe(false);
     expect(passesGate({})).toBe(false);
   });
 });
@@ -161,13 +157,13 @@ describe('prompt context', () => {
     expect(sent.length).toBeLessThanOrEqual(PROMPT_CONTEXT.maxQueryChars);
   });
 
-  it('suggests with enough coverage even without a symbol-name match', async () => {
-    const t = setup({ result: answer([match('handleLogin')], { strong: false, coverage: 0.6 }) });
-    expect(await t.ask()).not.toBeNull();
+  it('does not suggest on high coverage alone (wrong top hits also cover most of a question)', async () => {
+    const t = setup({ result: answer([match('handleLogin')], { strong: false, coverage: 1 }) });
+    expect(await t.ask()).toBeNull();
   });
 
   it('injects nothing for weak or unreported confidence (no hint either)', async () => {
-    expect(await setup({ result: answer([match('a')], { strong: false, coverage: 0.59 }) }).ask()).toBeNull();
+    expect(await setup({ result: answer([match('a')], { strong: false, coverage: 0.95 }) }).ask()).toBeNull();
     expect(await setup({ result: answer([match('a')], { strong: false }) }).ask()).toBeNull();
     // A ranking that reports neither field (an older Code Map host) is weak by definition.
     expect(await setup({ result: answer([match('a')]) }).ask()).toBeNull();

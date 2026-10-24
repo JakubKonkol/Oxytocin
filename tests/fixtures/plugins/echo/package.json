@@ -36,6 +36,10 @@
         {
           "id": "echo.setEnv",
           "title": "Echo: Set Environment"
+        },
+        {
+          "id": "echo.core",
+          "title": "Echo: Core Command"
         }
       ],
       "statusBarItems": [

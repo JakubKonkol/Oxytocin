@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { launchApp, repoRoot } from './helpers/launch';
-import { connect, freePort } from './helpers/mcp';
+import { freePort } from './helpers/mcp';
 import { activeProjectId, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js');
@@ -133,7 +133,7 @@ interface HookResponse {
 }
 
 /** A project with two small TypeScript modules, a Claude bridge on a free port and a fake Claude Code in a terminal. */
-async function pointerSetup(options: { mcp?: boolean } = {}) {
+async function pointerSetup() {
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
   const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-pointers-'));
   await mkdir(join(project, 'src'));
@@ -148,7 +148,6 @@ async function pointerSetup(options: { mcp?: boolean } = {}) {
   const out = join(userData, 'hook-responses.jsonl');
   await writeFile(out, '');
   const port = await freePort();
-  const mcpPort = options.mcp ? await freePort() : 0;
   const hooksJson = join(
     userData,
     'plugin-data/oxytocin.claude-code-bridge/claude-marketplace/oxytocin-bridge/hooks/hooks.json',
@@ -158,7 +157,6 @@ async function pointerSetup(options: { mcp?: boolean } = {}) {
     JSON.stringify({
       'claudeBridge.port': port,
       'terminal.env': { FAKE_CLAUDE_HOOKS: hooksJson, FAKE_CLAUDE_HOOK_OUT: out },
-      ...(options.mcp ? { 'mcp.enabled': true, 'mcp.port': mcpPort } : {}),
     }),
   );
   const launched = await launchApp({
@@ -208,7 +206,7 @@ async function pointerSetup(options: { mcp?: boolean } = {}) {
       projectId,
       enabled,
     ] as const);
-  return { ...launched, project, projectId, mcpPort, hook, contextOf, setSuggestions };
+  return { ...launched, project, projectId, hook, contextOf, setSuggestions };
 }
 
 test('Claude Code Bridge: no code pointers unless the project turns on prompt suggestions in the Code Map tab', async () => {
@@ -247,29 +245,8 @@ test('Claude Code Bridge: no code pointers unless the project turns on prompt su
 
 test('Claude Code Bridge: a strong match adds up to three pointers once per session, never for harness text', async () => {
   test.setTimeout(120_000);
-  const { app, hook, contextOf, setSuggestions, mcpPort, project, userData } = await pointerSetup({ mcp: true });
+  const { app, hook, contextOf, setSuggestions } = await pointerSetup();
   try {
-    // The pointers need the confidence signal of the Code Map search (phase 2 of the remediation plan). Until the
-    // ranking reports it, Oxytocin correctly adds nothing, so this story cannot run.
-    await expect.poll(async () => readFile(join(userData, 'mcp.json'), 'utf8').catch(() => '')).toContain('token');
-    const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
-    const client = await connect(mcpPort, token);
-    try {
-      const probe = await client.call('oxy_find_code', {
-        cwd: project,
-        format: 'json',
-        query: 'validateSessionToken',
-      });
-      const data = (JSON.parse(probe.result!.content![0]!.text) as { data?: { strong?: boolean; coverage?: number } })
-        .data;
-      test.skip(
-        data?.strong === undefined && data?.coverage === undefined,
-        'The Code Map search does not report a confidence signal yet',
-      );
-    } finally {
-      client.close();
-    }
-
     const question = 'UserPromptSubmit where does validateSessionToken reject a short session token';
     await setSuggestions(true);
     const first = contextOf(await hook(question));

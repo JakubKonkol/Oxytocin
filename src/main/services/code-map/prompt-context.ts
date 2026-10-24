@@ -16,15 +16,17 @@ import type { z } from 'zod';
  * injected line is uncached input on each turn, so a wrong or repeated suggestion costs more than it saves. When the
  * match is weak nothing is injected at all (not even a "no strong match" hint): the agent would search normally
  * anyway, and the hint would only add input to every such prompt.
+ *
+ * The gate is the search's `strong` flag alone (the top hit matched the prompt in its own name, or is an exact
+ * identifier or path). `coverage` is deliberately not used: the phase 2 measurements on the frozen corpus show it is
+ * 0.93-1.0 for the top hit even when that hit is wrong, while `strong` was right in about 6 of 7 cases. A result
+ * without `strong` (an older Code Map host) counts as weak.
  */
 export const PROMPT_CONTEXT = {
   /** Shorter prompts ("yes", "continue", "fix it") carry no question to search. */
   minPromptChars: 12,
   /** Hard budget for the whole lookup; the hook itself times out after 5 s. Past it, nothing is injected. */
   budgetMs: 1000,
-  /** Gate: inject only when the top hit matched in a symbol name (`strong`), or when its idf-weighted share of ... */
-  /** ... the question (`coverage`, 0-1) is at least this. A search result without either signal counts as weak. */
-  minCoverage: 0.6,
   /** Pointers per prompt. */
   maxPointers: 3,
   /** Pointers remembered per session (the oldest are forgotten first) and sessions remembered (least recently used). */
@@ -115,12 +117,9 @@ function pointerLine(match: Match): string {
   return `${path}${lines} ${oneLine(match.kind, 40)} ${oneLine(match.name, PROMPT_CONTEXT.maxPartChars)}`;
 }
 
-/** The confidence gate: a strong name match or most of the question matched; absent signals count as weak. */
-export function passesGate(data: { strong?: boolean | undefined; coverage?: number | undefined }): boolean {
-  return (
-    data.strong === true ||
-    (typeof data.coverage === 'number' && Number.isFinite(data.coverage) && data.coverage >= PROMPT_CONTEXT.minCoverage)
-  );
+/** The confidence gate: the top hit must be strong (see `PROMPT_CONTEXT`); coverage alone never passes. */
+export function passesGate(data: { strong?: boolean | undefined }): boolean {
+  return data.strong === true;
 }
 
 /** Whether a prompt is worth a lookup: long enough and typed by the user (not harness text). */

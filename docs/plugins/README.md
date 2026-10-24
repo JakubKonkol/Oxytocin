@@ -828,8 +828,8 @@ Core commands callable through `oxy.commands.execute` or `view.executeCommand`:
   pointers (`path:start-end kind name`, no source) for the prompt an agent in that terminal just received, to be added to
   the agent's context (the built-in Claude Code Bridge returns them from its `UserPromptSubmit` hook). It returns `null`
   unless the terminal's project has Code Map on **and** "Suggest code locations with each prompt" checked, the prompt is
-  at least 12 characters and not harness text, a snapshot is published, the answer arrives within 1 s and the top match
-  is strong; pointers already returned for the same `(terminalId, sessionId)` are dropped. `prompt` is at most 4,000
+  at least 12 characters and not harness text, a snapshot is published, the answer arrives within 1 s and the search
+  reports the top match as `strong`; pointers already returned for the same `(terminalId, sessionId)` are dropped. `prompt` is at most 4,000
   characters; it is read locally for this one lookup and never stored or logged. Requires the `code-map.read` permission.
   `oxytocin.codeMap.forgetPromptContext({ terminalId, sessionId })` drops what a finished session was shown.
 

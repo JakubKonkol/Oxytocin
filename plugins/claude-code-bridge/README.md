@@ -18,7 +18,8 @@ Built-in Oxytocin plugin: exact Claude Code states through Claude Code hooks.
   *Project settings → Code Map → Suggest code locations with each prompt* checked, every `UserPromptSubmit` hook also asks
   Oxytocin for up to 3 file pointers (`path:start-end kind name`, no code) and returns them as `additionalContext`
   (together with the once-per-session resources brief), so the agent often needs no Code Map tool call. Oxytocin adds
-  pointers only when the top match is strong (matched a symbol name, or at least 60% of the prompt's weighted terms),
+  pointers only when the search reports the top match as `strong` (it matched the prompt in a symbol name, or is an
+  exact identifier or path; coverage alone is not trusted),
   never repeats a pointer within a session, skips short prompts and harness text (`<task-notification>` and similar),
   and gives up after 1 s (the hook itself times out after 5 s), so a prompt is never delayed noticeably. The bridge
   plugin therefore declares the `code-map.read` permission (the core command `oxytocin.codeMap.promptContext` checks
