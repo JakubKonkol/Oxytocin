@@ -29,9 +29,9 @@ started.
 | 0 | Paid A/B (D1) | not started | | Needs owner approval and budget. |
 | 1 | Remove agent overhead (one locate tool, schemas, instructions, quiet output, stale-tolerant answers) | done | `8aa0555` | Default tool schemas 4,372 → 1,533 chars; all 8 tools 9,788 → 5,214. Open: Review memory defaults to on, so `oxy_task_context` + learning tools stay listed by default (rules then point to task_context only). |
 | 2 | Body-aware BM25F ranking | done | `2f592ae` | Search corpus cached in records (not graph.json), pinned per generation; PageRank prior tried and rejected (no train gain). Cache +38%; index build on first query after publish 0.2–0.4 s here, 1.1–1.3 s on 10k fixture (phase 5 must address). `coverage` separates right/wrong poorly; `strong` tuned on train only. |
-| 3 | Source excerpts in `oxy_find_code` | not started | | Depends on 1 and 2. |
+| 3 | Source excerpts in `oxy_find_code` | in progress | | Delegated (worktree): hash-checked term-focused excerpts, `full: true`. |
 | 4 | Prompt-time pointers via Claude Code Bridge | in progress | | Delegated; core command `oxytocin.codeMap.promptContext`, per-project setting default off, reads optional `coverage`/`strong` from phase 2. |
-| 5 | Targeted refresh on query, incremental resolution | not started | | |
+| 5 | Cheap freshness barrier, faster publication, edit-latency script | in progress | | Delegated (worktree). |
 | 6 | TypeScript receiver types | done | `5fcf185`, `80938ba` | Repo-symbol call edges +27%, 40/40 spot-checked new edges correct; `unknown-value-type` only −5% (21k are references to local values). Fixed `@shared/*` aliases through solution-style tsconfig. Next gap: call-chain receivers (`this.f(id).m()`). |
 | 7 | Decide on defaults after the A/B | not started | | |
 
