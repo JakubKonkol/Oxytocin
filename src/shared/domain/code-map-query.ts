@@ -26,6 +26,11 @@ export const CodeMapQuerySchemas = {
       pathPrefix,
       query: z.string().trim().min(1).max(2000),
       limit: z.number().int().min(1).max(50).default(8),
+      /**
+       * Inline source with the best matches: `terms` the lines that contain the question's terms, `full` the whole
+       * definition of the first match (up to 80 lines). Absent: pointers only.
+       */
+      excerpts: z.enum(['terms', 'full']).optional(),
     })
     .strict(),
   outline: z.object({ ...options, path: CodeMapRelativePathSchema }).strict(),
@@ -84,6 +89,23 @@ const node = z.discriminatedUnion('kind', [
     whyIncluded: z.string().max(200),
   }),
 ]);
+/** Source lines of one search match, verified against the indexed file content. */
+export const CodeMapExcerptSchema = z.object({
+  /** Runs of consecutive lines in file order; a gap between runs is skipped code. */
+  segments: z
+    .array(
+      z.object({
+        /** 1-based line number of the first line of the run. */
+        start: z.number().int().min(1),
+        lines: z.array(z.string().max(160)).min(1).max(80),
+      }),
+    )
+    .min(1)
+    .max(40),
+  /** Lines of the definition (or of the file's head) that are not shown. */
+  omitted: z.number().int().nonnegative(),
+});
+export type CodeMapExcerpt = z.infer<typeof CodeMapExcerptSchema>;
 export const CodeMapQueryDataSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('status'), status: CodeMapStatusSchema.omit({ owner: true, error: true }) }),
   z.object({ kind: z.literal('repo-map'), markdown: z.string().max(24000) }),
@@ -101,6 +123,7 @@ export const CodeMapQueryDataSchema = z.discriminatedUnion('kind', [
           stale: z.boolean(),
           score: z.number(),
           whyIncluded: z.array(z.string()),
+          excerpt: CodeMapExcerptSchema.optional(),
         }),
       )
       .max(50),

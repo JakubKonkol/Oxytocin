@@ -6,6 +6,9 @@ import type { TaskContextResult } from '@shared/domain/code-map-learning-tools';
 // complete inspection data (coverage, unresolved counts, warnings), and `oxy_code_map_status`/the UI show them.
 // An answer is quiet when it is fresh: no header, no coverage totals, no "partial index" boilerplate.
 const MAX_SIGNATURE = 120;
+const MAX_SOURCE_LINE = 160;
+/** An excerpt this long is the largest the server returns; asking for `full` again cannot show more. */
+const FULL_EXCERPT_LINES = 80;
 /** The compact text of a relations answer; the JSON envelope it was budgeted with is several times larger. */
 const RELATIONS_TEXT_BUDGET = 8000;
 const SOURCE_STATUS_NOTE: Record<string, string> = {
@@ -19,6 +22,12 @@ const SOURCE_STATUS_NOTE: Record<string, string> = {
 const oneLine = (text: string) => text.replace(/[\p{Cc}\s]+/gu, ' ').trim();
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 const signature = (text: string) => clip(oneLine(text), MAX_SIGNATURE);
+/**
+ * A source line under its pointer. Source is untrusted data: it is always prefixed with its line number, so it can
+ * never look like a result row, and control, separator and format characters cannot start a new row or hide text.
+ */
+const sourceLine = (text: string) =>
+  clip(text.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ').replace(/\p{Cf}/gu, ''), MAX_SOURCE_LINE).trimEnd();
 /** Paths are copied back into tool arguments: print them bare unless that would be ambiguous. */
 const path = (value: string) => (/^[^\s"\\\p{Cc}]+$/u.test(value) ? value : JSON.stringify(value));
 const location = (file: string, span?: readonly number[]) => `${path(file)}${span ? `:${span[0]}-${span[2]}` : ''}`;
@@ -61,6 +70,30 @@ function truncation(result: CodeMapQueryResult): string[] {
   if (result.reasons.includes('VISIT_LIMIT'))
     return ['Truncated: relation search limit reached. Use depth 1 or one direction.'];
   return [];
+}
+
+type SearchMatch = Extract<NonNullable<CodeMapQueryResult['data']>, { kind: 'search' }>['matches'][number];
+/**
+ * The excerpt under a pointer: `  <line>| <text>`, `  …` for skipped code, and how to get the rest (`full` applies
+ * to the first definition only).
+ */
+function excerptLines(m: SearchMatch, first: boolean): string[] {
+  const excerpt = m.excerpt;
+  if (!excerpt) return [];
+  const lines: string[] = [];
+  let shown = 0;
+  excerpt.segments.forEach((segment, i) => {
+    if (i > 0) lines.push('  …');
+    segment.lines.forEach((text, k) => lines.push(`  ${segment.start + k}| ${sourceLine(text)}`));
+    shown += segment.lines.length;
+  });
+  if (excerpt.omitted > 0) {
+    const rest = m.span ? `read ${location(m.path, m.span)}` : `read ${path(m.path)}`;
+    lines.push(
+      `  (+${excerpt.omitted} more line${excerpt.omitted === 1 ? '' : 's'}; ${first && m.span && shown < FULL_EXCERPT_LINES ? `full: true or ${rest}` : rest})`,
+    );
+  }
+  return lines;
 }
 
 function relationsLines(data: Extract<NonNullable<CodeMapQueryResult['data']>, { kind: 'relations' }>): {
@@ -139,12 +172,14 @@ export function formatCodeMap(result: CodeMapQueryResult): string {
   const lines: string[] = [];
   if (data.kind === 'search') {
     lines.push(...note(result.freshness, citedBy(data)));
-    for (const m of data.matches)
+    for (const [index, m] of data.matches.entries()) {
       lines.push(
         m.kind === 'file'
           ? `${path(m.path)} file${m.stale ? ' STALE' : ''}`
           : `${location(m.path, m.span)} ${describe(m.kind, m.signature ?? m.name)}${m.stale ? ' STALE' : ''}`,
+        ...excerptLines(m, index === 0),
       );
+    }
     if (!data.matches.length) lines.push('No indexed matches. Use Grep.');
   } else if (data.kind === 'outline') {
     lines.push(...note(result.freshness, citedBy(data)));

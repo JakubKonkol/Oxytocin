@@ -27,6 +27,36 @@ it('offers five read-only bounded tools, validates inputs and refuses unresolved
   );
 });
 
+it('asks for the matching source lines by default and for the whole definition with full: true', async () => {
+  const query = vi.fn().mockResolvedValue({ code: 'OK' });
+  const search = buildCodeMapTools({ query }).find((t) => t.definition.name === 'oxy_find_code')!;
+  const call = (args: Record<string, unknown>) => ({
+    args,
+    caller: { context: { projectId: 'p' } },
+    signal: new AbortController().signal,
+    sessionId: 's',
+  });
+  await search.run(call({ query: 'shift enter' }));
+  expect(query).toHaveBeenLastCalledWith(
+    'p',
+    expect.objectContaining({ excerpts: 'terms' }),
+    expect.anything(),
+    undefined,
+  );
+  await search.run(call({ query: 'shift enter', full: true }));
+  expect(query).toHaveBeenLastCalledWith(
+    'p',
+    expect.objectContaining({ excerpts: 'full' }),
+    expect.anything(),
+    undefined,
+  );
+  expect(query.mock.calls.at(-1)![1]).not.toHaveProperty('full');
+  const properties = (search.definition.inputSchema as unknown as { properties: object }).properties;
+  expect(Object.keys(properties)).toEqual(['cwd', 'query', 'pathPrefix', 'full']);
+  const outline = buildCodeMapTools({ query }).find((t) => t.definition.name === 'oxy_file_outline')!;
+  await expect(outline.run(call({ path: 'a.ts', full: true }))).rejects.toThrow('Invalid Code Map arguments');
+});
+
 const size = (t: { definition: { name: string; description: string; inputSchema: unknown } }) =>
   JSON.stringify({
     name: t.definition.name,
