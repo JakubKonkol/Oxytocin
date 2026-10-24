@@ -113,12 +113,12 @@ async function main() {
     };
     let counter = 0;
     const ask = async (query: string, freshness: 'latest' | 'verified' = 'latest') =>
-      (await controller.query('latency', `q${++counter}`, {
+      await controller.query('latency', `q${++counter}`, {
         kind: 'search',
         query,
         limit: 5,
         freshness,
-      })) as CodeMapHostQueryResult;
+      });
     const contains = (result: CodeMapHostQueryResult, name: string) =>
       result.data?.kind === 'search' && result.data.matches.some((match) => match.name === name);
     try {

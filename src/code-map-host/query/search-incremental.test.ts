@@ -40,7 +40,7 @@ const generator = {
   extractors: {},
   grammars: {},
   settingsHash: `sha256:${'0'.repeat(64)}`,
-} as Parameters<typeof buildGraph>[2];
+};
 
 const files: Record<string, string> = {
   'src/terminal/flow-control.ts':

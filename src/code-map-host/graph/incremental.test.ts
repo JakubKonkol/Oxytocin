@@ -40,7 +40,7 @@ const generator = {
   extractors: {},
   grammars: {},
   settingsHash: `sha256:${'0'.repeat(64)}`,
-} as Parameters<typeof buildGraph>[2];
+};
 
 /** A project whose records change step by step; every step must give the same graph with and without the cache. */
 class Project {
