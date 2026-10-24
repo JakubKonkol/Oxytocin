@@ -12,6 +12,9 @@ import { GoResolver } from '../resolve/go';
 import { JavaResolver } from '../resolve/java';
 import { PythonResolver } from '../resolve/python';
 
+/** Kinds whose members are exported together with them. */
+const EXPANDED_KINDS = new Set(['class', 'interface', 'namespace', 'enum']);
+const PRIVATE_SIGNATURE = /^(?:(?:static|readonly|abstract|override|public|async|get|set) )*(?:private|protected) /;
 const compareEdges = (left: CodeMapGraph['edges'][number], right: CodeMapGraph['edges'][number]): number =>
   comparePaths(left.from, right.from) ||
   comparePaths(left.rel, right.rel) ||
@@ -204,24 +207,19 @@ export function buildGraph(
   };
   for (const symbol of graph.symbols)
     if (symbol.owner) {
-      const list = children.get(symbol.owner) ?? [];
-      list.push(symbol);
-      children.set(symbol.owner, list);
+      const list = children.get(symbol.owner);
+      if (list) list.push(symbol);
+      else children.set(symbol.owner, [symbol]);
     }
   const queue = graph.symbols.filter((symbol) => symbol.exported);
   const expanded = new Set<string>();
   for (let index = 0; index < queue.length; index++) {
     const owner = queue[index]!;
+    if (!EXPANDED_KINDS.has(owner.kind) || expanded.has(owner.id)) continue;
     if (records.get(owner.file.slice(2))?.python) continue;
-    if (expanded.has(owner.id) || !['class', 'interface', 'namespace', 'enum'].includes(owner.kind)) continue;
     expanded.add(owner.id);
     for (const child of children.get(owner.id) ?? []) {
-      if (
-        child.visibility ||
-        child.name.startsWith('#') ||
-        /^(?:(?:static|readonly|abstract|override|public|async|get|set) )*(?:private|protected) /.test(child.signature)
-      )
-        continue;
+      if (child.visibility || child.name.startsWith('#') || PRIVATE_SIGNATURE.test(child.signature)) continue;
       if (owner.kind === 'namespace' && !isNamespaceMember(owner.id, child.id)) continue;
       child.exported = true;
       queue.push(child);
