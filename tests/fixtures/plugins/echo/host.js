@@ -18,6 +18,8 @@ export function activate(ctx) {
       return ctx.storage.get('last');
     }),
     oxy.commands.register('test.echo.deactivations', () => deactivated),
+    // Runs a core command of Oxytocin as this plugin (the caller's permissions are checked in main).
+    oxy.commands.register('echo.core', (id, arg) => oxy.commands.execute(id, arg)),
     oxy.commands.register('echo.setEnv', (value) => oxy.terminals.environment.replace('OXY_ECHO', String(value))),
   );
   const item = oxy.ui.statusBarItem('echo.status');

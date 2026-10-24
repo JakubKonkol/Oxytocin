@@ -110,6 +110,10 @@ export const invokeContract = {
     req: z.object({ projectId: ProjectIdSchema, mode: z.enum(['off', 'review']) }).strict(),
     res: z.null(),
   },
+  'codeMap:setPromptSuggestions': {
+    req: z.object({ projectId: ProjectIdSchema, enabled: z.boolean() }).strict(),
+    res: z.null(),
+  },
   'codeMap:getStatus': { req: z.object({ projectId: ProjectIdSchema }).strict(), res: CodeMapStatusSchema },
   'codeMap:setEnabled': {
     req: z.object({ projectId: ProjectIdSchema, enabled: z.boolean(), ignoreInGit: z.boolean().optional() }).strict(),

@@ -32,6 +32,18 @@ describe('project settings draft', () => {
     expect(patchFromDraft(p, d).settings?.codeMap).toEqual(codeMap);
     expect(d.codeMap).not.toBe(codeMap);
   });
+  it('keeps the prompt suggestions choice when saving another tab, and leaves it unset by default', () => {
+    const codeMap = { enabled: true, excludedPaths: [], ignoreInGit: true, promptSuggestions: true };
+    const p = { ...project, settings: { ...project.settings, codeMap } };
+    const d = draftOf(p);
+    d.name = 'renamed';
+    expect(patchFromDraft(p, d).settings?.codeMap).toEqual(codeMap);
+    const plain = {
+      ...project,
+      settings: { ...project.settings, codeMap: { ...codeMap, promptSuggestions: undefined } },
+    };
+    expect(patchFromDraft(plain, draftOf(plain)).settings?.codeMap?.promptSuggestions).toBeUndefined();
+  });
   it('round-trips a project through the draft unchanged', () => {
     const d = draftOf(project);
     expect(d.env).toEqual([

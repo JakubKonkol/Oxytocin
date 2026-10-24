@@ -8,6 +8,11 @@ import {
 import { type AgentInfoWithTerminal, type AgentStateReport, AgentStateReportSchema } from '@shared/domain/agent';
 import type { AgentAccountInfo, AgentLimits } from '@shared/domain/agent-limits';
 import type { RepoStatus } from '@shared/domain/git';
+import {
+  CodeMapForgetPromptContextArgsSchema,
+  CodeMapPromptContextArgsSchema,
+  type CodeMapPromptContextArgs,
+} from '@shared/domain/code-map-prompt-context';
 import { GitCheckoutChangesSchema } from '@shared/domain/git-checkout';
 import { type PluginDescriptor, type PluginPermission } from '@shared/domain/plugin';
 import { type Project, PROJECT_COLOR_VALUES } from '@shared/domain/project';
@@ -151,6 +156,10 @@ export interface PluginCorePort {
   agentBrief?(terminalId: string): string | null;
   /** Code Map tool use of terminals' agents in time ranges (counts only). */
   codeMapUsage?(ranges: CodeMapUsageRange[]): CodeMapUsageResult;
+  /** Pointers into the Code Map for a prompt a terminal's agent received (null: nothing worth adding). */
+  codeMapPromptContext?(args: CodeMapPromptContextArgs): Promise<{ text: string } | null>;
+  /** The agent session ended: forget which pointers it was given. */
+  forgetCodeMapPromptContext?(args: z.infer<typeof CodeMapForgetPromptContextArgsSchema>): void;
 }
 
 export interface PluginHostServiceDeps {
@@ -189,6 +198,8 @@ const CORE_COMMANDS = new Set([
   'oxytocin.codeMap.openLearnings',
   'oxytocin.codeMap.openReceipt',
   'oxytocin.resources.agentBrief',
+  'oxytocin.codeMap.promptContext',
+  'oxytocin.codeMap.forgetPromptContext',
 ]);
 
 const MAX_HANG_INCIDENTS = 2;
@@ -792,6 +803,19 @@ export class PluginHostService implements Disposable {
         if (typeof terminalId !== 'string' || !terminalId) return null;
         const text = core.agentBrief?.(terminalId);
         return text ? { text } : null;
+      }
+      // Prompt-time Code Map pointers: `{ terminalId, sessionId, prompt }` → `{ text } | null` (the prompt is read
+      // locally for this one lookup and never stored or logged). Needs `code-map.read` like any Code Map access.
+      if (id === 'oxytocin.codeMap.promptContext' || id === 'oxytocin.codeMap.forgetPromptContext') {
+        const caller = this.deps.plugins.get(pluginId);
+        if (!caller?.manifest || !this.deps.plugins.enabled().some((p) => p.id === pluginId))
+          throw new OxyError('NOT_FOUND', `Unknown plugin ${pluginId}`);
+        this.permission(caller, 'code-map.read');
+        if (id === 'oxytocin.codeMap.forgetPromptContext') {
+          core.forgetCodeMapPromptContext?.(CodeMapForgetPromptContextArgsSchema.parse(args[0]));
+          return null;
+        }
+        return (await core.codeMapPromptContext?.(CodeMapPromptContextArgsSchema.parse(args[0]))) ?? null;
       }
       core.toRenderer('runCommand', { id, args });
       return undefined;
