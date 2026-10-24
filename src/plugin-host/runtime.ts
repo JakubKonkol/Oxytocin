@@ -174,7 +174,7 @@ export class PluginRuntime {
           return d;
         },
         registerCommand: (commandId, handler) => this.registerCommand(plugin, commandId, handler),
-        executeCommand: (commandId, args) => this.executeCommand(commandId, args),
+        executeCommand: (commandId, args) => this.executeCommand(commandId, args, info.id),
         registerProvider: (kind, providerId, provider) => this.registerProvider(plugin, kind, providerId, provider),
         registerMcpTool: (tool, handler) => this.registerMcpTool(plugin, tool, handler),
         reportError: (where, error) => log.error(`Error in ${where}`, error),
@@ -451,8 +451,11 @@ export class PluginRuntime {
     this.mcpCalls.get(callId)?.controller.abort();
   }
 
-  /** Runs a plugin command, activating `onCommand:<id>` first; core commands go to main. */
-  async executeCommand(id: string, args: unknown[]): Promise<unknown> {
+  /**
+   * Runs a plugin command, activating `onCommand:<id>` first; core commands go to main, which learns the calling
+   * plugin (`callerId`) to check the permissions of commands that read project data.
+   */
+  async executeCommand(id: string, args: unknown[], callerId = ''): Promise<unknown> {
     if (!this.commands.has(id)) {
       const owner = [...this.plugins.values()].find((p) => p.info.commands.includes(id));
       if (owner) {
@@ -465,7 +468,7 @@ export class PluginRuntime {
       const owner = [...this.plugins.values()].find((p) => p.info.commands.includes(id));
       if (owner) throw new OxyError('UNAVAILABLE', `Command not available: ${id}`);
       // Not a plugin command: a core command, executed by main/renderer.
-      return this.bridge.call('', 'commands.executeCore', { id, args });
+      return this.bridge.call(callerId, 'commands.executeCore', { id, args });
     }
     this.bridge.busy(command.pluginId);
     try {

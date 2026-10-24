@@ -89,6 +89,10 @@ export const CodeMapQueryDataSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('repo-map'), markdown: z.string().max(24000) }),
   z.object({
     kind: z.literal('search'),
+    /** Idf-weighted share of the question matched by the top hit (0-1); absent when the ranking does not report it. */
+    coverage: z.number().min(0).max(1).optional(),
+    /** The top hit matched in a symbol name; absent when the ranking does not report it. */
+    strong: z.boolean().optional(),
     matches: z
       .array(
         z.object({

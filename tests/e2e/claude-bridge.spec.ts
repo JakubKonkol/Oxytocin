@@ -1,10 +1,10 @@
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { launchApp, repoRoot } from './helpers/launch';
-import { freePort } from './helpers/mcp';
-import { oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { connect, freePort } from './helpers/mcp';
+import { activeProjectId, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js');
 const fakeCli = join(repoRoot, 'tests/fixtures/agents/fake-claude-plugin-cli.mjs');
@@ -120,6 +120,182 @@ test('Claude Code Bridge: hook events drive agent states; the setup panel instal
     await panel.locator('#uninstall').click();
     await expect(panel.locator('#status-installed')).toHaveText('not installed');
     expect(await calls()).toContain('plugin marketplace remove oxytocin');
+  } finally {
+    await app.close();
+  }
+});
+
+// Phase 4 of the Code Map remediation: prompt-time pointers through the `UserPromptSubmit` hook.
+interface HookResponse {
+  event: string;
+  status: number;
+  body: string;
+}
+
+/** A project with two small TypeScript modules, a Claude bridge on a free port and a fake Claude Code in a terminal. */
+async function pointerSetup(options: { mcp?: boolean } = {}) {
+  const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-pointers-'));
+  await mkdir(join(project, 'src'));
+  await writeFile(
+    join(project, 'src/session-token.ts'),
+    'export function validateSessionToken(token: string): boolean {\n  return token.length > 8;\n}\n',
+  );
+  await writeFile(
+    join(project, 'src/billing.ts'),
+    'export function calculateInvoiceTotal(lines: number[]): number {\n  return lines.reduce((a, b) => a + b, 0);\n}\n',
+  );
+  const out = join(userData, 'hook-responses.jsonl');
+  await writeFile(out, '');
+  const port = await freePort();
+  const mcpPort = options.mcp ? await freePort() : 0;
+  const hooksJson = join(
+    userData,
+    'plugin-data/oxytocin.claude-code-bridge/claude-marketplace/oxytocin-bridge/hooks/hooks.json',
+  );
+  await writeFile(
+    join(userData, 'settings.json'),
+    JSON.stringify({
+      'claudeBridge.port': port,
+      'terminal.env': { FAKE_CLAUDE_HOOKS: hooksJson, FAKE_CLAUDE_HOOK_OUT: out },
+      ...(options.mcp ? { 'mcp.enabled': true, 'mcp.port': mcpPort } : {}),
+    }),
+  );
+  const launched = await launchApp({
+    userData,
+    project,
+    env: { CLAUDE_CONFIG_DIR: await mkdtemp(join(tmpdir(), 'oxy-e2e-claude-')) },
+  });
+  const { win } = launched;
+  const terminalId = await waitForTerminal(win);
+  await expect.poll(() => readFile(hooksJson, 'utf8').catch(() => '')).toContain(`:${port}/claude/hook`);
+  const projectId = await activeProjectId(win);
+  await win.evaluate((projectId) => window.oxy.invoke('codeMap:setEnabled', { projectId, enabled: true }), projectId);
+  await expect
+    .poll(async () => {
+      const status = (await win.evaluate(
+        (projectId) => window.oxy.invoke('codeMap:getStatus', { projectId }),
+        projectId,
+      )) as { state: string };
+      return status.state;
+    })
+    .toBe('ready');
+  await run(win, `node "${fakeClaude}"`);
+  const idle = () =>
+    expect.poll(async () => (await oxyTest(win).text(terminalId)).trimEnd().endsWith('fake-claude>')).toBe(true);
+  await idle();
+  const responses = async (): Promise<HookResponse[]> =>
+    (await readFile(out, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as HookResponse);
+  /** Sends one hook event like Claude Code does and returns what Oxytocin answered. */
+  const hook = async (command: string): Promise<HookResponse> => {
+    const before = (await responses()).length;
+    await run(win, `hook ${command}`);
+    await expect.poll(async () => (await responses()).length).toBe(before + 1);
+    await idle();
+    return (await responses())[before]!;
+  };
+  /** The `additionalContext` of a response (empty when Oxytocin added nothing). */
+  const contextOf = (response: HookResponse): string =>
+    response.body
+      ? (JSON.parse(response.body) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput
+          .additionalContext
+      : '';
+  const setSuggestions = (enabled: boolean) =>
+    win.evaluate(([projectId, enabled]) => window.oxy.invoke('codeMap:setPromptSuggestions', { projectId, enabled }), [
+      projectId,
+      enabled,
+    ] as const);
+  return { ...launched, project, projectId, mcpPort, hook, contextOf, setSuggestions };
+}
+
+test('Claude Code Bridge: no code pointers unless the project turns on prompt suggestions in the Code Map tab', async () => {
+  test.setTimeout(90_000);
+  const { app, win, hook, contextOf, projectId } = await pointerSetup();
+  try {
+    const prompt = 'UserPromptSubmit where does validateSessionToken reject a short session token';
+    // Off by default: the prompt goes through untouched (an empty 2xx).
+    const off = await hook(prompt);
+    expect(off.status).toBe(204);
+    expect(contextOf(off)).toBe('');
+
+    // The Code Map tab explains the privacy of the setting and turns it on for this project only.
+    await win.getByRole('button', { name: 'Code Map status' }).click();
+    const dialog = win.getByTestId('project-settings');
+    const suggest = dialog.getByTestId('code-map-prompt-suggestions');
+    await expect(suggest).not.toBeChecked();
+    await expect(dialog.getByTestId('code-map-prompt-suggestions-note')).toContainText('never stored or logged');
+    await suggest.check();
+    await expect(suggest).toBeChecked();
+    await expect
+      .poll(async () => {
+        const projects = (await win.evaluate(() => window.oxy.invoke('projects:list'))) as {
+          id: string;
+          settings: { codeMap?: { promptSuggestions?: boolean } };
+        }[];
+        return projects.find((p) => p.id === projectId)?.settings.codeMap?.promptSuggestions;
+      })
+      .toBe(true);
+    await suggest.uncheck();
+    await expect(suggest).not.toBeChecked();
+  } finally {
+    await app.close();
+  }
+});
+
+test('Claude Code Bridge: a strong match adds up to three pointers once per session, never for harness text', async () => {
+  test.setTimeout(120_000);
+  const { app, hook, contextOf, setSuggestions, mcpPort, project, userData } = await pointerSetup({ mcp: true });
+  try {
+    // The pointers need the confidence signal of the Code Map search (phase 2 of the remediation plan). Until the
+    // ranking reports it, Oxytocin correctly adds nothing, so this story cannot run.
+    await expect.poll(async () => readFile(join(userData, 'mcp.json'), 'utf8').catch(() => '')).toContain('token');
+    const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
+    const client = await connect(mcpPort, token);
+    try {
+      const probe = await client.call('oxy_find_code', {
+        cwd: project,
+        format: 'json',
+        query: 'validateSessionToken',
+      });
+      const data = (JSON.parse(probe.result!.content![0]!.text) as { data?: { strong?: boolean; coverage?: number } })
+        .data;
+      test.skip(
+        data?.strong === undefined && data?.coverage === undefined,
+        'The Code Map search does not report a confidence signal yet',
+      );
+    } finally {
+      client.close();
+    }
+
+    const question = 'UserPromptSubmit where does validateSessionToken reject a short session token';
+    await setSuggestions(true);
+    const first = contextOf(await hook(question));
+    expect(first).toContain('Code Map — likely relevant code');
+    expect(first).toMatch(/src\/session-token\.ts:1-3 function validateSessionToken/);
+    expect(first.split('\n').length).toBeLessThanOrEqual(4);
+    // No source and nothing from the prompt itself is added.
+    expect(first).not.toContain('token.length');
+    expect(first).not.toContain('reject a short');
+
+    // The same pointers are not repeated within the session ...
+    const repeated = await hook(question);
+    expect(repeated.status).toBe(204);
+    // ... harness text is never searched ...
+    const harness = await hook(
+      'UserPromptSubmit <task-notification>validateSessionToken finished running in the background</task-notification>',
+    );
+    expect(harness.status).toBe(204);
+    // ... and a session that ended starts over.
+    expect((await hook('SessionEnd')).status).toBe(204);
+    expect(contextOf(await hook(question))).toContain('src/session-token.ts:1-3 function validateSessionToken');
+
+    // Turning the setting off stops the pointers at once.
+    await hook('SessionEnd');
+    await setSuggestions(false);
+    expect((await hook(question)).status).toBe(204);
   } finally {
     await app.close();
   }

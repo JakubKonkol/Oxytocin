@@ -20,6 +20,12 @@ export const CodeMapSettingsSchema = z.object({
     .max(200)
     .default([]),
   ignoreInGit: z.boolean().default(true),
+  /**
+   * "Suggest code locations with each prompt": the Claude Code Bridge hands every prompt to Oxytocin, which adds up to
+   * three file pointers to Claude Code's context when the Code Map matches strongly. Off unless `true` (absent = off;
+   * optional so existing project files and settings written before this field stay valid and unchanged).
+   */
+  promptSuggestions: z.boolean().optional(),
   memory: z.object({ mode: z.enum(['off', 'review']).default('review') }).optional(),
 });
 export type CodeMapSettings = z.infer<typeof CodeMapSettingsSchema>;

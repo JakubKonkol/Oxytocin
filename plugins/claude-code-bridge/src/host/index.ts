@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { PluginContext } from '@oxytocin/plugin-api';
 import { createCliRunner, installInClaude, isInstalledInClaude, refreshInClaude, removeFromClaude } from './claude-cli';
 import { TOKEN_VAR, writeMarketplace } from './claude-plugin';
-import { BriefedSessions, briefOutput, stateFromHook } from './events';
+import { BriefedSessions, createHookHandler } from './events';
 import { BridgeServer } from './server';
 import type { ActionResult, BridgeStatus } from '../shared/status';
 
@@ -36,19 +36,17 @@ export async function activate(ctx: PluginContext): Promise<void> {
   let installed: boolean | null = ctx.storage.get<boolean>('installed') ?? null;
 
   // With a session's first prompt, Claude Code gets a brief about the project's databases and APIs (Oxytocin's
-  // project resources), so it uses Oxytocin's tools instead of hunting for credentials.
-  const briefed = new BriefedSessions();
-  const server = new BridgeServer(token, async (terminalId, input) => {
-    const report = stateFromHook(input);
-    if (report) oxy.agents.reportState(terminalId, report);
-    const sessionId = typeof input.session_id === 'string' ? input.session_id : '';
-    if (input.hook_event_name === 'SessionEnd' && sessionId) briefed.forget(terminalId, sessionId);
-    if (input.hook_event_name !== 'UserPromptSubmit' || !sessionId || !briefed.first(terminalId, sessionId)) return;
-    const brief = await oxy.commands
-      .execute<{ text: string } | null>('oxytocin.resources.agentBrief', { terminalId })
-      .catch(() => null);
-    return brief?.text ? briefOutput(brief.text) : undefined;
-  });
+  // project resources), so it uses Oxytocin's tools instead of hunting for credentials. With every prompt of a project
+  // that turned on "Suggest code locations with each prompt", it also gets up to three Code Map pointers (Oxytocin
+  // decides; the prompt is read locally for that one lookup, never stored or logged).
+  const server = new BridgeServer(
+    token,
+    createHookHandler({
+      reportState: (terminalId, report) => oxy.agents.reportState(terminalId, report),
+      execute: (id, args) => oxy.commands.execute(id, args),
+      briefed: new BriefedSessions(),
+    }),
+  );
   let retry: ReturnType<typeof setInterval> | undefined;
   const listen = async () => {
     try {

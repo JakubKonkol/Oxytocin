@@ -255,6 +255,23 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
           </Button>
         </div>
       </Section>
+      <Section title="Prompt suggestions">
+        <Check
+          checked={settings.promptSuggestions === true}
+          disabled={!settings.enabled || busy}
+          onChange={(enabled) =>
+            void run(() => ipc.invoke('codeMap:setPromptSuggestions', { projectId: project.id, enabled }))
+          }
+          testId="code-map-prompt-suggestions"
+        >
+          Suggest code locations with each prompt
+        </Check>
+        <p className="text-small text-fg-muted" data-testid="code-map-prompt-suggestions-note">
+          Needs the Claude Code Bridge. Oxytocin reads each prompt you send to Claude Code, only on this computer, looks
+          it up in this map and, when the match is strong, adds up to 3 file pointers (path and line range, no code) to
+          Claude Code&apos;s context so it can skip a search. The prompt text is never stored or logged. Off by default.
+        </p>
+      </Section>
       <Section title="Memory mode">
         <Field
           label="Agent learnings"

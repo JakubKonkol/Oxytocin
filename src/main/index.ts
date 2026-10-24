@@ -73,6 +73,8 @@ import { ProjectService } from './services/projects/project-service';
 import { CodeMapActivityHints } from './services/code-map/activity-hints';
 import { CodeMapService } from './services/code-map/code-map-service';
 import { checkoutChanges } from './services/code-map/checkout-changes';
+import { CodeMapPromptContext } from './services/code-map/prompt-context';
+import { resolveCodeMapCaller } from './services/mcp/caller-context';
 import { isWithin } from './services/projects/path-utils';
 import { projectPathsFromArgv } from './app/argv';
 import { WorkspaceStateService } from './services/workspace-state/workspace-state-service';
@@ -619,6 +621,22 @@ function bootstrap(): void {
     },
   );
 
+  // Prompt-time Code Map pointers for the Claude Code Bridge. A terminal maps to its project and checkout exactly like
+  // an MCP tool call from it (an Ensemble worktree answers from its own checkout). `callerDeps` is defined below.
+  const codeMapPromptContext = new CodeMapPromptContext({
+    resolve: async (terminalId) => {
+      const { context, projectError } = await resolveCodeMapCaller(callerDeps, {
+        terminalHeader: terminalId,
+        args: {},
+      });
+      return projectError || !context.projectId
+        ? null
+        : { projectId: context.projectId, ...(context.checkoutId ? { checkoutId: context.checkoutId } : {}) };
+    },
+    settings: (projectId) => projects.get(projectId)?.settings.codeMap,
+    query: (projectId, input, signal, checkoutId) => codeMap.query(projectId, input, signal, checkoutId),
+    logger: createLogger('map'),
+  });
   const pluginDeps: Omit<PluginHostServiceDeps, 'host' | 'plugins' | 'logger'> = {
     codeMap,
     env: {
@@ -713,6 +731,8 @@ function bootstrap(): void {
         if (Notification.isSupported()) new Notification({ title, body, icon: appPaths.windowIcon() }).show();
       },
       agentBrief: (terminalId) => resourcesController.sessionBrief(terminalId),
+      codeMapPromptContext: (args) => codeMapPromptContext.suggest(args),
+      forgetCodeMapPromptContext: (args) => codeMapPromptContext.forget(args),
     },
   };
   // Built-in plugins and user/developer plugins run in separate Plugin Hosts (ADR-022).
@@ -1128,6 +1148,7 @@ function bootstrap(): void {
       'codeMap:memory': ({ projectId, checkoutId, operation }) => codeMap.memory(projectId, operation, checkoutId),
       'codeMap:memoryCheckouts': ({ projectId }) => codeMap.memoryCheckouts(projectId),
       'codeMap:setMemoryMode': ({ projectId, mode }) => codeMap.setMemoryMode(projectId, mode),
+      'codeMap:setPromptSuggestions': ({ projectId, enabled }) => codeMap.setPromptSuggestions(projectId, enabled),
       'codeMap:setEnabled': ({ projectId, enabled, ignoreInGit }) =>
         codeMap.setEnabled(projectId, enabled, ignoreInGit),
       'codeMap:setOptions': ({ projectId, excludedPaths, ignoreInGit, removeGitignoreEntry }) =>

@@ -20,7 +20,8 @@
       "agents.annotate",
       "terminals.env",
       "net.listen-local",
-      "fs.read-home"
+      "fs.read-home",
+      "code-map.read"
     ],
     "contributes": {
       "panels": [

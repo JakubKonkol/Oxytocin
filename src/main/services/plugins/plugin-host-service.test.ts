@@ -360,6 +360,66 @@ describe('PluginHostService', () => {
     });
   });
 
+  describe('prompt-time Code Map pointers (oxytocin.codeMap.promptContext)', () => {
+    const args = { terminalId: 't1', sessionId: 's1', prompt: 'where does the login handler validate the token?' };
+    const bridge = () => descriptor('bridge.one', { permissions: ['code-map.read'] });
+    const promptContext = (value: unknown) => ({ id: 'oxytocin.codeMap.promptContext', args: [value] });
+
+    it('answers with the pointers of the core for a plugin that may read Code Maps', async () => {
+      const s = setup({ list: [bridge(), descriptor('no.perm')] });
+      const suggest = vi.fn(() => Promise.resolve({ text: 'POINTERS' }));
+      const forget = vi.fn();
+      s.core.codeMapPromptContext = suggest;
+      s.core.forgetCodeMapPromptContext = forget;
+      expect(await s.api('bridge.one', 'commands.executeCore', promptContext(args))).toEqual({ text: 'POINTERS' });
+      expect(suggest).toHaveBeenCalledWith(args);
+      expect(
+        await s.api('bridge.one', 'commands.executeCore', {
+          id: 'oxytocin.codeMap.forgetPromptContext',
+          args: [{ terminalId: 't1', sessionId: 's1' }],
+        }),
+      ).toBeNull();
+      expect(forget).toHaveBeenCalledWith({ terminalId: 't1', sessionId: 's1' });
+      // Nothing is sent to the renderer: these are not UI commands.
+      expect(s.toRenderer).not.toHaveBeenCalled();
+      s.service.dispose();
+    });
+
+    it('answers null when the core has nothing to add', async () => {
+      const s = setup({ list: [bridge()] });
+      s.core.codeMapPromptContext = () => Promise.resolve(null);
+      expect(await s.api('bridge.one', 'commands.executeCore', promptContext(args))).toBeNull();
+      s.core.codeMapPromptContext = undefined;
+      expect(await s.api('bridge.one', 'commands.executeCore', promptContext(args))).toBeNull();
+      s.service.dispose();
+    });
+
+    it('needs the code-map.read permission and a known, enabled caller', async () => {
+      const s = setup({ list: [bridge(), descriptor('no.perm')] });
+      const suggest = vi.fn(() => Promise.resolve({ text: 'POINTERS' }));
+      s.core.codeMapPromptContext = suggest;
+      const call = (pluginId: string) => s.api(pluginId, 'commands.executeCore', promptContext(args));
+      await expect(call('no.perm')).rejects.toMatchObject({ code: 'PERMISSION' });
+      await expect(call('')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(call('unknown.one')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(suggest).not.toHaveBeenCalled();
+      s.service.dispose();
+    });
+
+    it('validates the arguments, including the 4,000 character cap on the prompt', async () => {
+      const s = setup({ list: [bridge()] });
+      const suggest = vi.fn(() => Promise.resolve({ text: 'POINTERS' }));
+      s.core.codeMapPromptContext = suggest;
+      const call = (value: unknown) => s.api('bridge.one', 'commands.executeCore', promptContext(value));
+      await expect(call({ ...args, prompt: 'x'.repeat(4001) })).rejects.toThrow();
+      await expect(call({ terminalId: 't1', prompt: 'a long enough prompt' })).rejects.toThrow();
+      await expect(call({ ...args, extra: 1 })).rejects.toThrow();
+      await expect(call(undefined)).rejects.toThrow();
+      await expect(call('where is it')).rejects.toThrow();
+      expect(suggest).not.toHaveBeenCalled();
+      s.service.dispose();
+    });
+  });
   it('lists accounts and limits, takes limit reports and sends prompts with the right permissions', async () => {
     const s = setup({
       list: [
