@@ -21,6 +21,7 @@ import { safeDirectory } from '../store/paths';
 import type { InventorySnapshot } from '../indexer';
 import { buildGraph } from './build';
 import { ResolutionCache } from './resolution-cache';
+import { serializeGraph } from './serialize';
 import { buildSearchCorpus, type SearchCorpus } from '../query/corpus';
 
 export interface PublishedGraph {
@@ -28,6 +29,19 @@ export interface PublishedGraph {
   manifest: CodeMapManifest;
   bytes: number;
   diagnostics: CodeMapDiagnostics;
+}
+/** Small edits to graphs of at least this many files are written to disk after a quiet period, not before publishing. */
+const DEFER_MINIMUM_FILES = 300;
+const DEFER_MAXIMUM_CHANGED = 50;
+const PERSIST_QUIET_MS = 1000;
+const PERSIST_MAXIMUM_MS = 10_000;
+/** A generation waiting to be written; records of earlier skipped generations are carried along. */
+interface PersistJob {
+  graph: CodeMapGraph;
+  configs: ReadonlyMap<string, ProjectConfig>;
+  manifest: CodeMapManifest;
+  cache: Map<string, string>;
+  live: Set<string>;
 }
 const intents = (record: FileRecord) =>
   record.relations.length +
@@ -60,6 +74,15 @@ export class GraphEngine {
   private readonly cache: CacheStore;
   /** Relations resolved in earlier builds; only files whose inputs changed are resolved again. */
   private readonly resolution = new ResolutionCache();
+  private readonly changedPaths = new Set<string>();
+  /** The newest published generation that is not on disk yet. */
+  private pending: PersistJob | undefined;
+  private pendingSince: number | undefined;
+  private persistTimer: ReturnType<typeof setTimeout> | undefined;
+  private persistPaused = false;
+  private disposed = false;
+  /** Disk writes run one at a time, oldest generation first. */
+  private writing: Promise<void> = Promise.resolve();
   constructor(
     private readonly options: {
       root: string;
@@ -68,6 +91,9 @@ export class GraphEngine {
       excludedPaths: string[];
       parser: Pick<ParserClient, 'parse'>;
       assertOwned(): Promise<void>;
+      /** A deferred write finished; `bytes` is the size of the map data on disk. */
+      persisted?(bytes: number): void;
+      persistFailed?(error: unknown): void;
     },
   ) {
     this.cache = new CacheStore(options.root);
@@ -213,6 +239,7 @@ export class GraphEngine {
       this.symbolCount -= record.symbols.length;
       this.relationCount -= intents(record);
     }
+    this.changedPaths.add(path);
     this.records.delete(path);
     this.configs.delete(path);
     this.failures.delete(path);
@@ -237,10 +264,14 @@ export class GraphEngine {
         lastFullHashAt: inventory.fullHash ? now : this.manifest.lastFullHashAt,
       };
       signal.throwIfAborted();
-      await this.options.assertOwned();
-      await atomicWrite(join(this.directory, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+      // The manifest is a few hundred bytes; it is rewritten with the pending snapshot while one is waiting.
+      if (!this.pending) {
+        await this.options.assertOwned();
+        await atomicWrite(join(this.directory, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+      }
       signal.throwIfAborted();
       this.manifest = manifest;
+      if (this.pending) this.pending.manifest = manifest;
       return { ...this.checkpoint.published, manifest };
     }
     if (
@@ -271,17 +302,15 @@ export class GraphEngine {
     );
     // Captured with the graph, before any await: both describe the same records.
     const corpus = buildSearchCorpus(this.records);
-    const graphText = `${JSON.stringify(graph)}\n`;
-    const hash = sha256(graphText);
-    const same = this.graph && hash === this.manifest?.graphSha256 && this.dirtyCache.size === 0;
     const now = new Date(inventory.checkedAt).toISOString();
     const manifest = CodeMapManifestSchema.parse({
       format: 'oxytocin.code-map.manifest',
       schemaVersion: 1,
       state: graph.coverage.files.failed ? 'degraded' : 'ready',
-      graphSha256: hash,
-      generation: (this.manifest?.generation ?? 0) + (same ? 0 : 1),
-      builtAt: same ? this.manifest!.builtAt : now,
+      // Describes the graph.json on disk: replaced by the real hash when this generation is persisted.
+      graphSha256: this.manifest?.graphSha256 ?? '0'.repeat(64),
+      generation: (this.manifest?.generation ?? 0) + 1,
+      builtAt: now,
       lastReconciledAt: now,
       lastFullHashAt: inventory.fullHash ? now : (this.manifest?.lastFullHashAt ?? now),
       durationsMs: {
@@ -297,36 +326,37 @@ export class GraphEngine {
         : [],
     });
     signal.throwIfAborted();
-    const owned = async () => {
-      signal.throwIfAborted();
-      await this.options.assertOwned();
+    const changed = this.changedPaths.size;
+    this.changedPaths.clear();
+    const job: PersistJob = {
+      graph,
+      configs: new Map(this.configs),
+      manifest,
+      cache: new Map([...(this.pending?.cache ?? []), ...this.dirtyCache]),
+      live: new Set([...this.records].map(([path, record]) => this.cacheKey(path, record.file.sha256))),
     };
-    if (same) {
-      await owned();
-      await atomicWrite(join(this.directory, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
-      this.manifest = manifest;
-    } else {
-      const keys = new Set([...this.records].map(([path, record]) => this.cacheKey(path, record.file.sha256)));
-      const published = await publishSnapshot(
-        this.options.root,
-        {
-          graph: graphText,
-          map: renderMapMarkdown(graph, this.configs, undefined, hash),
-          manifest,
-          cache: this.dirtyCache,
-          liveCacheKeys: keys,
-        },
-        owned,
-        this.cache,
-      );
-      this.manifest = published.manifest;
-      this.bytes = published.bytes;
+    // Small edits to a large graph are published in memory now and written to disk after the edit burst settles;
+    // everything else (first index, bulk changes, small projects) is written before it is published.
+    const defer =
+      !!this.manifest &&
+      this.activeRebuild === this.appliedRebuild &&
+      this.records.size >= DEFER_MINIMUM_FILES &&
+      changed <= DEFER_MAXIMUM_CHANGED &&
+      changed * 20 <= this.records.size;
+    if (!defer) {
+      await this.enqueue(() => this.persist(job, signal));
+      this.pending = undefined;
+      this.pendingSince = undefined;
+      if (this.persistTimer) clearTimeout(this.persistTimer);
+      this.persistTimer = undefined;
     }
+    this.manifest = job.manifest;
     this.graph = graph;
     this.corpus = corpus;
-    this.publishedConfigs = new Map(this.configs);
+    this.publishedConfigs = job.configs;
     this.appliedRebuild = this.activeRebuild;
     this.dirtyCache.clear();
+    if (defer) this.schedulePersist(job);
     const failed = [
       ...inventory.diagnostics.failed,
       ...[...this.failures].map(([path, reason]) => ({ path, reason })),
@@ -338,7 +368,7 @@ export class GraphEngine {
     const published: PublishedGraph = {
       graph,
       manifest: this.manifest,
-      bytes: this.bytes || this.cache.bytes + Buffer.byteLength(graphText),
+      bytes: this.bytes || this.cache.bytes,
       diagnostics: {
         skipped: inventory.diagnostics.skipped,
         failed: failed.slice(0, 200),
@@ -349,7 +379,86 @@ export class GraphEngine {
     this.checkpoint = { revision: this.revision, diagnostics: diagnosticsKey, published };
     return published;
   }
+  /** Writes one generation: graph.json, MAP.md, the manifest and new extraction records. */
+  private async persist(job: PersistJob, signal?: AbortSignal): Promise<void> {
+    const serialized = await serializeGraph(job.graph);
+    signal?.throwIfAborted();
+    const manifest = CodeMapManifestSchema.parse({ ...job.manifest, graphSha256: serialized.hash });
+    const owned = async () => {
+      signal?.throwIfAborted();
+      await this.options.assertOwned();
+    };
+    const published = await publishSnapshot(
+      this.options.root,
+      {
+        graph: serialized.text,
+        map: renderMapMarkdown(job.graph, job.configs, undefined, serialized.hash),
+        manifest,
+        cache: job.cache,
+        liveCacheKeys: job.live,
+      },
+      owned,
+      this.cache,
+    );
+    job.manifest = published.manifest;
+    this.bytes = published.bytes;
+    // The published manifest of this or a newer generation learns the hash of what is on disk.
+    if (this.manifest && this.manifest.generation >= job.manifest.generation)
+      this.manifest = { ...this.manifest, graphSha256: published.manifest.graphSha256 };
+  }
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const run = this.writing.catch(() => undefined).then(operation);
+    this.writing = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+  private schedulePersist(job: PersistJob): void {
+    this.pending = job;
+    this.pendingSince ??= Date.now();
+    this.armPersist();
+  }
+  private armPersist(): void {
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    if (!this.pending || this.persistPaused || this.disposed) return;
+    const wait = Math.min(PERSIST_QUIET_MS, Math.max(0, this.pendingSince! + PERSIST_MAXIMUM_MS - Date.now()));
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      void this.flush().catch((error: unknown) => this.options.persistFailed?.(error));
+    }, wait);
+    this.persistTimer.unref();
+  }
+  /** Persists the generation waiting for disk, if any. */
+  flush(): Promise<void> {
+    return this.enqueue(async () => {
+      const job = this.pending;
+      if (!job || this.disposed || this.persistPaused) return;
+      if (this.persistTimer) clearTimeout(this.persistTimer);
+      this.persistTimer = undefined;
+      await this.persist(job);
+      // A generation published while this one was written stays pending.
+      if (this.pending === job) {
+        this.pending = undefined;
+        this.pendingSince = undefined;
+      } else this.pendingSince = Date.now();
+      this.options.persisted?.(this.bytes);
+      if (this.pending) this.armPersist();
+    });
+  }
+  /** Nothing is written while the index is paused; the waiting generation is kept. */
+  holdPersistence(held: boolean): void {
+    this.persistPaused = held;
+    if (held && this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    if (!held) this.armPersist();
+  }
   dispose(): void {
+    this.disposed = true;
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    this.pending = undefined;
     this.records.clear();
     this.configs.clear();
     this.dirtyCache.clear();
@@ -376,6 +485,7 @@ export class GraphEngine {
     this.symbolCount = symbols;
     this.relationCount = relations;
     this.revision++;
+    this.changedPaths.add(path);
     this.records.set(path, record);
   }
 }

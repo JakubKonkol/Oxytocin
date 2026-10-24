@@ -125,6 +125,15 @@ export class CodeMapCheckouts {
           if (!checkout.lease) throw new Error('Updated by another Oxytocin instance');
           await checkout.lease.assertOwned();
         },
+        persisted: (bytes) => {
+          status.bytes = bytes;
+          this.changed(checkout);
+        },
+        persistFailed: (error) => {
+          status.state = error instanceof CodeMapLimitError ? 'limit' : 'error';
+          status.error = error instanceof Error ? error.message : String(error);
+          this.changed(checkout);
+        },
       });
       await checkout.graph.initialize();
       const snapshot = checkout.graph.snapshot();
@@ -408,12 +417,14 @@ export class CodeMapCheckouts {
   pause(checkoutId: string): CodeMapStatus {
     const checkout = this.get(checkoutId);
     checkout.indexer?.pause();
+    checkout.graph?.holdPersistence(true);
     checkout.status.state = 'paused';
     return this.changed(checkout);
   }
   resume(checkoutId: string): CodeMapStatus {
     const checkout = this.get(checkoutId);
     checkout.indexer?.resume();
+    checkout.graph?.holdPersistence(false);
     if (!checkout.status.readOnly) checkout.status.state = 'updating';
     return this.changed(checkout);
   }
@@ -459,6 +470,8 @@ export class CodeMapCheckouts {
   }
   async dispose(): Promise<void> {
     await this.serialize(async () => {
+      // Generations published in memory but not yet written are saved when the host shuts down.
+      for (const checkout of this.checkouts.values()) await checkout.graph?.flush().catch(() => undefined);
       for (const id of this.checkouts.keys()) await this.removeNow(id);
       this.scheduler.dispose();
       await this.parser.dispose();
