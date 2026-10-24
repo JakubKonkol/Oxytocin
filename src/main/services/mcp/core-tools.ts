@@ -1,3 +1,4 @@
+import type { CodeMapAnswerReport } from './code-map-usage';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { McpPolicy, McpToolDefinition, McpToolInfo, McpToolResult } from '@shared/domain/mcp';
 import type { TerminalInfo } from '@shared/domain/terminal';
@@ -45,6 +46,8 @@ export interface CoreToolCall {
   signal: AbortSignal;
   /** Supplied by the authenticated endpoint, never a tool argument or terminal header. */
   learningActor?: { principal: string; role: string; task?: string };
+  /** Code Map tools tell the Hub about their answer (counts only) for per-session accounting. */
+  report?: (answer: CodeMapAnswerReport) => void;
 }
 
 export interface CoreTool {

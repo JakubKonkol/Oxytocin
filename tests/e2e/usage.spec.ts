@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
 import { launchApp, repoRoot } from './helpers/launch';
+import { connect, freePort } from './helpers/mcp';
 import { withinBudget } from './helpers/perf';
-import { waitForTerminal } from './helpers/terminal';
+import { activeProjectId, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 interface Expected {
   sources: Record<string, { costUsdAuto: number }>;
@@ -266,6 +267,113 @@ test('Usage Monitor: Claude subscription limits through the Claude Code status l
         statusLine: original,
       });
   } finally {
+    await app.close();
+  }
+});
+
+test("Usage Monitor: the Code Map calls of an agent's MCP session show next to its usage session", async () => {
+  test.setTimeout(120_000);
+  const root = await mkdtemp(join(tmpdir(), 'oxy-e2e-usage-map-'));
+  const claudeDir = join(root, 'claude');
+  const home = join(root, 'home');
+  await mkdir(home, { recursive: true });
+  const project = await mkdtemp(join(tmpdir(), 'oxy-e2e-project-'));
+  await writeFile(join(project, 'api.ts'), 'export function beforeEdit() {}\n');
+  const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
+  await writeFile(join(userData, 'settings.json'), JSON.stringify({ 'usage.pricing.autoUpdate': false }));
+  const { app, win } = await launchApp({
+    userData,
+    project,
+    env: {
+      CLAUDE_CONFIG_DIR: claudeDir,
+      CODEX_HOME: join(root, 'codex'),
+      GEMINI_CLI_HOME: join(root, 'gemini'),
+      HOME: home,
+      USERPROFILE: home,
+    },
+  });
+  let client: Awaited<ReturnType<typeof connect>> | undefined;
+  try {
+    const terminalId = await waitForTerminal(win);
+    // An agent in the terminal: the fake Claude Code registers its session id with Oxytocin.
+    await run(win, `node "${join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic-ai/claude-code/cli.js')}"`);
+    await expect.poll(() => oxyTest(win).text(terminalId)).toContain('fake-claude>');
+    let sessionId = '';
+    await expect
+      .poll(async () => {
+        const agents = (await win.evaluate(() => window.oxy.invoke('agents:list'))) as {
+          terminalId: string;
+          sessionId?: string;
+        }[];
+        sessionId = agents.find((a) => a.terminalId === terminalId)?.sessionId ?? '';
+        return sessionId;
+      })
+      .toMatch(/^fake-/);
+
+    const projectId = await activeProjectId(win);
+    const port = await freePort();
+    await win.evaluate((port) => window.oxy.invoke('settings:update', { 'mcp.enabled': true, 'mcp.port': port }), port);
+    await win.locator(`[data-project-id="${projectId}"]`).click({ button: 'right' });
+    await win.getByTestId('project-menu-settings').click();
+    await win.getByTestId('project-settings-tab-code-map').click();
+    await win.getByTestId('code-map-enabled').click();
+    await win
+      .getByRole('alertdialog', { name: 'Enable Code Map?' })
+      .getByRole('button', { name: 'Enable Code Map', exact: true })
+      .click();
+    await expect(win.getByTestId('code-map-state')).toHaveText('Ready', { timeout: 20_000 });
+    await win.getByTestId('project-settings-save').click();
+    await expect(win.getByTestId('project-settings')).toHaveCount(0);
+
+    // The agent's MCP client names its terminal in the header, like the registered `claude mcp` entry does.
+    const token = (JSON.parse(await readFile(join(userData, 'mcp.json'), 'utf8')) as { token: string }).token;
+    client = await connect(port, token, { 'X-Oxytocin-Terminal': terminalId });
+    const startedAt = Date.now() - 5000;
+    for (const query of ['beforeEdit', 'beforeEdit']) {
+      const found = await client.call('oxy_find_code', { query, cwd: project });
+      expect(found.result?.content?.[0]?.text).toContain('beforeEdit');
+    }
+    await client.call('oxy_file_outline', { path: 'missing.ts', cwd: project });
+
+    // Its usage: two requests around the calls (the transcript Claude Code writes).
+    const line = (n: number, at: number) =>
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: new Date(at).toISOString(),
+        sessionId,
+        uuid: `00000000-0000-4000-8000-00000000000${n}`,
+        cwd: project,
+        message: {
+          id: `msg_map_${n}`,
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-opus-5-5',
+          usage: { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 0 },
+        },
+      });
+    await mkdir(join(claudeDir, 'projects/-map'), { recursive: true });
+    await writeFile(
+      join(claudeDir, 'projects/-map', `${sessionId}.jsonl`),
+      `${line(1, startedAt)}\n${line(2, Date.now() + 1000)}\n`,
+    );
+
+    await win.getByTestId('status-item-usage.today').click();
+    const dashboard = await frameOf(win, 'dashboard.html');
+    await dashboard.getByRole('tab', { name: 'Sessions' }).click();
+    const cell = dashboard.getByTestId('usage-session-codemap');
+    await expect(async () => {
+      await dashboard.getByTestId('usage-refresh').click();
+      await expect(cell).toHaveText(/^3 · \d+$/, { timeout: 3000 });
+    }).toPass({ timeout: 30_000 });
+    // Counts only; the tooltip tells what they are, including the answer that was not OK (NOT_FOUND).
+    await expect(cell).toHaveAttribute(
+      'title',
+      /Code Map calls: 3, \d+ characters answered, 0 stale, 1 not OK, 0 failed/,
+    );
+    await expect(cell).not.toContainText('beforeEdit');
+    await expect(cell).not.toHaveAttribute('title', /beforeEdit|api\.ts|missing/);
+  } finally {
+    client?.close();
     await app.close();
   }
 });

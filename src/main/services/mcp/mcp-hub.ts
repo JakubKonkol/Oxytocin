@@ -19,6 +19,8 @@ import { type Disposable, DisposableStore } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 import { type CallerDeps, resolveCaller, resolveCodeMapCaller, type ResolvedCaller } from './caller-context';
 import { buildCodeMapTools, CodeMapToolInputError, isCodeMapTool } from './code-map-tools';
+import { CodeMapUsage, type CodeMapAnswerReport, type CodeMapSessionUsage } from './code-map-usage';
+import type { CodeMapUsageRange, CodeMapUsageResult } from '@shared/domain/code-map-usage';
 import { buildLearningTools, isLearningTool } from './code-map-learning-tools';
 import type { CodeMapService } from '../code-map/code-map-service';
 import { codeMapMcpInstructions } from '@shared/domain/code-map';
@@ -162,6 +164,8 @@ export class McpHub implements Disposable {
   private readonly coreTools: Map<string, CoreTool>;
   private readonly logDetails = new Map<string, (args: Record<string, unknown>) => string | undefined>();
   private readonly log: McpCallLogEntry[] = [];
+  /** Code Map use per MCP session: counts only, in memory. */
+  private readonly usage = new CodeMapUsage();
   private logId = 0;
   private claudeConnected: boolean | null = null;
   private codexConnected: boolean | null = null;
@@ -403,6 +407,18 @@ export class McpHub implements Disposable {
     this.registry.dropDynamic(pluginIds);
   }
 
+  // ── Code Map accounting ──
+
+  /** Code Map and learning tool use per MCP session, most recent first (counts only). */
+  codeMapUsage(): CodeMapSessionUsage[] {
+    return this.usage.snapshot();
+  }
+
+  /** What the terminals' agents used Code Map for in time ranges (the Usage Monitor's per-session figure). */
+  codeMapUsageTotals(ranges: readonly CodeMapUsageRange[]): CodeMapUsageResult {
+    return this.usage.totals(ranges);
+  }
+
   // ── calls ──
 
   private sourceLabel(entry: RegistryEntry): string {
@@ -441,6 +457,7 @@ export class McpHub implements Disposable {
     const started = Date.now();
     const callerLabel = this.callerLabel(caller);
     let detail: string | undefined;
+    let answer: CodeMapAnswerReport | undefined;
     try {
       detail = entry.source.kind === 'core' ? this.logDetails.get(name)?.(args) : undefined;
     } catch {
@@ -458,6 +475,17 @@ export class McpHub implements Disposable {
         ...(caller.context.projectId ? { projectId: caller.context.projectId } : {}),
         ...(detail ? { detail: detail.slice(0, 500) } : {}),
       });
+      if (isMapRequest(name) && (outcome === 'ok' || outcome === 'error' || outcome === 'cancelled'))
+        this.usage.record({
+          sessionId: call.sessionId,
+          terminalId: caller.context.terminalId,
+          projectId: caller.context.projectId,
+          tool: name,
+          at: started,
+          result,
+          failed: outcome === 'error',
+          report: answer,
+        });
       return result;
     };
     const timeoutMs = entry.definition.timeoutMs ?? MCP_DEFAULT_TIMEOUT_MS;
@@ -485,7 +513,9 @@ export class McpHub implements Disposable {
           return finish('denied', toolError(message), answer === 'deny' ? 'Denied by the user' : 'No answer');
         }
       }
-      const run = this.run(entry, args, caller, call.sessionId, controller.signal, timeoutMs, call.principal);
+      const run = this.run(entry, args, caller, call.sessionId, controller.signal, timeoutMs, call.principal, (r) => {
+        answer = r;
+      });
       const aborted = new Promise<'aborted'>((resolve) => {
         if (controller.signal.aborted) resolve('aborted');
         else controller.signal.addEventListener('abort', () => resolve('aborted'), { once: true });
@@ -524,6 +554,7 @@ export class McpHub implements Disposable {
     signal: AbortSignal,
     timeoutMs: number,
     principal?: string,
+    report?: (answer: CodeMapAnswerReport) => void,
   ): Promise<McpToolResult | string> {
     if (entry.source.kind === 'core') {
       const tool = this.coreTools.get(entry.name);
@@ -545,7 +576,14 @@ export class McpHub implements Disposable {
           };
         } else learningActor = { principal: 'hub', role: 'hub' };
       }
-      return tool.run({ args, caller, sessionId, signal, ...(learningActor ? { learningActor } : {}) });
+      return tool.run({
+        args,
+        caller,
+        sessionId,
+        signal,
+        ...(learningActor ? { learningActor } : {}),
+        ...(report ? { report } : {}),
+      });
     }
     return this.deps.plugins.call({
       pluginId: entry.source.pluginId,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { agentName, dateTime, duration, shortModel, tokens, usd } from '../shared/format';
-import type { Totals } from '../shared/types';
+import type { CodeMapFigure, Totals } from '../shared/types';
 import { useRequest, useView } from './api';
 import { Sparkline } from './chart';
 
@@ -15,6 +15,8 @@ interface SessionRow extends Totals {
   lastEventAt: number | null;
   reportedCostUsd: number | null;
   primarySource: string | null;
+  /** Code Map calls of the session's agent (null: not counted). */
+  codeMap: CodeMapFigure | null;
 }
 
 interface Detail {
@@ -50,9 +52,19 @@ function SessionDetail({ id }: { id: string }) {
           ? ` · cost reported by the agent ${usd(s.reportedCostUsd, { precise: true })}`
           : ''}{' '}
         · source {s.primarySource ?? '—'}
+        {s.codeMap ? ` · ${codeMapTitle(s.codeMap)}` : ''}
       </div>
     </div>
   );
+}
+
+/** `12 · 8.4k` — calls and the (thousands of) characters the agent received; stale/not-OK/failed answers in the tooltip. */
+function codeMapText(c: CodeMapFigure | null): string {
+  return c ? `${c.calls} · ${tokens(c.chars)}` : '—';
+}
+function codeMapTitle(c: CodeMapFigure | null): string {
+  if (!c) return 'Not counted: the session did not run in an Oxytocin terminal, or it ended before Oxytocin started.';
+  return `Code Map calls: ${c.calls}, ${c.chars} characters answered, ${c.stale} stale, ${c.notOk} not OK, ${c.errors} failed`;
 }
 
 export function SessionsTab({ initialSession }: { initialSession?: string }) {
@@ -135,6 +147,9 @@ export function SessionsTab({ initialSession }: { initialSession?: string }) {
             <th className="num">In</th>
             <th className="num">Out</th>
             <th className="num">Cache</th>
+            <th className="num" title="Code Map tool calls and the characters of their answers">
+              Code Map
+            </th>
             <th className="num">Cost</th>
             <th className="num">Duration</th>
           </tr>
@@ -157,6 +172,9 @@ export function SessionsTab({ initialSession }: { initialSession?: string }) {
               <td className="num">{tokens(s.tokens.input)}</td>
               <td className="num">{tokens(s.tokens.output)}</td>
               <td className="num">{tokens(s.tokens.cacheRead + s.tokens.cacheWrite)}</td>
+              <td className="num" title={codeMapTitle(s.codeMap)} data-testid="usage-session-codemap">
+                {codeMapText(s.codeMap)}
+              </td>
               <td className="num">{usd(s.costUsd, { unknown: s.unknownCostEvents > 0 })}</td>
               <td className="num">
                 {s.firstEventAt && s.lastEventAt ? duration(s.lastEventAt - s.firstEventAt) : '—'}

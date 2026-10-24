@@ -15,6 +15,12 @@ import type { Settings } from '@shared/domain/settings';
 import type { TerminalInfo } from '@shared/domain/terminal';
 import { type McpCallContext, type McpToolResult, toolError } from '@shared/domain/mcp';
 import { OxyError } from '@shared/errors';
+import {
+  CODE_MAP_USAGE_COMMAND,
+  CodeMapUsageQuerySchema,
+  type CodeMapUsageRange,
+  type CodeMapUsageResult,
+} from '@shared/domain/code-map-usage';
 import { QUICK_PICK_MAX_ITEMS, type QuickPickItem, QuickPickItemSchema } from '@shared/domain/quick-pick';
 import type { NotificationPayload } from '@shared/ipc/events';
 import type { Logger } from '@shared/logging/logger';
@@ -143,6 +149,8 @@ export interface PluginCorePort {
   osNotify(title: string, body: string): void;
   /** What an agent in this terminal should know about its project's resources (null: nothing to tell). */
   agentBrief?(terminalId: string): string | null;
+  /** Code Map tool use of terminals' agents in time ranges (counts only). */
+  codeMapUsage?(ranges: CodeMapUsageRange[]): CodeMapUsageResult;
 }
 
 export interface PluginHostServiceDeps {
@@ -176,6 +184,7 @@ const CORE_COMMANDS = new Set([
   'oxytocin.changes.refresh',
   'oxytocin.panel.focus',
   'oxytocin.mcp.openSettings',
+  CODE_MAP_USAGE_COMMAND,
   'oxytocin.codeMap.openSettings',
   'oxytocin.codeMap.openLearnings',
   'oxytocin.codeMap.openReceipt',
@@ -763,6 +772,10 @@ export class PluginHostService implements Disposable {
       const { id, args } = params as { id: string; args: unknown[] };
       if (!CORE_COMMANDS.has(id)) throw new OxyError('NOT_FOUND', `Unknown command: ${id}`);
       if (id === 'oxytocin.changes.refresh') return undefined;
+      // Counts of the Code Map tool calls a terminal's agent made in time ranges: `{ ranges }` → totals by key.
+      if (id === CODE_MAP_USAGE_COMMAND) {
+        return core.codeMapUsage?.(CodeMapUsageQuerySchema.parse(args[0]).ranges) ?? {};
+      }
       if (id === 'oxytocin.codeMap.openLearnings') z.string().min(1).max(64).parse(args[0]);
       if (id === 'oxytocin.codeMap.openReceipt')
         z.object({
