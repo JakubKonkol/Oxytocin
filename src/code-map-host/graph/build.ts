@@ -4,6 +4,7 @@ import { comparePaths, CodeMapLimitError } from '../enumerate';
 import type { FileRecord } from '../extract/record';
 import type { ProjectConfig } from '../resolve/config';
 import { ModuleResolver } from '../resolve/modules';
+import type { ResolutionCache } from './resolution-cache';
 import { BindingResolver } from '../resolve/bindings';
 import { CSharpResolver } from '../resolve/csharp';
 import { GoResolver } from '../resolve/go';
@@ -16,6 +17,8 @@ export function buildGraph(
   generator: CodeMapGraph['generator'],
   skipped = 0,
   limits: { files: number; symbols: number; edges: number } = CODE_MAP_LIMITS,
+  /** Reuses the relations of files whose inputs did not change; the result equals a build without it. */
+  resolution?: ResolutionCache,
 ): CodeMapGraph {
   if (records.size > limits.files) throw new CodeMapLimitError();
   const graph: CodeMapGraph = {
@@ -84,10 +87,39 @@ export function buildGraph(
     if (group.parent) graph.edges.push({ from: group.parent, to: group.id, rel: 'contains', prov: 'syntax' });
     if (graph.edges.length > limits.edges) throw new CodeMapLimitError();
   }
-  const resolver = new BindingResolver(new ModuleResolver(records, configs));
+  let resolver: BindingResolver | undefined;
+  const exportedSymbols = new Set<string>();
   const packages = new Set<string>();
+  resolution?.begin(records, configs);
   for (const [path] of ordered) {
-    resolver.appendRelations(path, graph.edges, graph.unresolved, packages, limits.edges);
+    let entry = resolution?.lookup(path, records);
+    if (!entry) {
+      resolver ??= new BindingResolver(new ModuleResolver(records, configs));
+      const output = {
+        edges: [] as CodeMapGraph['edges'],
+        unresolved: [] as CodeMapGraph['unresolved'],
+        packages: new Set<string>(),
+        exported: [] as string[],
+      };
+      const { deps } = resolver.track(() =>
+        resolver!.appendRelations(
+          path,
+          output.edges,
+          output.unresolved,
+          output.packages,
+          limits.edges,
+          output.exported,
+        ),
+      );
+      const stored = { ...output, packages: [...output.packages] };
+      entry = resolution
+        ? resolution.store(path, records, deps, stored)
+        : { record: records.get(path)!, deps: new Map(), presence: new Map(), ...stored };
+    }
+    for (const edge of entry.edges) graph.edges.push(edge);
+    for (const item of entry.unresolved) graph.unresolved.push(item);
+    for (const name of entry.packages) packages.add(name);
+    for (const id of entry.exported) exportedSymbols.add(id);
     if (graph.edges.length > limits.edges || graph.unresolved.length > limits.edges) throw new CodeMapLimitError();
   }
   const packageNodes = new Map<string, CodeMapGraph['packages'][number]>(
@@ -117,7 +149,7 @@ export function buildGraph(
   if ([...records.values()].some((r) => r.python))
     new PythonResolver(records, configs).append(graph, packageNodes, limits.edges);
   graph.groups.sort((a, b) => comparePaths(a.id, b.id));
-  for (const symbol of graph.symbols) if (resolver.exportedSymbols.has(symbol.id)) symbol.exported = true;
+  for (const symbol of graph.symbols) if (exportedSymbols.has(symbol.id)) symbol.exported = true;
   const children = new Map<string, typeof graph.symbols>();
   const namespaceMembers = new Set(
     [...records.values()].flatMap((record) => record.members.map((member) => `${member.owner}\0${member.symbol}`)),

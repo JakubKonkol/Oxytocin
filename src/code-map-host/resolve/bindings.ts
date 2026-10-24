@@ -26,8 +26,28 @@ const OWNER_KINDS = ['class', 'interface', 'namespace', 'enum'];
 /** Bounds the chain of declared types followed for one receiver (`this.a.b.c`, aliases, return types). */
 const TYPE_DEPTH = 24;
 
+/**
+ * Records read while resolving one file: indexed files whose content was consulted, and candidate paths whose
+ * mere existence decided a module lookup. A result stays valid while none of them changed.
+ */
+export interface ResolutionDeps {
+  paths: Set<string>;
+  presence: Set<string>;
+  parent: ResolutionDeps | null;
+}
+const newDeps = (parent: ResolutionDeps | null): ResolutionDeps => ({
+  paths: new Set(),
+  presence: new Set(),
+  parent,
+});
+
 export class BindingResolver {
   readonly exportedSymbols = new Set<string>();
+  /** The reads of the resolution in progress; `null` while nobody listens. */
+  private tracking: ResolutionDeps | null = null;
+  private readonly memberPaths = new Map<string, string[]>();
+  private readonly exportDeps = new Map<string, ResolutionDeps>();
+  private readonly ownerDeps = new Map<string, ResolutionDeps>();
   private readonly symbols = new Map<string, CodeMapSymbol>();
   private readonly scopes = new Map<string, Map<string, FileRecord['scopes'][number]>>();
   private readonly bindings = new Map<string, Map<string, FileRecord['bindings']>>();
@@ -37,6 +57,7 @@ export class BindingResolver {
   private readonly bases = new Map<string, { path: string; scope: string; target: string[] | null; rel: string }[]>();
   private readonly owners = new Map<string, string>();
   constructor(private readonly modules: ModuleResolver) {
+    modules.onProbe = (path) => this.tracking?.presence.add(path);
     for (const [path, record] of modules.records) {
       for (const symbol of record.symbols) this.symbols.set(symbol.id, symbol);
       for (const entry of record.symbolTypes ?? [])
@@ -60,10 +81,80 @@ export class BindingResolver {
         const list = this.members.get(member.owner) ?? [];
         list.push(member);
         this.members.set(member.owner, list);
+        const paths = this.memberPaths.get(member.owner);
+        if (!paths) this.memberPaths.set(member.owner, [path]);
+        else if (paths.at(-1) !== path) paths.push(path);
       }
     }
   }
+  /** Runs the resolution of one file and returns everything it read. */
+  track<T>(run: () => T): { value: T; deps: ResolutionDeps } {
+    const deps = newDeps(null);
+    this.tracking = deps;
+    try {
+      return { value: run(), deps };
+    } finally {
+      this.tracking = null;
+    }
+  }
+  private read(path: string): void {
+    this.tracking?.paths.add(path);
+  }
+  /** The file a symbol id belongs to: ids are `s:<path>#...`; a deleted file's ids still name their path. */
+  private readId(id: string): void {
+    if (!this.tracking) return;
+    const known = this.symbols.get(id);
+    if (known) {
+      this.tracking.paths.add(known.file.slice(2));
+      return;
+    }
+    for (let index = id.indexOf('#'); index > 2; index = id.indexOf('#', index + 1))
+      this.tracking.paths.add(id.slice(2, index));
+  }
+  private absorb(deps: ResolutionDeps | undefined): void {
+    if (!this.tracking || !deps) return;
+    for (const path of deps.paths) this.tracking.paths.add(path);
+    for (const path of deps.presence) this.tracking.presence.add(path);
+  }
+  /** Collects the reads of a cached computation so that a later cache hit can report them too. */
+  private memoized<T>(run: () => T): { value: T; deps: ResolutionDeps } {
+    const outer = this.tracking;
+    const deps = newDeps(outer);
+    this.tracking = deps;
+    try {
+      return { value: run(), deps };
+    } finally {
+      this.tracking = outer;
+      if (outer) this.absorbInto(outer, deps);
+    }
+  }
+  private absorbInto(target: ResolutionDeps, deps: ResolutionDeps): void {
+    for (const path of deps.paths) target.paths.add(path);
+    for (const path of deps.presence) target.presence.add(path);
+  }
+  private sym(id: string): CodeMapSymbol | undefined {
+    this.readId(id);
+    return this.symbols.get(id);
+  }
+  private symType(id: string): { path: string; scope: string; type: TypeRef } | undefined {
+    this.readId(id);
+    return this.symbolTypes.get(id);
+  }
+  private memberList(owner: string): FileRecord['members'] {
+    if (this.tracking) {
+      this.readId(owner);
+      for (const path of this.memberPaths.get(owner) ?? []) this.tracking.paths.add(path);
+    }
+    return this.members.get(owner) ?? [];
+  }
+  private baseList(owner: string): { path: string; scope: string; target: string[] | null; rel: string }[] {
+    this.readId(owner);
+    const list = this.bases.get(owner) ?? [];
+    for (const base of list) this.read(base.path);
+    return list;
+  }
   private local(path: string, scope: string, name: string): FileRecord['bindings'] | null {
+    this.read(path);
     const scopes = this.scopes.get(path);
     for (let current: string | null = scope; current; current = scopes?.get(current)?.parent ?? null) {
       const binding = this.bindings.get(path)?.get(`${current}\0${name}`);
@@ -106,9 +197,21 @@ export class BindingResolver {
   private exported(path: string, name: string, visiting: Set<string>): Resolved {
     const marker = `export:${path}:${name}`;
     const cached = this.exports.get(marker);
-    if (cached) return cached;
+    if (cached) {
+      this.absorb(this.exportDeps.get(marker));
+      return cached;
+    }
     if (visiting.has(marker) || visiting.size > 100) return unknown('cyclic-or-deep-export');
     visiting = new Set(visiting).add(marker);
+    const { value: result, deps } = this.memoized(() => this.computeExport(path, name, visiting));
+    if (result.kind !== 'unknown') {
+      this.exports.set(marker, result);
+      this.exportDeps.set(marker, deps);
+    }
+    return result;
+  }
+  private computeExport(path: string, name: string, visiting: Set<string>): Resolved {
+    this.read(path);
     const record = this.modules.records.get(path);
     if (!record) return unknown('module-not-indexed');
     const explicit = record.exports.filter((entry) => entry.name === name);
@@ -133,16 +236,30 @@ export class BindingResolver {
         );
       return unknown('export-not-found');
     });
-    const result = this.unique(targets);
-    if (result.kind !== 'unknown') this.exports.set(marker, result);
-    return result;
+    return this.unique(targets);
   }
   /** The class, interface, alias or property whose members describe values of the declared type `ref`. */
   private owner(path: string, scope: string, ref: TypeRef, visiting: Set<string>): string | null {
     if ('shape' in ref || visiting.size > TYPE_DEPTH) return null;
     const cacheKey = `${path}\0${scope}\0${JSON.stringify(ref)}`;
     const cached = this.owners.get(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      this.absorb(this.ownerDeps.get(cacheKey));
+      return cached;
+    }
+    const { value: result, deps } = this.memoized(() => this.computeOwner(path, scope, ref, visiting));
+    if (result) {
+      this.owners.set(cacheKey, result);
+      this.ownerDeps.set(cacheKey, deps);
+    }
+    return result;
+  }
+  private computeOwner(
+    path: string,
+    scope: string,
+    ref: Exclude<TypeRef, { shape: true }>,
+    visiting: Set<string>,
+  ): string | null {
     let result: string | null = null;
     if ('name' in ref) {
       // `Promise<T>` is a promise, not a `T`; only `await` unwraps it (see `call` below).
@@ -157,13 +274,13 @@ export class BindingResolver {
       const value = this.evaluate(path, scope, ref.value, visiting);
       if (value.kind === 'instance') result = value.type;
       else if (value.kind === 'symbol' && !value.instance) {
-        const kind = this.symbols.get(value.id)?.kind;
+        const kind = this.sym(value.id)?.kind;
         if (kind === 'property' || kind === 'variable') result = this.valueOwner(value.id, visiting);
       }
     } else {
       const callee = this.evaluate(path, scope, ref.call, visiting);
-      const kind = callee.kind === 'symbol' ? this.symbols.get(callee.id)?.kind : undefined;
-      const declared = callee.kind === 'symbol' ? this.symbolTypes.get(callee.id) : undefined;
+      const kind = callee.kind === 'symbol' ? this.sym(callee.id)?.kind : undefined;
+      const declared = callee.kind === 'symbol' ? this.symType(callee.id) : undefined;
       if (declared && 'name' in declared.type && (kind === 'function' || kind === 'method' || kind === 'component'))
         if (!declared.type.promise || ref.await)
           result = this.owner(
@@ -173,25 +290,24 @@ export class BindingResolver {
             visiting,
           );
     }
-    if (result) this.owners.set(cacheKey, result);
     return result;
   }
   /** A type symbol as the owner of its instances' members; aliases are followed to what they name. */
   private typeOwner(id: string, visiting: Set<string>): string | null {
-    const kind = this.symbols.get(id)?.kind;
+    const kind = this.sym(id)?.kind;
     if (kind === 'class' || kind === 'interface') return id;
     if (kind !== 'type') return null;
     const marker = `type:${id}`;
-    const declared = this.symbolTypes.get(id);
+    const declared = this.symType(id);
     if (!declared || visiting.has(marker)) return null;
     if ('shape' in declared.type) return id;
     return this.owner(declared.path, declared.scope, declared.type, new Set(visiting).add(marker));
   }
   /** The owner of the members of a property or exported variable, from its declared type. */
   private valueOwner(id: string, visiting: Set<string>): string | null {
-    const declared = this.symbolTypes.get(id);
+    const declared = this.symType(id);
     if (!declared) return null;
-    if ('shape' in declared.type) return this.symbols.get(id)?.kind === 'property' ? id : null;
+    if ('shape' in declared.type) return this.sym(id)?.kind === 'property' ? id : null;
     const marker = `value:${id}`;
     if (visiting.has(marker)) return null;
     return this.owner(declared.path, declared.scope, declared.type, new Set(visiting).add(marker));
@@ -204,10 +320,10 @@ export class BindingResolver {
     visiting: Set<string>,
   ): { symbols: Set<string>; blocked: boolean; ambiguous: boolean } {
     const found = { symbols: new Set<string>(), blocked: false, ambiguous: false };
-    const owner = this.symbols.get(ownerId);
+    const owner = this.sym(ownerId);
     if (!owner) return { ...found, blocked: true };
     const keepsStatics = owner.kind === 'namespace' || owner.kind === 'enum';
-    let members = (this.members.get(ownerId) ?? []).filter(
+    let members = this.memberList(ownerId).filter(
       (member) => member.name === name && (keepsStatics || member.static === !instance),
     );
     // Anonymous object types (`deps: { run(): void }`) have no implementation to prefer over their signatures.
@@ -222,11 +338,11 @@ export class BindingResolver {
     if ((owner.kind !== 'class' && owner.kind !== 'interface') || visiting.has(marker) || visiting.size > TYPE_DEPTH)
       return found;
     const inner = new Set(visiting).add(marker);
-    const bases = this.bases.get(ownerId) ?? [];
+    const bases = this.baseList(ownerId);
     const baseOwner = (base: (typeof bases)[number]): string | null => {
       const value = base.target ? this.evaluate(base.path, base.scope, base.target, inner) : null;
       const id = value?.kind === 'symbol' && !value.instance ? value.id : null;
-      const kind = id ? this.symbols.get(id)?.kind : undefined;
+      const kind = id ? this.sym(id)?.kind : undefined;
       return kind === 'class' || kind === 'interface' ? id : null;
     };
     const merge = (list: typeof bases, strict: boolean): void => {
@@ -267,7 +383,7 @@ export class BindingResolver {
     if (value.kind === 'instance') {
       ownerId = value.type;
     } else {
-      const kind = this.symbols.get(value.id)?.kind ?? '';
+      const kind = this.sym(value.id)?.kind ?? '';
       typeOnly = value.typeOnly;
       if (OWNER_KINDS.includes(kind)) {
         ownerId = value.id;
@@ -283,6 +399,7 @@ export class BindingResolver {
   /** Follows `names` (`a`, `this.a.b`, `ns.T`) from `scope`: bindings, then members, through declared types. */
   private evaluate(path: string, scope: string, names: string[], visiting: Set<string>): Target {
     const [name, ...members] = names;
+    this.read(path);
     const info = this.scopes.get(path)?.get(scope);
     let value: Target =
       name === 'this'
@@ -304,7 +421,7 @@ export class BindingResolver {
       if (value.kind === 'namespace') return unknown('namespace-is-not-callable');
       if (
         value.kind === 'symbol' &&
-        !['function', 'component', 'method', 'class'].includes(this.symbols.get(value.id)?.kind ?? '')
+        !['function', 'component', 'method', 'class'].includes(this.sym(value.id)?.kind ?? '')
       )
         return unknown('unknown-callable-value');
     }
@@ -316,7 +433,9 @@ export class BindingResolver {
     unresolved: CodeMapGraph['unresolved'],
     packages: Set<string>,
     maxEdges = 2_000_000,
+    exportedOut?: string[],
   ): void {
+    this.read(path);
     const record = this.modules.records.get(path)!;
     for (const intent of record.imports) {
       if (edges.length >= maxEdges || unresolved.length >= maxEdges) throw new CodeMapLimitError();
@@ -347,8 +466,9 @@ export class BindingResolver {
       const target = this.exported(path, entry.name, new Set());
       if (target.kind !== 'symbol') continue;
       if (edges.length >= maxEdges) throw new CodeMapLimitError();
-      const symbol = this.symbols.get(target.id);
+      const symbol = this.sym(target.id);
       if (symbol?.file === record.file.id) this.exportedSymbols.add(target.id);
+      if (symbol?.file === record.file.id) exportedOut?.push(target.id);
       edges.push({
         from: record.file.id,
         to: target.id,

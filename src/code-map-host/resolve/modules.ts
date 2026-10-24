@@ -29,6 +29,8 @@ export class ModuleResolver {
   private readonly packages = new Map<string, { directory: string; config: PackageConfig }>();
   private readonly duplicatePackages = new Set<string>();
   private readonly compiler = new Map<string, CompilerOptions>();
+  /** Called with every candidate path whose existence a lookup consulted (see `ResolutionDeps`). */
+  onProbe: ((path: string) => void) | undefined;
   constructor(
     readonly records: ReadonlyMap<string, FileRecord>,
     readonly configs: ReadonlyMap<string, ProjectConfig>,
@@ -59,7 +61,10 @@ export class ModuleResolver {
         : candidate.endsWith('.cjs')
           ? ['.cts', '.d.cts', '.cjs'].map((extension) => candidate.slice(0, -4) + extension)
           : [candidate, ...extensions.map((extension) => candidate + extension)];
-    for (const path of substitutions) if (this.records.has(path)) return path;
+    for (const path of substitutions) {
+      this.onProbe?.(path);
+      if (this.records.has(path)) return path;
+    }
     const config = this.configs.get(posix.join(candidate, 'package.json'));
     if (config?.kind === 'package')
       for (const entry of [
@@ -73,6 +78,7 @@ export class ModuleResolver {
       }
     for (const extension of extensions) {
       const path = posix.join(candidate, `index${extension}`);
+      this.onProbe?.(path);
       if (this.records.has(path)) return path;
     }
     return null;

@@ -20,6 +20,7 @@ import { atomicWrite, CacheStore, loadSnapshot, publishSnapshot, sha256 } from '
 import { safeDirectory } from '../store/paths';
 import type { InventorySnapshot } from '../indexer';
 import { buildGraph } from './build';
+import { ResolutionCache } from './resolution-cache';
 import { buildSearchCorpus, type SearchCorpus } from '../query/corpus';
 
 export interface PublishedGraph {
@@ -57,6 +58,8 @@ export class GraphEngine {
   private revision = 0;
   private checkpoint: { revision: number; diagnostics: string; published: PublishedGraph } | undefined;
   private readonly cache: CacheStore;
+  /** Relations resolved in earlier builds; only files whose inputs changed are resolved again. */
+  private readonly resolution = new ResolutionCache();
   constructor(
     private readonly options: {
       root: string;
@@ -263,6 +266,8 @@ export class GraphEngine {
         settingsHash: `sha256:${sha256(JSON.stringify([...new Set(this.options.excludedPaths)].sort(comparePaths)))}`,
       },
       inventory.skippedCount,
+      undefined,
+      this.resolution,
     );
     // Captured with the graph, before any await: both describe the same records.
     const corpus = buildSearchCorpus(this.records);
@@ -350,6 +355,7 @@ export class GraphEngine {
     this.dirtyCache.clear();
     this.failures.clear();
     this.symbolCount = this.relationCount = 0;
+    this.resolution.clear();
   }
   /** One published generation: graph, manifest and the search corpus built from the same records. */
   snapshot(): {
