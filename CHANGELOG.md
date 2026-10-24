@@ -18,6 +18,11 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Changed
 
+- **Code Map:** `oxy_find_code` answers include the relevant source lines, so most lookups need no separate file
+  read. The best match shows up to 12 numbered lines (its signature and the lines with the question's terms, with
+  context); a second or third match shows up to 6 lines only when it scores close to the first. Lines are shown only
+  while the file still matches the index. `full: true` returns the whole definition of the best match (up to 80
+  lines), and plugins can ask for the same with `excerpts: 'terms' | 'full'` on a search query.
 - **Code Map:** agent answers are much cheaper to use.
   - Agents see one tool to locate code (`oxy_find_code`; `oxy_task_context` while Review memory is on) and no status
     tool; the tool schemas and the guidance are about 60% smaller and say when plain Grep is the better choice.
