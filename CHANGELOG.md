@@ -11,6 +11,11 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   terminal made during the session and how many characters of answers it received; the tooltip adds stale, not-OK and
   failed answers. Oxytocin keeps only counts, in memory since the app started — no queries, paths or code.
 
+- **Code Map:** a project can turn on *Suggest code locations with each prompt* (Project settings → Code Map, off by
+  default). With the Claude Code Bridge installed, Oxytocin then adds up to three file pointers to Claude Code's context
+  when a prompt matches the map strongly, and nothing otherwise; pointers already given in the session are not repeated.
+  The prompt is read locally for that one lookup and is never stored or logged.
+
 ### Changed
 
 - **Code Map:** agent answers are much cheaper to use.

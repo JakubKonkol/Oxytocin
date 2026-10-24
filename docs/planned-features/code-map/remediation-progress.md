@@ -30,7 +30,7 @@ started.
 | 1 | Remove agent overhead (one locate tool, schemas, instructions, quiet output, stale-tolerant answers) | done | `8aa0555` | Default tool schemas 4,372 → 1,533 chars; all 8 tools 9,788 → 5,214. Open: Review memory defaults to on, so `oxy_task_context` + learning tools stay listed by default (rules then point to task_context only). |
 | 2 | Body-aware BM25F ranking | done | `2f592ae` | Search corpus cached in records (not graph.json), pinned per generation; PageRank prior tried and rejected (no train gain). Cache +38%; index build on first query after publish 0.2–0.4 s here, 1.1–1.3 s on 10k fixture (phase 5 must address). `coverage` separates right/wrong poorly; `strong` tuned on train only. |
 | 3 | Source excerpts in `oxy_find_code` | in progress | | Delegated (worktree): hash-checked term-focused excerpts, `full: true`. |
-| 4 | Prompt-time pointers via Claude Code Bridge | in progress | | Delegated; core command `oxytocin.codeMap.promptContext`, per-project setting default off, reads optional `coverage`/`strong` from phase 2. |
+| 4 | Prompt-time pointers via Claude Code Bridge | done | `446ba7a`, `3585d8a` | Core command `oxytocin.codeMap.promptContext` (+ `forgetPromptContext`), `code-map.read` permission now checked via the calling plugin id; setting `promptSuggestions` default off; gate `strong === true` only; ≤3 pointers, per-session novelty, 1 s budget, no prompt logging. |
 | 5 | Cheap freshness barrier, faster publication, edit-latency script | in progress | | Delegated (worktree). |
 | 6 | TypeScript receiver types | done | `5fcf185`, `80938ba` | Repo-symbol call edges +27%, 40/40 spot-checked new edges correct; `unknown-value-type` only −5% (21k are references to local values). Fixed `@shared/*` aliases through solution-style tsconfig. Next gap: call-chain receivers (`this.f(id).m()`). |
 | 7 | Decide on defaults after the A/B | not started | | |
@@ -56,9 +56,9 @@ compact MCP answer). "hit@k" counts questions whose first expected file is withi
 - 2026-10-23 — Phase 1 merged (`8aa0555`): check green (1,473 unit, 76 integration, 3 latency), E2E code-map/visualizer/ipc-hosts 21/21; ranks unchanged, mean answer −56%.
 - 2026-10-24 — Phases 6 and 2 merged (`EXTRACTOR_VERSION` 8 for the combined record shape); check green (1,515 unit, 76 integration, 3 latency); E2E code-map + visualizer 16/16. Phase 4 and 0b agents stopped on a usage limit mid-work; their worktree branches keep the partial work.
 - 2026-10-24 — Phase 0b merged (`64c35d1`); check green (1,532 unit, 76 integration, 3 latency), E2E usage + code-map + mcp-hub 19/19. A container restart (likely memory: parallel checks/E2E) stopped the phase 3 and 5 agents; resumed. Run at most one full check/E2E at a time.
+- 2026-10-24 — Phase 4 merged; check green (1,571 unit, 77 integration, 3 latency), E2E claude-bridge + code-map + usage 19/19.
 - Finding for phase 5: every query calls `indexer.verify()`, a full metadata audit (git enumeration) of the checkout, and any change re-resolves the whole graph — the source of the 1.6–2.7 s update latency.
 
 ## Next
 
-- Review and merge phase 4 (`worktree-agent-a13196d230750f082`, finished; report lost in a restart).
 - Then phase 3 (excerpts), phase 4 (bridge pointers, off by default), phase 5 (freshness).
