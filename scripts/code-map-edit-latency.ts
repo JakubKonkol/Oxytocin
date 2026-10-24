@@ -194,6 +194,7 @@ async function main() {
         unchangedVerifiedQueryMs: summary(idleVerified),
         firstAnswerAfterEditMs: summary(firstAnswer),
         editToFreshAnswerMs: untilFresh.length ? summary(untilFresh) : null,
+        editToFreshRunsMs: untilFresh.map(Math.round),
         firstAnswerStale: `${staleFirst}/${runs}`,
         neverFresh: missed,
         rssMiB: mib(rss),

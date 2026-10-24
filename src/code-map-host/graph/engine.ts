@@ -78,6 +78,8 @@ export class GraphEngine {
   private readonly changedPaths = new Set<string>();
   /** Records replaced since the published graph (and its search index) was built. */
   private readonly searchChanged = new Set<string>();
+  /** A changed record was C# or project configuration, which can alter documents of other files. */
+  private searchCoupled = false;
   private searchIndex: CodeSearch | undefined;
   private searchBuild: { promise: Promise<void>; cancelled: boolean } | undefined;
   /** The newest published generation that is not on disk yet. */
@@ -246,6 +248,7 @@ export class GraphEngine {
     }
     this.changedPaths.add(path);
     this.searchChanged.add(path);
+    if (record?.file.language === 'csharp' || this.configs.has(path)) this.searchCoupled = true;
     this.records.delete(path);
     this.configs.delete(path);
     this.failures.delete(path);
@@ -392,15 +395,18 @@ export class GraphEngine {
    */
   private updateSearch(graph: CodeMapGraph, corpus: SearchCorpus): void {
     const changed = new Set(this.searchChanged);
+    const coupled = this.searchCoupled;
     this.searchChanged.clear();
+    this.searchCoupled = false;
     if (this.searchBuild) {
       this.searchBuild.cancelled = true;
       this.searchBuild = undefined;
     }
     if (!this.searchIndex) return;
     const small = changed.size <= 200 && changed.size * 5 <= graph.files.length;
-    // C# files are merged and flagged across files, so a change can alter documents of other files.
-    const independent = !graph.files.some((file) => file.language === 'csharp');
+    // C# files are merged and flagged across files (and by project files), so such a change can alter documents of
+    // other files.
+    const independent = !coupled;
     if (small && independent && this.searchIndex.update(graph, corpus, changed)) return;
     this.searchIndex = undefined;
     this.buildSearch();
@@ -541,6 +547,8 @@ export class GraphEngine {
     this.revision++;
     this.changedPaths.add(path);
     this.searchChanged.add(path);
+    if (record.file.language === 'csharp' || old?.file.language === 'csharp' || this.configs.has(path))
+      this.searchCoupled = true;
     this.records.set(path, record);
   }
 }
