@@ -7,7 +7,7 @@ import {
 } from '@shared/domain/code-map';
 
 /** Bump on every change of extracted records: cached records of another version are reparsed. */
-export const EXTRACTOR_VERSION = 6;
+export const EXTRACTOR_VERSION = 8;
 export const PythonRecordSchema = z.object({
   module: z.string(),
   all: z.array(z.string().max(1024)).max(50_000).nullable().optional(),
@@ -256,6 +256,51 @@ export const ImportIntentSchema = z.object({
   typeOnly: z.boolean(),
   kind: z.enum(['import', 'export', 'dynamic', 'require']),
 });
+/**
+ * A type written in the source, kept as syntax: resolution happens in the graph build, against indexed declarations.
+ * `name` is a (qualified) type reference, `promise` marks `Promise<name>`, `wrappers` lists member-preserving utility
+ * types around it (`Pick<name, ...>`); `call` is the type returned by calling the
+ * named callee (`await` unwraps `Promise`); `value` is the type of the value at a name or member path
+ * (`const x = this.deps`, `const { a } = this.deps`); `shape` marks an anonymous object type whose members are owned by the
+ * declaring property symbol. Unions with `null`/`undefined` collapse to the remaining member; anything else
+ * (other unions, intersections, arrays, function types, `any`) is not recorded.
+ */
+export const TypeRefSchema = z.union([
+  z
+    .object({
+      name: z.array(z.string().max(1024)).min(1).max(20),
+      promise: z.literal(true).optional(),
+      wrappers: z.array(z.string().max(32)).min(1).max(8).optional(),
+    })
+    .strict(),
+  z.object({ call: z.array(z.string().max(1024)).min(1).max(20), await: z.literal(true).optional() }).strict(),
+  z.object({ value: z.array(z.string().max(1024)).min(1).max(20) }).strict(),
+  z.object({ shape: z.literal(true) }).strict(),
+]);
+export type TypeRef = z.infer<typeof TypeRefSchema>;
+/**
+ * Search postings of one text region (a symbol's own source, or the file text outside symbols). `n` is the count of
+ * indexed tokens (BM25 length); `t` lists `index` or `index*count` entries separated by spaces, where `index`
+ * points into the file's term dictionary.
+ */
+export const SearchDocSchema = z.object({
+  n: z.number().int().nonnegative().max(1_000_000),
+  t: z
+    .string()
+    .max(40_000)
+    .regex(/^[0-9* ]*$/),
+});
+/** Body and residual term postings, cached with the record and never written to `graph.json`. */
+export const FileSearchSchema = z.object({
+  /** Stemmed terms of this file; documents reference them by index. */
+  terms: z.array(z.string().min(1).max(64)).max(20_000),
+  /** One document per symbol, aligned with `FileRecord.symbols`. */
+  symbols: z.array(SearchDocSchema).max(50_000),
+  /** Text outside every top-level symbol (imports, constants, header comments), or a prefix of a file-only file. */
+  residual: SearchDocSchema,
+});
+export type SearchDoc = z.infer<typeof SearchDocSchema>;
+export type FileSearch = z.infer<typeof FileSearchSchema>;
 export const FileRecordSchema = z.object({
   version: z.literal(EXTRACTOR_VERSION),
   file: CodeMapFileSchema,
@@ -281,9 +326,19 @@ export const FileRecordSchema = z.object({
           .object({ module: z.string(), name: z.string(), typeOnly: z.boolean(), require: z.boolean().optional() })
           .optional(),
         implementation: z.boolean().optional(),
+        /** Declared or `new`-initialized type of a parameter or variable, resolved in `scope`. */
+        type: TypeRefSchema.optional(),
       }),
     )
     .max(100_000),
+  /**
+   * Declared types of symbols: properties and exported variables (their type), functions and methods (their return
+   * type), type aliases (the aliased type). Names resolve in `scope`. Overloaded or merged declarations are omitted.
+   */
+  symbolTypes: z
+    .array(z.object({ symbol: z.string(), scope: z.string(), type: TypeRefSchema }))
+    .max(50_000)
+    .optional(),
   members: z
     .array(
       z.object({
@@ -325,6 +380,7 @@ export const FileRecordSchema = z.object({
   go: GoRecordSchema.optional(),
   java: JavaRecordSchema.optional(),
   python: PythonRecordSchema.optional(),
+  search: FileSearchSchema.optional(),
 });
 export type FileRecord = z.infer<typeof FileRecordSchema>;
 export type Scope = FileRecord['scopes'][number];

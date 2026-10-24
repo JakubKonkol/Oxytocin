@@ -111,6 +111,21 @@ export class ModuleResolver {
     this.compiler.set(path, output);
     return output;
   }
+  private compilerChoices(from: string): CompilerOptions[] {
+    const path = this.configPath(from);
+    if (!path) return [{}];
+    const own = this.compilerOptions(path);
+    const config = this.configs.get(path);
+    if (config?.kind !== 'typescript' || !config.data.references?.length || own.paths || own.baseUrl) return [own];
+    const projects = config.data.references.flatMap((reference) => {
+      let candidate = posix.normalize(posix.join(posix.dirname(path), reference.path));
+      if (!candidate.endsWith('.json')) candidate = posix.join(candidate, 'tsconfig.json');
+      return contained(candidate) && this.configs.get(candidate)?.kind === 'typescript'
+        ? [this.compilerOptions(candidate)]
+        : [];
+    });
+    return projects.length ? projects : [own];
+  }
   resolve(from: string, specifier: string | null): ModuleTarget {
     if (specifier === null) return { kind: 'unresolved', reason: 'dynamic-module-specifier' };
     if (specifier.startsWith('/') || /^[a-z]:/i.test(specifier))
@@ -119,32 +134,43 @@ export class ModuleResolver {
       const path = this.lookup(posix.join(posix.dirname(from), specifier));
       return path ? { kind: 'file', path } : { kind: 'unresolved', reason: 'relative-module-not-indexed' };
     }
-    const config = this.configPath(from);
-    const compiler = config ? this.compilerOptions(config) : {};
-    const patterns = Object.entries(compiler.paths?.values ?? {}).sort(
-      ([left], [right]) =>
-        right.replace('*', '').length - left.replace('*', '').length || (left < right ? -1 : left > right ? 1 : 0),
-    );
-    for (const [pattern, targets] of patterns) {
-      const star = pattern.indexOf('*');
-      const match =
-        star < 0
-          ? specifier === pattern
-          : specifier.startsWith(pattern.slice(0, star)) && specifier.endsWith(pattern.slice(star + 1));
-      if (!match) continue;
-      const replacement = star < 0 ? '' : specifier.slice(star, specifier.length - (pattern.length - star - 1));
-      for (const entry of targets) {
-        const path = this.lookup(
-          posix.join(compiler.baseUrl ?? compiler.paths!.origin, entry.replace('*', replacement)),
-        );
-        if (path) return { kind: 'file', path };
+    // Solution-style `tsconfig.json` (`"files": []` plus `references`) maps nothing itself: the mappings live in the
+    // referenced projects. A specifier that two of them map to different files is ambiguous, never guessed.
+    const found = new Set<string>();
+    let mapped = false;
+    for (const compiler of this.compilerChoices(from)) {
+      const patterns = Object.entries(compiler.paths?.values ?? {}).sort(
+        ([left], [right]) =>
+          right.replace('*', '').length - left.replace('*', '').length || (left < right ? -1 : left > right ? 1 : 0),
+      );
+      const pattern = patterns.find(([entry]) => {
+        const star = entry.indexOf('*');
+        return star < 0
+          ? specifier === entry
+          : specifier.startsWith(entry.slice(0, star)) && specifier.endsWith(entry.slice(star + 1));
+      });
+      if (pattern) {
+        mapped = true;
+        const [entry, targets] = pattern;
+        const star = entry.indexOf('*');
+        const replacement = star < 0 ? '' : specifier.slice(star, specifier.length - (entry.length - star - 1));
+        for (const target of targets) {
+          const path = this.lookup(
+            posix.join(compiler.baseUrl ?? compiler.paths!.origin, target.replace('*', replacement)),
+          );
+          if (path) {
+            found.add(path);
+            break;
+          }
+        }
+      } else if (compiler.baseUrl) {
+        const path = this.lookup(posix.join(compiler.baseUrl, specifier));
+        if (path) found.add(path);
       }
-      return { kind: 'unresolved', reason: 'path-mapping-target-not-indexed' };
     }
-    if (compiler.baseUrl) {
-      const path = this.lookup(posix.join(compiler.baseUrl, specifier));
-      if (path) return { kind: 'file', path };
-    }
+    if (found.size > 1) return { kind: 'unresolved', reason: 'ambiguous-path-mapping' };
+    if (found.size === 1) return { kind: 'file', path: [...found][0]! };
+    if (mapped) return { kind: 'unresolved', reason: 'path-mapping-target-not-indexed' };
     const name = packageName(specifier);
     if (this.duplicatePackages.has(name)) return { kind: 'unresolved', reason: 'ambiguous-workspace-package' };
     const workspace = this.packages.get(name);

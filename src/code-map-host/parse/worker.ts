@@ -9,6 +9,7 @@ import { extractGo } from '../extract/go';
 import { extractJava } from '../extract/java';
 import { extractPython } from '../extract/python';
 import { parserLanguage } from '../extract/languages';
+import { buildSearchData } from '../extract/search-data';
 import { CodeMapLimitError } from '../enumerate';
 
 const { assets } = z.object({ assets: z.string().min(1) }).parse(workerData);
@@ -34,6 +35,7 @@ port.on('message', (input: unknown) => {
                 : language === 'csharp'
                   ? extractCSharp(job.path, source, tree)
                   : extractTypeScript(job.path, source, tree);
+        record.search = buildSearchData(source, record.symbols);
         port.postMessage(ParseResultSchema.parse({ id: job.id, record }));
       } finally {
         tree.delete();

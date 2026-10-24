@@ -46,6 +46,8 @@ describe('Code Map parser isolation', () => {
     ]);
     expect(results[0].symbols[0]!.name).toBe('first');
     expect(results[1].symbols[0]!.kind).toBe('component');
+    // Search postings are computed in the worker, one document per symbol.
+    for (const result of results) expect(result.search?.symbols).toHaveLength(result.symbols.length);
     await expect(parser.parse('../outside.ts', '')).rejects.toThrow();
     const abort = new AbortController();
     abort.abort();
@@ -60,6 +62,7 @@ describe('Code Map parser isolation', () => {
     );
     expect(performance.now() - started).toBeLessThan(2500);
     expect(record.csharp?.types.map((type) => type.name)).toEqual(['Program']);
+    expect(record.search?.symbols).toHaveLength(record.symbols.length);
     expect(record.symbols.find((symbol) => symbol.name === 'Main')).toMatchObject({ kind: 'method', exported: true });
     await expect(parser.parse('notes.txt', 'text')).rejects.toThrow('no parser');
   });

@@ -18,6 +18,15 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
     "updating" without data.
   - The `CLAUDE.md`/`AGENTS.md` instruction block is a single line; existing opted-in blocks are upgraded
     automatically.
+- **Code Map:** finding code is more accurate. `oxy_find_code` and the task context now rank on what is inside function
+  bodies (BM25F over names, paths and bodies with query coverage), rank tests and docs lower unless the question asks
+  for them, and show one result per file first; results carry `coverage` and `strong` confidence fields. On Oxytocin's
+  own questions the right file comes first in 27 of 44 cases instead of 19. The map cache grows by about 40% and is
+  rebuilt once after the update; `graph.json` is unchanged.
+- **Code Map:** TypeScript and JavaScript method calls on values with a declared type are resolved (constructor
+  parameter properties, fields, parameters, `new T()`, return types, inherited members), so `oxy_code_relations` finds
+  about a quarter more callers; path aliases such as `@shared/*` resolve through a solution-style `tsconfig.json` with
+  project references instead of appearing as external packages.
 
 ## [0.9.13] - 2026-10-23
 
