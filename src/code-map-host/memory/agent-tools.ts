@@ -222,6 +222,7 @@ export class LearningTools {
           state,
           authority.checkoutId,
           receipt,
+          snapshot?.corpus,
         );
         if (receipt) this.receipts.create(authority.projectId, actor, result, receipt);
         return result;

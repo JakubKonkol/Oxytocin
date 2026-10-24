@@ -642,7 +642,7 @@ test('Python src packages report Imports plus simple calls and leave dynamic att
 
 test('MCP Code Map tools see edits, report access and disappear after disabling', async () => {
   const project = await mkdtemp(join(tmpdir(), 'oxy-map-mcp-'));
-  await writeFile(join(project, 'api.ts'), 'export function beforeEdit() {}\n');
+  await writeFile(join(project, 'api.ts'), "export function beforeEdit() { return 'bodyonlyalpha'; }\n");
   const { app, win, userData } = await launchApp({ project });
   let client: Awaited<ReturnType<typeof connect>> | undefined;
   try {
@@ -666,7 +666,11 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
     expect(
       (await client.call('oxy_find_code', { query: 'beforeEdit', cwd: project })).result?.content?.[0]?.text,
     ).toContain('beforeEdit');
-    await writeFile(join(project, 'api.ts'), 'export function afterEdit() {}\n');
+    // Words that occur only inside a function body find the file.
+    expect(
+      (await client.call('oxy_find_code', { query: 'bodyonlyalpha', cwd: project })).result?.content?.[0]?.text,
+    ).toContain('beforeEdit');
+    await writeFile(join(project, 'api.ts'), "export function afterEdit() { return 'bodyonlybeta'; }\n");
     const found = await client.call('oxy_find_code', { query: 'afterEdit', cwd: project });
     expect(found.result?.content?.[0]?.text).toContain('afterEdit');
     const foundText = found.result?.content?.[0]?.text ?? '';
@@ -680,6 +684,10 @@ test('MCP Code Map tools see edits, report access and disappear after disabling'
     expect(
       (await client.call('oxy_code_relations', { path: 'api.ts', line, cwd: project })).result?.content?.[0]?.text,
     ).toMatch(/^1 api\.ts:\d+-\d+ function afterEdit/);
+    const body = await client.call('oxy_find_code', { query: 'bodyonlybeta', cwd: project });
+    expect(body.result?.content?.[0]?.text).toContain('afterEdit');
+    const old = await client.call('oxy_find_code', { query: 'bodyonlyalpha', cwd: project });
+    expect(old.result?.content?.[0]?.text).not.toContain('afterEdit');
     expect(
       (await client.call('oxy_file_outline', { path: 'api.ts', cwd: project })).result?.content?.[0]?.text,
     ).toContain('afterEdit');

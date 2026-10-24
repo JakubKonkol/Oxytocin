@@ -104,6 +104,10 @@ export const CodeMapQueryDataSchema = z.discriminatedUnion('kind', [
         }),
       )
       .max(50),
+    /** Idf-weighted share (0-1) of the question's terms matched by the best result. */
+    coverage: z.number().min(0).max(1).optional(),
+    /** The best result matched the question in its own name, or is an exact identifier or path match. */
+    strong: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal('outline'),

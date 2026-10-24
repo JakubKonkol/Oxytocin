@@ -7,7 +7,7 @@ import {
 } from '@shared/domain/code-map';
 
 /** Bump on every change of extracted records: cached records of another version are reparsed. */
-export const EXTRACTOR_VERSION = 7;
+export const EXTRACTOR_VERSION = 8;
 export const PythonRecordSchema = z.object({
   module: z.string(),
   all: z.array(z.string().max(1024)).max(50_000).nullable().optional(),
@@ -278,6 +278,29 @@ export const TypeRefSchema = z.union([
   z.object({ shape: z.literal(true) }).strict(),
 ]);
 export type TypeRef = z.infer<typeof TypeRefSchema>;
+/**
+ * Search postings of one text region (a symbol's own source, or the file text outside symbols). `n` is the count of
+ * indexed tokens (BM25 length); `t` lists `index` or `index*count` entries separated by spaces, where `index`
+ * points into the file's term dictionary.
+ */
+export const SearchDocSchema = z.object({
+  n: z.number().int().nonnegative().max(1_000_000),
+  t: z
+    .string()
+    .max(40_000)
+    .regex(/^[0-9* ]*$/),
+});
+/** Body and residual term postings, cached with the record and never written to `graph.json`. */
+export const FileSearchSchema = z.object({
+  /** Stemmed terms of this file; documents reference them by index. */
+  terms: z.array(z.string().min(1).max(64)).max(20_000),
+  /** One document per symbol, aligned with `FileRecord.symbols`. */
+  symbols: z.array(SearchDocSchema).max(50_000),
+  /** Text outside every top-level symbol (imports, constants, header comments), or a prefix of a file-only file. */
+  residual: SearchDocSchema,
+});
+export type SearchDoc = z.infer<typeof SearchDocSchema>;
+export type FileSearch = z.infer<typeof FileSearchSchema>;
 export const FileRecordSchema = z.object({
   version: z.literal(EXTRACTOR_VERSION),
   file: CodeMapFileSchema,
@@ -357,6 +380,7 @@ export const FileRecordSchema = z.object({
   go: GoRecordSchema.optional(),
   java: JavaRecordSchema.optional(),
   python: PythonRecordSchema.optional(),
+  search: FileSearchSchema.optional(),
 });
 export type FileRecord = z.infer<typeof FileRecordSchema>;
 export type Scope = FileRecord['scopes'][number];
