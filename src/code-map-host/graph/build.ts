@@ -4,7 +4,7 @@ import { comparePaths, CodeMapLimitError } from '../enumerate';
 import type { FileRecord } from '../extract/record';
 import type { ProjectConfig } from '../resolve/config';
 import { ModuleResolver } from '../resolve/modules';
-import type { ResolutionCache } from './resolution-cache';
+import { ResolutionCache } from './resolution-cache';
 import { BindingResolver } from '../resolve/bindings';
 import { CSharpResolver } from '../resolve/csharp';
 import { GoResolver } from '../resolve/go';
@@ -90,11 +90,14 @@ export function buildGraph(
   let resolver: BindingResolver | undefined;
   const exportedSymbols = new Set<string>();
   const packages = new Set<string>();
-  resolution?.begin(records, configs);
+  // Without a cache the lookup tables are built from scratch, which is what an incremental build must equal.
+  const cache = resolution ?? new ResolutionCache();
+  cache.begin(records, configs);
+  const index = cache.index;
   for (const [path] of ordered) {
-    let entry = resolution?.lookup(path, records);
+    let entry = cache.lookup(path);
     if (!entry) {
-      resolver ??= new BindingResolver(new ModuleResolver(records, configs));
+      resolver ??= new BindingResolver(new ModuleResolver(records, configs), index);
       const output = {
         edges: [] as CodeMapGraph['edges'],
         unresolved: [] as CodeMapGraph['unresolved'],
@@ -112,9 +115,7 @@ export function buildGraph(
         ),
       );
       const stored = { ...output, packages: [...output.packages] };
-      entry = resolution
-        ? resolution.store(path, records, deps, stored)
-        : { record: records.get(path)!, deps: new Map(), presence: new Map(), ...stored };
+      entry = cache.store(path, deps, stored);
     }
     for (const edge of entry.edges) graph.edges.push(edge);
     for (const item of entry.unresolved) graph.unresolved.push(item);

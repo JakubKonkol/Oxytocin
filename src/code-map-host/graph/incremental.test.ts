@@ -111,6 +111,19 @@ describe('incremental relation resolution', () => {
     project.check();
     await project.set('src/lib/shape.ts', base['src/lib/shape.ts']!);
     project.check();
+    // A wildcard re-export makes two modules answer the same name; undoing it repairs the importer.
+    await project.set('src/lib/index.ts', `${base['src/lib/index.ts']!}export * from "../util";\n`);
+    await project.set('src/util.ts', `${base['src/util.ts']!}export interface Shape { x: number }\n`);
+    project.check();
+    await project.set('src/util.ts', base['src/util.ts']!);
+    project.check();
+    await project.set('src/lib/index.ts', base['src/lib/index.ts']!);
+    project.check();
+    // An unrelated export is added to a barrel that importers go through.
+    await project.set('src/lib/shape.ts', `${base['src/lib/shape.ts']!}export const extra = 1;\n`);
+    project.check();
+    await project.set('src/lib/shape.ts', base['src/lib/shape.ts']!);
+    project.check();
     // Removing and adding files changes module lookups (candidate paths) and path mappings.
     project.delete('src/lib/square.ts');
     project.check();
@@ -145,9 +158,18 @@ describe('incremental relation resolution', () => {
     expect(counted()).toBe(0);
     await project.set('src/app/main.ts', `${base['src/app/main.ts']!}\nexport const more = 1;\n`);
     expect(counted()).toBe(1);
-    // `consumer.ts` reads `util.ts` exports; `main.ts` too. Touching util resolves both and nothing else.
+    // Adding an export nobody imports changes no facet that importers read: only the edited file resolves again.
     await project.set('src/util.ts', `${base['src/util.ts']!}\nexport const more = 1;\n`);
-    expect(counted()).toBeLessThanOrEqual(3); // util.ts itself and its two callers, never the unrelated files
+    expect(counted()).toBe(1);
+    // Moving code (positions only) changes nothing importers read either.
+    await project.set('src/util.ts', `\n\n${base['src/util.ts']!}\nexport const more = 1;\n`);
+    expect(counted()).toBe(1);
+    // Renaming an export that `consumer.ts` imports makes it resolve again, but not the unrelated files.
+    await project.set(
+      'src/util.ts',
+      'export function helper(): void {}\nexport function renamed(): void { helper(); }\nexport const more = 1;\n',
+    );
+    expect(counted()).toBe(2);
   });
 
   it('equals a full build on a real code base under a sequence of edits', async () => {

@@ -1,6 +1,7 @@
 import type { CodeMapEdge, CodeMapGraph, CodeMapSymbol } from '@shared/domain/code-map';
 import type { FileRecord, RelationIntent, TypeRef } from '../extract/record';
 import type { ModuleResolver } from './modules';
+import { encodeFacet, type Base, type BindingIndex, type FacetKind, type SymbolType } from './binding-index';
 import { CodeMapLimitError } from '../enumerate';
 
 /** What a name or export stands for: never a bare typed value (that is not a graph node). */
@@ -27,69 +28,32 @@ const OWNER_KINDS = ['class', 'interface', 'namespace', 'enum'];
 const TYPE_DEPTH = 24;
 
 /**
- * Records read while resolving one file: indexed files whose content was consulted, and candidate paths whose
- * mere existence decided a module lookup. A result stays valid while none of them changed.
+ * What resolving one file read from other files: facets (see `BindingIndex`) and module paths whose mere existence
+ * decided a lookup. A result stays valid while none of them changed.
  */
 export interface ResolutionDeps {
-  paths: Set<string>;
+  facets: Set<string>;
   presence: Set<string>;
-  parent: ResolutionDeps | null;
 }
-const newDeps = (parent: ResolutionDeps | null): ResolutionDeps => ({
-  paths: new Set(),
-  presence: new Set(),
-  parent,
-});
+const newDeps = (): ResolutionDeps => ({ facets: new Set(), presence: new Set() });
 
 export class BindingResolver {
   readonly exportedSymbols = new Set<string>();
   /** The reads of the resolution in progress; `null` while nobody listens. */
   private tracking: ResolutionDeps | null = null;
-  private readonly memberPaths = new Map<string, string[]>();
   private readonly exportDeps = new Map<string, ResolutionDeps>();
   private readonly ownerDeps = new Map<string, ResolutionDeps>();
-  private readonly symbols = new Map<string, CodeMapSymbol>();
-  private readonly scopes = new Map<string, Map<string, FileRecord['scopes'][number]>>();
-  private readonly bindings = new Map<string, Map<string, FileRecord['bindings']>>();
-  private readonly members = new Map<string, FileRecord['members']>();
   private readonly exports = new Map<string, Resolved>();
-  private readonly symbolTypes = new Map<string, { path: string; scope: string; type: TypeRef }>();
-  private readonly bases = new Map<string, { path: string; scope: string; target: string[] | null; rel: string }[]>();
   private readonly owners = new Map<string, string>();
-  constructor(private readonly modules: ModuleResolver) {
+  constructor(
+    private readonly modules: ModuleResolver,
+    private readonly index: BindingIndex,
+  ) {
     modules.onProbe = (path) => this.tracking?.presence.add(path);
-    for (const [path, record] of modules.records) {
-      for (const symbol of record.symbols) this.symbols.set(symbol.id, symbol);
-      for (const entry of record.symbolTypes ?? [])
-        this.symbolTypes.set(entry.symbol, { path, scope: entry.scope, type: entry.type });
-      for (const relation of record.relations)
-        if (relation.rel === 'extends' || relation.rel === 'implements') {
-          const list = this.bases.get(relation.from) ?? [];
-          list.push({ path, scope: relation.scope, target: relation.target, rel: relation.rel });
-          this.bases.set(relation.from, list);
-        }
-      this.scopes.set(path, new Map(record.scopes.map((scope) => [scope.id, scope])));
-      const bindings = new Map<string, FileRecord['bindings']>();
-      for (const binding of record.bindings) {
-        const id = `${binding.scope}\0${binding.name}`;
-        const list = bindings.get(id) ?? [];
-        list.push(binding);
-        bindings.set(id, list);
-      }
-      this.bindings.set(path, bindings);
-      for (const member of record.members) {
-        const list = this.members.get(member.owner) ?? [];
-        list.push(member);
-        this.members.set(member.owner, list);
-        const paths = this.memberPaths.get(member.owner);
-        if (!paths) this.memberPaths.set(member.owner, [path]);
-        else if (paths.at(-1) !== path) paths.push(path);
-      }
-    }
   }
   /** Runs the resolution of one file and returns everything it read. */
   track<T>(run: () => T): { value: T; deps: ResolutionDeps } {
-    const deps = newDeps(null);
+    const deps = newDeps();
     this.tracking = deps;
     try {
       return { value: run(), deps };
@@ -97,70 +61,45 @@ export class BindingResolver {
       this.tracking = null;
     }
   }
-  private read(path: string): void {
-    this.tracking?.paths.add(path);
-  }
-  /** The file a symbol id belongs to: ids are `s:<path>#...`; a deleted file's ids still name their path. */
-  private readId(id: string): void {
-    if (!this.tracking) return;
-    const known = this.symbols.get(id);
-    if (known) {
-      this.tracking.paths.add(known.file.slice(2));
-      return;
-    }
-    for (let index = id.indexOf('#'); index > 2; index = id.indexOf('#', index + 1))
-      this.tracking.paths.add(id.slice(2, index));
+  private read(kind: FacetKind, a: string, b = ''): void {
+    this.tracking?.facets.add(encodeFacet(kind, a, b));
   }
   private absorb(deps: ResolutionDeps | undefined): void {
     if (!this.tracking || !deps) return;
-    for (const path of deps.paths) this.tracking.paths.add(path);
+    for (const facet of deps.facets) this.tracking.facets.add(facet);
     for (const path of deps.presence) this.tracking.presence.add(path);
   }
   /** Collects the reads of a cached computation so that a later cache hit can report them too. */
   private memoized<T>(run: () => T): { value: T; deps: ResolutionDeps } {
     const outer = this.tracking;
-    const deps = newDeps(outer);
+    const deps = newDeps();
     this.tracking = deps;
     try {
       return { value: run(), deps };
     } finally {
       this.tracking = outer;
-      if (outer) this.absorbInto(outer, deps);
+      this.absorb(deps);
     }
-  }
-  private absorbInto(target: ResolutionDeps, deps: ResolutionDeps): void {
-    for (const path of deps.paths) target.paths.add(path);
-    for (const path of deps.presence) target.presence.add(path);
   }
   private sym(id: string): CodeMapSymbol | undefined {
-    this.readId(id);
-    return this.symbols.get(id);
+    this.read('s', id);
+    return this.index.symbols.get(id);
   }
-  private symType(id: string): { path: string; scope: string; type: TypeRef } | undefined {
-    this.readId(id);
-    return this.symbolTypes.get(id);
+  private symType(id: string): SymbolType | undefined {
+    this.read('t', id);
+    return this.index.symbolTypes.get(id);
   }
-  private memberList(owner: string): FileRecord['members'] {
-    if (this.tracking) {
-      this.readId(owner);
-      for (const path of this.memberPaths.get(owner) ?? []) this.tracking.paths.add(path);
-    }
-    return this.members.get(owner) ?? [];
+  private memberList(owner: string, name: string): FileRecord['members'] {
+    this.read('m', owner, name);
+    return (this.index.members.get(owner) ?? []).filter((member) => member.name === name);
   }
-  private baseList(owner: string): { path: string; scope: string; target: string[] | null; rel: string }[] {
-    this.readId(owner);
-    const list = this.bases.get(owner) ?? [];
-    for (const base of list) this.read(base.path);
-    return list;
+  private baseList(owner: string): Base[] {
+    this.read('b', owner);
+    return this.index.bases.get(owner) ?? [];
   }
   private local(path: string, scope: string, name: string): FileRecord['bindings'] | null {
-    this.read(path);
-    const scopes = this.scopes.get(path);
-    for (let current: string | null = scope; current; current = scopes?.get(current)?.parent ?? null) {
-      const binding = this.bindings.get(path)?.get(`${current}\0${name}`);
-      if (binding) return binding;
-    }
-    return null;
+    this.read('l', path, `${scope}\0${name}`);
+    return this.index.local(path, scope, name).found;
   }
   private imported(path: string, module: string, name: string, typeOnly: boolean, visiting: Set<string>): Resolved {
     const resolved = this.modules.resolve(path, module);
@@ -211,7 +150,7 @@ export class BindingResolver {
     return result;
   }
   private computeExport(path: string, name: string, visiting: Set<string>): Resolved {
-    this.read(path);
+    this.read('x', path, name);
     const record = this.modules.records.get(path);
     if (!record) return unknown('module-not-indexed');
     const explicit = record.exports.filter((entry) => entry.name === name);
@@ -323,9 +262,7 @@ export class BindingResolver {
     const owner = this.sym(ownerId);
     if (!owner) return { ...found, blocked: true };
     const keepsStatics = owner.kind === 'namespace' || owner.kind === 'enum';
-    let members = this.memberList(ownerId).filter(
-      (member) => member.name === name && (keepsStatics || member.static === !instance),
-    );
+    let members = this.memberList(ownerId, name).filter((member) => keepsStatics || member.static === !instance);
     // Anonymous object types (`deps: { run(): void }`) have no implementation to prefer over their signatures.
     if (owner.kind !== 'property' && members.some((member) => member.implementation))
       members = members.filter((member) => member.implementation);
@@ -399,8 +336,8 @@ export class BindingResolver {
   /** Follows `names` (`a`, `this.a.b`, `ns.T`) from `scope`: bindings, then members, through declared types. */
   private evaluate(path: string, scope: string, names: string[], visiting: Set<string>): Target {
     const [name, ...members] = names;
-    this.read(path);
-    const info = this.scopes.get(path)?.get(scope);
+    this.read('c', path, scope);
+    const info = this.index.scopes.get(path)?.get(scope);
     let value: Target =
       name === 'this'
         ? info?.thisClass
@@ -435,7 +372,6 @@ export class BindingResolver {
     maxEdges = 2_000_000,
     exportedOut?: string[],
   ): void {
-    this.read(path);
     const record = this.modules.records.get(path)!;
     for (const intent of record.imports) {
       if (edges.length >= maxEdges || unresolved.length >= maxEdges) throw new CodeMapLimitError();
