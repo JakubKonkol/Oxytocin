@@ -96,3 +96,31 @@ it('keeps the learning tools small too: oxy_task_context shows three parameters'
   ]);
   expect(size(context)).toBeLessThanOrEqual(600);
 });
+it('reports how each answer went (stale, not OK) to the Hub without the text', async () => {
+  const freshness = { state: 'ready', stale: false, pendingFiles: 0 };
+  const query = vi
+    .fn()
+    .mockResolvedValueOnce({ code: 'OK', freshness, data: { kind: 'repo-map', markdown: '# map' }, reasons: [] })
+    .mockResolvedValueOnce({
+      code: 'OK',
+      freshness: { ...freshness, stale: true, pendingFiles: 1 },
+      data: { kind: 'repo-map', markdown: '# map' },
+      reasons: [],
+    })
+    .mockResolvedValueOnce({ code: 'INDEX_UPDATING', hint: 'Indexing.', freshness, reasons: [] });
+  const tool = buildCodeMapTools({ query }).find((t) => t.definition.name === 'oxy_repo_map')!;
+  const report = vi.fn();
+  const call = {
+    args: {},
+    caller: { context: { projectId: 'p' } },
+    signal: new AbortController().signal,
+    sessionId: 's',
+    report,
+  };
+  for (let i = 0; i < 3; i++) await tool.run(call);
+  expect(report.mock.calls).toEqual([
+    [{ stale: false, notOk: false }],
+    [{ stale: true, notOk: false }],
+    [{ stale: false, notOk: true }],
+  ]);
+});

@@ -360,6 +360,28 @@ describe('PluginHostService', () => {
     });
   });
 
+  it('answers the Code Map usage command with counts for validated time ranges only', async () => {
+    const s = setup();
+    const range = { key: 'sess', terminalId: 't1', from: 1, to: 2 };
+    const totals = { sess: { calls: 3, chars: 120, stale: 1, notOk: 0, errors: 0 } };
+    const codeMapUsage = vi.fn(() => totals);
+    s.core.codeMapUsage = codeMapUsage;
+    expect(
+      await s.api('a.one', 'commands.executeCore', { id: 'oxytocin.mcp.codeMapUsage', args: [{ ranges: [range] }] }),
+    ).toEqual(totals);
+    expect(codeMapUsage).toHaveBeenCalledWith([range]);
+    for (const args of [[], [{}], [{ ranges: [{ ...range, terminalId: '' }] }], [{ ranges: [range], query: 'x' }]]) {
+      await expect(s.api('a.one', 'commands.executeCore', { id: 'oxytocin.mcp.codeMapUsage', args })).rejects.toThrow();
+    }
+    expect(codeMapUsage).toHaveBeenCalledTimes(1);
+    // Nothing counted (older core): an empty answer, never an error.
+    delete s.core.codeMapUsage;
+    expect(
+      await s.api('a.one', 'commands.executeCore', { id: 'oxytocin.mcp.codeMapUsage', args: [{ ranges: [range] }] }),
+    ).toEqual({});
+    expect(s.toRenderer).not.toHaveBeenCalled();
+  });
+
   it('lists accounts and limits, takes limit reports and sends prompts with the right permissions', async () => {
     const s = setup({
       list: [
