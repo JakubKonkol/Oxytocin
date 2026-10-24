@@ -27,6 +27,8 @@ export default tseslint.config(
       'test-results/**',
       'playwright-report/**',
       'docs/**',
+      // Claude Code keeps agent worktrees (full checkouts) here.
+      '.claude/**',
       '**/dist/**',
       'spikes/**',
       // Plugin templates contain {{placeholders}}; they are checked by building generated projects (tests).

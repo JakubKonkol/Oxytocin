@@ -223,7 +223,7 @@ export interface CodeMapStatus {
 }
 export type CodeMapData =
   | CodeMapSlice
-  | { kind: 'search'; matches: CodeMapSearchMatch[] }
+  | { kind: 'search'; matches: CodeMapSearchMatch[]; coverage?: number; strong?: boolean }
   | { kind: 'outline'; file: CodeMapFile; definitions: CodeMapSymbol[]; imports: CodeMapEdge[] }
   | { kind: 'status'; status: CodeMapStatus }
   | { kind: 'repo-map'; markdown: string }

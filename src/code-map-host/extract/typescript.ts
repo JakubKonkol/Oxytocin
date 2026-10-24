@@ -2,7 +2,7 @@ import type { Node, Tree } from 'web-tree-sitter';
 import type { CodeMapSymbol } from '@shared/domain/code-map';
 import { CodeMapLimitError } from '../enumerate';
 import { fileRecord } from './files';
-import type { FileRecord, RelationIntent, Scope } from './record';
+import type { FileRecord, RelationIntent, Scope, TypeRef } from './record';
 
 interface Context {
   scope: string;
@@ -49,6 +49,92 @@ function names(pattern: Node | null): string[] {
     ['type_annotation', 'comment'].includes(child.type) ? [] : names(child),
   );
 }
+/** Utility types whose members are some of the wrapped type's own members, unchanged. */
+const MEMBER_PRESERVING = ['Pick', 'Omit', 'Readonly', 'Required', 'Partial', 'NonNullable'];
+const significant = (node: Node) => node.namedChildren.filter((child) => child.type !== 'comment');
+const isNullish = (node: Node) => node.type === 'literal_type' && ['null', 'undefined'].includes(node.text);
+function unionMembers(node: Node): Node[] {
+  if (node.type === 'union_type') return significant(node).flatMap(unionMembers);
+  if (node.type === 'parenthesized_type') {
+    const inner = significant(node)[0];
+    return inner ? unionMembers(inner) : [];
+  }
+  return [node];
+}
+/**
+ * The type a source annotation names, as syntax. Only a single named type is recorded: `T`, `ns.T`, `T<...>` (type
+ * arguments are ignored), `Promise<T>` (flagged) and `T | null | undefined`. Everything else stays unrecorded so the
+ * resolver can never pick a member of a type the value does not have. `shape` admits an anonymous object type.
+ */
+function typeRef(node: Node | null, shape = false): TypeRef | null {
+  if (!node) return null;
+  if (node.type === 'type_annotation') return typeRef(significant(node)[0] ?? null, shape);
+  if (node.type === 'union_type' || node.type === 'parenthesized_type') {
+    const members = unionMembers(node).filter((member) => !isNullish(member));
+    return members.length === 1 && members[0]!.id !== node.id ? typeRef(members[0]!, shape) : null;
+  }
+  if (node.type === 'type_identifier' || node.type === 'nested_type_identifier') {
+    const name = target(node);
+    return name && !name.includes('this') ? { name } : null;
+  }
+  if (node.type === 'generic_type') {
+    const name = target(field(node, 'name'));
+    if (!name) return null;
+    const wrapper = name.length === 1 ? name[0]! : '';
+    if (wrapper !== 'Promise' && !MEMBER_PRESERVING.includes(wrapper)) return { name };
+    const args = significant(field(node, 'type_arguments') ?? node);
+    const inner = wrapper === 'Promise' ? (args.length === 1 ? typeRef(args[0]!) : null) : typeRef(args[0] ?? null);
+    if (!inner || !('name' in inner) || inner.promise) return null;
+    return wrapper === 'Promise'
+      ? { name: inner.name, ...(inner.wrappers ? { wrappers: inner.wrappers } : {}), promise: true }
+      : { name: inner.name, wrappers: [...new Set([wrapper, ...(inner.wrappers ?? [])])] };
+  }
+  return node.type === 'object_type' && shape ? { shape: true } : null;
+}
+/** The type of an initializer when it is evident from syntax: `new T()`, `f()`, `await f()`, `x as T`, `<T>x`, `a.b`. */
+function initializerType(value: Node | null): TypeRef | null {
+  let node = value;
+  let awaited = false;
+  while (node && ['parenthesized_expression', 'non_null_expression', 'await_expression'].includes(node.type)) {
+    if (node.type === 'await_expression') {
+      if (awaited) return null;
+      awaited = true;
+    }
+    node = significant(node)[0] ?? null;
+  }
+  if (!node) return null;
+  const unwrapped = (ref: TypeRef | null): TypeRef | null =>
+    ref && 'name' in ref
+      ? {
+          name: ref.name,
+          ...(ref.wrappers ? { wrappers: ref.wrappers } : {}),
+          ...(ref.promise && !awaited ? { promise: true as const } : {}),
+        }
+      : null;
+  if (node.type === 'new_expression') {
+    const name = awaited ? null : target(field(node, 'constructor'));
+    return name && !['this', 'super'].includes(name[0]!) ? { name } : null;
+  }
+  if (node.type === 'call_expression') {
+    const name = target(field(node, 'function'));
+    return name && !['require', 'import', 'super'].includes(name[0]!)
+      ? { call: name, ...(awaited ? { await: true as const } : {}) }
+      : null;
+  }
+  if (node.type === 'identifier' || node.type === 'member_expression') {
+    const path = awaited ? null : target(node);
+    return path && path[0] !== 'super' ? { value: path } : null;
+  }
+  if (node.type === 'as_expression') {
+    const parts = significant(node);
+    return parts.length === 2 ? unwrapped(typeRef(parts[1]!)) : null;
+  }
+  if (node.type === 'type_assertion') {
+    const parts = significant(node);
+    return unwrapped(typeRef(significant(parts[0] ?? node)[0] ?? null));
+  }
+  return null;
+}
 function returnsJsx(node: Node): boolean {
   const visit = (current: Node): boolean => {
     if (
@@ -79,6 +165,15 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
   const scopeCounts = new Map<string, number>();
   const symbolById = new Map<string, CodeMapSymbol>();
   const forcedClassNames = new Map<number, string>();
+  const symbolBase = new Map<string, string>();
+  // Plain JavaScript has no declarations: a mutable binding can later hold anything, only `const` is evident.
+  const javascript = /\.[cm]?jsx?$/.test(path);
+  const inferred = (value: Node | null, constant: boolean): TypeRef | null =>
+    javascript && !constant ? null : initializerType(value);
+  record.symbolTypes = [];
+  const declareType = (symbol: CodeMapSymbol, scope: string, type: TypeRef | null) => {
+    if (type) record.symbolTypes!.push({ symbol: symbol.id, scope, type });
+  };
   const makeScope = (
     context: Context,
     kind: Scope['kind'],
@@ -128,6 +223,7 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
       throw new CodeMapLimitError('Code Map per-file symbol limit reached — add exclusions');
     record.symbols.push(symbol);
     symbolById.set(symbol.id, symbol);
+    symbolBase.set(symbol.id, base);
     if (context.exported && context.scope === 'file')
       record.exports.push({
         name: context.defaultExport ? 'default' : name,
@@ -171,15 +267,48 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
       })
       .join(', ');
   };
+  /** `p: T`, `p?: T`, and `p: T = new T()` when evident; destructured and rest parameters carry no type. */
+  const parameterType = (parameter: Node): TypeRef | null => {
+    if (!['required_parameter', 'optional_parameter'].includes(parameter.type)) return null;
+    return typeRef(field(parameter, 'type')) ?? inferred(field(parameter, 'value'), false);
+  };
   const addParameters = (node: Node, context: Context) => {
     for (const parameter of (field(node, 'parameters')?.namedChildren ?? [field(node, 'parameter')]).filter(
       (value): value is Node => !!value,
-    ))
-      for (const name of names(field(parameter, 'pattern') ?? field(parameter, 'name') ?? parameter))
-        bind(name, context, null);
+    )) {
+      const pattern = field(parameter, 'pattern') ?? field(parameter, 'name') ?? parameter;
+      const type = parameterType(parameter);
+      for (const name of names(pattern))
+        bind(name, context, null, type && pattern.type === 'identifier' ? { type } : {});
+    }
     for (const parameter of field(node, 'type_parameters')?.namedChildren ?? []) {
       const name = field(parameter, 'name');
       if (name) bind(name.text, context, null);
+    }
+  };
+  const propertyParameters = new Map<number, string>();
+  /** `constructor(private readonly dep: Dep)` declares an instance property `dep` of the class. */
+  const parameterProperties = (constructor: Node, context: Context): void => {
+    for (const parameter of field(constructor, 'parameters')?.namedChildren ?? []) {
+      if (!['required_parameter', 'optional_parameter'].includes(parameter.type)) continue;
+      const modifiers = parameter.children.filter((child) =>
+        ['accessibility_modifier', 'readonly', 'override_modifier'].includes(child.type),
+      );
+      const pattern = field(parameter, 'pattern');
+      if (!modifiers.length || pattern?.type !== 'identifier') continue;
+      const visible = !modifiers.some((part) => ['private', 'protected'].includes(part.text));
+      const symbol = emit(
+        parameter,
+        pattern.text,
+        'property',
+        `${modifiers.map(clean).join(' ')} ${pattern.text}${clean(field(parameter, 'type'))}`,
+        { ...context, exported: visible },
+      );
+      record.members.push({ owner: context.owner!, name: pattern.text, symbol: symbol.id, static: false });
+      const type = typeRef(field(parameter, 'type'), true) ?? parameterType(parameter);
+      declareType(symbol, context.scope, type);
+      // `deps: { service: Service }`: the members of the anonymous object type belong to the property.
+      if (type && 'shape' in type) propertyParameters.set(parameter.id, symbol.id);
     }
   };
   const visitFunction = (
@@ -193,6 +322,7 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
     const name = forcedName ?? ownName ?? (context.defaultExport ? 'default' : null);
     const isArrow = node.type === 'arrow_function';
     let owner = context.owner;
+    let declared: CodeMapSymbol | null = null;
     if (name) {
       const kind = member ? 'method' : returnsJsx(node) ? 'component' : 'function';
       const modifiers = node.children
@@ -202,6 +332,7 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
       const signature = `${modifiers ? `${modifiers} ` : ''}${member ? '' : 'function '}${name}${clean(field(node, 'type_parameters'))}(${parameters(node)})${clean(field(node, 'return_type'))}`;
       const symbol = emit(declaration, name, kind, signature, context);
       owner = symbol.id;
+      declared = symbol;
       if (member && context.owner)
         record.members.push({
           owner: context.owner,
@@ -213,7 +344,14 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
       else if (forcedName || /declaration|signature/.test(node.type))
         bind(name, context, symbol.id, { implementation: !!field(node, 'body') });
     }
-    const thisClass = member ? context.classId : isArrow ? context.classId : null;
+    // `this` in an object-literal method is the literal, not the enclosing class.
+    const thisClass = member
+      ? node.parent?.type === 'object'
+        ? null
+        : context.classId
+      : isArrow
+        ? context.classId
+        : null;
     const staticThis = member ? node.children.some((child) => child.type === 'static') : context.staticThis;
     const next = {
       ...context,
@@ -228,6 +366,8 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
     if (ownName && name && ownName !== name) bind(ownName, next, owner);
     if (ownName && !forcedName && !/declaration|signature/.test(node.type)) bind(ownName, next, owner);
     addParameters(node, next);
+    if (declared) declareType(declared, next.scope, typeRef(field(node, 'return_type')));
+    if (member && ownName === 'constructor' && context.owner && context.classId) parameterProperties(node, context);
     for (const child of node.namedChildren) if (child.id !== field(node, 'name')?.id) visit(child, next);
   };
   const visitImport = (node: Node, context: Context): void => {
@@ -297,6 +437,13 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
   };
   const visit = (node: Node, context: Context): void => {
     if (node.type === 'comment') return;
+    const propertyId = propertyParameters.get(node.id);
+    if (propertyId) {
+      const annotation = field(node, 'type');
+      for (const child of node.namedChildren)
+        visit(child, child.id === annotation?.id ? { ...context, owner: propertyId, exported: false } : context);
+      return;
+    }
     if (node.type === 'import_statement') {
       visitImport(node, context);
       return;
@@ -384,6 +531,7 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
         const identifier = field(parameter, 'name');
         if (identifier) bind(identifier.text, next, null);
       }
+      if (kind === 'type') declareType(symbol, next.scope, typeRef(field(node, 'value'), true));
       for (const child of node.namedChildren)
         if (child.id !== field(node, 'name')?.id && child.id !== field(node, 'type_parameters')?.id) visit(child, next);
       return;
@@ -421,10 +569,41 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
         if (module !== null && (fn === 'require' || (fn === 'import' && value?.type === 'await_expression')))
           imported = { module, name: '*', typeOnly: false, ...(fn === 'require' ? { require: true } : {}) };
       }
+      const declaredType =
+        pattern?.type === 'identifier'
+          ? (typeRef(field(node, 'type')) ?? inferred(value, node.parent?.children[0]?.type === 'const'))
+          : null;
+      // `const { service, logger: log } = this.deps` takes the member types of an evident source path.
+      const destructured = new Map<string, TypeRef>();
+      let source = value;
+      while (source && ['parenthesized_expression', 'non_null_expression'].includes(source.type))
+        source = significant(source)[0] ?? null;
+      const sourcePath =
+        pattern?.type === 'object_pattern' &&
+        !field(node, 'type') &&
+        ['identifier', 'member_expression'].includes(source?.type ?? '')
+          ? target(source)
+          : null;
+      if (
+        sourcePath &&
+        sourcePath.length < 18 &&
+        sourcePath[0] !== 'super' &&
+        (!javascript || node.parent?.children[0]?.type === 'const')
+      )
+        for (const child of significant(pattern!)) {
+          const key = field(child, 'key');
+          const local = field(child, 'value');
+          if (child.type === 'shorthand_property_identifier_pattern')
+            destructured.set(child.text, { value: [...sourcePath, child.text] });
+          else if (child.type === 'pair_pattern' && key?.type === 'property_identifier' && local?.type === 'identifier')
+            destructured.set(local.text, { value: [...sourcePath, key.text] });
+        }
       for (const name of declared) {
         const symbol = context.exported
           ? emit(node, name, 'variable', `const ${name}${clean(field(node, 'type'))}`, context)
           : null;
+        const type = declaredType ?? destructured.get(name) ?? null;
+        if (symbol) declareType(symbol, bindingContext.scope, type);
         let bindingImport = imported;
         if (bindingImport && pattern?.type === 'object_pattern') {
           const pair = pattern.namedChildren.find((child) => names(child).includes(name));
@@ -433,7 +612,10 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
             name: pair?.type === 'pair_pattern' ? (field(pair, 'key')?.text ?? name) : name,
           };
         }
-        bind(name, bindingContext, symbol?.id ?? null, bindingImport ? { imported: bindingImport } : {});
+        bind(name, bindingContext, symbol?.id ?? null, {
+          ...(bindingImport ? { imported: bindingImport } : {}),
+          ...(type ? { type } : {}),
+        });
       }
       const annotation = field(node, 'type');
       if (annotation) visit(annotation, { ...context, exported: false });
@@ -473,6 +655,7 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
           });
         const value = field(node, 'value');
         const annotation = field(node, 'type');
+        declareType(symbol, context.scope, typeRef(annotation, true) ?? inferred(value, false));
         if (annotation) visit(annotation, { ...context, owner: symbol.id, exported: false });
         if (value) visit(value, { ...context, owner: symbol.id, exported: false, publicOwner: false });
       }
@@ -507,11 +690,13 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
     if (['identifier', 'member_expression'].includes(node.type) && node.parent?.type === 'arguments')
       relation(node, context, 'references', 'value', node);
     if (
-      ['statement_block', 'for_statement', 'for_in_statement', 'catch_clause'].includes(node.type) &&
+      ['statement_block', 'for_statement', 'for_in_statement', 'catch_clause', 'switch_body'].includes(node.type) &&
       node.parent?.type !== 'internal_module'
     )
       context = { ...context, scope: makeScope(context, 'block', node.type), exported: false, defaultExport: false };
     if (node.type === 'catch_clause') for (const name of names(field(node, 'parameter'))) bind(name, context, null);
+    if (node.type === 'for_in_statement' && field(node, 'kind'))
+      for (const name of names(field(node, 'left'))) bind(name, context, null);
     for (const child of node.namedChildren) visit(child, context);
   };
   visit(tree.rootNode, {
@@ -523,5 +708,9 @@ export function extractTypeScript(path: string, source: string, tree: Tree): Fil
     defaultExport: false,
     publicOwner: true,
   });
+  // Overloaded or merged declarations share one symbol base: no single signature speaks for them.
+  record.symbolTypes = record.symbolTypes.filter(
+    (entry) => (occurrences.get(symbolBase.get(entry.symbol) ?? '') ?? 1) === 1,
+  );
   return record;
 }

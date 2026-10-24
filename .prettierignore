@@ -15,3 +15,4 @@ tests/fixtures/usage/
 # Templates with {{placeholders}}; the generated project is formatted by its author.
 packages/create-oxytocin-plugin/template/
 packages/create-oxytocin-plugin/vendor/
+.claude/

@@ -1,11 +1,14 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { copyCodeMapAssets } from '../../../scripts/code-map-assets';
 import { ParserRuntime } from '../parse/runtime';
 import { extractTypeScript } from '../extract/typescript';
+import { EXTRACTOR_VERSION } from '../extract/record';
+import { buildSearchData } from '../extract/search-data';
+import { CodeSearch } from '../query/search';
 import { normalizedSource } from '../extract/files';
 import type { InventorySnapshot } from '../indexer';
 import { GraphEngine } from './engine';
@@ -35,7 +38,10 @@ const parse = vi.fn(async (path: string, source: string) => {
   source = normalizedSource(source);
   const tree = await parser.parse(source, 'typescript');
   try {
-    return extractTypeScript(path, source, tree);
+    // The parser worker attaches the same search postings to every parsed record.
+    const record = extractTypeScript(path, source, tree);
+    record.search = buildSearchData(source, record.symbols);
+    return record;
   } finally {
     tree.delete();
   }
@@ -155,5 +161,88 @@ describe('Graph publication pipeline', () => {
     expect(parse).toHaveBeenCalledTimes(1);
     expect(result.manifest.generation).toBeGreaterThan(first.manifest.generation);
     expect(await readFile(join(root, '.oxy/code-map/graph.json'), 'utf8')).toBe(expected);
+  });
+  describe('search corpus', () => {
+    const question = (target: GraphEngine, text: string) => {
+      const snapshot = target.snapshot()!;
+      return new CodeSearch(snapshot.graph, snapshot.corpus).search(text, undefined, 8).matches.map((m) => m.id);
+    };
+    it('keeps body terms out of graph.json, caches them with the record and pins each snapshot to its generation', async () => {
+      const root = await temporary(),
+        target = await engine(root),
+        sources = new Map([
+          ['a.ts', 'export function first() { return bodyonlyalpha; }'],
+          ['notes.md', '# Notes\n\nResidualnotesword explains the plan.\n'],
+        ]);
+      const first = await publish(target, sources);
+      const before = target.snapshot()!;
+      expect(before.manifest.generation).toBe(first.manifest.generation);
+      const graphText = await readFile(join(root, '.oxy/code-map/graph.json'), 'utf8');
+      expect(graphText).not.toContain('bodyonlyalpha');
+      expect(graphText).not.toContain('"search"');
+      const records = await Promise.all(
+        (await cacheFiles(root)).map(async (path) => gunzipSync(await readFile(path)).toString('utf8')),
+      );
+      expect(records.every((text) => text.includes('"search"'))).toBe(true);
+      expect(question(target, 'bodyonlyalpha')).toEqual(['s:a.ts#function:first']);
+      expect(question(target, 'residualnotesword')).toEqual(['f:notes.md']);
+
+      sources.set('a.ts', 'export function first() { return bodyonlybeta; }');
+      await publish(target, sources, ['a.ts']);
+      const after = target.snapshot()!;
+      expect(after.manifest.generation).toBe(before.manifest.generation + 1);
+      expect(after.corpus).not.toBe(before.corpus);
+      // The earlier generation keeps answering from its own graph and corpus, whatever was published since.
+      const old = new CodeSearch(before.graph, before.corpus);
+      expect(old.search('bodyonlyalpha', undefined, 3).matches.map((m) => m.path)).toEqual(['a.ts']);
+      expect(old.search('bodyonlybeta', undefined, 3).matches).toEqual([]);
+      expect(question(target, 'bodyonlybeta')).toEqual(['s:a.ts#function:first']);
+      expect(question(target, 'bodyonlyalpha')).toEqual([]);
+      // A checkpoint without changes returns the same pinned pair.
+      await publish(target, sources, []);
+      expect(target.snapshot()!.corpus).toBe(after.corpus);
+    });
+    it('answers identically after an incremental update, a cold build and a restart from the cache', async () => {
+      const incrementalRoot = await temporary(),
+        coldRoot = await temporary();
+      const sources = new Map([
+        ['a.ts', 'export function first() { return shiftPlain; }'],
+        ['b.ts', "import {first} from './a'; export function run() { first(); /* newline handling */ }"],
+        ['c.ts', 'export const flags = { shiftKey: true };'],
+      ]);
+      const incremental = await engine(incrementalRoot);
+      await publish(incremental, sources);
+      sources.set('a.ts', 'export function first() { return shiftKey && newline; }');
+      sources.delete('c.ts');
+      sources.set('d.ts', 'export function later() { /* newline after shiftKey */ }');
+      await publish(incremental, sources, ['a.ts', 'd.ts']);
+      const cold = await engine(coldRoot);
+      await publish(cold, sources);
+      const reopened = await engine(incrementalRoot);
+      const dump = (target: GraphEngine) => JSON.stringify([...target.snapshot()!.corpus]);
+      expect(dump(incremental)).toBe(dump(cold));
+      expect(dump(reopened)).toBe(dump(cold));
+      for (const text of ['shiftKey newline', 'newline handling', 'later', 'shift plain', 'first run'])
+        for (const other of [cold, reopened]) expect(question(incremental, text)).toEqual(question(other, text));
+      expect(question(incremental, 'shiftKey newline')).not.toEqual([]);
+    });
+    it('reparses cached records of another extractor version and recovers their search terms', async () => {
+      const root = await temporary(),
+        sources = new Map([['a.ts', 'export function first() { return versionedword; }']]);
+      await publish(await engine(root), sources);
+      for (const path of await cacheFiles(root)) {
+        const record = JSON.parse(gunzipSync(await readFile(path)).toString('utf8')) as Record<string, unknown>;
+        record.version = EXTRACTOR_VERSION - 1;
+        delete record.search;
+        await writeFile(path, gzipSync(JSON.stringify(record)));
+      }
+      const reopened = await engine(root);
+      // Records that cannot be trusted are not used for search either.
+      expect(reopened.snapshot()!.corpus.size).toBe(0);
+      parse.mockClear();
+      await publish(reopened, sources);
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(question(reopened, 'versionedword')).toEqual(['s:a.ts#function:first']);
+    });
   });
 });
