@@ -1,24 +1,34 @@
+/** `items` in `compare` order; elements that compare equal are one element when `unique` is set. */
+export function sortedFrom<T>(items: readonly T[], compare: (left: T, right: T) => number, unique: boolean): T[] {
+  return merge([], [...items].sort(compare), compare, unique);
+}
+
 /**
- * Sorts `current` (and optionally removes elements that compare equal) by reusing the sorted result of the previous
- * build. Elements that are the same object in both builds keep their relative order, so only new elements are
- * sorted and merged in. The result equals sorting `current` from scratch, provided `compare` is a total order on
- * the content of the elements (equal-comparing elements have equal content).
+ * The previous sorted result without `removed`, merged with the `added` elements. Equals sorting the new element set
+ * from scratch when `compare` is a total order on the content of the elements (equal-comparing elements have equal
+ * content), `removed` holds exactly the previous elements that are gone and `added` exactly the new ones.
  */
-export function sortedFrom<T extends object>(
-  current: readonly T[],
-  previous: readonly T[] | undefined,
+export function mergeSorted<T>(
+  previous: readonly T[],
+  removed: ReadonlySet<T>,
+  added: readonly T[],
   compare: (left: T, right: T) => number,
   unique: boolean,
 ): T[] {
-  let kept: T[] = [];
-  let fresh: T[];
-  if (previous?.length) {
-    const now = new Set<T>(current);
-    const before = new Set<T>(previous);
-    kept = previous.filter((item) => now.has(item));
-    fresh = current.filter((item) => !before.has(item));
-  } else fresh = [...current];
-  fresh.sort(compare);
+  return merge(
+    removed.size ? previous.filter((item) => !removed.has(item)) : previous,
+    [...added].sort(compare),
+    compare,
+    unique,
+  );
+}
+
+function merge<T>(
+  kept: readonly T[],
+  fresh: readonly T[],
+  compare: (left: T, right: T) => number,
+  unique: boolean,
+): T[] {
   const output: T[] = [];
   const emit = (item: T) => {
     if (unique && output.length && compare(output[output.length - 1]!, item) === 0) return;

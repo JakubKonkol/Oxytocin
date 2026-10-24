@@ -4,8 +4,8 @@ import { comparePaths, CodeMapLimitError } from '../enumerate';
 import type { FileRecord } from '../extract/record';
 import type { ProjectConfig } from '../resolve/config';
 import { ModuleResolver } from '../resolve/modules';
-import { ResolutionCache } from './resolution-cache';
-import { sortedFrom } from './sorted';
+import { ResolutionCache, type FileResolution } from './resolution-cache';
+import { mergeSorted, sortedFrom } from './sorted';
 import { BindingResolver } from '../resolve/bindings';
 import { CSharpResolver } from '../resolve/csharp';
 import { GoResolver } from '../resolve/go';
@@ -59,6 +59,10 @@ export function buildGraph(
   const cache = resolution ?? new ResolutionCache();
   const groups = new Map<string, CodeMapGraph['groups'][number]>();
   const ordered = [...records].sort(([left], [right]) => comparePaths(left, right));
+  // What each source contributed to the edges, to merge into the previous order instead of sorting everything.
+  const ownByPath = new Map<string, CodeMapEdge[]>();
+  const entryByPath = new Map<string, FileResolution>();
+  const volatileEdges: CodeMapEdge[] = [];
   const csharp =
     [...records.values()].some((record) => record.csharp) ||
     [...configs.values()].some((config) => config.kind.startsWith('dotnet-'))
@@ -81,7 +85,8 @@ export function buildGraph(
       if (path === '.') break;
     }
     // The containment edges of an unchanged record are the same objects in every build (without C# merging).
-    const reused = csharp ? undefined : cache.containment.get(record);
+    const cacheable = !csharp || !record.csharp;
+    const reused = cacheable ? cache.containment.get(record) : undefined;
     const own: CodeMapEdge[] = reused ?? [
       { from: record.file.group, to: record.file.id, rel: 'contains', prov: 'syntax' },
     ];
@@ -112,11 +117,16 @@ export function buildGraph(
           at: [symbol.span[0], symbol.span[1]],
         });
     }
-    if (!csharp && !reused) cache.containment.set(record, own);
+    if (cacheable && !reused) cache.containment.set(record, own);
+    ownByPath.set(record.file.path, own);
     for (const edge of own) graph.edges.push(edge);
   }
   for (const group of groups.values()) {
-    if (group.parent) graph.edges.push({ from: group.parent, to: group.id, rel: 'contains', prov: 'syntax' });
+    if (group.parent) {
+      const edge: CodeMapEdge = { from: group.parent, to: group.id, rel: 'contains', prov: 'syntax' };
+      graph.edges.push(edge);
+      volatileEdges.push(edge);
+    }
     if (graph.edges.length > limits.edges) throw new CodeMapLimitError();
   }
   let resolver: BindingResolver | undefined;
@@ -147,12 +157,14 @@ export function buildGraph(
       const stored = { ...output, packages: [...output.packages] };
       entry = cache.store(path, deps, stored);
     }
+    entryByPath.set(path, entry);
     for (const edge of entry.edges) graph.edges.push(edge);
     for (const item of entry.unresolved) graph.unresolved.push(item);
     for (const name of entry.packages) packages.add(name);
     for (const id of entry.exported) exportedSymbols.add(id);
     if (graph.edges.length > limits.edges || graph.unresolved.length > limits.edges) throw new CodeMapLimitError();
   }
+  const relationsEnd = { edges: graph.edges.length, unresolved: graph.unresolved.length };
   const packageNodes = new Map<string, CodeMapGraph['packages'][number]>(
     [...packages].map((name) => [`p:${name}`, { id: `p:${name}`, name, external: true }]),
   );
@@ -213,11 +225,46 @@ export function buildGraph(
   graph.packages = [...packageNodes.values()].sort((left, right) => comparePaths(left.id, right.id));
   graph.files.sort((left, right) => comparePaths(left.id, right.id));
   graph.symbols.sort((left, right) => comparePaths(left.id, right.id));
-  // Edges equal in every field are one edge. Files that did not change contribute the same edge objects as in the
-  // previous build, so only new edges are sorted and merged into the previous order.
-  graph.edges = sortedFrom(graph.edges, cache.published?.edges, compareEdges, true);
-  graph.unresolved = sortedFrom(graph.unresolved, cache.published?.unresolved, compareUnresolved, false);
-  cache.published = { edges: graph.edges, unresolved: graph.unresolved };
+  // Edges equal in every field are one edge. Sources that did not change contribute the same edge objects as in the
+  // previous build, so only the edges of changed sources are sorted and merged into the previous order.
+  for (let index = relationsEnd.edges; index < graph.edges.length; index++) volatileEdges.push(graph.edges[index]!);
+  const volatileUnresolved = graph.unresolved.slice(relationsEnd.unresolved);
+  const previous = cache.published;
+  if (previous && cache.mergedBuilds < 50) {
+    const removedEdges = new Set<CodeMapEdge>(previous.volatileEdges);
+    const addedEdges: CodeMapEdge[] = [...volatileEdges];
+    const removedUnresolved = new Set(previous.volatileUnresolved);
+    const addedUnresolved = [...volatileUnresolved];
+    for (const [path, own] of previous.own)
+      if (ownByPath.get(path) !== own) for (const edge of own) removedEdges.add(edge);
+    for (const [path, own] of ownByPath)
+      if (previous.own.get(path) !== own) for (const edge of own) addedEdges.push(edge);
+    for (const [path, entry] of previous.entries)
+      if (entryByPath.get(path) !== entry) {
+        for (const edge of entry.edges) removedEdges.add(edge);
+        for (const item of entry.unresolved) removedUnresolved.add(item);
+      }
+    for (const [path, entry] of entryByPath)
+      if (previous.entries.get(path) !== entry) {
+        for (const edge of entry.edges) addedEdges.push(edge);
+        for (const item of entry.unresolved) addedUnresolved.push(item);
+      }
+    graph.edges = mergeSorted(previous.edges, removedEdges, addedEdges, compareEdges, true);
+    graph.unresolved = mergeSorted(previous.unresolved, removedUnresolved, addedUnresolved, compareUnresolved, false);
+    cache.mergedBuilds++;
+  } else {
+    graph.edges = sortedFrom(graph.edges, compareEdges, true);
+    graph.unresolved = sortedFrom(graph.unresolved, compareUnresolved, false);
+    cache.mergedBuilds = 0;
+  }
+  cache.published = {
+    edges: graph.edges,
+    unresolved: graph.unresolved,
+    own: ownByPath,
+    entries: entryByPath,
+    volatileEdges,
+    volatileUnresolved,
+  };
   graph.coverage.files.skipped = skipped;
   graph.coverage.byLanguage = Object.fromEntries(
     Object.entries(graph.coverage.byLanguage).sort(([left], [right]) => comparePaths(left, right)),
