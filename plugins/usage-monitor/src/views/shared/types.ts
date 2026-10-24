@@ -18,6 +18,15 @@ export interface Totals {
   sessions: number;
 }
 
+/** Code Map tool use of one agent session (counts only). */
+export interface CodeMapFigure {
+  calls: number;
+  chars: number;
+  stale: number;
+  notOk: number;
+  errors: number;
+}
+
 export interface LiveSession {
   sessionId: string;
   agent: string;

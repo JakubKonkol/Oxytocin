@@ -43,7 +43,7 @@ const describe = (kind: string, text: string) => {
  * Nothing for a fresh answer. One short line when the index lags or a cited file is not what the answer was built
  * from; coverage and unresolved totals belong to status.
  */
-function note(f: CodeMapFreshness, cited: readonly { path: string; stale?: boolean | undefined }[] = []): string[] {
+function note(f: CodeMapFreshness, cited: readonly Cited[] = []): string[] {
   if (f.stale || !['ready', 'degraded'].includes(f.state))
     return [
       f.pendingFiles
@@ -133,13 +133,45 @@ function relationsLines(data: Extract<NonNullable<CodeMapQueryResult['data']>, {
   return { lines, trimmed: count < data.nodes.length };
 }
 
+type Cited = { path: string; stale?: boolean | undefined };
+/** The files an answer cites, whose staleness `note` reports. */
+function citedBy(data: NonNullable<CodeMapQueryResult['data']>): Cited[] {
+  if (data.kind === 'search') return data.matches;
+  if (data.kind === 'outline') return [{ path: data.file.path, stale: data.file.stale }];
+  if (data.kind !== 'relations') return [];
+  return data.nodes.flatMap((n): Cited[] =>
+    n.kind === 'symbol'
+      ? [{ path: filePath(n.value.file), stale: n.value.stale }]
+      : n.kind === 'file'
+        ? [{ path: n.value.path, stale: n.value.stale }]
+        : [],
+  );
+}
+
+/** Whether the agent is told the answer may lag (the `stale:` line), decided on the structured result. */
+export function isStaleAnswer(result: CodeMapQueryResult): boolean {
+  // A non-OK answer is a `CODE: hint` line and a status answer is JSON: neither carries a `stale:` line.
+  if (!result.freshness || result.code !== 'OK' || !result.data || result.data.kind === 'status') return false;
+  return note(result.freshness, citedBy(result.data)).length > 0;
+}
+
+/** The same for `oxy_task_context`. */
+export function isStaleTaskContext(result: TaskContextResult): boolean {
+  return taskContextNote(result).length > 0;
+}
+const taskContextNote = (result: TaskContextResult) =>
+  note(
+    result.freshness,
+    result.nodes.flatMap((n) => (n.path ? [{ path: n.path, stale: n.stale }] : [])),
+  );
+
 export function formatCodeMap(result: CodeMapQueryResult): string {
   if (!result.freshness || result.data?.kind === 'status') return JSON.stringify(result);
   const data = result.data;
   if (result.code !== 'OK' || !data) return finish([`${result.code}: ${result.hint}`], result);
   const lines: string[] = [];
   if (data.kind === 'search') {
-    lines.push(...note(result.freshness, data.matches));
+    lines.push(...note(result.freshness, citedBy(data)));
     for (const [index, m] of data.matches.entries()) {
       lines.push(
         m.kind === 'file'
@@ -150,7 +182,7 @@ export function formatCodeMap(result: CodeMapQueryResult): string {
     }
     if (!data.matches.length) lines.push('No indexed matches. Use Grep.');
   } else if (data.kind === 'outline') {
-    lines.push(...note(result.freshness, [{ path: data.file.path, stale: data.file.stale }]));
+    lines.push(...note(result.freshness, citedBy(data)));
     const status = SOURCE_STATUS_NOTE[data.file.status];
     lines.push(`${path(data.file.path)}${data.file.stale ? ' STALE' : ''}${status ? ` ${status}` : ''}`);
     for (const s of data.definitions)
@@ -158,18 +190,7 @@ export function formatCodeMap(result: CodeMapQueryResult): string {
     for (const e of data.imports)
       lines.push(`imports ${path(filePath(e.to))}${e.prov === 'heuristic' ? ' [heuristic]' : ''}`);
   } else if (data.kind === 'relations') {
-    lines.push(
-      ...note(
-        result.freshness,
-        data.nodes.flatMap((n) =>
-          n.kind === 'symbol'
-            ? [{ path: filePath(n.value.file), stale: n.value.stale }]
-            : n.kind === 'file'
-              ? [{ path: n.value.path, stale: n.value.stale }]
-              : [],
-        ),
-      ),
-    );
+    lines.push(...note(result.freshness, citedBy(data)));
     const { lines: body, trimmed } = relationsLines(data);
     lines.push(...body, 'Indexed code only; not exhaustive.');
     if (trimmed) lines.push('Truncated: size budget reached. Use depth 1 or one direction.');
@@ -190,10 +211,7 @@ const GENERIC_WARNINGS = [
 ];
 export function formatTaskContext(result: TaskContextResult): string {
   const lines = [
-    ...note(
-      result.freshness,
-      result.nodes.flatMap((n) => (n.path ? [{ path: n.path, stale: n.stale }] : [])),
-    ),
+    ...taskContextNote(result),
     ...(result.memory === 'unavailable' ? ['memory unavailable; code pointers only'] : []),
   ];
   // Numbers exist only so that relation lines can refer to nodes.

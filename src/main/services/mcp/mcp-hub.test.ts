@@ -353,6 +353,91 @@ describe('McpHub Code Map tools', () => {
   });
 });
 
+describe('McpHub Code Map accounting', () => {
+  const freshness = {
+    generation: 1,
+    state: 'ready',
+    stale: false,
+    verification: 'metadata',
+    checkedAt: null,
+    lastFullHashAt: null,
+    pendingFiles: 0,
+    coverage: {},
+    warnings: [],
+  };
+  const match = {
+    id: 's:secret/pay.ts#function:charge',
+    path: 'secret/pay.ts',
+    name: 'charge',
+    kind: 'function',
+    signature: 'function charge()',
+    span: [1, 0, 3, 1],
+    stale: false,
+    score: 1,
+    whyIncluded: ['exact name'],
+  };
+  const envelope = { checkoutId: 'c', code: 'OK', truncated: false, reasons: [], hint: 'ok', freshness };
+  const answers: Record<string, unknown> = {
+    fresh: { ...envelope, data: { kind: 'search', matches: [match] } },
+    lagging: {
+      ...envelope,
+      freshness: { ...freshness, stale: true, pendingFiles: 2 },
+      data: { kind: 'search', matches: [match] },
+    },
+    updating: { ...envelope, code: 'INDEX_UPDATING', hint: 'Indexing.' },
+  };
+  const withCodeMap = () => {
+    const query = vi.fn((_id: string, input: object) => {
+      const asked = 'query' in input ? String(input.query) : 'fresh';
+      return asked === 'boom' ? Promise.reject(new Error('index exploded')) : Promise.resolve(answers[asked] as never);
+    });
+    return setup({ codeMap: { enabled: () => true, onDidChange: () => ({ dispose() {} }), service: { query } } });
+  };
+  const textOf = (r: McpToolResult) => r.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
+
+  it('counts calls, answer characters, stale, not-OK and failed answers per MCP session and terminal', async () => {
+    const { hub, call } = withCodeMap();
+    const sizes = [
+      textOf(await call('oxy_find_code', { query: 'fresh' })).length,
+      textOf(await call('oxy_find_code', { query: 'lagging' })).length,
+      textOf(await call('oxy_find_code', { query: 'updating' })).length,
+      textOf(await call('oxy_find_code', { query: 'boom' })).length,
+      textOf(await call('oxy_file_outline', { path: 12 })).length,
+    ];
+    await call('oxy_capabilities');
+    const [session, ...rest] = hub.codeMapUsage();
+    expect(rest).toEqual([]);
+    expect(session).toMatchObject({
+      sessionId: 's',
+      terminalId: 't-1',
+      projectId: 'p1',
+      calls: 5,
+      chars: sizes.reduce((a, b) => a + b, 0),
+      stale: 1,
+      notOk: 1,
+      errors: 2,
+    });
+    expect(Object.keys(session!.tools).sort()).toEqual(['oxy_file_outline', 'oxy_find_code']);
+    expect(session!.tools['oxy_find_code']).toMatchObject({ calls: 4, stale: 1, notOk: 1, errors: 1 });
+    const now = Date.now();
+    expect(hub.codeMapUsageTotals([{ key: 'k', terminalId: 't-1', from: now - 60_000, to: now + 60_000 }])).toEqual({
+      k: { calls: 5, chars: session!.chars, stale: 1, notOk: 1, errors: 2 },
+    });
+    expect(hub.codeMapUsageTotals([{ key: 'k', terminalId: 'elsewhere', from: 0, to: now + 60_000 }])).toEqual({});
+    // Neither the query text nor the code paths it found are kept.
+    const stored = JSON.stringify(hub.codeMapUsage());
+    for (const leaked of ['fresh', 'lagging', 'boom', 'secret', 'pay.ts', 'charge'])
+      expect(stored).not.toContain(leaked);
+  });
+
+  it('does not count calls of tools that are not Code Map tools', async () => {
+    const { hub, call } = withCodeMap();
+    await call('oxy_capabilities');
+    await call('db_query');
+    expect(hub.codeMapUsage()).toEqual([]);
+  });
+});
+
 describe('McpHub Ensemble endpoint', () => {
   it('uses authenticated role provenance for learning writes and aborts them on token revocation', async () => {
     let live = true;

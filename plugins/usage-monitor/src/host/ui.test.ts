@@ -3,7 +3,12 @@ import type { PluginContext, PluginView, ViewProvider } from '@oxytocin/plugin-a
 import { registerUi, sidebarDisplay } from './ui';
 import type { WorkerClient } from './worker-rpc';
 
-function setup(status: Record<string, unknown>, settings: Record<string, unknown> = {}) {
+function setup(
+  status: Record<string, unknown>,
+  settings: Record<string, unknown> = {},
+  requests: Record<string, unknown> = {},
+  execute: (id: string, ...args: unknown[]) => Promise<unknown> = () => Promise.resolve(undefined),
+) {
   const item = { text: '', tooltip: '', command: undefined as unknown, show: vi.fn(), hide: vi.fn(), dispose: vi.fn() };
   const providers = new Map<string, ViewProvider>();
   const commands = new Map<string, (...a: unknown[]) => unknown>();
@@ -21,13 +26,13 @@ function setup(status: Record<string, unknown>, settings: Record<string, unknown
       settings: { get: (k: string) => settings[k], update, onDidChange: () => ({ dispose: vi.fn() }) },
       commands: {
         register: (id: string, h: (...a: unknown[]) => unknown) => (commands.set(id, h), { dispose: vi.fn() }),
-        execute: vi.fn(),
+        execute: vi.fn(execute),
       },
       projects: { list: () => Promise.resolve([]) },
     },
   } as unknown as PluginContext;
   const client = {
-    request: vi.fn((method: string) => Promise.resolve(method === 'view.status' ? status : {})),
+    request: vi.fn((method: string) => Promise.resolve(method === 'view.status' ? status : (requests[method] ?? {}))),
     onEvent: vi.fn(() => () => undefined),
   } as unknown as WorkerClient;
   registerUi(ctx, client);
@@ -113,6 +118,50 @@ describe('Usage Monitor UI glue', () => {
     await expect(
       Promise.resolve(handlers.get('settings.set')!({ key: 'terminal.fontSize', value: 1 })),
     ).rejects.toThrow(/cannot be changed/);
+    for (const d of s.ctx.subscriptions) d.dispose();
+  });
+
+  it('adds the Code Map calls of the agent in the terminal to the dashboard sessions', async () => {
+    const row = (sessionId: string, terminalId: string | null) => ({
+      sessionId,
+      terminalId,
+      firstEventAt: Date.now() - 5000,
+      lastEventAt: Date.now(),
+    });
+    const figure = { calls: 2, chars: 300, stale: 0, notOk: 0, errors: 0 };
+    const execute = vi.fn((_id: string, arg: unknown) =>
+      Promise.resolve({ [(arg as { ranges: { key: string }[] }).ranges[0]!.key]: figure }),
+    );
+    const s = setup(
+      { todayUsd: 1 },
+      {},
+      {
+        'dash.sessions': { rows: [row('a', 't1'), row('b', null)], total: 2 },
+        'dash.session': { session: row('a', 't1'), events: [] },
+      },
+      execute,
+    );
+    const handlers = new Map<string, (p: unknown) => unknown>();
+    const view = {
+      onDidDispose: vi.fn(),
+      onDidChangeVisibility: vi.fn(),
+      onRequest: (m: string, h: (p: unknown) => unknown) => handlers.set(m, h),
+    } as unknown as PluginView;
+    await s.providers.get('usage.dashboard')!.resolve(view);
+    const page = (await handlers.get('sessions')!({})) as {
+      rows: { sessionId: string; codeMap: unknown }[];
+      total: number;
+    };
+    expect(page.total).toBe(2);
+    expect(page.rows.map((r) => [r.sessionId, r.codeMap])).toEqual([
+      ['a', figure],
+      ['b', null],
+    ]);
+    expect(execute).toHaveBeenCalledWith('oxytocin.mcp.codeMapUsage', {
+      ranges: [expect.objectContaining({ key: 'a', terminalId: 't1' })],
+    });
+    const detail = (await handlers.get('session')!({ id: 'a' })) as { session: { codeMap: unknown } };
+    expect(detail.session.codeMap).toEqual(figure);
     for (const d of s.ctx.subscriptions) d.dispose();
   });
 

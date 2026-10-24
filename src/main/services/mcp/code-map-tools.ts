@@ -3,7 +3,7 @@ import { CodeMapQuerySchemas, type CodeMapQueryInput } from '@shared/domain/code
 import type { CodeMapService } from '../code-map/code-map-service';
 import type { CoreTool } from './core-tools';
 import { NO_PROJECT_MESSAGE } from './caller-context';
-import { formatCodeMap } from './code-map-format';
+import { formatCodeMap, isStaleAnswer } from './code-map-format';
 
 export const CODE_MAP_TOOL_KINDS = {
   oxy_code_map_status: 'status',
@@ -73,7 +73,7 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
         timeoutMs: 15_000,
       },
       defaultPolicy: 'allow',
-      run: async ({ args, caller, signal }) => {
+      run: async ({ args, caller, signal, report }) => {
         const parsed = schema.safeParse(args);
         if (!parsed.success)
           throw new CodeMapToolInputError(
@@ -101,6 +101,7 @@ export function buildCodeMapTools(service: Pick<CodeMapService, 'query'>): CoreT
           signal,
           caller.context.checkoutId,
         );
+        report?.({ stale: isStaleAnswer(result), notOk: result.code !== 'OK' });
         return format === 'json' ? JSON.stringify(result) : formatCodeMap(result);
       },
     } satisfies CoreTool;
