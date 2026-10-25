@@ -101,6 +101,15 @@ keychain and never shown to the agent. Configure your **database servers** once 
 address, login, discovered databases) and link the databases each project needs — agents see them grouped by server,
 e.g. `FIRMA_1/WMS_DB` and `FIRMA_2/WMS_DB`.
 
+### 🗺️ Code Map: a local index of your code (beta)
+
+Turn it on per project (*Project settings → Code Map*) and Oxytocin keeps a map of files, declarations and their
+relationships in `.oxy/code-map/`, updated as you edit — built locally, without AI or network requests. TypeScript,
+JavaScript, C#, Go and Java get declarations and relationships, Python declarations, imports and simple calls. Agents
+locate code through the MCP server (`oxy_find_code`, `oxy_code_relations`) and get compact `path:lines` pointers with
+the relevant source lines instead of searching the whole tree; the *Code Map Visualizer* shows the graph. Code Map is
+in beta: the map can lag behind edits or miss relationships, so agents still read the current source before editing.
+
 ### 🎼 Ensemble: a team of agents on one task (beta)
 
 Set up your crew once — which AI, model and effort each member runs on, and who leads — then describe a task, pick

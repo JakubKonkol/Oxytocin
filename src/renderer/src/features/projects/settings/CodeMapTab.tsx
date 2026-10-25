@@ -9,6 +9,7 @@ import type { Project } from '@shared/domain/project';
 import { ipc } from '../../../lib/ipc-client';
 import { useProjectsStore } from '../../../stores/projects-store';
 import { confirmDialog, confirmDialogEx } from '../../../stores/dialog-store';
+import { BetaNotice } from '../../../ui/Beta';
 import { Button } from '../../../ui/Button';
 import { openFile } from '../../editor/editor-actions';
 import { workspaceFor } from '../../attention/reveal';
@@ -81,7 +82,7 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
       const answer = await confirmDialogEx({
         title: 'Enable Code Map?',
         description:
-          'Oxytocin will create .oxy/ in this project and build a local map in the background while the app runs. It stores file paths, declarations and relationships. No AI, network requests or project scripts are used. TypeScript, JavaScript, C#, Go and Java get declarations and relationships; Python gets declarations, imports and simple calls. Other languages have file coverage only. You can pause updates, rebuild or delete the map at any time.',
+          'Code Map is in beta. Oxytocin will create .oxy/ in this project and build a local map in the background while the app runs. It stores file paths, declarations and relationships. No AI, network requests or project scripts are used. TypeScript, JavaScript, C#, Go and Java get declarations and relationships; Python gets declarations, imports and simple calls. Other languages have file coverage only. You can pause updates, rebuild or delete the map at any time.',
         confirmLabel: 'Enable Code Map',
         checkbox: { label: 'Keep .oxy out of Git', defaultChecked: true },
       });
@@ -119,6 +120,15 @@ export function CodeMapTab({ project, close }: { project: Project; close: () => 
   const canWrite = settings.enabled && !busy && !status?.readOnly;
   return (
     <div className="flex flex-col gap-3" data-testid="code-map-tab">
+      <BetaNotice
+        id="code-map"
+        feature="Code Map"
+        testId="code-map-beta-notice"
+        className="rounded-control border px-3"
+      >
+        It is not fully tested yet, so expect rough edges: the map can lag behind edits, miss relationships or rank a
+        less relevant file first. Agents should still read the current source before they change it.
+      </BetaNotice>
       <Section title="Code Map">
         <Check checked={settings.enabled} disabled={busy} onChange={() => void enable()} testId="code-map-enabled">
           Enable Code Map

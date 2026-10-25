@@ -1,5 +1,7 @@
 # Code Map Visualizer
 
+> **Beta.** Code Map is not fully tested yet; the map can lag behind edits or miss relationships.
+
 Open **Code Map** from a project's menu, Code Map settings, the Add menu, or **Code Map: Open**. Enable indexing in
 project settings first. The plugin uses public APIs with `projects.read`, `code-map.read`, `code-map.knowledge.read`
 and `git.read`.

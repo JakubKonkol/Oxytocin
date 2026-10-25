@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Badge } from './Badge';
+import { BetaBadge, BetaNotice } from './Beta';
 import { ConfirmDialog } from './ConfirmDialog';
 import { EmptyState } from './EmptyState';
 import { formatShortcut } from './Kbd';
@@ -122,5 +123,34 @@ describe('ConfirmDialog', () => {
     expect(screen.getByText('2 terminals still run processes.')).toBeInTheDocument();
     expect(screen.getByTestId('confirm-dialog-details').querySelectorAll('li')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Quit' })).toHaveFocus();
+  });
+});
+
+describe('Beta', () => {
+  it('names the feature in the badge tooltip', () => {
+    render(<BetaBadge feature="Code Map" testId="beta" />);
+    expect(screen.getByTestId('beta')).toHaveTextContent('Beta');
+    expect(screen.getByTestId('beta')).toHaveAttribute('title', 'Code Map is in beta: not fully tested yet');
+  });
+
+  it('keeps a closed notice closed for the session, per feature', async () => {
+    const notice = (id: string) => (
+      <BetaNotice id={id} feature="Code Map" testId={`notice-${id}`}>
+        Expect rough edges.
+      </BetaNotice>
+    );
+    const first = render(notice('a'));
+    expect(screen.getByRole('note')).toHaveTextContent('Code Map is in beta. Expect rough edges.');
+    await userEvent.click(screen.getByTestId('notice-a-close'));
+    expect(screen.queryByRole('note')).toBeNull();
+    first.unmount();
+    render(
+      <>
+        {notice('a')}
+        {notice('b')}
+      </>,
+    );
+    expect(screen.queryByTestId('notice-a')).toBeNull();
+    expect(screen.getByTestId('notice-b')).toBeInTheDocument();
   });
 });

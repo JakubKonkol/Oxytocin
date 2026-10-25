@@ -162,6 +162,7 @@ test('visualizer explores a symbol by keyboard, opens source and updates after e
     );
     const frame = win.frameLocator('iframe[src*="oxytocin.code-map-visualizer"]');
     await expect(frame.getByRole('heading', { name: /Code Map/ })).toBeVisible();
+    await expect(frame.getByTestId('code-map-view-beta')).toHaveText('Beta');
     await expect(frame.getByLabel('Code dependency graph')).toBeVisible();
     await expect(frame.getByRole('table', { name: 'Code Map nodes' })).toHaveCount(0);
     await frame.getByRole('button', { name: 'Outline', exact: true }).click();
@@ -251,6 +252,9 @@ test('Changes and Impact show bounded incoming dependencies and compare an Ensem
     gitIn(repo, 'commit', '-qm', 'main change');
     await useFakeClaude(win);
     await win.getByTestId('group-add').first().click();
+    // Both beta tools carry the badge in the "+" menu.
+    await expect(win.getByTestId('add-tool-plugin:codeMap.view-beta')).toHaveText('Beta');
+    await expect(win.getByTestId('add-tool-ensemble-beta')).toHaveText('Beta');
     await win.getByTestId('add-tool-ensemble').click();
     const panel = win.getByTestId('ensemble-panel');
     await panel.getByTestId('ensemble-new-mode').locator('[data-value="pipeline"]').click();

@@ -10,6 +10,7 @@ import { registerCommand } from '../../lib/commands';
 import { ipc } from '../../lib/ipc-client';
 import { useProjectsStore } from '../../stores/projects-store';
 import { Button } from '../../ui/Button';
+import { BetaBadge } from '../../ui/Beta';
 import { IconButton } from '../../ui/IconButton';
 import { notify } from '../../ui/Toast';
 import { confirmDialog } from '../../stores/dialog-store';
@@ -214,12 +215,12 @@ function StartupList({
 type TabId =
   'general' | 'terminals' | 'environment' | 'git' | 'code-map' | 'databases' | 'apis' | 'links' | 'related' | 'agents';
 
-const TABS: { id: TabId; label: string }[] = [
+const TABS: { id: TabId; label: string; beta?: true }[] = [
   { id: 'general', label: 'General' },
   { id: 'terminals', label: 'Terminals' },
   { id: 'environment', label: 'Environment' },
   { id: 'git', label: 'Git' },
-  { id: 'code-map', label: 'Code Map' },
+  { id: 'code-map', label: 'Code Map', beta: true },
   { id: 'databases', label: 'Databases' },
   { id: 'apis', label: 'APIs' },
   { id: 'links', label: 'Links & logs' },
@@ -369,6 +370,9 @@ function SettingsForm({
               className="rounded-control px-2 py-1 text-left text-ui text-fg-secondary hover:bg-card-hover data-[state=active]:bg-focus-tint data-[state=active]:text-fg"
             >
               {t.label}
+              {t.beta && (
+                <BetaBadge feature={t.label} className="ml-1.5" testId={`project-settings-tab-${t.id}-beta`} />
+              )}
             </Tabs.Trigger>
           ))}
         </Tabs.List>

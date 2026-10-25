@@ -8,7 +8,7 @@
   "oxytocin": {
     "id": "oxytocin.code-map-visualizer",
     "displayName": "Code Map Visualizer",
-    "description": "Explore folders, files and symbol neighborhoods using a graph or keyboard-accessible list.",
+    "description": "Beta: explore folders, files and symbol neighborhoods using a graph or keyboard-accessible list.",
     "publisher": "oxytocin",
     "engine": "^0.2.1",
     "main": "dist/host.js",

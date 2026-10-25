@@ -33,6 +33,16 @@ h1 {
   margin: 0;
   font-weight: 600;
 }
+.beta {
+  border: 1px solid color-mix(in srgb, var(--warning, #f5a524) 40%, transparent);
+  background: color-mix(in srgb, var(--warning, #f5a524) 10%, transparent);
+  color: var(--warning, #f5a524);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .snapshot,
 .counts {
   color: var(--text-muted, #85919c);

@@ -9,6 +9,7 @@ import { executeCommand } from '../../lib/commands';
 import { ipc } from '../../lib/ipc-client';
 import { currentPlatform } from '../../lib/platform';
 import { Badge } from '../../ui/Badge';
+import { BetaBadge } from '../../ui/Beta';
 import { PROJECT_ACTIVITY_LABELS } from '@shared/domain/activity';
 import { StatusDot } from '../../ui/StatusDot';
 import { useProjectsStore } from '../../stores/projects-store';
@@ -157,7 +158,7 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
             <button
               type="button"
               aria-label="Code Map status"
-              title={`Code Map: ${codeMap?.readOnly ? 'Updated by another Oxytocin instance' : (codeMap?.state ?? 'indexing')} · ${codeMap?.counts.files ?? 0} files · ${codeMap?.counts.symbols ?? 0} symbols`}
+              title={`Code Map (beta): ${codeMap?.readOnly ? 'Updated by another Oxytocin instance' : (codeMap?.state ?? 'indexing')} · ${codeMap?.counts.files ?? 0} files · ${codeMap?.counts.symbols ?? 0} symbols`}
               className={cn(
                 'flex-none rounded-control p-0.5 hover:bg-focus-tint',
                 codeMap?.state === 'error' || codeMap?.state === 'limit'
@@ -262,6 +263,7 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
               onSelect={() => void ipc.invoke('plugins:executeCommand', { id: 'codeMap.open', args: [project.id] })}
             >
               Open Code Map
+              <BetaBadge feature="Code Map" className="ml-auto" />
             </ContextMenu.Item>
           )}
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />

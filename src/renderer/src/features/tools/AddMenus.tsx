@@ -16,7 +16,7 @@ import { type ReactNode, useState } from 'react';
 import type { TerminalProfile } from '@shared/domain/terminal-profile';
 import { ipc } from '../../lib/ipc-client';
 import { shortcutFor } from '../../lib/keyboard';
-import { Badge } from '../../ui/Badge';
+import { BetaBadge } from '../../ui/Beta';
 import { IconButton } from '../../ui/IconButton';
 import { formatShortcut } from '../../ui/Kbd';
 import { notify } from '../../ui/Toast';
@@ -40,6 +40,9 @@ const menuItem =
   'flex h-7 cursor-default items-center gap-2 rounded-badge px-2 text-ui text-fg outline-none data-[highlighted]:bg-accent-muted';
 const menuLabel = 'oxy-label px-2 pt-1.5 pb-1';
 
+/** Tools in beta: their name for the badge's tooltip. */
+const BETA_TOOLS: Record<string, string> = { ensemble: 'Ensemble', 'plugin:codeMap.view': 'Code Map' };
+
 function ToolIcon({ tool }: { tool: ToolDefinition }) {
   if (tool.id === 'ensemble') return <Workflow size={14} className="flex-none text-agent" />;
   return tool.id === SCRATCHPAD_TOOL_ID ? (
@@ -56,10 +59,8 @@ function ToolItems({ tools, onPick }: { tools: ToolDefinition[]; onPick: (tool: 
         <DropdownMenu.Item key={t.id} data-testid={`add-tool-${t.id}`} className={menuItem} onSelect={() => onPick(t)}>
           <ToolIcon tool={t} />
           <span className="truncate">{t.title}</span>
-          {t.id === 'ensemble' && (
-            <Badge variant="warning" className="ml-auto">
-              Beta
-            </Badge>
+          {BETA_TOOLS[t.id] && (
+            <BetaBadge feature={BETA_TOOLS[t.id]!} className="ml-auto" testId={`add-tool-${t.id}-beta`} />
           )}
         </DropdownMenu.Item>
       ))}

@@ -470,6 +470,9 @@ function App() {
     <main className="map">
       <header>
         <h1>Code Map · {model.project?.name ?? 'No project'}</h1>
+        <span className="beta" title="Code Map is in beta: not fully tested yet" data-testid="code-map-view-beta">
+          Beta
+        </span>
         <span className="snapshot" title="Index snapshot">
           {model.checkouts.find((c) => c.checkoutId === response?.checkoutId)?.label ?? 'Main checkout'} ·{' '}
           {response?.freshness.state ?? 'Unavailable'} · Generation {response?.freshness.generation ?? '—'}

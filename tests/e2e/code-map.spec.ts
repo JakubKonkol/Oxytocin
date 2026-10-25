@@ -348,9 +348,13 @@ test('Code Map settings build, update, pause, rebuild, preserve settings and del
         edges: { from: string; to: string; rel: string; prov: string }[];
       };
     await win.getByTestId('projects-item-map-project').click({ button: 'right' });
+    // Code Map is in beta: marked in the project menu, the settings tab and at the top of the tab.
+    await expect(win.getByTestId('project-menu-code-map')).toContainText('Beta');
     await win.getByTestId('project-menu-settings').click();
     const dialog = win.getByTestId('project-settings');
+    await expect(dialog.getByTestId('project-settings-tab-code-map-beta')).toHaveText('Beta');
     await dialog.getByTestId('project-settings-tab-code-map').click();
+    await expect(dialog.getByTestId('code-map-beta-notice')).toContainText('Code Map is in beta.');
     await expect(dialog.getByTestId('code-map-state')).toHaveText('Disabled');
     await dialog.getByTestId('code-map-enabled').click();
     const confirm = win

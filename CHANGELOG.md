@@ -18,6 +18,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Changed
 
+- **Code Map is in beta**, like Ensemble: a *Beta* badge marks it in Project settings, the project menu, the "+" menu
+  and the Code Map Visualizer, and the Code Map settings tab opens with a notice (closed for the session with ×). It is
+  not fully tested yet: the map can lag behind edits, miss relationships or rank a less relevant file first.
 - **Workspaces:** layouts are no longer rewritten every time an agent's terminal changes its live state (working,
   waiting, activity, bells) or a terminal of another project changes; only changes to what a layout stores (terminal
   titles, folders, agent sessions) save it.
