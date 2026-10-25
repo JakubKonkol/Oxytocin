@@ -27,6 +27,10 @@ export const GIT_BASE_ARGS = ['--no-optional-locks', '-c', 'core.quotepath=false
 export function runGit(gitPath: string, args: readonly string[], opts: GitExecOptions): Promise<GitResult> {
   const maxBuffer = opts.maxBuffer ?? 50 * 1024 * 1024;
   return new Promise((resolve, reject) => {
+    if (opts.signal?.aborted) {
+      reject(new OxyError('CANCELLED', 'git call cancelled'));
+      return;
+    }
     let child;
     try {
       child = spawn(gitPath, [...GIT_BASE_ARGS, ...args], {

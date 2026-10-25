@@ -4,6 +4,7 @@ import { type CallOptions, createPortRpc, type PortRpc, type RpcEvents, type Rpc
 import type { HostState, HostStatus } from '@shared/domain/app-info';
 import { OxyError } from '@shared/errors';
 import type { Logger, LogRecord } from '@shared/logging/logger';
+import { callAll } from '@shared/utils/call-all';
 import { type Disposable, toDisposable } from '@shared/utils/disposable';
 import { Emitter } from '@shared/utils/emitter';
 
@@ -145,9 +146,7 @@ export class UtilityHost<
     name: string,
     listeners: Set<(payload: unknown, ports: readonly unknown[]) => void>,
   ): Disposable {
-    return rpc.onEvent(name, (payload, ports) => {
-      for (const l of [...listeners]) l(payload, ports);
-    });
+    return rpc.onEvent(name, (payload, ports) => callAll(listeners, payload, ports));
   }
 
   private forwardLog(record: LogRecord): void {
@@ -300,9 +299,14 @@ export class UtilityHost<
       return;
     }
     const exited = new Promise<void>((resolve) => child.on('exit', () => resolve()));
-    const timeout = new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), this.o.shutdownTimeoutMs));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), this.o.shutdownTimeoutMs);
+    });
     this.rpc?.call('shutdown', null as never, { timeoutMs: this.o.shutdownTimeoutMs }).catch(() => undefined);
-    if ((await Promise.race([exited, timeout])) === 'timeout') {
+    const outcome = await Promise.race([exited, timeout]);
+    clearTimeout(timer);
+    if (outcome === 'timeout') {
       this.o.logger.warn(`${this.o.name} did not exit in time; killing it`);
       child.kill();
     }

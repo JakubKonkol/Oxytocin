@@ -73,10 +73,19 @@ export class GitService implements Disposable {
         });
       }),
     );
+    let gitPath = this.gitPath();
+    let periodicSeconds = deps.settings()['git.periodicRefreshSeconds'];
     this.store.add(
-      deps.onDidChangeSettings(() => {
-        this.installation = undefined;
-        this.restartPeriodic();
+      deps.onDidChangeSettings((s) => {
+        // Only a different git binary (or one not found yet) needs detecting again; other settings just re-sync.
+        if ((s['git.path'] ?? 'git') !== gitPath || this.installation === null) {
+          gitPath = s['git.path'] ?? 'git';
+          this.installation = undefined;
+        }
+        if (s['git.periodicRefreshSeconds'] !== periodicSeconds) {
+          periodicSeconds = s['git.periodicRefreshSeconds'];
+          this.restartPeriodic();
+        }
         void this.sync();
       }),
     );
@@ -196,7 +205,13 @@ export class GitService implements Disposable {
       const key = JSON.stringify(req);
       if (this.watched.get(p.id) === key) continue;
       this.watched.set(p.id, key);
-      await this.call('git:watch', req);
+      try {
+        await this.deps.host.call('git:watch', req);
+      } catch (e) {
+        // Not watched after all: the next sync (project or settings change, host restart) tries again.
+        if (this.watched.get(p.id) === key) this.watched.delete(p.id);
+        this.deps.logger.debug(`Workspace Host git:watch failed for ${p.id}`, e);
+      }
     }
     for (const id of [...this.watched.keys()]) {
       if (keep.has(id)) continue;

@@ -41,7 +41,11 @@ export default function DiffEditorView({
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
-  const modelsRef = useRef<{ original: monaco.editor.ITextModel; modified: monaco.editor.ITextModel } | null>(null);
+  const modelsRef = useRef<{
+    original: monaco.editor.ITextModel;
+    modified: monaco.editor.ITextModel;
+    path: string;
+  } | null>(null);
   const savedVersion = useRef(0);
   const dirtyRef = useRef(false);
   /** Set while the text is replaced from disk: that is not an edit. */
@@ -183,7 +187,9 @@ export default function DiffEditorView({
     const original = content.original ?? '';
     const modified = content.modified ?? '';
     const current = modelsRef.current;
-    if (current && current.original.getLanguageId() === content.languageId) {
+    // Same file: update in place. Another file (same language or not) gets models of its own, so neither the scroll
+    // position, folding nor the URI of the previous file carries over.
+    if (current && current.original.getLanguageId() === content.languageId && current.path === content.path) {
       // Live update: keep scroll position and folded regions; unsaved edits are never replaced.
       const viewState = editor.saveViewState();
       if (current.original.getValue() !== original) current.original.setValue(original);
@@ -198,6 +204,7 @@ export default function DiffEditorView({
     }
     const id = ++modelCounter;
     const next = {
+      path: content.path,
       original: monaco.editor.createModel(
         original,
         content.languageId,
@@ -219,6 +226,11 @@ export default function DiffEditorView({
       }
     });
     editor.setModel(next);
+    if (dirtyRef.current) {
+      // The edits belonged to the replaced model.
+      dirtyRef.current = false;
+      callbacks.current.onDirtyChange?.(false);
+    }
     current?.original.dispose();
     current?.modified.dispose();
     modelsRef.current = next;

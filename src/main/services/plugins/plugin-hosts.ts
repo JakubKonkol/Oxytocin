@@ -41,6 +41,7 @@ type HostService = Pick<
   | 'envBarrier'
   | 'viewOpened'
   | 'viewClosed'
+  | 'closeAllViews'
   | 'viewVisibility'
   | 'viewMessage'
   | 'hasView'
@@ -140,6 +141,10 @@ export class PluginHosts implements Disposable {
 
   async viewClosed(viewId: string): Promise<void> {
     await this.forView(viewId)?.viewClosed(viewId);
+  }
+
+  async closeAllViews(): Promise<void> {
+    await Promise.all(this.all().map((h) => h.closeAllViews()));
   }
 
   async viewVisibility(viewId: string, visible: boolean): Promise<void> {

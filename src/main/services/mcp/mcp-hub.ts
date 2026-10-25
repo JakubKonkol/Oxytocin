@@ -710,6 +710,7 @@ export class McpHub implements Disposable {
     const controller = new AbortController();
     const abort = () => controller.abort();
     call.signal.addEventListener('abort', abort, { once: true });
+    if (call.signal.aborted) abort();
     const timer = setTimeout(abort, timeoutMs);
     try {
       const run = ensemble.call(name, args, { token, signal: controller.signal, sessionId: call.sessionId });

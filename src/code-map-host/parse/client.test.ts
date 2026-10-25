@@ -77,6 +77,17 @@ describe('Code Map parser isolation', () => {
     await expect(parser.parse('b.ts', '')).rejects.toThrow('deadline exceeded');
     await expect(parser.parse('a.ts', '')).resolves.toMatchObject({ file: { path: 'a.ts' } });
   });
+  it('keeps the parser thread after a file it turned down for its size', async () => {
+    const entry = join(directory, 'limit.cjs');
+    await writeFile(
+      entry,
+      `const {parentPort}=require('node:worker_threads'); const record=${JSON.stringify(fileRecord('a.ts', ''))}; let jobs=0; parentPort.on('message', job => { jobs++; if (jobs===1) return parentPort.postMessage({id:job.id,error:'too many symbols',code:'LIMIT'}); record.file.path='job-'+jobs+'.ts'; parentPort.postMessage({id:job.id,record}); });`,
+    );
+    const parser = client(entry);
+    await expect(parser.parse('big.ts', '')).rejects.toThrow('too many symbols');
+    // The same thread answers: it counts this as its second job.
+    await expect(parser.parse('a.ts', '')).resolves.toMatchObject({ file: { path: 'job-2.ts' } });
+  });
   it('rejects malformed extraction records from a worker', async () => {
     const entry = join(directory, 'malformed.cjs');
     await writeFile(

@@ -1,3 +1,4 @@
+import { callAll } from './call-all';
 import { type Disposable, toDisposable } from './disposable';
 
 export type Event<T> = (listener: (value: T) => void) => Disposable;
@@ -16,10 +17,9 @@ export class Emitter<T> implements Disposable {
     return this.listeners.size > 0;
   }
 
+  /** Calls every listener, also when one throws; the first error is rethrown once all have run. */
   fire(value: T): void {
-    for (const listener of [...this.listeners]) {
-      listener(value);
-    }
+    callAll(this.listeners, value);
   }
 
   dispose(): void {

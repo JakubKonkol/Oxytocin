@@ -25,6 +25,7 @@ export class SettingsService implements Disposable {
   private _loadInfo: SettingsLoadInfo = { status: 'missing' };
   private watcher: FSWatcher | undefined;
   private reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  private updates: Promise<unknown> = Promise.resolve();
   private readonly changeEmitter = new Emitter<Settings>();
   readonly onDidChange = this.changeEmitter.event;
 
@@ -92,7 +93,14 @@ export class SettingsService implements Disposable {
    * Writes keys into settings.json with minimal JSONC edits (comments and formatting are kept);
    * `null` removes a key. Returns the reloaded settings.
    */
-  async update(patch: Record<string, unknown>): Promise<Settings> {
+  update(patch: Record<string, unknown>): Promise<Settings> {
+    // Serialized: two updates at once would both read the same file and the second write would drop the first.
+    const next = this.updates.then(() => this.write(patch));
+    this.updates = next.catch(() => undefined);
+    return next;
+  }
+
+  private async write(patch: Record<string, unknown>): Promise<Settings> {
     let text: string;
     try {
       text = await readFile(this.filePath, 'utf8');

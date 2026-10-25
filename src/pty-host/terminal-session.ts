@@ -69,6 +69,8 @@ export class TerminalSession {
   /** Output held back while a restored buffer is written into the mirror (it must come first). */
   private heldOutput: string[] | undefined;
   private heldExit: { exitCode: number; signal?: number } | undefined;
+  private disposed = false;
+  private readonly ptyListeners: { dispose(): void }[] = [];
 
   constructor(
     opts: SpawnOptions,
@@ -138,8 +140,10 @@ export class TerminalSession {
         this.shellIntegration ? INITIAL_COMMAND_PROMPT_TIMEOUT_MS : INITIAL_COMMAND_FALLBACK_MS,
       );
     }
-    this.pty.onData((data) => this.onPtyData(data));
-    this.pty.onExit(({ exitCode, signal }) => this.onPtyExit(exitCode, signal));
+    this.ptyListeners.push(
+      this.pty.onData((data) => this.onPtyData(data)),
+      this.pty.onExit(({ exitCode, signal }) => this.onPtyExit(exitCode, signal)),
+    );
   }
 
   get pid(): number {
@@ -155,6 +159,8 @@ export class TerminalSession {
   }
 
   private onPtyData(data: string): void {
+    // A disposed session only waits for its killed process to go; its output has no reader any more.
+    if (this.disposed) return;
     if (this.heldOutput) {
       this.heldOutput.push(data);
       return;
@@ -423,9 +429,14 @@ export class TerminalSession {
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     if (this._alive) this.kill(true);
+    for (const l of this.ptyListeners.splice(0)) l.dispose();
     if (this.titleTimer) clearTimeout(this.titleTimer);
     if (this.initialCommandTimer) clearTimeout(this.initialCommandTimer);
+    if (this.killTimer) clearTimeout(this.killTimer);
+    this.heldOutput = undefined;
     this.batcher.dispose();
     this.flow.dispose();
     this.subscribers.clear();

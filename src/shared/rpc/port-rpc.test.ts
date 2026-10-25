@@ -28,6 +28,31 @@ function setup() {
 }
 
 describe('createPortRpc', () => {
+  it('serves only its own methods, never Object.prototype ones', async () => {
+    const { client } = setup();
+    await expect(
+      (client as unknown as { call: (m: string, p: unknown) => Promise<unknown> }).call('toString', null),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('delivers an event to every listener when one throws', () => {
+    let deliver: (message: unknown) => void = () => undefined;
+    const receiver = createPortRpc<never, never, { hello: string }>({
+      postMessage: () => undefined,
+      onMessage: (listener) => {
+        deliver = (message) => listener(message, []);
+        return { dispose: () => undefined };
+      },
+    });
+    const second = vi.fn();
+    receiver.onEvent('hello', () => {
+      throw new Error('broken listener');
+    });
+    receiver.onEvent('hello', second);
+    expect(() => deliver({ k: 'evt', n: 'hello', p: 'world' })).toThrow('broken listener');
+    expect(second).toHaveBeenCalledWith('world', []);
+  });
+
   it('performs request/response', async () => {
     const { client } = setup();
     await expect(client.call('add', { a: 2, b: 3 })).resolves.toBe(5);

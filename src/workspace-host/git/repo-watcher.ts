@@ -71,7 +71,17 @@ export class RepoWatcher {
     this.gitDirs = `${o.gitDir ?? ''}|${o.commonDir ?? ''}`;
   }
 
+  /** Subscribes; on failure every subscription made so far is removed again before the error is thrown. */
   async start(): Promise<void> {
+    try {
+      await this.subscribeAll();
+    } catch (e) {
+      await this.dispose();
+      throw e;
+    }
+  }
+
+  private async subscribeAll(): Promise<void> {
     const gitDirs = [this.o.gitDir, this.o.commonDir].filter((d): d is string => !!d);
     const inRoot = gitDirs.filter((d) => isInside(d, this.o.root));
     const rootIgnore = [

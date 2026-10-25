@@ -93,6 +93,16 @@ function persistedChangesUi(projectId: string): NonNullable<WorkspaceState['ui']
   return { expanded: ui.expanded, mode: ui.mode, ...(ui.filter ? { filter: ui.filter } : {}) };
 }
 
+/** The terminal fields of a project that its saved workspace contains (see `buildWorkspaceState`). */
+export function persistedTerminalsKey(projectId: string): string {
+  const parts: string[] = [];
+  for (const t of Object.values(useTerminalsStore.getState().terminals)) {
+    if (t.projectId !== projectId) continue;
+    parts.push(JSON.stringify([t.id, t.profileId, t.cwd, t.userTitle, t.title, t.agent?.agentId, t.agent?.sessionId]));
+  }
+  return parts.join('\n');
+}
+
 const flushers = new Map<string, () => Promise<void>>();
 
 /** Called by main before quitting (executeJavaScript) so the latest layout is on disk. */
@@ -116,9 +126,15 @@ export function trackWorkspacePersistence(api: DockviewApi, projectId: string): 
   };
   const layoutSub = api.onDidLayoutChange(schedule);
   const activeSub = api.onDidActivePanelChange(schedule);
-  // Titles and cwd live in TerminalInfo; persist their changes too.
+  // Titles, cwd and agent sessions live in TerminalInfo; persist their changes too. Only what is saved counts:
+  // agents update their terminals several times a second (state, activity), which alone must not rewrite layouts.
+  let terminalsKey = persistedTerminalsKey(projectId);
   const unsubscribeStore = useTerminalsStore.subscribe((s, prev) => {
-    if (s.terminals !== prev.terminals) schedule();
+    if (s.terminals === prev.terminals) return;
+    const key = persistedTerminalsKey(projectId);
+    if (key === terminalsKey) return;
+    terminalsKey = key;
+    schedule();
   });
   // Expanded folders, view mode and filter of the CHANGES section (per project).
   const unsubscribeChanges = useChangesStore.subscribe((s, prev) => {

@@ -134,3 +134,33 @@ describe('RepoRegistry status emission', () => {
     }
   });
 });
+
+describe('RepoRegistry watcher recovery', () => {
+  it('starts the watcher again on the next refresh when it could not start', async () => {
+    git(dir, 'init', '-q');
+    let fail = true;
+    const subscribed: string[] = [];
+    const registry = new RepoRegistry({
+      subscribe: (d, cb, o) => {
+        if (fail) return Promise.reject(new Error('inotify watch limit reached'));
+        subscribed.push(d);
+        return watcher.subscribe(d, cb, o);
+      },
+      emitRepo: () => undefined,
+      emitTouched: () => undefined,
+      onRefresh: () => Promise.resolve(),
+      logger: silentLogger,
+    });
+    try {
+      await registry.watch({ projectId: 'p', rootPath: dir, gitPath: 'git', ignoredFolders: [], maxFiles: 5000 });
+      await expect.poll(() => registry.get('p')?.info.state).toBe('ok');
+      expect(registry.get('p')?.watcher).toBeUndefined();
+      fail = false;
+      registry.request('p', 'focus');
+      await expect.poll(() => subscribed).toEqual([dir]);
+      expect(registry.get('p')?.watcher).toBeDefined();
+    } finally {
+      await registry.dispose();
+    }
+  });
+});

@@ -193,7 +193,33 @@ export class ClaudeRegistry implements Disposable {
     );
   }
 
-  async rescan(): Promise<void> {
+  private scanning: Promise<void> | undefined;
+  private rescanAgain = false;
+
+  /**
+   * Reads the registry again. Scans never overlap: one requested while another runs follows it, so an older
+   * scan that happens to finish last cannot put back a status the agent already left.
+   */
+  rescan(): Promise<void> {
+    if (this.scanning) {
+      this.rescanAgain = true;
+      return this.scanning;
+    }
+    const run = async (): Promise<void> => {
+      try {
+        do {
+          this.rescanAgain = false;
+          await this.scan();
+        } while (this.rescanAgain);
+      } finally {
+        this.scanning = undefined;
+      }
+    };
+    this.scanning = run();
+    return this.scanning;
+  }
+
+  private async scan(): Promise<void> {
     const next = new Map<number, RegistryEntry>();
     const exists = await stat(this.dir).then(
       (s) => s.isDirectory(),

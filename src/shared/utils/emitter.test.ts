@@ -22,4 +22,18 @@ describe('Emitter', () => {
     emitter.fire('x');
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  it('calls every listener when one throws and rethrows the first error afterwards', () => {
+    const emitter = new Emitter<number>();
+    const after = vi.fn();
+    emitter.event(() => {
+      throw new Error('first');
+    });
+    emitter.event(() => {
+      throw new Error('second');
+    });
+    emitter.event(after);
+    expect(() => emitter.fire(1)).toThrow('first');
+    expect(after).toHaveBeenCalledExactlyOnceWith(1);
+  });
 });

@@ -220,6 +220,29 @@ describe('McpHttpServer', () => {
     expect(signal!.aborted).toBe(true);
   });
 
+  it('aborts a call whose client dropped the request', async () => {
+    let signal: AbortSignal | undefined;
+    const { port, auth, initialize } = await start([echo], (_n, _a, call) => {
+      signal = call.signal;
+      return new Promise((resolve) =>
+        call.signal.addEventListener('abort', () => resolve({ content: [{ type: 'text', text: 'stopped' }] })),
+      );
+    });
+    const session = await initialize();
+    const req = request({
+      host: '127.0.0.1',
+      port,
+      path: '/mcp',
+      method: 'POST',
+      headers: { ...auth, 'Mcp-Session-Id': session },
+    });
+    req.on('error', () => undefined);
+    req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo' } }));
+    await expect.poll(() => signal).toBeDefined();
+    req.destroy();
+    await expect.poll(() => signal!.aborted).toBe(true);
+  });
+
   it('passes the terminal header, stops with open streams and reports a port in use', async () => {
     const { port, server, initialize, post, calls } = await start([echo]);
     const session = await initialize();

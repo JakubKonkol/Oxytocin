@@ -1137,14 +1137,21 @@ function bootstrap(): void {
         await projectsReady;
         return { id: projects.activeProjectId };
       },
-      'projects:add': ({ path }) => projects.add(path),
+      'projects:add': async ({ path }) => {
+        await projectsReady;
+        return projects.add(path);
+      },
       'projects:remove': async ({ id, killTerminals }) => {
+        await projectsReady;
         if (killTerminals) await Promise.all(terminals.list(id).map((t) => terminals.close(t.id)));
         projects.remove(id);
         await workspaceState.delete(id);
         await resources.removeProject(id);
       },
-      'projects:update': (patch) => projects.update(patch),
+      'projects:update': async (patch) => {
+        await projectsReady;
+        return projects.update(patch);
+      },
       'codeMap:getStatus': ({ projectId }) => codeMap.status(projectId),
       'codeMap:memory': ({ projectId, checkoutId, operation }) => codeMap.memory(projectId, operation, checkoutId),
       'codeMap:memoryCheckouts': ({ projectId }) => codeMap.memoryCheckouts(projectId),
@@ -1160,8 +1167,14 @@ function bootstrap(): void {
       'codeMap:deleteData': ({ projectId }) => codeMap.deleteData(projectId),
       'codeMap:getDiagnostics': ({ projectId }) => codeMap.diagnostics(projectId),
       'codeMap:editInstructions': ({ projectId, file, action }) => codeMap.editInstructions(projectId, file, action),
-      'projects:reorder': ({ ids }) => projects.reorder(ids),
-      'projects:setActive': ({ id }) => projects.setActive(id),
+      'projects:reorder': async ({ ids }) => {
+        await projectsReady;
+        projects.reorder(ids);
+      },
+      'projects:setActive': async ({ id }) => {
+        await projectsReady;
+        await projects.setActive(id);
+      },
       'projects:pickFolder': async () => {
         const scripted = e2e ? (globalThis as Record<string, unknown>)['__oxyPickFolderAnswer'] : undefined;
         if (typeof scripted === 'string' || scripted === null) return scripted;
@@ -1661,6 +1674,7 @@ function bootstrap(): void {
     quickPicks.cancelAll();
     confirms.cancelAll();
     notificationActions.cancelAll();
+    void pluginHost.closeAllViews();
   });
   // A crashed renderer reloads by itself (terminals and agents live in the hosts and reattach); a hung one offers
   // a reload. Native dialogs: the page cannot show its own.
@@ -1706,6 +1720,7 @@ function bootstrap(): void {
     quickPicks.cancelAll();
     confirms.cancelAll();
     notificationActions.cancelAll();
+    void pluginHost.closeAllViews();
     // While quitting the window goes away on purpose.
     if (!quitting) recovery.onGone(details);
   });
@@ -1845,7 +1860,7 @@ function bootstrap(): void {
         await withTimeout(mcpHub.stop(), 2000).catch(() => undefined);
         resourcesController.dispose();
         codeMapHints.dispose();
-        await codeMap.dispose();
+        await withTimeout(codeMap.dispose(), 3000).catch(() => undefined);
         app.off('browser-window-focus', reconcileCodeMap);
         powerMonitor.off('resume', reconcileCodeMap);
         await withTimeout(ensemble.flush(), 3000).catch(() => undefined);

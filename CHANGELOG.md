@@ -18,6 +18,12 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Changed
 
+- **Workspaces:** layouts are no longer rewritten every time an agent's terminal changes its live state (working,
+  waiting, activity, bells) or a terminal of another project changes; only changes to what a layout stores (terminal
+  titles, folders, agent sessions) save it.
+- **Code Map:** a file turned down for its size no longer restarts the parser thread, so the grammars stay loaded and
+  indexing continues without the restart cost.
+- **Git:** changing a setting unrelated to git no longer runs git again to detect its version.
 - **Code Map:** answers keep up with edits. While the file watcher is healthy a query no longer audits the whole
   checkout; it waits only for the incremental update of the files that changed, which now re-resolves just the
   affected files and updates the search index in place. On Oxytocin's own repository an edit shows up in the next
@@ -49,6 +55,38 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   parameter properties, fields, parameters, `new T()`, return types, inherited members), so `oxy_code_relations` finds
   about a quarter more callers; path aliases such as `@shared/*` resolve through a solution-style `tsconfig.json` with
   project references instead of appearing as external packages.
+
+### Fixed
+
+- **Settings:** changes saved at the same moment (for example a plugin turned on while another setting changes) no
+  longer overwrite each other in `settings.json`; each one is written after the previous one.
+- **Projects:** adding, removing, reordering or editing a project right after the start waits for the project list to
+  load instead of being lost when it finishes loading; moving a project to another folder no longer undoes a project
+  setting saved at the same time.
+- **Git:** a project whose file watcher could not start (the Workspace Host restarting, too many watched files) gets
+  one again on the next refresh (window focus, a periodic or manual refresh) instead of showing no live changes until
+  Oxytocin restarts; the half-started watcher no longer stays behind. A project removed while its watcher was starting
+  no longer keeps watching in the background.
+- **AI agents:** a Claude Code terminal no longer briefly shows an older state (working after it already waits for
+  you) when its session file changed twice in quick succession.
+- **Plugins:** views of a window that reloaded or crashed are closed in the Plugin Hosts; they used to stay open in the
+  background, keep the plugin's resources and come back after a Plugin Host restart.
+- **Agent Tools (MCP):** a tool call whose agent went away (killed, timed out) is cancelled instead of running to the
+  end, so for example a question it asked no longer waits for an answer nobody reads.
+- **Diffs:** switching to another file of the same language in a diff (Ensemble changes, a diff preview tab) shows it
+  from the top with its own folding instead of the previous file's scroll position; unsaved edits of the replaced file
+  no longer keep the diff marked as edited.
+- **Terminals:** a terminal view moved to another group keeps its keyboard shortcuts and commands (its registration was
+  removed by the view it replaced); a closed terminal's last output is no longer processed by the PTY Host.
+- **Code Map:** an unexpected error in the Code Map Host is logged instead of ending the process (Code Map gives up
+  after three restarts). Quitting waits at most three seconds for Code Map, and no new Code Map work starts while
+  Oxytocin quits.
+- **Stability:** an error in one of the parts that react to an event (a terminal update, a message from a host) no
+  longer keeps the others from receiving it, so for example the window still shows a terminal's new state when a
+  plugin's handler for it fails.
+- **Stability:** removing a project waits for a layout save still in progress, so its layout file is not written again
+  afterwards; deleted Ensemble tasks leave no progress timers behind; hosts no longer answer requests for built-in
+  object methods (such as `toString`); stopping a host clears its shutdown timer.
 
 ## [0.9.13] - 2026-10-23
 

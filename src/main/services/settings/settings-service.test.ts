@@ -54,6 +54,22 @@ describe('SettingsService', () => {
     expect(text).not.toContain('x.y');
   });
 
+  it('keeps every key of updates made at the same time', async () => {
+    const file = join(dir, 'settings.json');
+    await writeFile(file, '{}\n');
+    const s = new SettingsService(file, 'linux', silent);
+    s.loadSync();
+    await Promise.all([
+      s.update({ 'terminal.fontSize': 15 }),
+      s.update({ 'terminal.confirmOnQuit': false }),
+      s.update({ 'terminal.scrollback': 5000 }),
+    ]);
+    const settings = s.get();
+    expect(settings['terminal.fontSize']).toBe(15);
+    expect(settings['terminal.confirmOnQuit']).toBe(false);
+    expect(settings['terminal.scrollback']).toBe(5000);
+  });
+
   it('fires onDidChange when a reload changes values', async () => {
     const file = join(dir, 'settings.json');
     await writeFile(file, '{}');

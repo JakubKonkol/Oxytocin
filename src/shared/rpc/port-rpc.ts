@@ -1,3 +1,4 @@
+import { callAll } from '../utils/call-all';
 import { type Disposable, DisposableStore, toDisposable } from '../utils/disposable';
 import { fromSerializedError, OxyError, type SerializedOxyError, toSerializedError } from '../errors';
 
@@ -74,7 +75,8 @@ export function createPortRpc<
   };
 
   const serve = async (msg: Extract<Wire, { k: 'req' }>) => {
-    const fn = impl?.[msg.m];
+    // Own methods only: a name like `toString` or `constructor` must not reach Object.prototype.
+    const fn = impl && Object.hasOwn(impl, msg.m) ? impl[msg.m] : undefined;
     if (!fn) {
       send({ k: 'res', id: msg.id, ok: false, e: { code: 'NOT_FOUND', message: `Unknown RPC method: ${msg.m}` } });
       return;
@@ -106,7 +108,7 @@ export function createPortRpc<
         case 'evt': {
           const set = listeners.get(msg.n);
           if (!set) return;
-          for (const listener of [...set]) listener(msg.p, ports);
+          callAll(set, msg.p, ports);
           break;
         }
       }

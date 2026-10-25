@@ -696,8 +696,9 @@ export class CodeMapService {
   async dispose(): Promise<void> {
     for (const request of this.learningRequests.values()) request.controller.abort();
     this.subscriptions.dispose();
-    await this.queue;
+    // Operations queued from now on are refused; the one running finishes (its host calls are bounded).
     this.closed = true;
+    await this.queue;
     this.changed.dispose();
     this.checkoutChanged.dispose();
     this.knowledgeChanged.dispose();

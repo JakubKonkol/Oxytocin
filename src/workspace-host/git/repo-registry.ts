@@ -113,7 +113,11 @@ export class RepoRegistry {
   }
 
   private async startWatcher(entry: RepoEntry): Promise<void> {
-    await entry.watcher?.dispose();
+    const previous = entry.watcher;
+    delete entry.watcher;
+    await previous?.dispose();
+    // Unwatched meanwhile: a watcher started now would never be disposed.
+    if (this.entries.get(entry.req.projectId) !== entry) return;
     const watcher = new RepoWatcher({
       root: entry.req.rootPath,
       ...(entry.gitDir ? { gitDir: entry.gitDir } : {}),
@@ -132,6 +136,8 @@ export class RepoRegistry {
     try {
       await watcher.start();
     } catch (e) {
+      // Without a watcher the next refresh (focus, periodic, manual) tries again.
+      if (entry.watcher === watcher) delete entry.watcher;
       this.deps.logger.warn(`Cannot watch ${entry.req.rootPath}`, e);
     }
   }
@@ -139,7 +145,13 @@ export class RepoRegistry {
   private async refresh(entry: RepoEntry, reasons: ReadonlySet<RefreshReason>): Promise<void> {
     if (this.entries.get(entry.req.projectId) !== entry) return;
     // Discovery is cheap (two rev-parse calls) but only needed when the repository may have changed shape.
-    if (reasons.has('initial') || reasons.has('gitdir') || reasons.has('manual') || entry.info.state !== 'ok') {
+    if (
+      reasons.has('initial') ||
+      reasons.has('gitdir') ||
+      reasons.has('manual') ||
+      entry.info.state !== 'ok' ||
+      !entry.watcher
+    ) {
       await this.rediscover(entry);
     }
     if (this.deps.onRefresh) {

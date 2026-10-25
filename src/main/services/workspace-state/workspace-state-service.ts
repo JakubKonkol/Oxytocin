@@ -176,6 +176,10 @@ export class WorkspaceStateService {
   /** Removes a project's state and snapshots (project removed). */
   async delete(projectId: string): Promise<void> {
     this.latest.delete(projectId);
+    this.scrollbackFiles.delete(projectId);
+    // A save still queued would write the state again after it was removed.
+    await this.queues.get(projectId);
+    this.queues.delete(projectId);
     await rm(this.statePath(projectId), { force: true });
     await rm(join(this.dir, projectId), { recursive: true, force: true });
   }

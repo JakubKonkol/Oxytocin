@@ -578,6 +578,11 @@ export class PluginHostService implements Disposable {
       await this.deps.host.call('views:close', { viewId }).catch(() => undefined);
   }
 
+  /** The shell document went away (reload, crash): its views never report closing, so they are closed here. */
+  async closeAllViews(): Promise<void> {
+    await Promise.all([...this.openViews.keys()].map((viewId) => this.viewClosed(viewId)));
+  }
+
   async viewVisibility(viewId: string, visible: boolean): Promise<void> {
     const req = this.openViews.get(viewId);
     if (!req) return;

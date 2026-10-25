@@ -79,4 +79,25 @@ describe('Claude session registry', () => {
     expect(registry.get(77)).toBeUndefined();
     registry.dispose();
   });
+
+  it('runs a rescan requested during another one after it, so the newest status wins', async () => {
+    const statuses = ['busy', 'idle'];
+    const release: (() => void)[] = [];
+    const cli = vi.fn(async () => {
+      const status = statuses.shift();
+      // The first (older) scan answers last.
+      if (status === 'busy') await new Promise<void>((r) => release.push(r));
+      return [{ pid: 9, status }];
+    });
+    const registry = new ClaudeRegistry({ dir: join(dir, 'missing'), logger, cliFallback: cli });
+    registry.hasClaudeAgents = true;
+    const first = registry.rescan();
+    const second = registry.rescan();
+    await vi.waitFor(() => expect(release).toHaveLength(1));
+    release[0]!();
+    await Promise.all([first, second]);
+    expect(cli).toHaveBeenCalledTimes(2);
+    expect(registry.get(9)?.status).toBe('idle');
+    registry.dispose();
+  });
 });

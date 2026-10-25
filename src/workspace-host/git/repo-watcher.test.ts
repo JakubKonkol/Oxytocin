@@ -29,6 +29,24 @@ async function setup(opts: { gitDir?: string } = {}) {
 }
 
 describe('RepoWatcher', () => {
+  it('removes the subscriptions it made when a later one fails', async () => {
+    const unsubscribe = vi.fn(() => Promise.resolve());
+    let calls = 0;
+    const watcher = new RepoWatcher({
+      root,
+      // A linked worktree: its git directory lies outside the tree and gets a subscription of its own.
+      gitDir: join('/', 'elsewhere', '.git'),
+      ignoredFolders: [],
+      subscribe: () =>
+        ++calls === 1 ? Promise.resolve({ unsubscribe }) : Promise.reject(new Error('Too many open files')),
+      onRefresh: vi.fn(),
+      onTouched: vi.fn(),
+      logger,
+    });
+    await expect(watcher.start()).rejects.toThrow('Too many open files');
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('always excludes .oxy and never emits fs refreshes or touched paths for its writes', async () => {
     const s = await setup();
     expect(s.subs[0]!.ignore).toEqual(expect.arrayContaining(['.oxy', '**/.oxy', '**/.oxy/**']));

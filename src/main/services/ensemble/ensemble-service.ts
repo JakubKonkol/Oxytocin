@@ -362,6 +362,7 @@ export class EnsembleService implements Disposable {
         })
         .catch((e: unknown) => this.deps.logger.warn(`Removing the worktree of ${taskId} failed`, e));
     this.records.delete(taskId);
+    for (const key of [...this.lastProgress.keys()]) if (key.startsWith(`${taskId}/`)) this.lastProgress.delete(key);
     await this.store.remove(taskId);
     this.removeEmitter.fire({ taskId, projectId: r.task.projectId });
   }

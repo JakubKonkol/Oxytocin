@@ -36,6 +36,9 @@ export class ParserClient {
       this.worker = created;
     }
     const worker = this.worker;
+    // A file the worker turned down for its size (LIMIT) leaves it healthy and its grammars loaded; any other
+    // failure (deadline, cancellation, crash, parse error) starts a fresh thread for the next file.
+    let healthy = false;
     try {
       return await new Promise<FileRecord>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Code Map parser deadline exceeded')), this.timeoutMs);
@@ -46,9 +49,10 @@ export class ParserClient {
           try {
             const result = ParseResultSchema.parse(input);
             if (result.id !== job.id) throw new Error('Unexpected Code Map parser response');
-            if ('error' in result)
+            if ('error' in result) {
+              healthy = result.code === 'LIMIT';
               reject(result.code === 'LIMIT' ? new CodeMapLimitError(result.error) : new Error(result.error));
-            else resolve(result.record);
+            } else resolve(result.record);
           } catch (error) {
             reject(error instanceof Error ? error : new Error(String(error)));
           }
@@ -69,7 +73,7 @@ export class ParserClient {
         worker.postMessage(job);
       });
     } catch (error) {
-      await this.reset();
+      if (!healthy) await this.reset();
       throw error;
     } finally {
       this.cleanup?.();

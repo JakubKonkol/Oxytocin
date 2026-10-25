@@ -602,6 +602,23 @@ describe('PluginHostService views', () => {
     });
   });
 
+  it('closes every open view when the window document goes away', async () => {
+    const s = setup();
+    const withView = descriptor('c.three', {
+      contributes: { panels: [{ type: 'c.panel', title: 'C', entry: 'v.html' }] },
+    });
+    (s.plugins as unknown as { get: (id: string) => PluginDescriptor | undefined }).get = (id) =>
+      id === 'c.three' ? withView : undefined;
+    for (const viewId of ['v1', 'v2'])
+      await s.service.viewOpened({ viewId, pluginId: 'c.three', kind: 'panel', providerId: 'c.panel', visible: true });
+    await s.service.closeAllViews();
+    expect(s.service.hasView('v1') || s.service.hasView('v2')).toBe(false);
+    expect(s.calls.filter((c) => c.method === 'views:close').map((c) => c.params)).toEqual([
+      { viewId: 'v1' },
+      { viewId: 'v2' },
+    ]);
+  });
+
   describe('terminals API (0.1.4)', () => {
     const runner = () =>
       descriptor('run.ner', {

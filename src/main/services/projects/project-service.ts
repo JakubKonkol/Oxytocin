@@ -177,6 +177,9 @@ export class ProjectService implements Disposable {
   }
 
   async update(patch: ProjectPatch): Promise<Project> {
+    this.require(patch.id);
+    // Resolved before the current state is read: an update finishing meanwhile must not be overwritten.
+    const root = patch.rootPath !== undefined ? await this.canonicalRoot(patch.rootPath) : undefined;
     const current = this.require(patch.id);
     const next = { ...current };
     if (patch.name !== undefined) next.name = patch.name;
@@ -185,8 +188,7 @@ export class ProjectService implements Disposable {
     else if (patch.icon !== undefined) next.icon = patch.icon;
     if (patch.pinned !== undefined) next.pinned = patch.pinned;
     if (patch.settings !== undefined) next.settings = patch.settings;
-    if (patch.rootPath !== undefined) {
-      const root = await this.canonicalRoot(patch.rootPath);
+    if (root !== undefined) {
       const clash = this.store
         .get()
         .projects.find(

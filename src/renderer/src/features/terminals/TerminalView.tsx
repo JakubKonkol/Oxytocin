@@ -239,7 +239,8 @@ export function TerminalView({ terminalId, autoFocus = false, onRestart, onClose
       container.removeEventListener('drop', onDrop);
       term.textarea?.removeEventListener('focus', onFocus);
       sub.dispose();
-      terminalRegistry.delete(terminalId);
+      // A view mounted meanwhile for the same terminal (panel moved to another group) keeps its registration.
+      if (terminalRegistry.get(terminalId)?.term === term) terminalRegistry.delete(terminalId);
       disposeWebgl();
       term.dispose();
     };

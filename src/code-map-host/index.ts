@@ -125,5 +125,10 @@ const runtime = startHostRuntime<CodeMapHostEvents>({
   },
   exit: (code) => process.exit(code),
 });
+// A stray rejected promise must not take the host down (every checkout would re-index after the restart). Logged
+// instead; uncaught exceptions still end the process, which the supervisor restarts.
+process.on('unhandledRejection', (reason) =>
+  runtime.log.error('Unhandled promise rejection in the Code Map Host', reason),
+);
 runtime.log.info('Code Map Host started');
 import { join, resolve } from 'node:path';

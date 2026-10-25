@@ -361,9 +361,19 @@ export class McpHttpServer {
       if (!session) return;
     }
     const terminal = req.headers['x-oxytocin-terminal'];
+    // A client that drops the request (killed agent, timeout) no longer waits for its tool calls.
+    const dropped = new AbortController();
+    const onClose = () => {
+      if (!res.writableFinished) dropped.abort();
+    };
+    res.once('close', onClose);
     const responses = (
-      await Promise.all(messages.map((m) => this.dispatch(m, session, typeof terminal === 'string' ? terminal : '')))
+      await Promise.all(
+        messages.map((m) => this.dispatch(m, session, typeof terminal === 'string' ? terminal : '', dropped.signal)),
+      )
     ).filter((r): r is JsonRpcResponse => r !== null);
+    res.off('close', onClose);
+    if (dropped.signal.aborted) return;
     const headers = { 'Mcp-Session-Id': session.id };
     // Only notifications or responses: accepted without a body.
     if (responses.length === 0) return this.send(res, 202, undefined, headers);
@@ -371,7 +381,12 @@ export class McpHttpServer {
   }
 
   /** One JSON-RPC message → its response (null for notifications and client responses). */
-  async dispatch(m: JsonRpcMessage, session: Session, terminalHeader = ''): Promise<JsonRpcResponse | null> {
+  async dispatch(
+    m: JsonRpcMessage,
+    session: Session,
+    terminalHeader = '',
+    requestSignal?: AbortSignal,
+  ): Promise<JsonRpcResponse | null> {
     if (!m || typeof m !== 'object' || typeof m.method !== 'string') {
       // A response from the client (we never send requests) or garbage.
       return m && typeof m === 'object' && 'id' in m && m.id !== undefined && !('result' in m || 'error' in m)
@@ -410,6 +425,9 @@ export class McpHttpServer {
         const controller = new AbortController();
         const key = requestKey(id);
         session.inflight.set(key, controller);
+        const abort = () => controller.abort();
+        if (requestSignal?.aborted) abort();
+        else requestSignal?.addEventListener('abort', abort, { once: true });
         this.calls++;
         try {
           const result = await handler.callTool(
@@ -426,6 +444,7 @@ export class McpHttpServer {
         } catch (e) {
           return ok({ content: [{ type: 'text', text: e instanceof Error ? e.message : String(e) }], isError: true });
         } finally {
+          requestSignal?.removeEventListener('abort', abort);
           if (session.inflight.get(key) === controller) session.inflight.delete(key);
         }
       }

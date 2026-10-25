@@ -27,6 +27,7 @@ function fakeHost(views: string[] = []) {
     envBarrier: vi.fn(() => Promise.resolve()),
     viewOpened: vi.fn(() => Promise.resolve()),
     viewClosed: vi.fn(() => Promise.resolve()),
+    closeAllViews: vi.fn(() => Promise.resolve()),
     viewVisibility: vi.fn(() => Promise.resolve()),
     viewMessage: vi.fn(() => Promise.resolve()),
     hasView: (id: string) => views.includes(id),

@@ -22,6 +22,7 @@ function setup(opts: { projects?: Project[]; settings?: Record<string, unknown>;
   let active: string | null = projects[0]?.id ?? null;
   let settings: Settings = resolveSettings(opts.settings ?? {}, 'linux').settings;
   const calls: { method: string; params: unknown }[] = [];
+  let failWatch = false;
   const ready = new Emitter<{ restarted: boolean }>();
   const projectsChanged = new Emitter<Project[]>();
   const activeChanged = new Emitter<string | null>();
@@ -31,6 +32,7 @@ function setup(opts: { projects?: Project[]; settings?: Record<string, unknown>;
       calls.push({ method, params });
       if (method === 'git:detect')
         return Promise.resolve(opts.git === false ? null : { path: 'git', version: '2.43.0', supported: true });
+      if (method === 'git:watch' && failWatch) return Promise.reject(new Error('Workspace Host is restarting'));
       return Promise.resolve(undefined);
     }),
     onEvent: () => toDisposable(() => undefined),
@@ -67,6 +69,9 @@ function setup(opts: { projects?: Project[]; settings?: Record<string, unknown>;
       settingsChanged.fire(settings);
     },
     restartHost: () => ready.fire({ restarted: true }),
+    failWatch: (fail: boolean) => {
+      failWatch = fail;
+    },
   };
 }
 
@@ -130,5 +135,27 @@ describe('GitService', () => {
     s.restartHost();
     await s.service.sync();
     expect(s.methods('git:watch')).toHaveLength(4);
+  });
+
+  it('watches again on the next sync when starting a watcher failed', async () => {
+    const s = setup({ projects: [project('a')] });
+    s.failWatch(true);
+    await s.service.sync();
+    s.failWatch(false);
+    await s.service.sync();
+    expect(s.methods('git:watch')).toHaveLength(2);
+    await s.service.sync();
+    expect(s.methods('git:watch')).toHaveLength(2);
+  });
+
+  it('detects git again only when its path changes', async () => {
+    const s = setup({ projects: [project('a')] });
+    await s.service.sync();
+    s.setSettings({ 'terminal.fontSize': 15 });
+    await s.service.sync();
+    expect(s.methods('git:detect')).toHaveLength(1);
+    s.setSettings({ 'git.path': '/usr/local/bin/git' });
+    await s.service.sync();
+    expect(s.methods('git:detect')).toHaveLength(2);
   });
 });
