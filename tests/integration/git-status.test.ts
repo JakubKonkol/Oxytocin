@@ -10,7 +10,7 @@ import { discoverRepo } from '../../src/workspace-host/git/discover';
 let dir: string;
 const IDENTITY = ['-c', 'user.name=t', '-c', 'user.email=t@e', '-c', 'commit.gpgsign=false'];
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', [...IDENTITY, ...args], { cwd, stdio: 'pipe' }).toString();
+  execFileSync('git', [...IDENTITY, ...args], { cwd, stdio: 'pipe', windowsHide: true }).toString();
 
 async function status(root: string) {
   const info = await discoverRepo('git', root);
@@ -155,7 +155,11 @@ describe('computeStatus', () => {
     })();
     const commit = (i: number) =>
       new Promise<number>((resolve) => {
-        const child = spawn('git', [...IDENTITY, 'commit', '-qam', `c${i}`], { cwd: dir, stdio: 'ignore' });
+        const child = spawn('git', [...IDENTITY, 'commit', '-qam', `c${i}`], {
+          cwd: dir,
+          stdio: 'ignore',
+          windowsHide: true,
+        });
         child.on('close', (code) => resolve(code ?? -1));
       });
     const failures: number[] = [];

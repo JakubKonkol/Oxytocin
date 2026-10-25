@@ -61,6 +61,32 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
+- **Editors and diffs:** typing while a save is in progress no longer marks the newer text as saved or lets a
+  save-and-close action discard it. Repeated saves share the pending write, and the next save checks the modification
+  time returned by the previous write instead of reporting a false conflict.
+- **Editors:** an automatic reload that finishes after typing starts no longer overwrites those edits; obsolete
+  reads are ignored after another load, a save or closing the panel. Failed reloads keep the editor mounted, a failed
+  file check no longer reports the file as deleted, and errors from *Keep mine* are reported instead of escaping.
+- **Diffs:** a live refresh no longer silently authorizes overwriting another process's edits: normal Save still
+  checks the disk version the edit started from. Unsaved text stays available when refreshing fails or the file is
+  deleted, becomes binary or exceeds the diff size limit. Switching a preview to another file isolates its state
+  from reads and saves still finishing for the previous file.
+- **Host processes:** stopping during restart backoff immediately rejects waiting requests; calling start during
+  backoff cannot create a second child. Shutdown stops health checks, late ready/ping messages cannot revive or affect
+  a replacement host, and disposal releases RPC calls, timers and subscriptions even without a child exit event.
+- **RPC:** finishing a request after its channel closes no longer causes an unhandled rejection when sending either
+  the result or an error. Removed event subscriptions release their empty listener sets, and disposed channels do not
+  retain new subscriptions.
+- **Databases:** a failed connection that was already dropped no longer removes its replacement from the pool,
+  leaking that connection and forcing extra reconnects. A disposed pool refuses new connections and closes pending
+  ones when they finish opening.
+- **Git:** rapid watcher configuration changes keep the newest request; removing a project or shutting down cannot
+  resurrect a watcher still being replaced, and late repository discovery no longer publishes stale state. Events
+  accumulated behind another repository are handled in one refresh instead of scheduling a redundant second scan.
+- **Saved state:** a value that cannot be serialized no longer blocks every subsequent write; the next valid value
+  can be persisted normally.
+- **Tests:** Git and plugin-generator subprocesses in integration tests explicitly hide their Windows console.
+
 - **Settings:** changes saved at the same moment (for example a plugin turned on while another setting changes) no
   longer overwrite each other in `settings.json`; each one is written after the previous one.
 - **Projects:** adding, removing, reordering or editing a project right after the start waits for the project list to

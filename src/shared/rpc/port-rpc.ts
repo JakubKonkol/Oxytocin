@@ -78,14 +78,23 @@ export function createPortRpc<
     // Own methods only: a name like `toString` or `constructor` must not reach Object.prototype.
     const fn = impl && Object.hasOwn(impl, msg.m) ? impl[msg.m] : undefined;
     if (!fn) {
-      send({ k: 'res', id: msg.id, ok: false, e: { code: 'NOT_FOUND', message: `Unknown RPC method: ${msg.m}` } });
+      reply({ k: 'res', id: msg.id, ok: false, e: { code: 'NOT_FOUND', message: `Unknown RPC method: ${msg.m}` } });
       return;
     }
     try {
       const result = await fn(msg.p as never);
-      send({ k: 'res', id: msg.id, ok: true, r: result });
+      if (!store.isDisposed) send({ k: 'res', id: msg.id, ok: true, r: result });
     } catch (e) {
-      send({ k: 'res', id: msg.id, ok: false, e: toSerializedError(e) });
+      reply({ k: 'res', id: msg.id, ok: false, e: toSerializedError(e) });
+    }
+  };
+
+  const reply = (msg: Extract<Wire, { k: 'res' }>) => {
+    if (store.isDisposed) return;
+    try {
+      send(msg);
+    } catch {
+      // A disconnected peer cannot receive an error either. Never reject the detached serve task.
     }
   };
 
@@ -155,6 +164,7 @@ export function createPortRpc<
       send({ k: 'evt', n: name, p: payload }, transfer);
     },
     onEvent(name, listener) {
+      if (store.isDisposed) return toDisposable(() => undefined);
       let set = listeners.get(name);
       if (!set) {
         set = new Set();
@@ -162,7 +172,10 @@ export function createPortRpc<
       }
       const wrapped = listener as (payload: unknown, ports: readonly unknown[]) => void;
       set.add(wrapped);
-      return toDisposable(() => set.delete(wrapped));
+      return toDisposable(() => {
+        set.delete(wrapped);
+        if (set.size === 0 && listeners.get(name) === set) listeners.delete(name);
+      });
     },
     rejectPending,
     dispose() {

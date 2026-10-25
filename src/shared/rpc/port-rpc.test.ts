@@ -28,6 +28,45 @@ function setup() {
 }
 
 describe('createPortRpc', () => {
+  it.each(['success', 'failure', 'unknown'] as const)('handles a disconnected peer after %s', async (outcome) => {
+    let deliver!: (message: unknown, ports: readonly unknown[]) => void;
+    const postMessage = vi.fn(() => {
+      throw new Error('port closed');
+    });
+    const rpc = createPortRpc(
+      {
+        postMessage,
+        onMessage: (listener) => {
+          deliver = listener;
+          return { dispose() {} };
+        },
+      },
+      {
+        success: () => 'done',
+        failure: () => {
+          throw new Error('failed');
+        },
+      },
+    );
+    deliver({ k: 'req', id: 1, m: outcome, p: null }, []);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(postMessage).toHaveBeenCalled();
+    rpc.dispose();
+  });
+
+  it('does not send a reply when a request finishes after disposal', async () => {
+    const [left, right] = createEndpointPair();
+    const pending = Promise.withResolvers<string>();
+    const send = vi.spyOn(right, 'postMessage');
+    const server = createPortRpc(right, { slow: () => pending.promise });
+    left.postMessage({ k: 'req', id: 1, m: 'slow', p: null });
+    await Promise.resolve();
+    server.dispose();
+    pending.resolve('done');
+    await Promise.resolve();
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('serves only its own methods, never Object.prototype ones', async () => {
     const { client } = setup();
     await expect(

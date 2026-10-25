@@ -33,7 +33,7 @@ afterEach(async () => {
 
 describe('project files', () => {
   it('lists folders first and marks what git ignores', async () => {
-    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['init', '-q'], { cwd: root, windowsHide: true });
     const entries = await listDir({ root, path: '', gitPath: 'git' });
     expect(entries.map((e) => `${e.kind}:${e.name}${e.ignored ? ':ignored' : ''}`)).toEqual([
       'dir:node_modules:ignored',
@@ -48,7 +48,7 @@ describe('project files', () => {
   it('finds files with git (respecting .gitignore) or by walking the folder', async () => {
     const walked = await findFiles({ root, gitPath: 'git', ignoredFolders: ['node_modules'], limit: 100 });
     expect(walked.files).toEqual(['.gitignore', 'README.md', 'debug.log', 'src/a.ts']);
-    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['init', '-q'], { cwd: root, windowsHide: true });
     const found = await findFiles({ root, gitPath: 'git', ignoredFolders: [], limit: 100 });
     expect(found).toEqual({ files: ['.gitignore', 'README.md', 'src/a.ts'], truncated: false });
     expect((await findFiles({ root, gitPath: 'git', ignoredFolders: [], limit: 2 })).truncated).toBe(true);

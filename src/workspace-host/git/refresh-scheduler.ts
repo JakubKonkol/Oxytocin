@@ -128,6 +128,8 @@ export class RefreshScheduler {
   private async execute(): Promise<void> {
     this.queued = false;
     if (this.disposed) return;
+    // Requests accumulated while queued are already included in this run.
+    this.dirty = false;
     const reasons = this.reasons;
     this.reasons = new Set();
     this.running = true;

@@ -7,8 +7,8 @@ export interface DiffHandle {
   currentLine(): number | undefined;
   /** The edited right side (null before the content loaded). */
   modifiedValue(): string | null;
-  /** The right side was saved: it is no longer dirty. */
-  markSaved(): void;
+  /** Captures the exact model version being saved, preserving edits made during the write. */
+  captureSave(): { text: string; markSaved(): boolean } | null;
   /** Drops unsaved edits and shows the file as it is on disk. */
   discardEdits(): void;
   revealLine(line: number): void;

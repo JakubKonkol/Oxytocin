@@ -10,7 +10,7 @@ import { checkPaths, listBranches, runGitAction } from '../../src/workspace-host
 let dir: string;
 let remote: string;
 const git = (cwd: string, ...args: string[]) =>
-  execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], { cwd, stdio: 'pipe' }).toString();
+  execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], { cwd, stdio: 'pipe', windowsHide: true }).toString();
 
 async function status() {
   return computeStatus({

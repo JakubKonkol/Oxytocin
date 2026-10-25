@@ -1,4 +1,5 @@
 import type { ResolvedDatabase } from '@shared/rpc/contracts/connections-host';
+import { OxyError } from '@shared/errors';
 import type { Driver } from './driver';
 import { resolveTarget, type Target } from './target';
 
@@ -47,6 +48,7 @@ interface Entry {
 export class DriverPool {
   private readonly entries = new Map<string, Entry>();
   private readonly timer: ReturnType<typeof setInterval>;
+  private disposed = false;
 
   constructor(private readonly now: () => number = Date.now) {
     this.timer = setInterval(() => void this.sweep(), SWEEP_MS);
@@ -54,6 +56,7 @@ export class DriverPool {
   }
 
   get(db: ResolvedDatabase): Promise<{ driver: Driver; target: Target }> {
+    if (this.disposed) return Promise.reject(new OxyError('UNAVAILABLE', 'Database pool disposed'));
     const id = `${db.key}#${db.fingerprint}`;
     let entry = this.entries.get(id);
     if (!entry) {
@@ -62,7 +65,10 @@ export class DriverPool {
       const driver = resolveTarget(db).then(async (target) => ({ driver: await createDriver(db, target), target }));
       entry = { key: db.key, driver, lastUsed: this.now() };
       this.entries.set(id, entry);
-      driver.catch(() => this.entries.delete(id));
+      const created = entry;
+      driver.catch(() => {
+        if (this.entries.get(id) === created) this.entries.delete(id);
+      });
     }
     entry.lastUsed = this.now();
     return entry.driver;
@@ -91,6 +97,7 @@ export class DriverPool {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
     clearInterval(this.timer);
     const all = [...this.entries.values()];
     this.entries.clear();

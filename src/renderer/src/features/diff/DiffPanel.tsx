@@ -68,6 +68,10 @@ function Toggle({
 
 /** Center panel with the diff of one file against HEAD. */
 export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) {
+  return <DiffPanel key={`${props.params.projectId}:${props.params.path}`} {...props} />;
+}
+
+function DiffPanel(props: IDockviewPanelProps<DiffPanelParams>) {
   const { projectId, path, oldPath } = props.params;
   const panelId = props.api.id;
   const project = useProjectsStore((s) => s.projects.find((p) => p.id === projectId));
@@ -83,7 +87,14 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
   const [dirty, setDirty] = useState(false);
   const [diskChanged, setDiskChanged] = useState(false);
   const loadSeq = useRef(0);
-  const dirtyRef = useLatest(dirty);
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const expectedMtime = useRef<number | undefined>(undefined);
+  const latestDiskContent = useRef<FileDiffContent | null>(null);
+  const dirtyRef = useRef(false);
+  const onDirtyChange = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+  }, []);
   const contentRef = useLatest(content);
 
   // Fingerprint of the file in the latest status + live touches: a change means the content changed.
@@ -96,13 +107,17 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
 
   const load = useCallback(
     async (live: boolean) => {
+      if (savingRef.current) return;
       const seq = ++loadSeq.current;
       try {
         const next = await ipc.invoke('git:getFileDiff', { projectId, path, ...(oldPath ? { oldPath } : {}) });
         if (seq !== loadSeq.current) return;
+        latestDiskContent.current = next;
         // Unsaved edits stay on screen; the newer version waits for "Reload".
         if (live && dirtyRef.current && next.modified !== contentRef.current?.modified) setDiskChanged(true);
-        setContent(next);
+        if (!dirtyRef.current) expectedMtime.current = next.mtimeMs;
+        // A deleted, binary or oversized disk version must not unmount an editor with unsaved text.
+        if (!dirtyRef.current || (!next.binary && !next.tooLarge && next.modified !== null)) setContent(next);
         setError(null);
         if (live) setUpdatedAt(Date.now());
       } catch (e) {
@@ -143,21 +158,25 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
 
   const save = useCallback(
     (force = false): Promise<boolean> => {
+      if (savingRef.current) return savingRef.current;
+      loadSeq.current++;
       const attempt = async (force: boolean): Promise<boolean> => {
-        const text = diffRegistry.get(panelId)?.modifiedValue();
+        const snapshot = diffRegistry.get(panelId)?.captureSave();
         const current = contentRef.current;
-        if (text == null || !current) return false;
+        if (!snapshot || !current) return false;
         try {
-          await ipc.invoke('files:write', {
+          const stat = await ipc.invoke('files:write', {
             projectId,
             path,
-            content: text,
+            content: snapshot.text,
             ...(current.bom ? { bom: true } : {}),
-            ...(!force && current.mtimeMs !== undefined && !diskChanged ? { expectedMtimeMs: current.mtimeMs } : {}),
+            ...(!force && expectedMtime.current !== undefined ? { expectedMtimeMs: expectedMtime.current } : {}),
           });
-          diffRegistry.get(panelId)?.markSaved();
+          expectedMtime.current = stat.mtimeMs;
+          const clean = snapshot.markSaved();
+          setContent({ ...current, modified: snapshot.text, mtimeMs: stat.mtimeMs });
           setDiskChanged(false);
-          return true;
+          return clean;
         } catch (e) {
           if (e instanceof OxyError && e.code === 'CONFLICT') {
             const ok = await confirmDialog({
@@ -173,9 +192,13 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
           return false;
         }
       };
-      return attempt(force);
+      const pending = attempt(force).finally(() => {
+        savingRef.current = null;
+      });
+      savingRef.current = pending;
+      return pending;
     },
-    [panelId, projectId, path, diskChanged, contentRef],
+    [panelId, projectId, path, contentRef],
   );
 
   useEffect(() => {
@@ -208,7 +231,7 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
   }, [content]);
 
   let body: React.ReactNode;
-  if (error) body = <EmptyState title="Could not read the file" description={error} />;
+  if (error && !content) body = <EmptyState title="Could not read the file" description={error} />;
   else if (!content) body = <EmptyState title="Loading diff…" />;
   else if (content.binary)
     body = (
@@ -240,7 +263,7 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
           content={content}
           options={options}
           editable={editable}
-          onDirtyChange={setDirty}
+          onDirtyChange={onDirtyChange}
           onSave={() => void save()}
         />
       </Suspense>
@@ -381,6 +404,11 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
           onClick={openEditor}
         />
       </div>
+      {error && content && (
+        <div role="status" className="border-b border-line-subtle px-3 py-1.5 text-small text-warning">
+          Could not reload the diff: {error}
+        </div>
+      )}
       {diskChanged && (
         <div
           data-testid="diff-disk-banner"
@@ -391,7 +419,11 @@ export function DiffPanelComponent(props: IDockviewPanelProps<DiffPanelParams>) 
             size="sm"
             variant="secondary"
             onClick={() => {
+              if (savingRef.current) return;
               diffRegistry.get(panelId)?.discardEdits();
+              const latest = latestDiskContent.current;
+              if (latest) setContent(latest);
+              expectedMtime.current = latest?.mtimeMs;
               setDiskChanged(false);
             }}
           >

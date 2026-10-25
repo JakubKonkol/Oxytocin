@@ -37,6 +37,8 @@ const sameRequest = (a: WatchRepoRequest, b: WatchRepoRequest) => JSON.stringify
 /** projectId → watched repository with its refresh scheduler. */
 export class RepoRegistry {
   private readonly entries = new Map<string, RepoEntry>();
+  private readonly watchRequests = new Map<string, symbol>();
+  private disposed = false;
   readonly queue = new RefreshQueue();
 
   constructor(private readonly deps: RepoRegistryDeps) {}
@@ -46,9 +48,13 @@ export class RepoRegistry {
   }
 
   async watch(req: WatchRepoRequest): Promise<void> {
+    if (this.disposed) return;
     const existing = this.entries.get(req.projectId);
     if (existing && sameRequest(existing.req, req)) return;
-    if (existing) await this.unwatch(req.projectId);
+    const request = Symbol();
+    this.watchRequests.set(req.projectId, request);
+    if (existing) await this.release(req.projectId);
+    if (this.disposed || this.watchRequests.get(req.projectId) !== request) return;
     const entry: RepoEntry = {
       req,
       info: { projectId: req.projectId, state: 'not-a-repo', hasHead: false, pathspec: null },
@@ -64,6 +70,11 @@ export class RepoRegistry {
   }
 
   async unwatch(projectId: string): Promise<void> {
+    this.watchRequests.delete(projectId);
+    await this.release(projectId);
+  }
+
+  private async release(projectId: string): Promise<void> {
     const entry = this.entries.get(projectId);
     if (!entry) return;
     this.entries.delete(projectId);
@@ -103,6 +114,7 @@ export class RepoRegistry {
         pathspec: null,
       };
     }
+    if (this.entries.get(projectId) !== entry) return;
     const changedDirs = !entry.watcher || entry.watcher.gitDirs !== `${entry.gitDir ?? ''}|${entry.commonDir ?? ''}`;
     if (JSON.stringify(info) !== JSON.stringify(entry.info)) {
       entry.info = info;
@@ -154,6 +166,7 @@ export class RepoRegistry {
     ) {
       await this.rediscover(entry);
     }
+    if (this.entries.get(entry.req.projectId) !== entry) return;
     if (this.deps.onRefresh) {
       if (entry.info.state === 'ok') await this.deps.onRefresh(entry, reasons);
       return;
@@ -278,6 +291,8 @@ export class RepoRegistry {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
+    this.watchRequests.clear();
     await Promise.all([...this.entries.keys()].map((id) => this.unwatch(id)));
   }
 }

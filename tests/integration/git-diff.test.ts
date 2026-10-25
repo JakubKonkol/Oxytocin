@@ -10,6 +10,7 @@ let dir: string;
 const git = (...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', '-c', 'commit.gpgsign=false', ...args], {
     cwd: dir,
+    windowsHide: true,
     stdio: 'pipe',
   }).toString();
 

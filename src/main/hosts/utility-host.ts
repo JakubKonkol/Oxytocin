@@ -55,6 +55,7 @@ export class UtilityHost<
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private missedPings = 0;
   private stopping = false;
+  private disposed = false;
   private readyWaiters: { resolve: () => void; reject: (e: unknown) => void }[] = [];
   private readonly eventListeners = new Map<string, Set<(payload: unknown, ports: readonly unknown[]) => void>>();
   /** Methods the host may call on main (mutable: services register them after construction). */
@@ -103,7 +104,7 @@ export class UtilityHost<
   }
 
   start(): void {
-    if (this.child) return;
+    if (this.disposed || this.child || this.restartTimer) return;
     this.stopping = false;
     this.launch(false);
   }
@@ -155,6 +156,7 @@ export class UtilityHost<
   }
 
   private handleReady(pid: number, restarted: boolean): void {
+    if (this.stopping) return;
     this._pid = pid;
     this.missedPings = 0;
     this.setState('running');
@@ -209,9 +211,11 @@ export class UtilityHost<
       if (!rpc || this._state !== 'running') return;
       rpc.call('ping', null as never, { timeoutMs: this.o.pingTimeoutMs }).then(
         () => {
+          if (this.rpc !== rpc || this.stopping) return;
           this.missedPings = 0;
         },
         () => {
+          if (this.rpc !== rpc || this.stopping) return;
           this.missedPings++;
           this.o.logger.warn(`${this.o.name} did not answer ping (${this.missedPings}/${this.o.maxMissedPings})`);
           if (this.missedPings >= this.o.maxMissedPings) {
@@ -230,6 +234,7 @@ export class UtilityHost<
 
   /** Resolves once the host is running (rejects if it fails or is stopped). */
   whenReady(timeoutMs = 15_000): Promise<void> {
+    if (this.stopping || this.disposed) return Promise.reject(new OxyError('UNAVAILABLE', `${this.o.name} stopped`));
     if (this._state === 'running') return Promise.resolve();
     if (this._state === 'failed') return Promise.reject(new OxyError('UNAVAILABLE', `${this.o.name} failed`));
     return new Promise<void>((resolve, reject) => {
@@ -291,6 +296,8 @@ export class UtilityHost<
   /** Graceful stop: asks the host to shut down, kills it after the timeout. */
   async stop(): Promise<void> {
     this.stopping = true;
+    this.stopPing();
+    this.rejectWaiters(new OxyError('UNAVAILABLE', `${this.o.name} stopped`));
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = undefined;
     const child = this.child;
@@ -313,10 +320,23 @@ export class UtilityHost<
   }
 
   dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
     this.stopping = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
+    this.restartTimer = undefined;
     this.stopPing();
-    this.child?.kill();
+    const child = this.child;
+    this.child = undefined;
+    this._pid = null;
+    for (const d of this.rpcSubscriptions.splice(0)) d.dispose();
+    this.rpc?.dispose();
+    this.rpc = undefined;
+    this.rejectWaiters(new OxyError('UNAVAILABLE', `${this.o.name} stopped`));
+    this.eventListeners.clear();
+    for (const name of Object.keys(this.served)) delete this.served[name];
+    child?.kill();
+    this.setState('stopped');
     this.stateEmitter.dispose();
     this.readyEmitter.dispose();
   }

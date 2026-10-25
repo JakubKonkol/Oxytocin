@@ -65,22 +65,35 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
   const [saving, setSaving] = useState(false);
   const viewApi = useRef<CodeViewApi | null>(null);
   const mtime = useRef<number | null>(null);
-  const dirtyRef = useLatest(dirty);
+  const dirtyRef = useRef(false);
+  const savingRef = useRef<Promise<boolean> | null>(null);
+  const loadSeq = useRef(0);
+  const onDirtyChange = useCallback((value: boolean) => {
+    dirtyRef.current = value;
+    setDirty(value);
+  }, []);
   const contentRef = useLatest(content);
   const change = useChangesStore((s) => s.status[projectId]?.files.find((f) => f.path === path));
   const touched = useChangesStore((s) => s.touched[projectId]?.[path] ?? 0);
 
   /** Reads the file; with `intoView`, an editor that is already open shows the new text. */
   const load = useCallback(
-    async (intoView: boolean) => {
+    async (intoView: boolean, discardEdits = false) => {
+      const seq = ++loadSeq.current;
       try {
         const next = await ipc.invoke('files:read', { projectId, path });
+        if (seq !== loadSeq.current) return;
+        if (intoView && !discardEdits && dirtyRef.current) {
+          setDisk('changed');
+          return;
+        }
         mtime.current = next.mtimeMs;
         setDisk('same');
         setError(null);
         if (intoView && viewApi.current && next.content !== null) viewApi.current.load(next.content);
         else setContent(next);
       } catch (e) {
+        if (seq !== loadSeq.current) return;
         if (e instanceof OxyError && e.code === 'NOT_FOUND' && contentRef.current) setDisk('deleted');
         else setError(e instanceof Error ? e.message : String(e));
       }
@@ -92,12 +105,24 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
     // The state updates happen after the IPC round trip.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(false);
+    return () => {
+      // Invalidate every request outstanding at cleanup, including later automatic reloads.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      loadSeq.current++;
+    };
   }, [load]);
 
   /** Compares the file on disk with the version in the editor (after a write by an agent, on focus). */
   const checkDisk = useCallback(async () => {
-    if (mtime.current === null) return;
-    const s = await ipc.invoke('files:stat', { projectId, path }).catch(() => null);
+    if (mtime.current === null || savingRef.current) return;
+    const seq = loadSeq.current;
+    const s = await ipc.invoke('files:stat', { projectId, path }).catch((e: unknown) => {
+      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : String(e));
+      return undefined;
+    });
+    if (seq !== loadSeq.current || savingRef.current) return;
+    if (s === undefined) return;
+    setError(null);
     if (!s) {
       setDisk('deleted');
       return;
@@ -127,22 +152,24 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
 
   const save = useCallback(
     (force = false): Promise<boolean> => {
+      if (savingRef.current) return savingRef.current;
+      loadSeq.current++;
       const attempt = async (force: boolean): Promise<boolean> => {
-        const text = viewApi.current?.getValue();
-        if (text === undefined || !contentRef.current) return false;
+        const snapshot = viewApi.current?.captureSave();
+        if (!snapshot || !contentRef.current) return false;
         setSaving(true);
         try {
           const stat = await ipc.invoke('files:write', {
             projectId,
             path,
-            content: text,
+            content: snapshot.text,
             ...(contentRef.current.bom ? { bom: true } : {}),
             ...(!force && mtime.current !== null && disk !== 'deleted' ? { expectedMtimeMs: mtime.current } : {}),
           });
           mtime.current = stat.mtimeMs;
-          viewApi.current?.markSaved();
+          const clean = snapshot.markSaved();
           setDisk('same');
-          return true;
+          return clean;
         } catch (e) {
           if (e instanceof OxyError && e.code === 'CONFLICT') {
             const overwrite = await confirmDialog({
@@ -163,7 +190,11 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
           setSaving(false);
         }
       };
-      return attempt(force);
+      const pending = attempt(force).finally(() => {
+        savingRef.current = null;
+      });
+      savingRef.current = pending;
+      return pending;
     },
     [projectId, path, disk, contentRef],
   );
@@ -218,7 +249,7 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
   const toggle = (key: 'wordWrap' | 'minimap') => setOptions((o) => ({ ...o, [key]: !o[key] }));
 
   let body: React.ReactNode;
-  if (error) body = <EmptyState title="Could not open the file" description={error} />;
+  if (error && !content) body = <EmptyState title="Could not open the file" description={error} />;
   else if (!content) body = <EmptyState title="Opening…" />;
   else if (content.content === null)
     body = (
@@ -249,7 +280,7 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
           eol={content.eol}
           options={options}
           apiRef={viewApi}
-          onDirtyChange={setDirty}
+          onDirtyChange={onDirtyChange}
           onSave={() => void save()}
           onReady={onReady}
         />
@@ -348,6 +379,11 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
           onClick={() => project && void openInEditor(project, path)}
         />
       </div>
+      {error && content && (
+        <div role="status" className="border-b border-line-subtle px-3 py-1.5 text-small text-warning">
+          Could not reload the file: {error}
+        </div>
+      )}
       {disk !== 'same' && (
         <div
           data-testid="code-disk-banner"
@@ -359,7 +395,13 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
               : 'The file changed on disk while you were editing it.'}
           </span>
           {disk === 'changed' && (
-            <Button size="sm" variant="secondary" data-testid="code-reload" onClick={() => void load(true)}>
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="code-reload"
+              disabled={saving}
+              onClick={() => void load(true, true)}
+            >
               Reload (discard my edits)
             </Button>
           )}
@@ -368,11 +410,18 @@ function CodeEditor(props: IDockviewPanelProps<CodePanelParams>) {
             variant="ghost"
             data-testid="code-keep-mine"
             onClick={() =>
-              void ipc.invoke('files:stat', { projectId, path }).then((s) => {
-                // The next save writes over the version on disk without asking again.
-                if (s) mtime.current = s.mtimeMs;
-                setDisk('same');
-              })
+              void ipc
+                .invoke('files:stat', { projectId, path })
+                .then((s) => {
+                  // The next save writes over the version on disk without asking again.
+                  if (s) mtime.current = s.mtimeMs;
+                  setDisk('same');
+                })
+                .catch((e: unknown) => {
+                  notify('error', 'Could not check the file on disk', {
+                    description: e instanceof Error ? e.message : String(e),
+                  });
+                })
             }
           >
             Keep mine

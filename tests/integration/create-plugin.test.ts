@@ -20,7 +20,7 @@ afterAll(async () => {
 });
 
 const node = (cwd: string, ...args: string[]) =>
-  execFileSync(process.execPath, args, { cwd, encoding: 'utf8', stdio: 'pipe' });
+  execFileSync(process.execPath, args, { cwd, encoding: 'utf8', stdio: 'pipe', windowsHide: true });
 
 describe('create-oxytocin-plugin', () => {
   it('validates ids and renders placeholders', () => {

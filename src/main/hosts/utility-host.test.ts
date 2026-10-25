@@ -93,6 +93,64 @@ describe('UtilityHost', () => {
     host.dispose();
   });
 
+  it.each(['stop', 'dispose'] as const)('rejects ready waiters on %s during restart backoff', async (action) => {
+    const { host } = make();
+    host.start();
+    await host.whenReady();
+    processes[0]!.exit(1);
+    await vi.advanceTimersByTimeAsync(0);
+    const waiting = expect(host.whenReady()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    await host[action]();
+    await waiting;
+    await expect(host.whenReady()).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(processes).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not launch a second child when start is called during restart backoff', async () => {
+    const { host } = make();
+    host.start();
+    await host.whenReady();
+    processes[0]!.exit(1);
+    await vi.advanceTimersByTimeAsync(0);
+    host.start();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(processes).toHaveLength(2);
+    host.dispose();
+  });
+
+  it('disposes RPC and pending calls even when killing the child produces no exit event', async () => {
+    const { host } = make();
+    host.start();
+    await host.whenReady();
+    const child = processes[0]!;
+    child.answerPings = false;
+    vi.spyOn(child, 'kill').mockReturnValue(false);
+    const waiting = expect(host.call('ping', null)).rejects.toMatchObject({ code: 'CANCELLED' });
+    await Promise.resolve();
+    host.dispose();
+    await waiting;
+    expect(child.listenerCount('message')).toBe(0);
+    expect(host.state).toBe('stopped');
+    expect(vi.getTimerCount()).toBe(0);
+    host.start();
+    expect(processes).toHaveLength(1);
+  });
+
+  it('does not count an interrupted ping as a failure of the replacement process', async () => {
+    const { host, log } = make({ pingIntervalMs: 100, pingTimeoutMs: 1000, restartDelaysMs: [0] });
+    host.start();
+    await host.whenReady();
+    processes[0]!.answerPings = false;
+    await vi.advanceTimersByTimeAsync(100);
+    processes[0]!.exit(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await host.whenReady();
+    expect(log.lines.some((line) => line.includes('did not answer ping'))).toBe(false);
+    host.dispose();
+  });
+
   it('restarts after an unexpected exit with backoff and rejects pending calls', async () => {
     const { host, log } = make();
     const ready = vi.fn();

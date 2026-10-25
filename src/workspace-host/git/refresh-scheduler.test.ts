@@ -96,4 +96,18 @@ describe('RefreshScheduler', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(runs).toHaveLength(0);
   });
+
+  it('handles requests accumulated behind another repository in a single refresh', async () => {
+    const { scheduler, runs, queue } = setup();
+    const blocking = Promise.withResolvers<void>();
+    queue.enqueue({ key: 'other', execute: () => blocking.promise });
+    scheduler.request('manual');
+    await vi.advanceTimersByTimeAsync(0);
+    scheduler.request('fs');
+    scheduler.request('gitdir');
+    blocking.resolve();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]!.reasons.sort()).toEqual(['fs', 'gitdir', 'manual']);
+  });
 });

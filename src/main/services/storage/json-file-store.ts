@@ -157,8 +157,8 @@ export class JsonFileStore<T> {
     this.writing = this.writing.then(async () => {
       if (!this.dirty) return;
       this.dirty = false;
-      const content = `${JSON.stringify(this.value, null, 2)}\n`;
       try {
+        const content = `${JSON.stringify(this.value, null, 2)}\n`;
         await writeFileAtomic(this.o.path, content);
         if (this.o.backup) await copyFile(this.o.path, `${this.o.path}.bak`).catch(() => undefined);
       } catch (e) {

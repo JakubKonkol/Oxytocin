@@ -84,4 +84,16 @@ describe('JsonFileStore', () => {
     expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ version: 2, items: ['x'] });
     expect(JSON.parse(await readFile(`${file}.bak`, 'utf8'))).toEqual({ version: 2, items: ['x'] });
   });
+
+  it('recovers after a value cannot be serialized instead of poisoning all later writes', async () => {
+    const file = join(dir, 'retry.json');
+    const store = new JsonFileStore<unknown>({ path: file, schema: z.unknown(), defaults: () => null });
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    store.set(cyclic);
+    await expect(store.flush()).resolves.toBeUndefined();
+    store.set({ recovered: true });
+    await store.flush();
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({ recovered: true });
+  });
 });

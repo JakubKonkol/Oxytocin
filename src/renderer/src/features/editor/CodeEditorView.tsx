@@ -16,7 +16,8 @@ export interface CodeViewApi {
   getValue(): string;
   /** Replaces the text (a reload from disk) keeping the scroll position; the result counts as saved. */
   load(text: string): void;
-  markSaved(): void;
+  /** Captures the version being written; later edits must remain dirty when the write finishes. */
+  captureSave(): { text: string; markSaved(): boolean };
   revealLine(line: number, column?: number): void;
   focus(): void;
   selection(): CodeContext | null;
@@ -118,9 +119,18 @@ export default function CodeEditorView({
         setDirty(false);
         if (viewState) editor.restoreViewState(viewState);
       },
-      markSaved: () => {
-        savedVersion = model.getAlternativeVersionId();
-        setDirty(false);
+      captureSave: () => {
+        const version = model.getAlternativeVersionId();
+        return {
+          text: model.getValue(),
+          markSaved: () => {
+            if (model.isDisposed()) return false;
+            savedVersion = version;
+            const clean = model.getAlternativeVersionId() === version;
+            setDirty(!clean);
+            return clean;
+          },
+        };
       },
       revealLine: (line, column) => {
         const position = { lineNumber: Math.max(1, line), column: Math.max(1, column ?? 1) };

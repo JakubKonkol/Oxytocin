@@ -130,12 +130,23 @@ export default function DiffEditorView({
         return (current ?? changes[0])?.modifiedStartLineNumber || pos;
       },
       modifiedValue: () => modelsRef.current?.modified.getValue() ?? null,
-      markSaved: () => {
-        savedVersion.current = modelsRef.current?.modified.getAlternativeVersionId() ?? 0;
-        if (dirtyRef.current) {
-          dirtyRef.current = false;
-          callbacks.current.onDirtyChange?.(false);
-        }
+      captureSave: () => {
+        const model = modelsRef.current?.modified;
+        if (!model) return null;
+        const version = model.getAlternativeVersionId();
+        return {
+          text: model.getValue(),
+          markSaved: () => {
+            if (modelsRef.current?.modified !== model || model.isDisposed()) return false;
+            savedVersion.current = version;
+            const dirty = model.getAlternativeVersionId() !== version;
+            if (dirtyRef.current !== dirty) {
+              dirtyRef.current = dirty;
+              callbacks.current.onDirtyChange?.(dirty);
+            }
+            return !dirty;
+          },
+        };
       },
       discardEdits: () => {
         const models = modelsRef.current;
