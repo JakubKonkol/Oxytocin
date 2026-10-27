@@ -61,6 +61,12 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
+- **Task:** starting a task works again: the Claude planner opened in plan mode and did nothing. Its prompt came after
+  `--add-dir`, which reads every following argument as one more directory, so Claude Code got no prompt. A new
+  agent session now gets its prompt before any other argument. Claude sessions started by Task no longer get
+  `--add-dir`, which also keeps a startup prompt from being submitted (anthropics/claude-code#92930); they read Task's
+  folder through a permission rule in Task's `--settings` file instead. A plugin that starts Claude Code with
+  `addDirs` and a prompt gets the prompt typed once the agent is ready.
 - **Editors and diffs:** typing while a save is in progress no longer marks the newer text as saved or lets a
   save-and-close action discard it. Repeated saves share the pending write, and the next save checks the modification
   time returned by the previous write instead of reporting a false conflict.

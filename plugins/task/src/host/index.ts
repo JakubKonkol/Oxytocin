@@ -18,7 +18,15 @@ import {
   type Task,
   type TaskFiles,
 } from '../shared/task';
-import { decision, DECISION_REASONS, HOOK_PATH, PlanHookServer, plannerSettings, TASK_VAR } from './hook';
+import {
+  decision,
+  DECISION_REASONS,
+  HOOK_PATH,
+  PlanHookServer,
+  plannerSettings,
+  TASK_VAR,
+  taskFolderSettings,
+} from './hook';
 import { captureClaudePlan, readPlan } from './plans';
 
 const HookStateSchema = z.object({ port: z.number().int().min(0).max(65535), token: z.string().min(32).max(128) });
@@ -189,28 +197,34 @@ export async function activate(ctx: PluginContext): Promise<void> {
   }
   ctx.subscriptions.push({ dispose: () => void server.stop() });
 
-  /** A new Claude planning session: plan mode with bypass available, Task's hook and deny rules (`--settings`). */
-  const plannerLaunch = async (t: Task, launchId: string) => {
-    if (!hookUrl || !t.planMode) return undefined;
+  /**
+   * What a new session of a role starts with besides its prompt. Claude Code gets Task's `--settings` file: read access
+   * to Task's folder and, for a planner in plan mode, the plan hook, deny rules and bypass in its Shift+Tab cycle
+   * (`hooked`). Other CLIs get Task's folder as an extra directory.
+   */
+  const sessionLaunch = async (t: Task, name: RoleName, launchId: string) => {
     const launcher = (await oxy.agents.listLaunchers()).find((l) => l.launchId === launchId);
-    if (launcher?.agent !== 'claude') return undefined;
+    if (launcher?.agent !== 'claude') return { hooked: false, options: { addDirs: [taskDir(t)] } };
     const project = (await oxy.projects.list()).find((p) => p.id === t.projectId);
-    if (!project) return undefined;
-    const file = join(taskDir(t), 'claude-settings.json');
+    const hooked = name === 'planner' && !!hookUrl && t.planMode && !!project;
+    const settings =
+      hooked && hookUrl && project
+        ? plannerSettings({ projectRoot: project.rootPath, taskDir: taskDir(t), url: hookUrl, token })
+        : taskFolderSettings(taskDir(t), name === 'planner');
+    const file = join(taskDir(t), name === 'planner' ? 'claude-settings.json' : `claude-${name}-settings.json`);
     await mkdir(taskDir(t), { recursive: true });
-    await writeFile(
-      file,
-      `${JSON.stringify(plannerSettings({ projectRoot: project.rootPath, url: hookUrl, token }), null, 2)}\n`,
-      { mode: 0o600 },
-    );
+    await writeFile(file, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
     return {
-      claudeArgs: [
-        ...(launcher.kind === 'profile' ? [] : PLANNER_MODEL),
-        '--allow-dangerously-skip-permissions',
-        '--settings',
-        file,
-      ],
-      env: { [TASK_VAR]: t.id },
+      hooked,
+      options: {
+        claudeArgs: [
+          ...(hooked && launcher.kind !== 'profile' ? PLANNER_MODEL : []),
+          ...(hooked ? ['--allow-dangerously-skip-permissions'] : []),
+          '--settings',
+          file,
+        ],
+        ...(hooked ? { env: { [TASK_VAR]: t.id } } : {}),
+      },
     };
   };
 
@@ -265,20 +279,19 @@ export async function activate(ctx: PluginContext): Promise<void> {
       queue(t, name, prompt(hooked(t)));
       return;
     }
-    const planner = name === 'planner' ? await plannerLaunch(t, role.launchId) : undefined;
-    const text = prompt(!!planner);
+    const session = await sessionLaunch(t, name, role.launchId);
+    const text = prompt(session.hooked);
     const result = await oxy.agents.launch({
       projectId: t.projectId,
       launchId: role.launchId,
       reuse: false,
       prompt: text,
-      addDirs: [taskDir(t)],
       ...(name === 'planner' ? { planMode: t.planMode } : {}),
-      ...(planner ?? {}),
+      ...session.options,
     });
     role.terminalId = result.terminalId;
     if (name === 'planner') {
-      if (planner) t.hookTerminalId = result.terminalId;
+      if (session.hooked) t.hookTerminalId = result.terminalId;
       else delete t.hookTerminalId;
     }
     if (!result.sent) queue(t, name, text);

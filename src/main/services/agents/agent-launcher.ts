@@ -32,7 +32,12 @@ const STARTUP_PROMPT: Record<string, (prompt: string) => string[]> = {
   gemini: (prompt) => ['--prompt-interactive', prompt],
   qwen: (prompt) => ['--prompt-interactive', prompt],
 };
-/** Directories a new session may use besides the project (Codex reads anywhere; its flag adds a writable root). */
+/**
+ * Directories a new session may use besides the project (Codex reads anywhere; its flag adds a writable root).
+ * Claude Code's `--add-dir` keeps a prompt given on the same command line from being submitted (the session opens
+ * with an empty turn, anthropics/claude-code#92930), so a Claude session with extra directories gets its prompt typed
+ * once it is ready instead.
+ */
 const ADD_DIR: Record<string, string> = {
   claude: '--add-dir',
   codex: '--add-dir',
@@ -94,7 +99,7 @@ export class AgentLauncherService {
         ...(cli === 'claude' ? [...(o.planMode ? ['--permission-mode', 'plan'] : []), ...(o.claudeArgs ?? [])] : []),
         ...(ADD_DIR[cli] ? (o.addDirs ?? []).flatMap((dir) => [ADD_DIR[cli]!, dir]) : []),
       ];
-      const prompt = o.prompt;
+      const prompt = cli === 'claude' && (o.addDirs ?? []).length > 0 ? undefined : o.prompt;
       const head = profile.command ?? cli;
       terminal = await this.deps.create(o.projectId, o.launchId, {
         ...(args.length > 0 || (prompt && STARTUP_PROMPT[cli])
@@ -102,7 +107,9 @@ export class AgentLauncherService {
               command: (shell: ShellKind) => {
                 const promptArgs = prompt ? startupPromptArgs(cli, prompt, shell) : undefined;
                 passed = !!promptArgs;
-                return { head, args: [...args, ...(promptArgs ?? [])] };
+                // The prompt comes first: an option that takes several values (Claude Code's `--add-dir`, Gemini's
+                // `--include-directories`) would read a prompt after it as one more value.
+                return { head, args: [...(promptArgs ?? []), ...args] };
               },
             }
           : {}),

@@ -108,9 +108,13 @@ test('Task: a Claude planner waits for the decision in Task, feedback revises th
     await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan this task');
     const started = await oxyTest(win).text(planner);
     expect(started).toContain('Task: Add a search field');
+    // The fake parses its command line like Claude Code: nothing after the prompt can swallow it, and no --add-dir
+    // keeps it from being submitted (Task's folder is readable through its settings).
     expect(started).toMatch(
-      /ARGS: --permission-mode plan --model opus --effort high --allow-dangerously-skip-permissions --settings \S+claude-settings\.json --add-dir /,
+      /ARGS: Plan this task; .* --permission-mode plan --model opus --effort high --allow-dangerously-skip-permissions --settings \S+claude-settings\.json\s*$/m,
     );
+    expect(started).not.toContain('--add-dir');
+    expect(started).not.toContain('UNSUBMITTED PROMPT');
     await expect.poll(() => oxyTest(win).activeTerminalId()).toBe(planner);
 
     // Claude finishes the plan and waits in the hook: no question in the terminal, the plan appears in Task.
@@ -150,6 +154,7 @@ test('Task: a Claude planner waits for the decision in Task, feedback revises th
     await frame.getByTestId('task-review').click();
     const reviewer = await agentTerminal(win, 'claude-code', 1);
     await expect.poll(() => oxyTest(win).text(reviewer)).toContain('PROMPT: Review the current changes');
+    expect(await oxyTest(win).text(reviewer)).toMatch(/--settings \S+claude-reviewer-settings\.json\s*$/m);
     await taskFrame(win);
     await frame.getByTestId('task-done').click();
     await expect(frame.getByText('COMPLETED', { exact: true })).toBeVisible();

@@ -43,7 +43,7 @@ describe('AgentLauncherService', () => {
     ).toEqual({ terminalId: 't0', reused: false, sent: true });
     expect(s.commands[0]).toEqual({
       head: 'claude --model opusplan',
-      args: ['--permission-mode', 'plan', 'Plan this'],
+      args: ['Plan this', '--permission-mode', 'plan'],
     });
     expect(s.show).toHaveBeenCalledWith('t0', 'p');
     // Nothing is typed: the agent starts with the prompt.
@@ -66,8 +66,29 @@ describe('AgentLauncherService', () => {
   it('passes Codex its prompt and extra directories', async () => {
     const s = setup();
     await s.service.launch({ projectId: 'p', launchId: 'ai:codex', prompt: 'Implement it', addDirs: ['/data/task'] });
-    expect(s.commands[0]).toEqual({ head: 'codex', args: ['--add-dir', '/data/task', 'Implement it'] });
+    expect(s.commands[0]).toEqual({ head: 'codex', args: ['Implement it', '--add-dir', '/data/task'] });
     expect(s.send).not.toHaveBeenCalled();
+  });
+  it('never puts the prompt where an option that takes several values would read it as one more value', async () => {
+    const s = setup();
+    await s.service.launch({
+      projectId: 'p',
+      launchId: 'ai:claude',
+      planMode: true,
+      prompt: 'Plan it',
+      claudeArgs: ['--settings', '/data/task/claude-settings.json'],
+    });
+    expect(s.commands[0]!.args[0]).toBe('Plan it');
+    expect(s.send).not.toHaveBeenCalled();
+  });
+  it('types the prompt of a Claude session started with extra directories once it is ready', async () => {
+    const s = setup();
+    // Claude Code's --add-dir keeps a startup prompt from being submitted (anthropics/claude-code#92930).
+    expect(
+      await s.service.launch({ projectId: 'p', launchId: 'ai:claude', prompt: 'Review it', addDirs: ['/data/task'] }),
+    ).toEqual({ terminalId: 't0', reused: false, sent: true });
+    expect(s.commands[0]).toEqual({ head: 'claude --model opusplan', args: ['--add-dir', '/data/task'] });
+    expect(s.send).toHaveBeenCalledWith('t0', 'Review it');
   });
   it('never puts what cmd.exe would expand on its command line', async () => {
     const s = setup('cmd');

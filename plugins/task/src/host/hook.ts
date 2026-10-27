@@ -42,6 +42,17 @@ export function absoluteRulePath(path: string): string {
 }
 
 /**
+ * The `--settings` file of a Claude Code session started by Task: reading Task's folder (the task and the brief) asks
+ * no permission; `write` also lets a planner without the plan hook write its plan there. This is an allow rule rather
+ * than `--add-dir`, which keeps the prompt on Claude Code's command line from being submitted
+ * (anthropics/claude-code#92930).
+ */
+export function taskFolderSettings(taskDir: string, write = false) {
+  const dir = absoluteRulePath(taskDir);
+  return { permissions: { allow: [`Read(${dir}/**)`, ...(write ? [`Edit(${dir}/**)`] : [])] } };
+}
+
+/**
  * The `--settings` file of a planning session (it only adds to the user's and the project's settings):
  * - a `PreToolUse` hook on `ExitPlanMode` that hands the finished plan to Task over HTTP and waits for the user's
  *   decision (approve, feedback or reject), which Task returns as the hook's answer: nothing is typed into the
@@ -49,13 +60,17 @@ export function absoluteRulePath(path: string): string {
  *   id from the terminal's environment. Outside a Task terminal the id is empty and Task answers "no decision"; when
  *   Oxytocin does not answer, the request fails as a non-blocking hook error and Claude Code asks in the terminal as
  *   usual, so the plan is never lost.
+ * - reading Task's folder (see `taskFolderSettings`);
  * - deny rules: with bypass permissions available Claude Code does not enforce plan mode's blocks in an interactive
  *   terminal, so edits inside the project and git commands that change history or the working tree are denied.
  *   Claude Code writes its plan file outside the project (`~/.claude/plans/` or `plansDirectory`).
  */
-export function plannerSettings(o: { projectRoot: string; url: string; token: string }) {
+export function plannerSettings(o: { projectRoot: string; taskDir: string; url: string; token: string }) {
   return {
-    permissions: { deny: [`Edit(${absoluteRulePath(o.projectRoot)}/**)`, ...GIT_DENY] },
+    permissions: {
+      allow: taskFolderSettings(o.taskDir).permissions.allow,
+      deny: [`Edit(${absoluteRulePath(o.projectRoot)}/**)`, ...GIT_DENY],
+    },
     hooks: {
       PreToolUse: [
         {

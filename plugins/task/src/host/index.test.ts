@@ -205,7 +205,10 @@ describe('Task workflow', () => {
       const id = await s.request<string>('create', { ...input, reviewer: { launchId: 'ai:claude' } });
       const taskDir = join(s.dir, 'p', id);
       expect((await s.task()).phase).toBe('planning');
-      expect(s.launch.mock.calls[0]![0]).toMatchObject({ reuse: false, addDirs: [taskDir] });
+      // Claude Code reads Task's folder through its settings: --add-dir would keep its prompt from being submitted.
+      expect(s.launch.mock.calls[0]![0]).toMatchObject({ reuse: false });
+      expect(s.launch.mock.calls[0]![0].prompt).toContain('Add search');
+      expect(s.launch.mock.calls[0]![0]).not.toHaveProperty('addDirs');
       expect(await readFile(join(taskDir, 'task.md'), 'utf8')).toBe('Add search\n');
       await expect(s.request('implement', id)).rejects.toThrow(/Approve/);
       await s.request('approve', { id, plan: '# Search\nAdd a keyboard shortcut.' });
@@ -213,6 +216,7 @@ describe('Task workflow', () => {
       expect(implementer).toMatchObject({ launchId: 'ai:codex', reuse: false, addDirs: [taskDir] });
       expect(implementer.prompt).toContain(join(taskDir, 'brief.md'));
       expect(implementer.prompt).not.toContain('\n');
+      expect(implementer).not.toHaveProperty('claudeArgs');
       expect(await readFile(join(taskDir, 'brief.md'), 'utf8')).toBe(
         '# Task\n\nAdd search\n\n# Approved plan\n\n# Search\nAdd a keyboard shortcut.\n',
       );
@@ -222,7 +226,17 @@ describe('Task workflow', () => {
       await expect(s.request('approve', { id, plan: 'Changed plan' })).rejects.toThrow(/already been approved/);
       await s.request('review', id);
       expect((await s.task()).phase).toBe('reviewing');
-      expect(s.launch.mock.calls.at(-1)?.[0]).toMatchObject({ launchId: 'ai:claude', reuse: false });
+      const reviewerSettings = join(taskDir, 'claude-reviewer-settings.json');
+      expect(s.launch.mock.calls.at(-1)?.[0]).toMatchObject({
+        launchId: 'ai:claude',
+        reuse: false,
+        claudeArgs: ['--settings', reviewerSettings],
+      });
+      expect(s.launch.mock.calls.at(-1)?.[0]).not.toHaveProperty('addDirs');
+      const allowed = (JSON.parse(await readFile(reviewerSettings, 'utf8')) as { permissions: { allow: string[] } })
+        .permissions.allow;
+      expect(allowed).toHaveLength(1);
+      expect(allowed[0]).toMatch(/^Read\(\/\/.*\/\*\*\)$/);
       expect(s.launch.mock.calls.at(-1)?.[0].prompt).toContain('Do not edit files');
       // Every role has a session of its own.
       expect(new Set(s.launch.mock.results.map((_r, i) => `t${i + 1}`)).size).toBe(3);

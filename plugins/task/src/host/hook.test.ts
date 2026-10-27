@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { absoluteRulePath, decision, HOOK_PATH, PlanHookServer, plannerSettings } from './hook';
+import { absoluteRulePath, decision, HOOK_PATH, PlanHookServer, plannerSettings, taskFolderSettings } from './hook';
 
 describe('planner settings', () => {
   it('spells project paths as absolute permission rule paths', () => {
@@ -7,12 +7,24 @@ describe('planner settings', () => {
     expect(absoluteRulePath('/home/jane/repo')).toBe('//home/jane/repo');
   });
 
+  it("lets Claude read Task's folder, and a planner without the hook write its plan there", () => {
+    expect(taskFolderSettings('C:\\Users\\Jane Doe\\task')).toEqual({
+      permissions: { allow: ['Read(//c/Users/Jane Doe/task/**)'] },
+    });
+    expect(taskFolderSettings('/data/task', true).permissions.allow).toEqual([
+      'Read(//data/task/**)',
+      'Edit(//data/task/**)',
+    ]);
+  });
+
   it('denies edits in the project and history-changing git commands, and hooks ExitPlanMode only', () => {
     const settings = plannerSettings({
       projectRoot: 'D:\\work\\app',
+      taskDir: 'D:\\data\\task',
       url: 'http://127.0.0.1:1/task/exit-plan',
       token: 'x',
     });
+    expect(settings.permissions.allow).toEqual(['Read(//d/data/task/**)']);
     expect(settings.permissions.deny).toEqual([
       'Edit(//d/work/app/**)',
       'Bash(git commit *)',
