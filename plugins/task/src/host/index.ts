@@ -34,6 +34,8 @@ const HookStateSchema = z.object({ port: z.number().int().min(0).max(65535), tok
 const PLANNER_MODEL = ['--model', 'opus', '--effort', 'high'];
 /** How long a queued prompt waits for a session whose agent has not been detected yet before Task gives up. */
 const AGENT_START_GRACE_MS = 60_000;
+/** After this long without starting on its prompt, a new session is shown as stalled (its terminal needs a look). */
+export const KICKOFF_MS = 30_000;
 
 export async function activate(ctx: PluginContext): Promise<void> {
   const { oxy } = ctx;
@@ -60,6 +62,27 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const hooked = (t: Task) => !!t.hookTerminalId && t.planner.terminalId === t.hookTerminalId;
   /** Claude Code sessions waiting in Task's plan hook for the user's decision, by task id. */
   const held = new Map<string, { resolve: (output: object | undefined) => void }>();
+  /**
+   * New sessions that got their prompt on the command line and have not been seen working on it (or asking
+   * something) yet, by task id. A session still idle after `KICKOFF_MS` is reported instead of looking healthy.
+   */
+  const kickoffs = new Map<string, { role: RoleName; terminalId: string; at: number }>();
+  const now = () => Date.now();
+  const noticeStarts = (agents: AgentSnapshot[]) => {
+    for (const [id, kickoff] of kickoffs) {
+      const state = agents.find((a) => a.terminalId === kickoff.terminalId)?.state;
+      if (state === 'working' || state === 'waiting') kickoffs.delete(id);
+    }
+  };
+  /** The role whose new session has not started on its prompt, when it waits for input or is still starting. */
+  const stalled = (t: Task, agents: AgentSnapshot[]): RoleName | null => {
+    const kickoff = kickoffs.get(t.id);
+    if (!kickoff || t[kickoff.role]?.terminalId !== kickoff.terminalId) return null;
+    if (t.phase === 'done' || t.phase === 'rejected') return null;
+    if (now() - kickoff.at < KICKOFF_MS) return null;
+    const state = agents.find((a) => a.terminalId === kickoff.terminalId)?.state;
+    return state === 'idle' || state === 'starting' ? kickoff.role : null;
+  };
   let writes = Promise.resolve();
   const persist = () => {
     const snapshot = JSON.stringify(tasks);
@@ -76,6 +99,8 @@ export async function activate(ctx: PluginContext): Promise<void> {
   const projectOf = (view: PluginView) => view.projectId ?? active?.id;
   const model = async (projectId: string | undefined, selected?: string) => {
     const task = tasks.find((t) => t.projectId === projectId && (!selected || t.id === selected)) ?? null;
+    const agents = projectId ? (await oxy.agents.list()).filter((a) => a.projectId === projectId) : [];
+    noticeStarts(agents);
     return {
       project: projectId
         ? { id: projectId, name: (await oxy.projects.list()).find((p) => p.id === projectId)?.name ?? projectId }
@@ -86,8 +111,10 @@ export async function activate(ctx: PluginContext): Promise<void> {
       task,
       /** The planner waits in Task's hook for the decision on the current plan. */
       planWaiting: !!task && held.has(task.id),
+      /** A role whose new session has not started on its prompt (see `KICKOFF_MS`). */
+      stalled: task ? stalled(task, agents) : null,
       launchers: await oxy.agents.listLaunchers(),
-      agents: projectId ? (await oxy.agents.list()).filter((a) => a.projectId === projectId) : [],
+      agents,
       terminals: projectId ? await oxy.terminals.list({ projectId }) : [],
     };
   };
@@ -295,6 +322,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
       else delete t.hookTerminalId;
     }
     if (!result.sent) queue(t, name, text);
+    else kickoffs.set(t.id, { role: name, terminalId: result.terminalId, at: now() });
   };
 
   /** Types a queued prompt once its session's agent waits for input; never over a turn or a question. */
@@ -552,6 +580,7 @@ export async function activate(ctx: PluginContext): Promise<void> {
           await locked(t.id, async () => {
             decide(t, decision(DECISION_REASONS.deleted));
             tasks.splice(tasks.indexOf(t), 1);
+            kickoffs.delete(t.id);
             await persist();
             await push();
           });
@@ -569,8 +598,9 @@ export async function activate(ctx: PluginContext): Promise<void> {
       await oxy.ui.openPanel('task.panel', { placement: 'sidebar' });
     }),
     // Agent states drive queued prompts and the sessions shown in Task.
-    oxy.agents.onDidChange(() => {
+    oxy.agents.onDidChange((agents) => {
       if (disposed) return;
+      noticeStarts(agents);
       deliverAll();
       if (tasks.length > 0) pushLater();
     }),

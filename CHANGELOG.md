@@ -66,7 +66,11 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   agent session now gets its prompt before any other argument. Claude sessions started by Task no longer get
   `--add-dir`, which also keeps a startup prompt from being submitted (anthropics/claude-code#92930); they read Task's
   folder through a permission rule in Task's `--settings` file instead. A plugin that starts Claude Code with
-  `addDirs` and a prompt gets the prompt typed once the agent is ready.
+  `addDirs` and a prompt, or a Claude launch command in Settings → AI Agents that ends with an option taking several
+  values (such as `claude --add-dir ../shared`), gets the prompt typed once the agent is ready.
+- **Task:** a new agent session that has not started on its prompt 30 seconds after it opened (it waits for input or
+  is still starting, for example on a question) is shown in Task with **Show terminal**, instead of looking as if
+  the task were running.
 - **Editors and diffs:** typing while a save is in progress no longer marks the newer text as saved or lets a
   save-and-close action discard it. Repeated saves share the pending write, and the next save checks the modification
   time returned by the previous write instead of reporting a false conflict.

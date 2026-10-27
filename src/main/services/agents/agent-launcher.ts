@@ -44,6 +44,13 @@ const ADD_DIR: Record<string, string> = {
   gemini: '--include-directories',
   qwen: '--include-directories',
 };
+/**
+ * Claude Code options that read every following argument up to the next option. A prompt after one of them in a
+ * configured command (`claude --add-dir ../shared`) would be read as one more value, and any `--add-dir` keeps a
+ * startup prompt from being submitted, so such a session gets its prompt typed once it is ready.
+ */
+const CLAUDE_MULTI_VALUE =
+  /(?:^|\s)--(?:add-dir|allowedTools|allowed-tools|disallowedTools|disallowed-tools|tools|mcp-config|plugin-dir|betas)(?=[\s=]|$)/;
 export const MAX_STARTUP_PROMPT = 2000;
 
 /**
@@ -99,8 +106,9 @@ export class AgentLauncherService {
         ...(cli === 'claude' ? [...(o.planMode ? ['--permission-mode', 'plan'] : []), ...(o.claudeArgs ?? [])] : []),
         ...(ADD_DIR[cli] ? (o.addDirs ?? []).flatMap((dir) => [ADD_DIR[cli]!, dir]) : []),
       ];
-      const prompt = cli === 'claude' && (o.addDirs ?? []).length > 0 ? undefined : o.prompt;
       const head = profile.command ?? cli;
+      const typed = cli === 'claude' && ((o.addDirs ?? []).length > 0 || CLAUDE_MULTI_VALUE.test(head));
+      const prompt = typed ? undefined : o.prompt;
       terminal = await this.deps.create(o.projectId, o.launchId, {
         ...(args.length > 0 || (prompt && STARTUP_PROMPT[cli])
           ? {

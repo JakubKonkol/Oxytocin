@@ -24,7 +24,7 @@ The workflow:
      Code does not enforce plan mode's blocks when bypass is available, and it writes its plan file outside the
      project (`~/.claude/plans/` or `plansDirectory`).
    Your own `~/.claude/settings.json` and the project's `.claude/settings.json` are never changed. Implementers and
-   reviewers start without these settings.
+   reviewers start without the hook and the deny rules.
 3. The plan appears in Task as Markdown with the status **Plan awaiting approval**. Your decision is Claude's answer:
    - **Approve & implement** ends the planner's turn and starts the implementer;
    - **Revise** sends your feedback and Claude revises the plan right away; the new version arrives the same way;
@@ -33,8 +33,13 @@ The workflow:
    as before: Claude's native plan document is captured, other agents write a Markdown document in Task's storage
    folder, or you paste the plan.
 4. Task freezes the approved version and writes a brief (the task and the approved plan) to its storage folder. The
-   implementer is told to read it; the folder is added to new sessions (`--add-dir`, `--include-directories`). No
-   planner conversation or tool output is forwarded.
+   implementer is told to read it. New Claude Code sessions may read the folder through an allow rule in Task's
+   `--settings` file (not `--add-dir`, which keeps Claude Code from submitting the prompt it starts with); other
+   agents get the folder with `--add-dir` (Codex CLI) or `--include-directories`. No planner conversation or tool
+   output is forwarded.
+
+A new session gets its first prompt on its command line. If it has not started on it 30 seconds later (it waits for
+input, or a question such as folder trust is open), Task says so with **Show terminal**.
 5. When implementation is ready, choose **Implementation ready · Review**, or mark the task done. Review receives
    the same brief and inspects the files itself. All stage transitions are manual.
 

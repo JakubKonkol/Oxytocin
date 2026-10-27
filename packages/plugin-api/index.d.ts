@@ -528,6 +528,9 @@ export interface AgentLaunchRequest {
   /**
    * Directories a new session may read and write besides the project (at most 8): `--add-dir` for Claude Code and
    * Codex CLI, `--include-directories` for Gemini CLI and Qwen Code. Reused sessions keep theirs. Since API 0.2.2.
+   * Claude Code does not submit a prompt from its command line together with `--add-dir`, so a Claude Code session
+   * with `addDirs` gets its `prompt` typed once it is ready; for read access only, prefer an allow rule such as
+   * `Read(//abs/dir/**)` in a `--settings` file (`claudeArgs`), which keeps the prompt on the command line.
    */
   addDirs?: string[];
 }

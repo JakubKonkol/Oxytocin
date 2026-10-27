@@ -11,7 +11,7 @@ const fakeClaude = join(repoRoot, 'tests/fixtures/agents/node_modules/@anthropic
 const fakeCodex = join(repoRoot, 'tests/fixtures/agents/node_modules/@openai/codex/bin/codex.js');
 
 /** A project with a git repository and the fake Claude Code and Codex CLI as its AI agents. */
-async function setup(name: string) {
+async function setup(name: string, env: Record<string, string> = {}) {
   const root = await mkdtemp(join(tmpdir(), `oxy-e2e-${name}-`));
   const repo = join(root, 'repo');
   const userData = join(root, 'data');
@@ -46,7 +46,7 @@ async function setup(name: string) {
       ],
     }),
   );
-  const launched = await launchApp({ project: repo, userData, env: { CLAUDE_CONFIG_DIR: claudeHome } });
+  const launched = await launchApp({ project: repo, userData, env: { CLAUDE_CONFIG_DIR: claudeHome, ...env } });
   return { ...launched, root, repo, claudeHome };
 }
 
@@ -277,6 +277,35 @@ test('Task types into chosen sessions once they are ready, follows the project w
     await expect(win.getByTestId('changes-send-review-dialog')).toHaveCount(0, { timeout: 20_000 });
     await expect.poll(() => oxyTest(win).text(implementer)).toContain('List bugs');
     expect((await oxyTest(win).terminalIds()).length).toBe(count);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Task points at a new session that does not start on its prompt, until Enter in its terminal starts it', async () => {
+  test.setTimeout(120_000);
+  // The fake Claude Code leaves its startup prompt in its input box, as Claude Code does with --add-dir.
+  const { app, win } = await setup('task-stalled', { FAKE_CLAUDE_UNSUBMITTED: '1' });
+  try {
+    await waitForTerminal(win);
+    const frame = await taskFrame(win);
+    await frame.getByTestId('task-description').fill('Add a search field');
+    await frame.getByTestId('task-planner').selectOption('ai:claude');
+    await frame.getByTestId('task-implementer').selectOption('ai:codex');
+    await frame.getByTestId('task-start').click();
+    const planner = await agentTerminal(win, 'claude-code');
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('UNSUBMITTED PROMPT: Plan this task');
+    const stalled = frame.getByTestId('task-stalled');
+    // Reported once the session has had its time to start (Task waits 30 s).
+    await expect(stalled).toContainText('The planner (Claude Code) has not started on its prompt', {
+      timeout: 60_000,
+    });
+    await stalled.getByRole('button', { name: 'Show terminal' }).click();
+    await expect.poll(() => oxyTest(win).activeTerminalId()).toBe(planner);
+    await win.getByTestId(`terminal-view-${planner}`).click();
+    await run(win, '');
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan this task');
+    await expect(stalled).toHaveCount(0);
   } finally {
     await app.close();
   }

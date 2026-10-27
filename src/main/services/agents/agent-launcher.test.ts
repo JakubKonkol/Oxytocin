@@ -32,7 +32,7 @@ function setup(shell: ShellKind = 'bash') {
     send,
     show,
   });
-  return { service, create, send, show, terms, agents, commands };
+  return { service, create, send, show, terms, agents, commands, profiles };
 }
 
 describe('AgentLauncherService', () => {
@@ -89,6 +89,22 @@ describe('AgentLauncherService', () => {
     ).toEqual({ terminalId: 't0', reused: false, sent: true });
     expect(s.commands[0]).toEqual({ head: 'claude --model opusplan', args: ['--add-dir', '/data/task'] });
     expect(s.send).toHaveBeenCalledWith('t0', 'Review it');
+  });
+  it('types the prompt when the configured Claude command ends with an option that takes several values', async () => {
+    const s = setup();
+    for (const command of ['claude --add-dir ../shared', 'claude --allowedTools Read Grep', 'claude --add-dir=../x'])
+      s.profiles.push({ id: `ai:${command}`, icon: 'agent-claude', command } as TerminalProfile);
+    for (const [i, command] of ['claude --add-dir ../shared', 'claude --allowedTools Read Grep'].entries()) {
+      await s.service.launch({ projectId: 'p', launchId: `ai:${command}`, prompt: 'Plan it' });
+      expect(s.commands[i]).toBeUndefined();
+      expect(s.send).toHaveBeenLastCalledWith(`t${i}`, 'Plan it');
+    }
+    await s.service.launch({ projectId: 'p', launchId: 'ai:claude --add-dir=../x', prompt: 'Plan it' });
+    expect(s.send).toHaveBeenCalledTimes(3);
+    // A similar-looking option is not one of them.
+    s.profiles.push({ id: 'ai:tools', icon: 'agent-claude', command: 'claude --tools-help' } as TerminalProfile);
+    await s.service.launch({ projectId: 'p', launchId: 'ai:tools', prompt: 'Plan it' });
+    expect(s.commands.at(-1)).toEqual({ head: 'claude --tools-help', args: ['Plan it'] });
   });
   it('never puts what cmd.exe would expand on its command line', async () => {
     const s = setup('cmd');

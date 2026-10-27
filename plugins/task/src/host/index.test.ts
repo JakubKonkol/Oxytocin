@@ -10,10 +10,10 @@ import type {
   ProjectInfo,
   ViewProvider,
 } from '@oxytocin/plugin-api';
-import { activate } from './index';
+import { activate, KICKOFF_MS } from './index';
 import type { Task } from '../shared/task';
 
-type Model = { task: Task; planWaiting: boolean; project: { id: string } | null };
+type Model = { task: Task; planWaiting: boolean; stalled: string | null; project: { id: string } | null };
 
 async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boolean } = {}) {
   dir ??= await mkdtemp(join(tmpdir(), 'oxy-task-host-'));
@@ -160,6 +160,30 @@ async function hook(dir: string, taskId: string, plan: string, o: { token?: stri
 }
 
 describe('Task workflow', () => {
+  it('reports a new session that does not start on its prompt until it is seen working', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const s = await setup();
+    try {
+      await s.request('create', input);
+      expect((await s.model()).stalled).toBeNull();
+      vi.setSystemTime(Date.now() + KICKOFF_MS);
+      // Claude opened with the prompt but waits for input: the user is told to look at its terminal.
+      expect((await s.model()).stalled).toBe('planner');
+      s.setState('t1', 'working');
+      s.setState('t1', 'idle');
+      expect((await s.model()).stalled).toBeNull();
+      // A session that is still starting (a trust question, a slow start) is reported the same way.
+      const second = await s.request<string>('create', { ...input, description: 'Second' });
+      s.setState('t2', 'starting');
+      vi.setSystemTime(Date.now() + KICKOFF_MS);
+      expect((await s.request<Model>('select', second)).stalled).toBe('planner');
+      await s.request('reject', second);
+      expect((await s.model()).stalled).toBeNull();
+    } finally {
+      s.dispose();
+      vi.useRealTimers();
+    }
+  });
   it('follows the active project in a sidebar, clears selection and rejects a stale click', async () => {
     const s = await setup(undefined, { sidebar: true });
     try {

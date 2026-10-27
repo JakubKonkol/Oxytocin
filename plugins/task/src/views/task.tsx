@@ -12,6 +12,8 @@ interface Model {
   tasks: Pick<Task, 'id' | 'description' | 'phase'>[];
   task: Task | null;
   planWaiting: boolean;
+  /** A role whose new session has not started on its prompt. */
+  stalled: RoleName | null;
   launchers: AgentLauncher[];
   agents: AgentSnapshot[];
   terminals: TerminalMeta[];
@@ -283,6 +285,23 @@ function TaskPanel() {
             </button>
             <button className="subtle" disabled={pending} onClick={() => void action('cancelDelivery', task.id)}>
               Cancel
+            </button>
+          </span>
+        </div>
+      )}
+      {task && model.stalled && !outbox && (
+        <div className="delivery" role="status" data-testid="task-stalled">
+          <span>
+            The {model.stalled} ({roleName(model.stalled)}) has not started on its prompt. Check its terminal: answer
+            what it asks, or press Enter if the prompt waits in its input box.
+          </span>
+          <span className="toolbar-actions">
+            <button
+              className="subtle"
+              disabled={pending}
+              onClick={() => void action('show', { id: task.id, role: model.stalled! })}
+            >
+              Show terminal
             </button>
           </span>
         </div>
