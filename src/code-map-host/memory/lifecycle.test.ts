@@ -75,6 +75,17 @@ it('latches raw watcher events before rebuilds and after edit/revert between rea
   expect(record.applicability.p?.state).toBe('needs-review');
   expect((await loadMemory(root)).records[0]?.applicability.p?.state).toBe('needs-review');
 });
+it('starts no evidence watcher for a watcher event that arrives while disposing', async () => {
+  const { root, authority, memory, events } = await fixture();
+  const disposed = memory.dispose();
+  // The event queues a refresh behind the operations dispose waits for.
+  events.get(root)!(null, [{ path: join(root, 'rules.md'), type: 'update' }]);
+  await disposed;
+  await expect(memory.run(authority, { action: 'list', search: '', state: 'all', offset: 0 })).rejects.toThrow(
+    'UNAVAILABLE',
+  );
+  expect(events.size).toBe(0);
+});
 it('pins watcher epochs during review and keeps the prior reviewed revision on a race', async () => {
   const { root, authority, accepted, save } = await fixture();
   // Inject the event at the generation check after the evidence has been read twice.

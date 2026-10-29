@@ -41,6 +41,7 @@ async function acquireLease(directory: string): Promise<OwnerLock> {
 }
 export class LearningMemory {
   private queue: Promise<unknown> = Promise.resolve();
+  private disposed = false;
   readonly observation: EvidenceObservation;
   constructor(
     private readonly snapshot: (checkoutId: string) => { graph: CodeMapGraph; generation: number } | undefined,
@@ -50,6 +51,9 @@ export class LearningMemory {
     this.observation = new EvidenceObservation(subscribe);
   }
   async dispose(): Promise<void> {
+    // Operations queued from now on (a watcher event while the queue drains) end without touching the checkout, so
+    // they cannot start a new evidence watcher after the watchers are closed.
+    this.disposed = true;
     await this.queue;
     await this.observation.dispose();
   }
@@ -99,6 +103,7 @@ export class LearningMemory {
       | { action: 'inspect' },
     signal?: AbortSignal,
   ): Promise<LearningResult> {
+    if (this.disposed) throw new Error('UNAVAILABLE: Code Map memory closed');
     signal?.throwIfAborted();
     if (
       authority.origin.source !== 'user' &&

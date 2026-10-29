@@ -20,6 +20,8 @@ import { PluginRuntime } from '../../src/plugin-host/runtime';
 import { silentLogger } from '../helpers/logger';
 
 const fixture = resolve(__dirname, '../fixtures/plugins/mcp-tools');
+// Windows releases a watched folder's handle shortly after the watcher is unsubscribed (EBUSY until then).
+const removeFolder = (path: string) => rm(path, { recursive: true, force: true, maxRetries: 10 });
 let userData: string;
 beforeEach(async () => {
   userData = await mkdtemp(join(tmpdir(), 'oxy-mcp-'));
@@ -28,7 +30,7 @@ let cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const c of cleanup.reverse()) await c();
   cleanup = [];
-  await rm(userData, { recursive: true, force: true });
+  await removeFolder(userData);
 });
 
 /** The hub with the fixture plugin running in a real PluginRuntime (as in the Plugin Host). */
@@ -236,7 +238,7 @@ it('uses three learning tools over real HTTP with independent sessions, review a
   });
   cleanup.push(async () => {
     await checkouts.dispose();
-    await rm(root, { recursive: true, force: true });
+    await removeFolder(root);
   });
   await writeFile(join(root, 'api.ts'), 'export const protocol = 1;\n');
   await checkouts.configure({
@@ -399,7 +401,7 @@ it('queries a live Code Map over HTTP, observes immediate edits, bounds results 
   });
   cleanup.push(async () => {
     await checkouts.dispose();
-    await rm(root, { recursive: true, force: true });
+    await removeFolder(root);
   });
   await writeFile(join(root, 'api.ts'), 'beforeEdit');
   await checkouts.configure({
