@@ -85,6 +85,7 @@ function TerminalTabContent({ props }: { props: IDockviewPanelHeaderProps<Termin
       ) : (
         <span
           data-testid="tab-title"
+          title={title}
           className="min-w-0 truncate"
           onDoubleClick={(e) => {
             e.stopPropagation();
@@ -178,7 +179,9 @@ function PluginTabContent({ props }: { props: IDockviewPanelHeaderProps }) {
   const title = usePanelTitle(props);
   return (
     <>
-      <span className="min-w-0 truncate">{title}</span>
+      <span title={title} className="min-w-0 truncate">
+        {title}
+      </span>
       {badge && (
         <Badge variant={badge.tone ?? 'neutral'} testId="tab-plugin-badge">
           {badge.text}
@@ -218,10 +221,14 @@ export function OxyTab(props: IDockviewPanelHeaderProps) {
       ) : props.api.component === 'review' ? (
         <>
           <ListChecks size={12} aria-hidden className="flex-none text-fg-muted" />
-          <span className="min-w-0 truncate">{props.api.title}</span>
+          <span title={props.api.title} className="min-w-0 truncate">
+            {props.api.title}
+          </span>
         </>
       ) : (
-        <span className="min-w-0 truncate">{props.api.title}</span>
+        <span title={props.api.title} className="min-w-0 truncate">
+          {props.api.title}
+        </span>
       )}
       <button
         type="button"

@@ -94,6 +94,9 @@
   /* Sizes */
   --titlebar-height: 36px;
   --statusbar-height: 24px;
+  /* Center tabs: a long title is cut at the max width; tabs shrink to the min width before the strip scrolls. */
+  --tab-max-width: 280px;
+  --tab-min-width: 96px;
 
   /* Motion */
   --motion-fast: 120ms;
