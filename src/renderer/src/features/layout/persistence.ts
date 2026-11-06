@@ -255,21 +255,22 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
 
 /**
  * First open of a project: its existing terminals, else the project's startup terminals
- * (`settings.startupTerminals`), else one terminal with the project's default profile.
+ * (`settings.startupTerminals`), else one terminal with the project's default profile. Returns whether it started
+ * terminals.
  */
-export async function openDefaultLayout(api: DockviewApi, projectId: string): Promise<void> {
+export async function openDefaultLayout(api: DockviewApi, projectId: string): Promise<boolean> {
   const existing = Object.values(useTerminalsStore.getState().terminals).filter(
     (t) => t.projectId === projectId && !t.background,
   );
   if (existing.length > 0) {
     for (const t of existing) addExistingTerminalPanel(api, t.id, t.title);
-    return;
+    return false;
   }
   const project = useProjectsStore.getState().projects.find((p) => p.id === projectId);
   const defaultProfileId = project?.settings.defaultProfileId;
   const startup = project?.settings.startupTerminals ?? [];
   if (startup.length === 0) {
-    await addTerminalPanel(
+    const started = await addTerminalPanel(
       api,
       { projectId, ...(defaultProfileId ? { profileId: defaultProfileId } : {}) },
       undefined,
@@ -277,7 +278,7 @@ export async function openDefaultLayout(api: DockviewApi, projectId: string): Pr
         background: true,
       },
     );
-    return;
+    return started !== null;
   }
   let previous: string | null = null;
   for (const task of startup) {
@@ -300,6 +301,7 @@ export async function openDefaultLayout(api: DockviewApi, projectId: string): Pr
         { background: true },
       )) ?? previous;
   }
+  return previous !== null;
 }
 
 function joinPath(root: string, relative: string): string {

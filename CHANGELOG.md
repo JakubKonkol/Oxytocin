@@ -20,6 +20,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   for a single tab spanning the header).
 - **Terminals:** restarting a terminal whose project folder was deleted keeps the old terminal and says why, instead
   of leaving the panel without a terminal; any other restart failure is reported too.
+- **Projects:** *New terminal in project* (project context menu) waits for that project's workspace instead of a fixed
+  50 ms: on a project whose workspace was unloaded the terminal could open in the previously active project. A
+  project opened this way for the first time gets one terminal, not its default terminal plus another.
 
 - **Projects:** the project's activity dot no longer stays on (the hollow *Idle* dot) once you closed its terminals.
   Terminals running in the background — a Project Runner app or script, an Ensemble session — mark the project only

@@ -36,7 +36,12 @@ import { dockPanel, moveToFloating, splitActive } from './layout-commands';
 import type { TerminalPanelParams } from './panel-registry';
 import { TerminalPanelComponent } from './TerminalPanelComponent';
 import { requestClosePanel, restartTerminalPanel } from './workspace-actions';
-import { setActiveWorkspace, setWorkspaceApi } from './workspace-registry';
+import {
+  setActiveWorkspace,
+  setWorkspaceApi,
+  trackWorkspaceOpening,
+  type WorkspaceOpening,
+} from './workspace-registry';
 import { WorkspaceVisibleContext } from './workspace-visibility';
 import { markProjectSwitchEnd } from '../../lib/perf';
 import { isDialogOpen } from '../../lib/focus';
@@ -146,9 +151,13 @@ function tabContextMenu(projectId: string) {
 async function initializeWorkspace(projectId: string, api: DockviewApi): Promise<() => void> {
   if (initializing.has(projectId) || api.panels.length > 0) return () => undefined;
   initializing.add(projectId);
+  const opening = (async (): Promise<WorkspaceOpening> => {
+    if (await restoreWorkspace(api, projectId).catch(() => false)) return 'restored';
+    return (await openDefaultLayout(api, projectId)) ? 'started-terminals' : 'other';
+  })();
+  trackWorkspaceOpening(projectId, opening);
   try {
-    const restored = await restoreWorkspace(api, projectId).catch(() => false);
-    if (!restored) await openDefaultLayout(api, projectId);
+    await opening;
   } finally {
     initializing.delete(projectId);
   }

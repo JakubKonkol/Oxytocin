@@ -1,6 +1,6 @@
 import type { Project } from '@shared/domain/project';
 import { OxyError } from '@shared/errors';
-import { executeCommand, registerCommand } from '../../lib/commands';
+import { registerCommand } from '../../lib/commands';
 import { ipc } from '../../lib/ipc-client';
 import { confirmDialogEx } from '../../stores/dialog-store';
 import { useProjectsStore } from '../../stores/projects-store';
@@ -8,6 +8,8 @@ import { useTerminalsStore } from '../../stores/terminals-store';
 import { notify } from '../../ui/Toast';
 import { markProjectSwitchStart } from '../../lib/perf';
 import { focusWhenReady, revealSidebarSection } from '../tools/sidebar-sections';
+import { newTerminal } from '../layout/layout-commands';
+import { whenWorkspaceReady } from '../layout/workspace-registry';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -119,9 +121,14 @@ export function registerProjectCommands(): void {
     title: 'Projects: New Terminal in Project',
     internal: true,
     run: async (id) => {
-      activateProject(String(id));
-      await new Promise((r) => setTimeout(r, 50));
-      await executeCommand('terminal.new');
+      const projectId = String(id);
+      activateProject(projectId);
+      // The project's own workspace, once mounted and laid out (it may still be mounting, which a fixed wait would
+      // miss: the terminal then opened in the previous project).
+      const ready = await whenWorkspaceReady(projectId);
+      // A project opened for the first time just started its terminal: that is the new terminal.
+      if (!ready || ready.opening === 'started-terminals') return;
+      await newTerminal(ready.api, projectId);
     },
   });
 }

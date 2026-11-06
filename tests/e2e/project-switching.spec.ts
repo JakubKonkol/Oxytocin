@@ -126,6 +126,21 @@ test('with keepAliveProjects=1 an evicted workspace is rehydrated with its colou
       background?: boolean;
     }[];
     expect(terminals.filter((x) => x.projectId === one && !x.background)).toEqual([]);
+
+    // "New terminal in project" on the unloaded project opens it in that project, next to its restored terminal.
+    await win.getByTestId('projects-item-two').click({ button: 'right' });
+    await win.getByTestId('project-context-menu').getByText('New terminal in project').click();
+    await expect(win.getByTestId('projects-item-two')).toHaveAttribute('aria-selected', 'true');
+    const two = await activeProjectId(win);
+    await expect.poll(async () => (await t.workspace())?.panels.length).toBe(2);
+    const list = (await win.evaluate(() => window.oxy.invoke('terminals:list', {}))) as {
+      id: string;
+      projectId: string;
+      background?: boolean;
+    }[];
+    const panels = (await t.workspace())!.panels.map((p) => p.terminalId);
+    expect(panels.map((id) => list.find((x) => x.id === id)?.projectId)).toEqual([two, two]);
+    expect(list.filter((x) => x.projectId === one && !x.background)).toEqual([]);
   } finally {
     await app.close();
   }
