@@ -185,6 +185,15 @@ export class TerminalService implements Disposable {
     return info;
   }
 
+  /** The project and the folder a terminal starts in (the project root when `req.cwd` is gone). */
+  private async resolveFolder(req: Pick<CreateTerminalRequest, 'projectId' | 'cwd'>) {
+    const project = this.deps.resolveProject(req.projectId);
+    if (!project) throw new OxyError('NOT_FOUND', `Project ${req.projectId} not found`);
+    const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
+    if (!(await isDirectory(cwd))) throw new OxyError('NOT_FOUND', `Folder not found: ${cwd}`);
+    return { project, cwd };
+  }
+
   create(req: CreateTerminalRequest, opts: CreateOptions = {}): Promise<TerminalInfo> {
     return this.createWith(req, undefined, opts);
   }
@@ -194,10 +203,7 @@ export class TerminalService implements Disposable {
     restoreOverride?: RestoredBuffer,
     opts: CreateOptions = {},
   ): Promise<TerminalInfo> {
-    const project = this.deps.resolveProject(req.projectId);
-    if (!project) throw new OxyError('NOT_FOUND', `Project ${req.projectId} not found`);
-    const cwd = req.cwd && (await isDirectory(req.cwd)) ? req.cwd : project.rootPath;
-    if (!(await isDirectory(cwd))) throw new OxyError('NOT_FOUND', `Folder not found: ${cwd}`);
+    const { project, cwd } = await this.resolveFolder(req);
     // The project's default profile applies when none was asked for; a profile that no longer exists falls back.
     const profileId = req.profileId ?? project.defaultProfileId;
     const launch = await this.deps.profiles
@@ -302,6 +308,9 @@ export class TerminalService implements Disposable {
   async restart(id: string): Promise<TerminalInfo> {
     const info = this.require(id);
     const req = this.requests.get(id);
+    // A project removed or a folder deleted meanwhile: the old terminal stays (with its exit bar) instead of leaving
+    // the panel without one. The old terminal is closed before the new one starts (a dev server frees its port).
+    await this.resolveFolder({ projectId: info.projectId, cwd: info.cwd });
     // The old buffer stays visible above a "Restarted" separator.
     const previous =
       info.state === 'failed'

@@ -10,8 +10,16 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 - **Projects:** a project whose terminals you closed opens on its empty view (New terminal, AI agents, Open…) instead
   of starting a new terminal by itself, also after Oxytocin restarts or the project's workspace was unloaded to save
   memory. A project opened for the first time still starts its terminal (or its startup terminals).
+- **Tabs:** a tab is at most 280 px wide and tabs shrink (down to 96 px) to share a narrow group before the tab strip
+  scrolls, so a long title ends in an ellipsis and every tab's close button (×) stays in view: closing a tab no longer
+  means scrolling its name first. The full title is in the tab's tooltip; a single tab still spans the whole header.
 
 ### Fixed
+
+- **Tabs:** the active tab of a group with several tabs is underlined again (the marker was meant to be hidden only
+  for a single tab spanning the header).
+- **Terminals:** restarting a terminal whose project folder was deleted keeps the old terminal and says why, instead
+  of leaving the panel without a terminal; any other restart failure is reported too.
 
 - **Projects:** the project's activity dot no longer stays on (the hollow *Idle* dot) once you closed its terminals.
   Terminals running in the background — a Project Runner app or script, an Ensemble session — mark the project only

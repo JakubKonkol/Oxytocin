@@ -107,7 +107,13 @@ export async function requestClosePanel(
 export async function restartTerminalPanel(api: DockviewApi, panelId: string): Promise<void> {
   const terminalId = terminalIdOf(api, panelId);
   if (!terminalId) return;
-  const info = await ipc.invoke('terminals:restart', { id: terminalId });
+  let info;
+  try {
+    info = await ipc.invoke('terminals:restart', { id: terminalId });
+  } catch (e) {
+    notify('error', 'Could not restart the terminal', { description: e instanceof Error ? e.message : String(e) });
+    return;
+  }
   useTerminalsStore.getState().upsert(info);
   api.getPanel(panelId)?.api.updateParameters({ terminalId: info.id });
 }

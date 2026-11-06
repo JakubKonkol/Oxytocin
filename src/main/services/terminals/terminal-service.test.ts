@@ -1,4 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultSettings, type Settings } from '@shared/domain/settings';
 import { toDisposable } from '@shared/utils/disposable';
@@ -43,13 +45,14 @@ function setup() {
     },
     () => settings,
   );
+  const project1 = { rootPath: tmpdir(), env: { FROM_PROJECT: '1' } };
   const svc = new TerminalService({
     ptyHost: ptyHost as never,
     profiles,
     settings: () => settings,
     resolveProject: (id) =>
       id === 'p1'
-        ? { rootPath: tmpdir(), env: { FROM_PROJECT: '1' } }
+        ? project1
         : id === 'p2'
           ? { rootPath: tmpdir(), defaultProfileId: 'custom' }
           : id === 'p3'
@@ -63,7 +66,7 @@ function setup() {
     logger,
   });
   const emit = (name: string, payload: unknown) => listeners.get(name)?.(payload);
-  return { svc, calls, emit, ready };
+  return { svc, calls, emit, ready, project1 };
 }
 
 describe('TerminalService', () => {
@@ -110,6 +113,17 @@ describe('TerminalService', () => {
     expect(respawn.restore).toEqual({ data: 'old output', label: 'Restarted' });
     expect(removed).toEqual([first.id]);
     expect(calls.map((c) => c.method)).toEqual(['spawn', 'serialize', 'kill', 'dispose', 'spawn']);
+  });
+
+  it('keeps the old terminal when the project folder of a restart is gone', async () => {
+    const { svc, calls, project1 } = setup();
+    const folder = await mkdtemp(join(tmpdir(), 'oxy-restart-'));
+    project1.rootPath = folder;
+    const first = await svc.create({ projectId: 'p1' });
+    await rm(folder, { recursive: true });
+    await expect(svc.restart(first.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    expect(svc.get(first.id)).toBeDefined();
+    expect(calls.map((c) => c.method)).toEqual(['spawn']);
   });
 
   it('marks running terminals as failed when the PTY host restarts', async () => {

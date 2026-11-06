@@ -18,7 +18,7 @@ import {
   Strikethrough,
   Trash2,
 } from 'lucide-react';
-import { type ReactNode, useRef, useState } from 'react';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
 import type { CoreSettings } from '@shared/domain/settings';
 import {
   otherScratchpadsWithText,
@@ -153,12 +153,15 @@ export function ScratchpadShareToggle() {
   );
 }
 
-/** Running agents, recomputed when terminals or projects change. */
+/**
+ * Running agents. Agents update their terminals several times a second (state, activity): the editor re-renders only
+ * when the targets themselves change.
+ */
 function useAgentTargets(): AgentTarget[] {
-  const terminals = useTerminalsStore((s) => s.terminals);
   const projects = useProjectsStore((s) => s.projects);
   const activeId = useProjectsStore((s) => s.activeId);
-  return agentTargets(terminals, projects, activeId);
+  const key = useTerminalsStore((s) => JSON.stringify(agentTargets(s.terminals, projects, activeId)));
+  return useMemo(() => JSON.parse(key) as AgentTarget[], [key]);
 }
 
 function Toggle({
