@@ -1,8 +1,7 @@
 import { FolderPlus } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useProjectsStore } from '../../stores/projects-store';
-import { useTerminalsStore } from '../../stores/terminals-store';
 import { Button } from '../../ui/Button';
 import { EmptyState } from '../../ui/EmptyState';
 import { SectionBody } from '../../ui/Section';
@@ -21,20 +20,9 @@ export async function addDroppedFolders(files: readonly File[]): Promise<void> {
 export function ProjectsSection() {
   const projects = useProjectsStore((s) => s.projects);
   const activeId = useProjectsStore((s) => s.activeId);
-  const terminals = useTerminalsStore((s) => s.terminals);
   const [filter, setFilter] = useState('');
   const [fileOver, setFileOver] = useState(false);
   const dragged = useRef<string | null>(null);
-
-  const byProject = useMemo(() => {
-    const map = new Map<string, (typeof terminals)[string][]>();
-    for (const t of Object.values(terminals)) {
-      const list = map.get(t.projectId) ?? [];
-      list.push(t);
-      map.set(t.projectId, list);
-    }
-    return map;
-  }, [terminals]);
 
   const visible = filter
     ? projects.filter((p) => `${p.name} ${p.rootPath}`.toLowerCase().includes(filter.toLowerCase()))
@@ -103,7 +91,6 @@ export function ProjectsSection() {
                 key={p.id}
                 project={p}
                 active={p.id === activeId}
-                terminals={byProject.get(p.id) ?? []}
                 onDragStart={(id) => (dragged.current = id)}
                 onDropOn={dropOn}
               />

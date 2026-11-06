@@ -33,6 +33,14 @@ describe('WorkspaceStateService', () => {
     expect((await svc.load('missing')).state).toBeNull();
   });
 
+  it('loads a layout saved right before only once it is written', async () => {
+    const svc = new WorkspaceStateService(dir, logger);
+    await svc.save(state());
+    const emptied = state({ savedAt: 2, panels: {} });
+    void svc.save(emptied);
+    expect((await svc.load('p1')).state).toEqual(emptied);
+  });
+
   it('moves an unreadable file aside and reports a problem', async () => {
     await writeFile(join(dir, 'p1.json'), '{ broken');
     const result = await new WorkspaceStateService(dir, logger).load('p1');

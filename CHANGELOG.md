@@ -3,6 +3,23 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Changed
+
+- **Projects:** a project whose terminals you closed opens on its empty view (New terminal, AI agents, Open…) instead
+  of starting a new terminal by itself, also after Oxytocin restarts or the project's workspace was unloaded to save
+  memory. A project opened for the first time still starts its terminal (or its startup terminals).
+
+### Fixed
+
+- **Projects:** the project's activity dot no longer stays on (the hollow *Idle* dot) once you closed its terminals.
+  Terminals running in the background — a Project Runner app or script, an Ensemble session — mark the project only
+  while something runs in them, not when their shell sits idle after a script finished or they exited. The project's
+  tooltip counts the same terminals.
+- **Workspaces:** a layout saved right before its project was opened again (a workspace unloaded and reopened
+  quickly) is no longer read from disk before the save finishes, which could bring back the previous layout.
+
 ## [0.9.14] - 2026-10-29
 
 ### Added

@@ -49,6 +49,8 @@ export class WorkspaceStateService {
 
   async load(projectId: string): Promise<WorkspaceLoadResult> {
     const path = this.statePath(projectId);
+    // A layout saved right before (a workspace evicted and opened again) is read only once it is on disk.
+    await this.queues.get(projectId);
     let text: string;
     try {
       text = await readFile(path, 'utf8');

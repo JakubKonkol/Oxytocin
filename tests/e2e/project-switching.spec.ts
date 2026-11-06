@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { launchApp } from './helpers/launch';
 import { withinBudget } from './helpers/perf';
-import { nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
+import { activeProjectId, nodeCmd, oxyTest, run, waitForTerminal } from './helpers/terminal';
 
 async function folder(name: string): Promise<string> {
   const dir = join(await mkdtemp(join(tmpdir(), 'oxy-e2e-switch-')), name);
@@ -68,7 +68,7 @@ test('switching projects keeps processes running and buffers complete; the title
   }
 });
 
-test('with keepAliveProjects=1 an evicted workspace is rehydrated with its colours', async () => {
+test('with keepAliveProjects=1 an evicted workspace is rehydrated with its colours, or empty once its panels were closed', async () => {
   const userData = await mkdtemp(join(tmpdir(), 'oxy-e2e-'));
   await writeFile(join(userData, 'settings.json'), JSON.stringify({ 'workspace.keepAliveProjects': 1 }));
   const { app, win } = await launchApp({ userData, project: await folder('one') });
@@ -89,6 +89,43 @@ test('with keepAliveProjects=1 an evicted workspace is rehydrated with its colou
     await win.getByTestId('projects-item-one').click();
     await expect.poll(async () => (await t.workspace())?.panels[0]?.terminalId).toBe(first);
     await expect.poll(() => t.color(first, 'GREENLINE')).toMatchObject({ palette: true, fg: 2 });
+
+    // Closing the project's only terminal shows the workspace's choices and turns the project's dot off.
+    const one = await activeProjectId(win);
+    const dot = win.getByTestId(`status-dot-${one}`);
+    await expect(dot).toHaveAttribute('data-state', 'idle');
+    const panel = (await t.workspace())!.panels[0]!;
+    await win.getByTestId(`tab-${panel.id}`).getByRole('button', { name: 'Close' }).click();
+    const oneWorkspace = win.locator(`[data-workspace-id="${one}"]`);
+    await expect(oneWorkspace.getByTestId('empty-workspace')).toBeVisible();
+    await expect(dot).toHaveCount(0);
+
+    // A background terminal (a Project Runner script) marks the project only while its script runs.
+    const marker = join(await mkdtemp(join(tmpdir(), 'oxy-e2e-marker-')), 'done').replace(/\\/g, '/');
+    const script = `setInterval(() => { if (require('fs').existsSync('${marker}')) process.exit(0); }, 100)`;
+    await win.evaluate(
+      ([projectId, initialCommand]) =>
+        window.oxy.invoke('terminals:create', { projectId, background: true, initialCommand }),
+      [one, nodeCmd(script)] as const,
+    );
+    await expect(dot).toHaveAttribute('data-state', 'running', { timeout: 20_000 });
+    await writeFile(marker, '');
+    await expect(dot).toHaveCount(0, { timeout: 20_000 });
+
+    // Opened again after its eviction, the emptied project starts no terminal by itself.
+    await win.getByTestId('projects-item-two').click();
+    await expect(win.getByTestId('projects-item-two')).toHaveAttribute('aria-selected', 'true');
+    await expect(win.locator(`[data-workspace-id="${one}"]`)).toHaveCount(0);
+    await win.getByTestId('projects-item-one').click();
+    await expect(oneWorkspace.getByTestId('empty-workspace')).toBeVisible();
+    // A short pause before asserting that no terminal is started.
+    await win.waitForTimeout(1000);
+    await expect(oneWorkspace.getByTestId('empty-workspace')).toBeVisible();
+    const terminals = (await win.evaluate(() => window.oxy.invoke('terminals:list', {}))) as {
+      projectId: string;
+      background?: boolean;
+    }[];
+    expect(terminals.filter((x) => x.projectId === one && !x.background)).toEqual([]);
   } finally {
     await app.close();
   }

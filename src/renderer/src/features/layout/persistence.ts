@@ -161,7 +161,7 @@ type SerializedPanels = SerializedDockview['panels'];
 /**
  * Restores a saved workspace: live terminals (renderer reload) are reused, dead ones are re-created with the
  * same profile/cwd and their scrollback; unknown panel types become "missing" placeholders.
- * Returns false when there was nothing (usable) to restore.
+ * Returns false when there was no saved layout (or it could not be used); an empty saved layout stays empty.
  */
 export async function restoreWorkspace(api: DockviewApi, projectId: string): Promise<boolean> {
   const { state, problem } = await ipc.invoke('workspace:load', { projectId });
@@ -232,21 +232,25 @@ export async function restoreWorkspace(api: DockviewApi, projectId: string): Pro
       };
     }
   }
-  try {
-    api.fromJSON(json);
-  } catch (e) {
-    notify('warning', 'The saved layout could not be restored. A default layout was opened.', {
-      description: e instanceof Error ? e.message : String(e),
-    });
-    api.clear();
-    return false;
+  // A layout the user emptied (every panel closed) is restored as it is: the workspace shows its choices instead of
+  // starting a terminal nobody asked for.
+  if (Object.keys(serializedPanels).length > 0) {
+    try {
+      api.fromJSON(json);
+    } catch (e) {
+      notify('warning', 'The saved layout could not be restored. A default layout was opened.', {
+        description: e instanceof Error ? e.message : String(e),
+      });
+      api.clear();
+      return false;
+    }
+    if (state.activePanelId) api.getPanel(state.activePanelId)?.api.setActive();
   }
-  if (state.activePanelId) api.getPanel(state.activePanelId)?.api.setActive();
   // Terminals alive in main but absent from the saved layout (e.g. created right before a reload).
   for (const t of Object.values(useTerminalsStore.getState().terminals)) {
     if (t.projectId === projectId && !used.has(t.id) && !t.background) addExistingTerminalPanel(api, t.id, t.title);
   }
-  return api.panels.length > 0;
+  return true;
 }
 
 /**

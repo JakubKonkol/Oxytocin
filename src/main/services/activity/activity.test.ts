@@ -55,6 +55,20 @@ describe('deriveActivity', () => {
     expect(deriveActivity([t({ state: 'exited', exitCode: 0 })], new Set())).toBe('idle');
   });
 
+  it('counts background terminals only while something runs in them', () => {
+    const idleShell = t({ background: true });
+    const cleanExit = t({ background: true, state: 'exited', exitCode: 0 });
+    const failed = t({ background: true, state: 'exited', exitCode: 1 });
+    const idleAgent = t({ background: true, kind: 'agent', agent: agent('idle') });
+    expect(deriveActivity([idleShell, cleanExit, failed, idleAgent], none)).toBe('none');
+    expect(deriveActivity([idleShell, t({ background: true, kind: 'process' })], none)).toBe('running');
+    expect(deriveActivity([t({ background: true, kind: 'agent', agent: agent('waiting') })], none)).toBe('attention');
+    expect(runtimeStatus('p', [idleShell, failed, t()], none, new Map())).toMatchObject({
+      activity: 'idle',
+      terminals: 1,
+    });
+  });
+
   it('counts terminals, processes and agents', () => {
     const failed = t({ state: 'exited', exitCode: 2 });
     const status = runtimeStatus(

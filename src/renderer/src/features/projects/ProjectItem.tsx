@@ -3,7 +3,6 @@ import { AlertTriangle, Link2, Pin, Network } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { Project } from '@shared/domain/project';
 import type { LinkResource } from '@shared/domain/project-resources';
-import type { TerminalInfo } from '@shared/domain/terminal';
 import { cn } from '../../lib/cn';
 import { executeCommand } from '../../lib/commands';
 import { ipc } from '../../lib/ipc-client';
@@ -23,7 +22,6 @@ export const PROJECT_DRAG_TYPE = 'application/x-oxytocin-project';
 export interface ProjectItemProps {
   project: Project;
   active: boolean;
-  terminals: readonly TerminalInfo[];
   onDragStart: (id: string) => void;
   onDropOn: (targetId: string, after: boolean) => void;
 }
@@ -32,7 +30,7 @@ const menuItem =
   'flex h-7 cursor-default items-center gap-2 rounded-badge px-2 text-ui text-fg outline-none data-[disabled]:text-fg-muted data-[highlighted]:bg-accent-muted';
 
 /** One row of the PROJECTS list. */
-export function ProjectItem({ project, active, terminals, onDragStart, onDropOn }: ProjectItemProps) {
+export function ProjectItem({ project, active, onDragStart, onDropOn }: ProjectItemProps) {
   const visualizer = usePluginsStore((s) => s.contributions.commands.some((c) => c.id === 'codeMap.open'));
   const [renaming, setRenaming] = useState(false);
   const [links, setLinks] = useState<LinkResource[]>([]);
@@ -44,6 +42,7 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
   const codeMap = useProjectsStore((s) => s.codeMaps[project.id]);
   const dot = status?.activity ?? 'none';
   const waiting = status?.agents.waiting ?? 0;
+  const terminals = status?.terminals ?? 0;
   const reveal = currentPlatform() === 'darwin' ? 'Reveal in Finder' : 'Reveal in Explorer';
   const tooltip = [
     project.rootPath,
@@ -54,7 +53,7 @@ export function ProjectItem({ project, active, terminals, onDragStart, onDropOn 
         : dot === 'error' && status?.unseenError
           ? `Process exited with code ${status.unseenError.exitCode}`
           : PROJECT_ACTIVITY_LABELS[dot],
-    `${terminals.length} terminal${terminals.length === 1 ? '' : 's'}`,
+    `${terminals} terminal${terminals === 1 ? '' : 's'}`,
   ].join(' · ');
 
   return (
