@@ -246,7 +246,8 @@ describe('Graph publication pipeline', () => {
     });
   });
 
-  describe('deferred persistence of small edits', () => {
+  // These fixtures persist hundreds of cache files; parallel Windows runs can exceed the default 5 s.
+  describe('deferred persistence of small edits', { timeout: 30_000 }, () => {
     const many = () =>
       new Map(
         Array.from({ length: 320 }, (_, index) => [`m${index}.ts`, `export function f${index}() { return ${index}; }`]),
