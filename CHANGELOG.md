@@ -3,6 +3,30 @@
 All notable changes to Oxytocin are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/)
 and the project uses [Semantic Versioning](https://semver.org/) (0.x until the plugin API is stable).
 
+## [Unreleased]
+
+### Changed
+
+- **Task** hands work over through files in the project instead of an agent's plan mode, the same way for every
+  agent. A task lives in `.oxy/tasks/<task id>/`: `raw.task.json` (your description) and `plan.md` (the planner's
+  plan). Each role starts with a one-line prompt that names those files and a built-in skill
+  (`.oxy/tasks/skills/plan.md`, `implement.md`, `review.md`: how to plan, implement and review), so the task, the plan
+  and the rules are read once and never pasted into a prompt. Git ignores the folder; it is removed when you mark the
+  task done, reject its plan or delete it, while the plan stays readable in Task.
+- **Task:** the plan has a fixed outline (summary, numbered steps with their files, a verification checklist), which
+  Task shows as steps instead of plain Markdown. The implementer ticks each finished step and each passed check in the
+  plan file and Task shows the progress ("2 of 5 done"). A plan without that outline is still shown as written.
+- **Task:** a Claude Code planner no longer starts in plan mode with Opus and a plan hook: it runs with the model and
+  permissions of the agent you chose, plus allow rules for the task's own folder. Feedback is typed into the planner's
+  session and the rewritten plan file is the next version. Task no longer reads Claude Code's transcripts or plan
+  folder and no longer opens a local port.
+
+### Fixed
+
+- **Project Runner:** the Run view no longer shows the apps and scripts of the previous project after you open
+  another one. An update of the previous project that finished late (a scan of a large folder) could overwrite the
+  new project's list until you left the project and came back.
+
 ## [0.9.15] - 2026-11-11
 
 ### Changed
@@ -16,9 +40,6 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
-- **Project Runner:** the Run view no longer shows the apps and scripts of the previous project after you open
-  another one. An update of the previous project that finished late (a scan of a large folder) could overwrite the
-  new project's list until you left the project and came back.
 - **Tabs:** the active tab of a group with several tabs is underlined again (the marker was meant to be hidden only
   for a single tab spanning the header).
 - **Terminals:** restarting a terminal whose project folder was deleted keeps the old terminal and says why, instead

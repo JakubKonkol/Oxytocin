@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -10,10 +10,37 @@ import type {
   ProjectInfo,
   ViewProvider,
 } from '@oxytocin/plugin-api';
-import { activate, KICKOFF_MS } from './index';
+import { activate, KICKOFF_MS, PLAN_SETTLE_MS } from './index';
 import type { Task } from '../shared/task';
 
-type Model = { task: Task; planWaiting: boolean; stalled: string | null; project: { id: string } | null };
+type Model = { task: Task; planFile: string | null; stalled: string | null; project: { id: string } | null };
+
+/** A plan with Task's outline, as a planner writes it. */
+const PLAN = `# Search
+
+## Summary
+Add a search field.
+
+## Steps
+
+### [ ] 1. Add the field
+Files: \`src/search.ts\`
+
+Render it.
+
+### [ ] 2. Test it
+Files: \`src/search.test.ts\`
+
+## Verification
+- [ ] \`npm test\`
+- [ ] Try it
+`;
+
+const exists = (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
 
 async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boolean } = {}) {
   dir ??= await mkdtemp(join(tmpdir(), 'oxy-task-host-'));
@@ -128,6 +155,12 @@ async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boo
     dispose,
     postMessage,
     list,
+    /** Runs `action` and waits until Task has read the plan files and updated its view once more. */
+    refreshed: async (action: () => void) => {
+      const before = postMessage.mock.calls.length;
+      action();
+      await vi.waitFor(() => expect(postMessage.mock.calls.length).toBeGreaterThan(before));
+    },
     changeProject: (id?: string) => {
       active = id ? ({ id, name: id === 'p' ? 'First' : 'Second' } as ProjectInfo) : undefined;
       changed(active);
@@ -136,28 +169,6 @@ async function setup(dir?: string, options: { sidebar?: boolean; noProject?: boo
 }
 
 const input = { description: 'Add search', planner: { launchId: 'ai:claude' }, implementer: { launchId: 'ai:codex' } };
-
-/** Claude Code's ExitPlanMode hook request: it stays open until the user decides in Task. */
-async function hook(dir: string, taskId: string, plan: string, o: { token?: string; signal?: AbortSignal } = {}) {
-  const state = JSON.parse(await readFile(join(dir, 'hook.json'), 'utf8')) as { port: number; token: string };
-  const res = await fetch(`http://127.0.0.1:${state.port}/task/exit-plan`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${o.token ?? state.token}`,
-      'x-oxytocin-task': taskId,
-    },
-    body: JSON.stringify({
-      session_id: 's1',
-      hook_event_name: 'PreToolUse',
-      tool_name: 'ExitPlanMode',
-      tool_input: { plan, planFilePath: '/home/me/.claude/plans/search.md' },
-    }),
-    ...(o.signal ? { signal: o.signal } : {}),
-  });
-  const body = res.status === 200 ? ((await res.json()) as { hookSpecificOutput: Record<string, string> }) : null;
-  return { status: res.status, output: body?.hookSpecificOutput };
-}
 
 describe('Task workflow', () => {
   it('reports a new session that does not start on its prompt until it is seen working', async () => {
@@ -223,57 +234,247 @@ describe('Task workflow', () => {
       s.dispose();
     }
   });
-  it('plans, implements and reviews in fresh sessions that start with their prompt, and persists the task', async () => {
+  it('plans, implements and reviews through the files in .oxy/tasks and removes them when the task is done', async () => {
     const s = await setup();
     try {
       const id = await s.request<string>('create', { ...input, reviewer: { launchId: 'ai:claude' } });
-      const taskDir = join(s.dir, 'p', id);
+      const tasks = join(s.dir, 'repo', '.oxy', 'tasks');
+      const taskDir = join(tasks, id);
+      const planFile = join(taskDir, 'plan.md');
       expect((await s.task()).phase).toBe('planning');
-      // Claude Code reads Task's folder through its settings: --add-dir would keep its prompt from being submitted.
-      expect(s.launch.mock.calls[0]![0]).toMatchObject({ reuse: false });
-      expect(s.launch.mock.calls[0]![0].prompt).toContain('Add search');
-      expect(s.launch.mock.calls[0]![0]).not.toHaveProperty('addDirs');
-      expect(await readFile(join(taskDir, 'task.md'), 'utf8')).toBe('Add search\n');
+      expect((await s.model()).planFile).toBe(planFile);
+      // One line that names the files; how to plan is in the skill. Nothing but Task's settings is added.
+      const planner = s.launch.mock.calls[0]![0];
+      expect(planner).toEqual({
+        projectId: 'p',
+        launchId: 'ai:claude',
+        reuse: false,
+        prompt: expect.any(String) as string,
+        claudeArgs: ['--settings', join(taskDir, 'claude-planner-settings.json')],
+      });
+      expect(planner.prompt).not.toContain('\n');
+      expect(planner.prompt).not.toContain('Add search');
+      for (const path of [join(taskDir, 'raw.task.json'), planFile, join(tasks, 'skills', 'plan.md')])
+        expect(planner.prompt).toContain(path);
+      expect(JSON.parse(await readFile(join(taskDir, 'raw.task.json'), 'utf8'))).toMatchObject({
+        version: 1,
+        id,
+        description: 'Add search',
+      });
+      expect(await readFile(join(tasks, '.gitignore'), 'utf8')).toBe('*\n');
+      expect(await readFile(join(tasks, 'skills', 'plan.md'), 'utf8')).toContain('### [ ] 1.');
+      const allowed = async (role: string) =>
+        (
+          JSON.parse(await readFile(join(taskDir, `claude-${role}-settings.json`), 'utf8')) as {
+            permissions: { allow: string[]; deny?: string[] };
+          }
+        ).permissions;
+      expect((await allowed('planner')).allow).toEqual([
+        expect.stringMatching(/^Read\(\/\/.*\/repo\/\.oxy\/tasks\/\*\*\)$/),
+        expect.stringMatching(new RegExp(`^Edit\\(//.*/repo/\\.oxy/tasks/${id}/\\*\\*\\)$`)),
+      ]);
+      expect(await allowed('planner')).not.toHaveProperty('deny');
+
       await expect(s.request('implement', id)).rejects.toThrow(/Approve/);
-      await s.request('approve', { id, plan: '# Search\nAdd a keyboard shortcut.' });
+      // The planner writes the plan file and ends its turn: that is how the plan arrives.
+      await writeFile(planFile, PLAN);
+      s.setState('t1', 'idle');
+      await vi.waitFor(async () => expect((await s.task()).phase).toBe('ready'));
+      expect(await s.task()).toMatchObject({
+        plan: PLAN,
+        source: planFile,
+        versions: [{ status: 'pending', origin: 'capture' }],
+      });
+      // The task is on screen: no notification on top of it.
+      expect(s.showNotification).not.toHaveBeenCalled();
+
+      await s.request('approve', { id, plan: PLAN.trim() });
       const implementer = s.launch.mock.calls.at(-1)![0];
-      expect(implementer).toMatchObject({ launchId: 'ai:codex', reuse: false, addDirs: [taskDir] });
-      expect(implementer.prompt).toContain(join(taskDir, 'brief.md'));
+      expect(implementer).toEqual({
+        projectId: 'p',
+        launchId: 'ai:codex',
+        reuse: false,
+        prompt: expect.any(String) as string,
+      });
+      expect(implementer.prompt).toContain(planFile);
+      expect(implementer.prompt).toContain(join(tasks, 'skills', 'implement.md'));
       expect(implementer.prompt).not.toContain('\n');
-      expect(implementer).not.toHaveProperty('claudeArgs');
-      expect(await readFile(join(taskDir, 'brief.md'), 'utf8')).toBe(
-        '# Task\n\nAdd search\n\n# Approved plan\n\n# Search\nAdd a keyboard shortcut.\n',
-      );
+      expect(await readFile(planFile, 'utf8')).toBe(PLAN);
       expect(await s.task()).toMatchObject({ phase: 'implementing', implementer: { terminalId: 't2' } });
       expect((await s.task()).outbox).toBeUndefined();
       expect(s.sendPrompt).not.toHaveBeenCalled();
       await expect(s.request('approve', { id, plan: 'Changed plan' })).rejects.toThrow(/already been approved/);
+
+      // The implementer ticks a step and a check in the plan file: Task shows the progress.
+      await writeFile(
+        planFile,
+        PLAN.replace('### [ ] 1.', '### [x] 1.').replace('- [ ] `npm test`', '- [x] `npm test`'),
+      );
+      s.setState('t2', 'idle');
+      await vi.waitFor(async () =>
+        expect((await s.task()).progress).toEqual({ steps: [true, false], checks: [true, false] }),
+      );
+      // A retry leaves the plan file, with its ticks, as it is.
+      await s.request('implement', id);
+      expect(await readFile(planFile, 'utf8')).toContain('### [x] 1.');
+
       await s.request('review', id);
       expect((await s.task()).phase).toBe('reviewing');
-      const reviewerSettings = join(taskDir, 'claude-reviewer-settings.json');
-      expect(s.launch.mock.calls.at(-1)?.[0]).toMatchObject({
+      const reviewer = s.launch.mock.calls.at(-1)![0];
+      expect(reviewer).toMatchObject({
         launchId: 'ai:claude',
         reuse: false,
-        claudeArgs: ['--settings', reviewerSettings],
+        claudeArgs: ['--settings', join(taskDir, 'claude-reviewer-settings.json')],
       });
-      expect(s.launch.mock.calls.at(-1)?.[0]).not.toHaveProperty('addDirs');
-      const allowed = (JSON.parse(await readFile(reviewerSettings, 'utf8')) as { permissions: { allow: string[] } })
-        .permissions.allow;
-      expect(allowed).toHaveLength(1);
-      expect(allowed[0]).toMatch(/^Read\(\/\/.*\/\*\*\)$/);
-      expect(s.launch.mock.calls.at(-1)?.[0].prompt).toContain('Do not edit files');
+      expect((await allowed('reviewer')).allow).toEqual([expect.stringMatching(/^Read\(/)]);
+      expect(reviewer.prompt).toContain(join(tasks, 'skills', 'review.md'));
+      expect(reviewer.prompt).toContain('Do not edit files');
+      expect(await readFile(planFile, 'utf8')).toContain('### [x] 1.');
       // Every role has a session of its own.
-      expect(new Set(s.launch.mock.results.map((_r, i) => `t${i + 1}`)).size).toBe(3);
+      expect(new Set(s.launch.mock.calls.map((call) => call[0].launchId)).size).toBe(2);
+      expect((await s.task()).reviewer?.terminalId).toBe('t3');
+
+      // The last ticks are read before the files leave the project; nothing of Task stays in it.
+      await writeFile(planFile, PLAN.replaceAll('[ ]', '[x]'));
       await s.request('done', id);
       const t = await s.task();
-      expect(t.phase).toBe('done');
-      expect(await readFile(join(taskDir, 'approved-plan.md'), 'utf8')).toBe(t.approvedPlan);
+      expect(t).toMatchObject({ phase: 'done', progress: { steps: [true, true], checks: [true, true] } });
+      expect((await s.model()).planFile).toBeNull();
+      expect(await exists(join(s.dir, 'repo', '.oxy'))).toBe(false);
       const restored = await setup(s.dir);
       try {
-        expect((await restored.task()).approvedPlan).toBe(t.approvedPlan);
+        expect(await restored.task()).toMatchObject({ approvedPlan: PLAN.trim(), progress: t.progress });
       } finally {
         restored.dispose();
       }
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('gives agents other than Claude Code nothing but the prompt', async () => {
+    const s = await setup();
+    try {
+      await s.request('create', { ...input, planner: { launchId: 'ai:codex' } });
+      const request = s.launch.mock.calls[0]![0];
+      expect(Object.keys(request).sort()).toEqual(['launchId', 'projectId', 'prompt', 'reuse']);
+      expect(request.prompt).toContain('plan.md');
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('waits for a planner that is still writing, then takes the plan once it has settled', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      const planFile = join(s.dir, 'repo', '.oxy', 'tasks', id, 'plan.md');
+      s.setState('t1', 'working');
+      await writeFile(planFile, PLAN);
+      await s.refreshed(() => s.setState('t1', 'working'));
+      expect((await s.task()).phase).toBe('planning');
+      // A planner whose turn does not seem to end cannot keep its plan from the user.
+      vi.setSystemTime(Date.now() + PLAN_SETTLE_MS + 1000);
+      s.setState('t1', 'working');
+      await vi.waitFor(async () => expect((await s.task()).phase).toBe('ready'));
+    } finally {
+      s.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it('types feedback into the planner, takes the rewritten file as the next version and approves an edited plan', async () => {
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      const taskDir = join(s.dir, 'repo', '.oxy', 'tasks', id);
+      const planFile = join(taskDir, 'plan.md');
+      // A plan without Task's outline is still a plan.
+      await writeFile(planFile, 'Just do it.');
+      s.setState('t1', 'idle');
+      await vi.waitFor(async () => expect((await s.task()).phase).toBe('ready'));
+      await s.request('revise', { id, feedback: 'Use the format.' });
+      await vi.waitFor(() => expect(s.sendPrompt).toHaveBeenCalledTimes(1));
+      expect(s.sendPrompt.mock.calls[0]![0]).toBe('t1');
+      expect(s.sendPrompt.mock.calls[0]![1]).toContain(planFile);
+      expect(s.sendPrompt.mock.calls[0]![1]).toMatch(/Feedback: Use the format\.$/);
+      await vi.waitFor(async () => expect((await s.task()).outbox).toBeUndefined());
+      // Nothing new in the file yet: the plan that got feedback is not taken again.
+      await s.refreshed(() => s.setState('t1', 'idle'));
+      expect(await s.task()).toMatchObject({
+        phase: 'planning',
+        versions: [{ status: 'revised', feedback: 'Use the format.' }],
+      });
+      await writeFile(planFile, PLAN);
+      s.setState('t1', 'idle');
+      await vi.waitFor(async () => expect((await s.task()).phase).toBe('ready'));
+      expect((await s.task()).versions.map((v) => v.status)).toEqual(['revised', 'pending']);
+      // The implementer reads exactly what was approved, also when it was edited in Task.
+      const edited = PLAN.replace('Add the field', 'Add the search field').trim();
+      await s.request('approve', { id, plan: edited });
+      expect(await readFile(planFile, 'utf8')).toBe(`${edited}\n`);
+      expect((await s.task()).versions).toMatchObject([
+        { status: 'revised' },
+        { status: 'superseded', origin: 'capture' },
+        { status: 'approved', origin: 'edit', plan: edited },
+      ]);
+      // An approved task takes no more plans from the file.
+      await writeFile(planFile, `${edited}\n\nLater thoughts.\n`);
+      await s.refreshed(() => s.setState('t1', 'idle'));
+      expect((await s.task()).approvedPlan).toBe(edited);
+      expect((await s.task()).versions).toHaveLength(3);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('removes the files of a rejected or deleted task and keeps those of the other tasks', async () => {
+    const s = await setup();
+    try {
+      const tasks = join(s.dir, 'repo', '.oxy', 'tasks');
+      const first = await s.request<string>('create', input);
+      const second = await s.request<string>('create', { ...input, description: 'Second' });
+      await writeFile(join(tasks, second, 'plan.md'), PLAN);
+      s.setState('t2', 'idle');
+      await vi.waitFor(async () => expect((await s.task()).phase).toBe('ready'));
+      await s.request('reject', second);
+      expect(await s.task()).toMatchObject({ phase: 'rejected', versions: [{ status: 'rejected' }] });
+      await expect(s.request('approve', { id: second, plan: PLAN })).rejects.toThrow(/no longer waiting/);
+      expect((await readdir(tasks)).sort()).toEqual(['.gitignore', first, 'skills'].sort());
+      // Something else in .oxy (a Code Map) is not Task's to remove.
+      await mkdir(join(s.dir, 'repo', '.oxy', 'code-map'));
+      await s.request('delete', first);
+      expect(await readdir(join(s.dir, 'repo', '.oxy'))).toEqual(['code-map']);
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('reports a plan file that is too large instead of taking it', async () => {
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      await writeFile(join(s.dir, 'repo', '.oxy', 'tasks', id, 'plan.md'), 'x'.repeat(100_000));
+      s.setState('t1', 'idle');
+      await vi.waitFor(async () => expect((await s.task()).error).toMatch(/larger than 90 KB/));
+      expect((await s.task()).phase).toBe('planning');
+    } finally {
+      s.dispose();
+    }
+  });
+
+  it('brings the task files back for a prompt when they were removed', async () => {
+    const s = await setup();
+    try {
+      const id = await s.request<string>('create', input);
+      await s.request('approve', { id, plan: PLAN.trim() });
+      await rm(join(s.dir, 'repo', '.oxy'), { recursive: true });
+      await s.request('implement', id);
+      const taskDir = join(s.dir, 'repo', '.oxy', 'tasks', id);
+      expect(await readFile(join(taskDir, 'plan.md'), 'utf8')).toBe(PLAN);
+      expect(await exists(join(taskDir, 'raw.task.json'))).toBe(true);
+      expect(await exists(join(s.dir, 'repo', '.oxy', 'tasks', 'skills', 'implement.md'))).toBe(true);
     } finally {
       s.dispose();
     }
@@ -303,7 +504,7 @@ describe('Task workflow', () => {
       s.setState('busy', 'idle');
       await vi.waitFor(() => expect(s.sendPrompt).toHaveBeenCalledTimes(1));
       expect(s.sendPrompt.mock.calls[0]![0]).toBe('busy');
-      expect(s.sendPrompt.mock.calls[0]![1]).toContain('brief.md');
+      expect(s.sendPrompt.mock.calls[0]![1]).toContain('plan.md');
       await vi.waitFor(async () => expect((await s.task()).outbox).toBeUndefined());
       expect((await s.task()).error).toBeUndefined();
     } finally {
@@ -368,158 +569,19 @@ describe('Task workflow', () => {
   });
 });
 
-describe('Task plan hook', () => {
-  it('starts a fresh Claude planner in plan mode with bypass available, its hook and deny rules', async () => {
-    const s = await setup();
-    try {
-      const id = await s.request<string>('create', input);
-      const request = s.launch.mock.calls[0]![0];
-      const file = join(s.dir, 'p', id, 'claude-settings.json');
-      expect(request).toMatchObject({
-        launchId: 'ai:claude',
-        planMode: true,
-        reuse: false,
-        claudeArgs: ['--model', 'opus', '--effort', 'high', '--allow-dangerously-skip-permissions', '--settings', file],
-        env: { OXYTOCIN_TASK_ID: id },
-      });
-      expect(request.prompt).toContain('finish it with ExitPlanMode');
-      expect(request.prompt).toContain('Task: Add search');
-      const settings = JSON.parse(await readFile(file, 'utf8')) as {
-        permissions: { deny: string[] };
-        hooks: { PreToolUse: { matcher: string; hooks: { url: string; timeout: number }[] }[] };
-      };
-      expect(settings.permissions.deny).toContain('Bash(git commit *)');
-      expect(settings.permissions.deny[0]).toMatch(/^Edit\(\/\/.*\/repo\/\*\*\)$/);
-      expect(settings.hooks.PreToolUse[0]).toMatchObject({ matcher: 'ExitPlanMode' });
-      expect(settings.hooks.PreToolUse[0]!.hooks[0]!.timeout).toBeGreaterThan(24 * 3600);
-      expect((await s.task()).hookTerminalId).toBe('t1');
-    } finally {
-      s.dispose();
-    }
-  });
-
-  it('gives other planners the plan document and API profiles their own model', async () => {
-    const s = await setup();
-    try {
-      await s.request('create', { ...input, planner: { launchId: 'ai:codex' } });
-      expect(s.launch.mock.calls[0]![0]).not.toHaveProperty('claudeArgs');
-      expect(s.launch.mock.calls[0]![0].prompt).toContain('plan.md');
-      await s.request('create', { ...input, planner: { launchId: 'ai:profile:glm' } });
-      expect(s.launch.mock.calls[1]![0].claudeArgs?.slice(0, 1)).toEqual(['--allow-dangerously-skip-permissions']);
-    } finally {
-      s.dispose();
-    }
-  });
-
-  it('holds Claude in the hook until the user decides: feedback and approval are its answers', async () => {
-    const s = await setup();
-    try {
-      const id = await s.request<string>('create', input);
-      expect(await hook(s.dir, id, '# Plan\nOne', { token: 'wrong' })).toMatchObject({ status: 401 });
-      expect(await hook(s.dir, 'not-a-task', '# Plan')).toMatchObject({ status: 204 });
-      expect(await hook(s.dir, '', '# Plan')).toMatchObject({ status: 204 });
-      const first = hook(s.dir, id, '# Plan\nOne');
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(true));
-      // The task is on screen: no notification on top of it.
-      expect(s.showNotification).not.toHaveBeenCalled();
-      expect(await s.task()).toMatchObject({
-        phase: 'ready',
-        plan: '# Plan\nOne',
-        source: '/home/me/.claude/plans/search.md',
-        versions: [{ status: 'pending', origin: 'hook' }],
-      });
-      await s.request('revise', { id, feedback: 'Add tests.' });
-      const revised = await first;
-      expect(revised.output).toMatchObject({ hookEventName: 'PreToolUse', permissionDecision: 'deny' });
-      expect(revised.output?.['permissionDecisionReason']).toMatch(/revise the plan[\s\S]*Feedback:\nAdd tests\.$/);
-      // Nothing is typed into the terminal.
-      expect(s.sendPrompt).not.toHaveBeenCalled();
-      expect(await s.task()).toMatchObject({
-        phase: 'planning',
-        versions: [{ status: 'revised', feedback: 'Add tests.' }],
-      });
-      expect((await s.model()).planWaiting).toBe(false);
-      const second = hook(s.dir, id, '# Plan\nOne\nTests');
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(true));
-      expect((await s.task()).versions.map((v) => v.status)).toEqual(['revised', 'pending']);
-      await s.request('approve', { id, plan: '# Plan\nOne\nTests' });
-      expect((await second).output?.['permissionDecisionReason']).toContain('approved this plan');
-      expect((await s.task()).versions.map((v) => v.status)).toEqual(['revised', 'approved']);
-      expect(await readFile(join(s.dir, 'p', id, 'brief.md'), 'utf8')).toContain('Tests');
-      // An approved task takes no more plans: Claude Code asks in the terminal as usual.
-      expect(await hook(s.dir, id, '# Later')).toMatchObject({ status: 204 });
-    } finally {
-      s.dispose();
-    }
-  });
-
-  it('types feedback into the planner once Claude stopped waiting in the hook', async () => {
-    const s = await setup();
-    try {
-      const id = await s.request<string>('create', input);
-      const esc = new AbortController();
-      const pending = hook(s.dir, id, '# Plan', { signal: esc.signal }).catch(() => null);
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(true));
-      esc.abort();
-      await pending;
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(false));
-      expect((await s.task()).versions).toMatchObject([{ status: 'pending' }]);
-      await s.request('revise', { id, feedback: 'Add tests.' });
-      await vi.waitFor(() => expect(s.sendPrompt).toHaveBeenCalledTimes(1));
-      expect(s.sendPrompt.mock.calls[0]![0]).toBe('t1');
-      expect(s.sendPrompt.mock.calls[0]![1]).toMatch(/ExitPlanMode again\. Feedback: Add tests\.$/);
-      await vi.waitFor(async () => expect((await s.task()).outbox).toBeUndefined());
-    } finally {
-      s.dispose();
-    }
-  });
-
-  it('answers a rejected or deleted task and records an edited approval as its own version', async () => {
-    const s = await setup();
-    try {
-      const id = await s.request<string>('create', input);
-      const rejected = hook(s.dir, id, '# Plan');
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(true));
-      await s.request('reject', id);
-      expect((await rejected).output?.['permissionDecisionReason']).toContain('rejected this plan');
-      expect(s.showNotification).not.toHaveBeenCalled();
-      expect(await s.task()).toMatchObject({ phase: 'rejected', versions: [{ status: 'rejected' }] });
-      await expect(s.request('approve', { id, plan: '# Plan' })).rejects.toThrow(/no longer waiting/);
-      const second = await s.request<string>('create', { ...input, description: 'Second' });
-      const edited = hook(s.dir, second, '# Draft');
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(true));
-      await s.request('approve', { id: second, plan: '# Draft, edited' });
-      expect((await edited).output?.['permissionDecisionReason']).toContain('approved this plan');
-      expect((await s.task()).versions).toMatchObject([
-        { status: 'superseded', origin: 'hook' },
-        { status: 'approved', origin: 'edit', plan: '# Draft, edited' },
-      ]);
-      const third = await s.request<string>('create', { ...input, description: 'Third' });
-      const deleted = hook(s.dir, third, '# Draft');
-      await vi.waitFor(async () => expect((await s.model()).planWaiting).toBe(true));
-      await s.request('delete', third);
-      expect((await deleted).output?.['permissionDecisionReason']).toContain('deleted');
-    } finally {
-      s.dispose();
-    }
-  });
-});
-
 describe('Task plan notification', () => {
   it('tells the user where a plan is when Task is not on screen', async () => {
     const s = await setup(undefined, { sidebar: true });
     try {
       const id = await s.request<string>('create', input);
       s.changeProject('q');
-      const pending = hook(s.dir, id, '# Plan').catch(() => null);
+      await writeFile(join(s.dir, 'repo', '.oxy', 'tasks', id, 'plan.md'), PLAN);
+      s.setState('t1', 'idle');
       await vi.waitFor(() =>
         expect(s.showNotification).toHaveBeenCalledWith(
           expect.objectContaining({ message: 'A plan is ready for your approval in Task.' }),
         ),
       );
-      s.dispose();
-      // Closing Task ends the waiting request: Claude Code asks in its terminal.
-      await pending;
     } finally {
       s.dispose();
     }

@@ -122,14 +122,6 @@ textarea {
   width: 100%;
   min-width: 0;
 }
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.check input {
-  accent-color: var(--accent);
-}
 .primary {
   background: var(--accent);
   color: var(--text-inverse);
@@ -286,6 +278,111 @@ textarea:focus-visible {
   border: 1px solid var(--accent-muted);
   border-radius: var(--radius-control, 6px);
   background: var(--bg-elevated);
+}
+.plan-view section,
+.plan-progress {
+  margin: 16px 0 12px;
+}
+.plan-view .plan-title {
+  margin-bottom: 4px;
+}
+.plan-note {
+  margin: 12px 0;
+}
+.plan-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.progress-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--success);
+}
+.plan-view .plan-steps,
+.plan-view .plan-checks {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plan-step {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control, 6px);
+  background: var(--bg-input);
+}
+.plan-step[data-done='true'] {
+  border-color: var(--success);
+}
+.plan-step[data-done='true'] .step-number {
+  border-color: var(--success);
+  color: var(--success);
+}
+.plan-step-body {
+  min-width: 0;
+  flex: 1;
+}
+.plan-view .plan-step-body h3 {
+  margin: 2px 0 0;
+  font-size: var(--font-size-ui);
+  font-weight: 600;
+}
+.plan-step-body .markdown > :last-child,
+.plan-checks .markdown > * {
+  margin-bottom: 0;
+}
+.plan-checks .markdown > :first-child {
+  margin-top: 0;
+}
+.plan-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.plan-view .plan-files code {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-checks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.plan-checks .markdown {
+  min-width: 0;
+  flex: 1;
+}
+.check-box {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font-size: var(--font-size-small);
+}
+.plan-checks li[data-done='true'] .check-box {
+  border-color: var(--success);
+  color: var(--success);
 }
 @media (max-width: 680px) {
   .task-panel {

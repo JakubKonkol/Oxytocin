@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_STEPS } from './plan';
 
 export const MAX_PLAN = 90_000;
 export const MAX_VERSIONS = 30;
@@ -20,7 +21,6 @@ export const TaskInputSchema = z.object({
   planner: RoleSchema,
   implementer: RoleSchema,
   reviewer: RoleSchema.optional(),
-  planMode: z.boolean().default(true),
 });
 /**
  * One version of the plan. `pending` awaits the user's decision; `revised` got feedback (the planner works on the
@@ -29,7 +29,7 @@ export const TaskInputSchema = z.object({
 export const PlanVersionSchema = z.object({
   plan: z.string().max(MAX_PLAN),
   at: z.number(),
-  /** `hook` (Claude Code finished the plan), `capture` (a plan document), `edit` (changed in Task). */
+  /** `capture` (the planner's plan file), `edit` (changed in Task); `hook` in tasks saved by Task 0.4. */
   origin: z.enum(['hook', 'capture', 'edit']),
   source: z.string().max(4096).optional(),
   status: z.enum(['pending', 'revised', 'superseded', 'approved', 'rejected']),
@@ -57,10 +57,12 @@ export const TaskSchema = TaskInputSchema.extend({
   phase: z.enum(['planning', 'ready', 'implementing', 'reviewing', 'done', 'rejected']),
   plan: z.string().max(MAX_PLAN).default(''),
   versions: z.array(PlanVersionSchema).max(MAX_VERSIONS).default([]),
-  /** The planner terminal that Task started with its plan hook (plans arrive from Claude Code, not from files). */
-  hookTerminalId: z.string().max(64).optional(),
   approvedPlan: z.string().max(MAX_PLAN).optional(),
   approvedAt: z.number().optional(),
+  /** The steps and checks the implementer ticked in the plan file (kept after the file is removed). */
+  progress: z
+    .object({ steps: z.array(z.boolean()).max(MAX_STEPS), checks: z.array(z.boolean()).max(MAX_STEPS) })
+    .optional(),
   outbox: OutboxSchema.optional(),
   startedAt: z.number(),
   updatedAt: z.number(),
@@ -89,56 +91,52 @@ export function addVersion(
 }
 
 /**
- * The files Task gives the agents (in its own storage, outside the repository): the description, the plan document
- * of a planner that is not Claude Code, and the brief that the implementer and the reviewer read.
+ * The files of a task, in the project's `.oxy/tasks` folder (ignored by Git, removed when the task is closed):
+ * the task as the user wrote it, the planner's plan, and the instructions ("skills") each role follows.
  */
 export interface TaskFiles {
+  /** `.oxy/tasks/<id>` */
+  dir: string;
+  /** `raw.task.json` */
   task: string;
+  /** `plan.md` */
   plan: string;
-  brief: string;
+  skills: Record<RoleName, string>;
+}
+
+/** `raw.task.json`: what the planner reads. */
+export function rawTask(task: Pick<Task, 'id' | 'description' | 'startedAt'>): string {
+  const raw = {
+    version: 1,
+    id: task.id,
+    createdAt: new Date(task.startedAt).toISOString(),
+    description: task.description,
+  };
+  return `${JSON.stringify(raw, null, 2)}\n`;
 }
 
 /** `path` as the prompts spell it: in backticks, which no shell expands inside a quoted argument. */
 const file = (path: string) => `\`${path}\``;
 
-/** The description itself when it reads well in the prompt's single line, else only the file holding it. */
-function taskLine(task: Task, files: TaskFiles): string {
-  const d = task.description.trim();
-  return /^[^\n\r\t%!`]{1,400}$/.test(d)
-    ? `Task: ${d} (also saved in ${file(files.task)}).`
-    : `The task is described in ${file(files.task)}; read it first.`;
-}
-
 /**
- * The planner's first prompt: one line, so that a new session receives it on its command line. `hooked`: a Claude
- * Code session started with Task's plan hook.
+ * Every prompt is one line that only names files, so that a new session receives it on its command line and no
+ * agent gets the task, the plan or the rules twice: how to work is in the role's skill file.
  */
-export function plannerPrompt(task: Task, files: TaskFiles, hooked: boolean): string {
-  const common = `Plan this task; do not implement it. ${taskLine(task, files)} Explore the code and ask the user in this terminal when something is unclear.`;
-  if (hooked)
-    return `${common} When the plan is complete, finish it with ExitPlanMode: Oxytocin shows it to the user for approval and a separate agent implements it.`;
-  return `${common} ${task.planMode ? 'Use plan mode if you have one. ' : ''}Write the final plan as a Markdown document to ${file(files.plan)} (Claude Code may use its native plan document instead; Oxytocin captures it), then stop: the user approves the plan in Oxytocin and a separate agent implements it.`;
+export function plannerPrompt(files: TaskFiles): string {
+  return `Plan a task for Oxytocin; do not implement it. Follow the instructions in ${file(files.skills.planner)}: the task is in ${file(files.task)}, write the plan to ${file(files.plan)}.`;
 }
 
-/** The user's feedback typed into a planner whose plan hook no longer waits (or that has none). */
-export function revisionPrompt(feedback: string, files: TaskFiles, hooked: boolean): string {
-  if (hooked)
-    return `The user reviewed your plan and asks for changes. Revise it in plan mode and finish the whole revised plan with ExitPlanMode again. Feedback: ${feedback}`;
-  return `The user reviewed your plan and asks for changes. Revise it and write the whole revised Markdown plan to ${file(files.plan)} again (Claude Code: your native plan document). Do not implement it. Feedback: ${feedback}`;
-}
-
-/** The brief the implementer and the reviewer read: the task and the approved plan, nothing from the planner's chat. */
-export function briefDocument(task: Task): string {
-  if (!task.approvedPlan?.trim()) throw new Error('Approve a non-empty plan first.');
-  return `# Task\n\n${task.description.trim()}\n\n# Approved plan\n\n${task.approvedPlan.trim()}\n`;
+/** The user's feedback, typed into the planner's session. */
+export function revisionPrompt(feedback: string, files: TaskFiles): string {
+  return `The user reviewed your plan and asks for changes. Rewrite the whole plan in ${file(files.plan)} in the same format (${file(files.skills.planner)}); do not implement it. Feedback: ${feedback}`;
 }
 
 export function implementationPrompt(task: Task, files: TaskFiles): string {
   if (!task.approvedPlan?.trim()) throw new Error('Approve a non-empty plan first.');
-  return `Implement the user-approved plan in ${file(files.brief)}. Read the whole file first; it holds the task and the plan, which was written and approved before you started. Follow the project's instructions and run the relevant checks.`;
+  return `Implement the user-approved plan in ${file(files.plan)}. Follow the instructions in ${file(files.skills.implementer)}.`;
 }
 
 export function reviewPrompt(task: Task, files: TaskFiles): string {
   if (!task.approvedPlan?.trim()) throw new Error('Approve a plan first.');
-  return `Review the current changes in this repository against the task and the user-approved plan in ${file(files.brief)} (read it first). Check for bugs, regressions and missing requirements. Report actionable findings as a concise list with file and line references. Do not edit files.`;
+  return `Review the current changes in this repository against the user-approved plan in ${file(files.plan)}. Follow the instructions in ${file(files.skills.reviewer)}. Do not edit files.`;
 }

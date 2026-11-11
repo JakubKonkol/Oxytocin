@@ -7,3 +7,8 @@ const md = markdownIt({ html: false, linkify: true, breaks: false });
 export function renderPlan(plan: string): string {
   return DOMPurify.sanitize(md.render(plan), { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form'] });
 }
+
+/** One line of a plan (a step title) as HTML: inline Markdown only. */
+export function renderInline(text: string): string {
+  return DOMPurify.sanitize(md.renderInline(text), { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form'] });
+}

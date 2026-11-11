@@ -146,8 +146,8 @@
     {
       "id": "q22",
       "split": "train",
-      "question": "Where is the Claude Code plan hook that waits for the user's decision?",
-      "expected": ["plugins/task/src/host/hook.ts"]
+      "question": "Where is the plan file of a task parsed into steps with their ticks?",
+      "expected": ["plugins/task/src/shared/plan.ts"]
     },
     {
       "id": "q23",

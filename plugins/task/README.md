@@ -5,48 +5,85 @@ buttons to move it to the left sidebar or the workspace; a workspace tab's menu 
 In either sidebar, Task follows the active project and shows its name. It is also available in **+ > Tools > Task**.
 Agent terminals open in the main workspace and are brought to front with keyboard focus.
 
-The workflow:
+Task is the glue between ordinary agent terminals: every hand-over goes through a few files in the project, the same
+way for every agent CLI. Nothing is read from an agent's conversation and nothing depends on an agent's plan mode.
+
+## The files
+
+Task keeps a task's files in the project, in `.oxy/tasks/`:
+
+| File | Written by | Purpose |
+|---|---|---|
+| `.oxy/tasks/<task id>/raw.task.json` | Task | The task as you described it (`description`) |
+| `.oxy/tasks/<task id>/plan.md` | the planner | The plan, in the outline below; the implementer ticks its steps |
+| `.oxy/tasks/<task id>/claude-<role>-settings.json` | Task | `--settings` of a Claude Code session started by Task |
+| `.oxy/tasks/skills/plan.md`, `implement.md`, `review.md` | Task | The built-in skills: how each role works |
+| `.oxy/tasks/.gitignore` | Task | `*`: Git ignores the whole folder |
+
+The folder of a task is removed when you mark the task done, reject its plan or delete it; the shared files go with
+the last task, and `.oxy` itself when nothing else (a Code Map) is in it. The plan and its progress stay in Task's own
+storage, so a completed task can still be read in Task. Files removed by hand come back with the next prompt.
+
+The skills are plain instruction files, not skills installed into `~/.claude` or `~/.codex`: a prompt names the file
+to follow, so they work with every agent and are read once per session.
+
+## The plan outline
+
+The planning skill asks for this outline, which Task parses and shows as steps with their files, a verification
+checklist and progress:
+
+```markdown
+# <Short title of the change>
+
+## Summary
+<What changes, why, and the approach.>
+
+## Steps
+
+### [ ] 1. <Step title>
+Files: `path/from/project/root.ts`, `another/file.ts`
+
+<What to change and how.>
+
+## Verification
+- [ ] `<command to run>`
+
+## Risks
+- <Optional; any other section is shown as it is>
+```
+
+A plan without a `## Steps` section with `###` steps is still taken: it is shown as the Markdown it is.
+
+## The workflow
 
 1. Describe the task and choose a planner, an implementer and an optional reviewer from **+ → AI Agents**'s choices.
    Each role gets a **new session with a clean context**, unless you choose one of the role's running sessions.
-2. Plan interactively in the planner's ordinary terminal. A new session starts with its first prompt on its command
-   line (`claude "…"`, `codex "…"`, `gemini --prompt-interactive "…"`): nothing is typed into it and there is nothing
-   to wait for. A Claude Code planner starts with
-   `--model opus --effort high --permission-mode plan --allow-dangerously-skip-permissions --settings <file>`
-   (API profiles keep their own model): it starts in plan mode, bypass permissions are in its Shift+Tab cycle, and
-   exploring asks no permission questions. The settings file, written by Task for that session only, adds:
-   - a `PreToolUse` hook on `ExitPlanMode` (an `http` hook to Task's local endpoint, `127.0.0.1` with a token; no
-     shell is involved). It acts only in terminals with `OXYTOCIN_TASK_ID`. It hands the finished plan to Task, and
-     **Claude waits there for your decision** (like Plannotator's plan review): the terminal shows no approval
-     question. Pressing Esc in the terminal ends the wait and Claude takes questions in the terminal again; when
-     Oxytocin does not answer, Claude Code asks in the terminal as usual and the plan is not lost;
-   - deny rules: no edits inside the project and no `git commit`, `git push`, `git checkout` or `git reset`. Claude
-     Code does not enforce plan mode's blocks when bypass is available, and it writes its plan file outside the
-     project (`~/.claude/plans/` or `plansDirectory`).
-   Your own `~/.claude/settings.json` and the project's `.claude/settings.json` are never changed. Implementers and
-   reviewers start without the hook and the deny rules.
-3. The plan appears in Task as Markdown with the status **Plan awaiting approval**. Your decision is Claude's answer:
-   - **Approve & implement** ends the planner's turn and starts the implementer;
-   - **Revise** sends your feedback and Claude revises the plan right away; the new version arrives the same way;
-   - **Reject** ends the planner's turn and closes the task.
-   Every version is kept under **Plan versions**. A chosen existing Claude session (no hook), or another agent, works
-   as before: Claude's native plan document is captured, other agents write a Markdown document in Task's storage
-   folder, or you paste the plan.
-4. Task freezes the approved version and writes a brief (the task and the approved plan) to its storage folder. The
-   implementer is told to read it. New Claude Code sessions may read the folder through an allow rule in Task's
-   `--settings` file (not `--add-dir`, which keeps Claude Code from submitting the prompt it starts with); other
-   agents get the folder with `--add-dir` (Codex CLI) or `--include-directories`. No planner conversation or tool
-   output is forwarded.
+2. The planner starts with one line on its command line (`claude "…"`, `codex "…"`, `gemini --prompt-interactive "…"`):
+   follow `skills/plan.md`, the task is in `raw.task.json`, write the plan to `plan.md`. Nothing is typed into a new
+   session. You can talk to the planner in its terminal as usual.
+3. When the planner's turn ends (or its plan file has not changed for ten seconds), the plan appears in Task with the
+   status **Plan awaiting approval**:
+   - **Approve & implement** starts the implementer. If you edited the plan in Task, the plan file gets your version.
+   - **Revise** types your feedback into the planner's session; the rewritten file is the next version.
+   - **Reject** closes the task and removes its files.
+   Every version is kept under **Plan versions**. You can also paste a plan yourself.
+4. The implementer is told to implement `plan.md` following `skills/implement.md`. It ticks each finished step
+   (`### [x]`) and each passed check in the plan file, and Task shows the progress. No conversation is forwarded.
+5. When implementation is ready, choose **Implementation ready · Review**, or **Mark done**. The reviewer reads the
+   same plan file and `skills/review.md` and inspects the changes itself. All stage transitions are manual.
+
+A Claude Code session started by Task gets `--settings <file>` with allow rules only: reading `.oxy/tasks` and, for
+the planner and the implementer, editing the task's own folder, so that writing the plan and ticking steps ask no
+permission. Your own `~/.claude/settings.json` and the project's `.claude/settings.json` are never changed, and the
+agent runs with the model and the permission mode of the launcher you chose.
 
 A new session gets its first prompt on its command line. If it has not started on it 30 seconds later (it waits for
 input, or a question such as folder trust is open), Task says so with **Show terminal**.
-5. When implementation is ready, choose **Implementation ready · Review**, or mark the task done. Review receives
-   the same brief and inspects the files itself. All stage transitions are manual.
 
-A prompt for a session that already runs (feedback after Esc, a chosen implementer or reviewer) is typed as soon as
-its agent waits for input: never over a running turn or a question on screen (trust, login, yes/no). Until then Task
-shows what it is waiting for, with **Show terminal** and **Cancel**; there is nothing to retry. If that session ends
-first, Task says so and the stage's retry opens a new session.
+A prompt for a session that already runs (feedback, a chosen implementer or reviewer) is typed as soon as its agent
+waits for input: never over a running turn or a question on screen (trust, login, yes/no). Until then Task shows what
+it is waiting for, with **Show terminal** and **Cancel**; there is nothing to retry. If that session ends first, Task
+says so and the stage's retry opens a new session.
 
-Tasks and their documents are saved in the plugin's storage, outside the repository, and survive app restarts.
-Deleting a task from the list keeps its terminal sessions and document files.
+Tasks (their roles, plan versions and progress) are saved in the plugin's storage and survive app restarts. Closing
+or deleting a task keeps its terminal sessions.

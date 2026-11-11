@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { AgentLauncher, AgentSnapshot, TerminalMeta } from '@oxytocin/plugin-api';
 import type { PlanVersion, Role, RoleName, Task, TaskInput } from '../shared/task';
-import { renderPlan } from './markdown';
+import { parsePlan, withProgress, type PlanProgress, type StructuredPlan } from '../shared/plan';
+import { renderInline, renderPlan } from './markdown';
 import './task.css';
 
 interface Model {
   project: { id: string; name: string } | null;
   tasks: Pick<Task, 'id' | 'description' | 'phase'>[];
   task: Task | null;
-  planWaiting: boolean;
+  /** The open task's plan file in the project, while the task has one. */
+  planFile: string | null;
   /** A role whose new session has not started on its prompt. */
   stalled: RoleName | null;
   launchers: AgentLauncher[];
@@ -39,22 +41,127 @@ const statusLabel: Record<PlanVersion['status'], string> = {
 };
 const originLabel: Record<PlanVersion['origin'], string> = {
   hook: 'from Claude Code',
-  capture: 'from the plan document',
+  capture: 'from the planner',
   edit: 'edited in Task',
 };
 
-function PlanView({ plan, testId }: { plan: string; testId: string }) {
-  const html = useMemo(() => renderPlan(plan), [plan]);
+function Markdown({ text }: { text: string }) {
+  const html = useMemo(() => renderPlan(text), [text]);
+  return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function Inline({ text }: { text: string }) {
+  const html = useMemo(() => renderInline(text), [text]);
+  return <span dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+/** A plan with Task's outline: its steps, their files and the checks, with the implementer's ticks. */
+function StructuredPlanView({ plan, showProgress }: { plan: StructuredPlan; showProgress: boolean }) {
+  const done = plan.steps.filter((s) => s.done).length;
+  return (
+    <>
+      {plan.title && (
+        <h1 className="plan-title">
+          <Inline text={plan.title} />
+        </h1>
+      )}
+      {plan.summary && <Markdown text={plan.summary} />}
+      <div className="plan-progress" data-testid="task-progress">
+        <span className="eyebrow">Steps</span>
+        <span className="muted">{showProgress ? `${done} of ${plan.steps.length} done` : `${plan.steps.length}`}</span>
+        {showProgress && (
+          <span
+            className="progress-bar"
+            role="progressbar"
+            aria-label="Steps done"
+            aria-valuemin={0}
+            aria-valuemax={plan.steps.length}
+            aria-valuenow={done}
+          >
+            <span style={{ width: `${(done / plan.steps.length) * 100}%` }} />
+          </span>
+        )}
+      </div>
+      <ol className="plan-steps">
+        {plan.steps.map((step, i) => (
+          <li key={i} className="plan-step" data-testid="task-step" data-done={step.done}>
+            <span className="step-number" aria-label={step.done ? 'Done' : `Step ${i + 1}`}>
+              {step.done ? '✓' : i + 1}
+            </span>
+            <div className="plan-step-body">
+              <h3>
+                <Inline text={step.title} />
+              </h3>
+              {step.files.length > 0 && (
+                <div className="plan-files">
+                  {step.files.map((file) => (
+                    <code key={file} title={file}>
+                      {file}
+                    </code>
+                  ))}
+                </div>
+              )}
+              {step.body && <Markdown text={step.body} />}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {plan.checks.length > 0 && (
+        <section>
+          <span className="eyebrow">Verification</span>
+          <ul className="plan-checks">
+            {plan.checks.map((check, i) => (
+              <li key={i} data-testid="task-check" data-done={check.done}>
+                <span className="check-box" aria-label={check.done ? 'Passed' : 'Not checked yet'}>
+                  {check.done ? '✓' : ''}
+                </span>
+                <Markdown text={check.text} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {plan.sections.map((section, i) => (
+        <section key={i}>
+          <span className="eyebrow">{section.title}</span>
+          <Markdown text={section.body} />
+        </section>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The plan as steps when it has Task's outline (see `parsePlan`), else the Markdown it is. `progress` are the
+ * implementer's ticks; without it the plan is still under review and shows no progress.
+ */
+function PlanView({ plan, testId, progress }: { plan: string; testId: string; progress?: PlanProgress | null }) {
+  const structured = useMemo(() => parsePlan(plan), [plan]);
+  const shown = useMemo(
+    () => (structured ? withProgress(structured, progress ?? undefined) : null),
+    [structured, progress],
+  );
   return (
     <div
-      className="plan-view markdown"
+      className="plan-view"
       data-testid={testId}
+      data-structured={!!shown}
       // Links would navigate the panel away from Task.
       onClick={(e) => {
         if ((e.target as HTMLElement).closest('a')) e.preventDefault();
       }}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    >
+      {shown ? (
+        <StructuredPlanView plan={shown} showProgress={progress !== undefined} />
+      ) : (
+        <>
+          <p className="muted hint plan-note" data-testid="task-plan-unstructured">
+            This plan does not have Task’s outline (a “## Steps” section with “###” steps), so it is shown as written.
+          </p>
+          <Markdown text={plan} />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -124,7 +231,6 @@ function TaskPanel() {
   const [planner, setPlanner] = useState<Role>();
   const [implementer, setImplementer] = useState<Role>();
   const [reviewer, setReviewer] = useState<Role>();
-  const [planMode, setPlanMode] = useState(true);
   const [draft, setDraft] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -194,7 +300,6 @@ function TaskPanel() {
   const plan = draft ?? task?.plan ?? '';
   const index = task ? phaseIndex(task) : 0;
   const awaiting = !!task && !task.approvedPlan && (task.phase === 'planning' || task.phase === 'ready');
-  const hooked = !!task?.hookTerminalId && task.planner.terminalId === task.hookTerminalId;
   const roleName = (role: RoleName) => model.launchers.find((a) => a.launchId === task?.[role]?.launchId)?.name ?? role;
   const outbox = task?.outbox;
   const versions = task?.versions ?? [];
@@ -210,8 +315,11 @@ function TaskPanel() {
           : versions.some((v) => v.status === 'revised')
             ? 'The planner is revising the plan'
             : 'Waiting for the planner';
-  // Without a plan yet, a planner that is not Claude Code may need one pasted.
-  const showEditor = awaiting && (editing || (!plan && !hooked));
+  // Without a plan yet, one can be pasted.
+  const showEditor = awaiting && (editing || !plan);
+  const closed = task?.phase === 'done' || task?.phase === 'rejected';
+  const ticks = task?.progress?.steps ?? [];
+  const allTicked = ticks.length > 0 && ticks.every(Boolean);
   return (
     <main className="task-panel" data-testid="task-panel" aria-busy={pending}>
       <header className="toolbar">
@@ -328,14 +436,10 @@ function TaskPanel() {
             <RolePicker label="Implementer" value={implementer} onChange={setImplementer} model={model} />
             <RolePicker label="Reviewer" value={reviewer} onChange={setReviewer} model={model} optional />
           </div>
-          <label className="check">
-            <input type="checkbox" checked={planMode} onChange={(e) => setPlanMode(e.target.checked)} />
-            Start new Claude sessions in plan mode
-          </label>
           <p className="muted hint">
-            Each role gets a new session with a clean context unless you choose a running one. A Claude planner starts
-            in plan mode (Opus, high effort) with edits in the project blocked; its finished plan appears here and
-            Claude waits for your decision. The implementer receives only the task and the approved plan.
+            Each role gets a new session with a clean context unless you choose a running one. The planner writes a
+            structured plan to <code>.oxy/tasks/&lt;task&gt;/plan.md</code> in the project and the implementer reads
+            that file: no conversation is forwarded. Git ignores the folder and it is removed when you close the task.
           </p>
           {model.launchers.length === 0 && (
             <p className="muted">No agents available. Detect or configure them in Settings → AI Agents.</p>
@@ -353,7 +457,6 @@ function TaskPanel() {
                     planner,
                     implementer,
                     ...(reviewer ? { reviewer } : {}),
-                    planMode,
                   } satisfies TaskInput);
               }}
             >
@@ -411,18 +514,20 @@ function TaskPanel() {
                 )}
               </div>
             </div>
-            <p className="muted hint">
-              {task.approvedPlan
-                ? 'The implementer received this exact plan. Conversations stay in their own terminals.'
-                : model.planWaiting
-                  ? 'Claude is waiting for your decision. Approve the plan, send feedback (Claude revises it right away) or reject it.'
-                  : hooked
-                    ? 'Claude sends its finished plan here and waits for your decision. If it stopped waiting (Esc in its terminal), feedback is typed into its terminal once it is ready.'
-                    : 'The planner’s plan document is captured automatically. You can also paste or refine a plan below before approving it.'}
+            <p className="muted hint" data-testid="task-plan-hint">
+              {task.phase === 'done'
+                ? 'The task is closed and its files were removed from the project.'
+                : task.phase === 'rejected'
+                  ? 'The plan was rejected and the task’s files were removed from the project.'
+                  : task.approvedPlan
+                    ? allTicked
+                      ? 'Every step is ticked. Look at the changes, then mark the task done.'
+                      : 'The implementer works from this plan file and ticks each step it finishes.'
+                    : 'The planner writes the plan to the file below; it appears here once the planner is done. You can also paste or refine a plan before approving it.'}
             </p>
-            {(viewed?.source ?? task.source) && (
-              <p className="document-path" title={viewed?.source ?? task.source}>
-                {viewed?.source ?? task.source}
+            {model.planFile && !viewed && (
+              <p className="document-path" title={model.planFile} data-testid="task-plan-file">
+                {model.planFile}
               </p>
             )}
             {viewed ? (
@@ -449,7 +554,11 @@ function TaskPanel() {
                 onChange={(e) => setDraft(e.target.value)}
               />
             ) : (task.approvedPlan ?? plan) ? (
-              <PlanView plan={task.approvedPlan ?? plan} testId="task-plan-view" />
+              <PlanView
+                plan={task.approvedPlan ?? plan}
+                testId="task-plan-view"
+                {...(task.approvedPlan ? { progress: task.progress ?? null } : {})}
+              />
             ) : (
               <p className="muted plan-empty">The plan will appear here when the planner finishes it.</p>
             )}
@@ -478,7 +587,7 @@ function TaskPanel() {
                   } else setDeleteArmed(true);
                 }}
               >
-                {deleteArmed ? 'Confirm deletion' : 'Delete task'}
+                {deleteArmed ? (closed ? 'Confirm deletion' : 'Confirm: delete the task and its files') : 'Delete task'}
               </button>
               <div className="toolbar-actions">
                 {awaiting &&

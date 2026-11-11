@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
@@ -69,6 +69,38 @@ async function currentFrame(win: Page): Promise<Frame> {
   return frame!;
 }
 
+/** A plan with Task's outline, as the planning skill asks for it (" | " in a step list is a new step). */
+const planDocument = (steps: string[]) =>
+  [
+    '# Search plan',
+    '',
+    '## Summary',
+    'Adds a search field.',
+    '',
+    '## Steps',
+    '',
+    ...steps.flatMap((step, i) => [`### [ ] ${i + 1}. ${step}`, 'Files: `test.txt`', '', 'Do it.', '']),
+    '## Verification',
+    '- [ ] `npm test`',
+    '',
+  ].join('\n');
+
+/** The folder of the project's only task (`.oxy/tasks/<id>`), once Task created it. */
+async function taskFolder(repo: string): Promise<string> {
+  const tasks = join(repo, '.oxy', 'tasks');
+  let id: string | undefined;
+  await expect
+    .poll(async () => (id = (await readdir(tasks).catch(() => [])).find((entry) => /^[0-9a-f-]{36}$/.test(entry))))
+    .toBeTruthy();
+  return join(tasks, id!);
+}
+
+const exists = (path: string) =>
+  stat(path).then(
+    () => true,
+    () => false,
+  );
+
 const agents = async (win: Page) => (await win.evaluate(() => window.oxy.invoke('agents:list'))) as AgentSnapshot[];
 
 /** The terminal of the n-th agent of a kind (in the order they started). */
@@ -91,9 +123,9 @@ async function typeInto(win: Page, terminalId: string, line: string) {
   await run(win, line);
 }
 
-test('Task: a Claude planner waits for the decision in Task, feedback revises the plan, Codex implements and Claude reviews', async () => {
+test('Task: the planner writes a structured plan file, feedback revises it, Codex implements it with progress and the files leave the project', async () => {
   test.setTimeout(120_000);
-  const { app, win } = await setup('task');
+  const { app, win, repo } = await setup('task');
   try {
     await waitForTerminal(win);
     const frame = await taskFrame(win);
@@ -103,61 +135,87 @@ test('Task: a Claude planner waits for the decision in Task, feedback revises th
     await frame.getByTestId('task-reviewer').selectOption('ai:claude');
     await frame.getByTestId('task-start').click();
 
-    // A fresh session that starts with the prompt on its command line: plan mode, bypass available, Task's settings.
+    // A fresh session that starts with a one-line prompt naming the task's files; only Task's settings are added.
     const planner = await agentTerminal(win, 'claude-code');
-    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan this task');
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan a task for Oxytocin');
     const started = await oxyTest(win).text(planner);
-    expect(started).toContain('Task: Add a search field');
-    // The fake parses its command line like Claude Code: nothing after the prompt can swallow it, and no --add-dir
-    // keeps it from being submitted (Task's folder is readable through its settings).
-    expect(started).toMatch(
-      /ARGS: Plan this task; .* --permission-mode plan --model opus --effort high --allow-dangerously-skip-permissions --settings \S+claude-settings\.json\s*$/m,
-    );
-    expect(started).not.toContain('--add-dir');
-    expect(started).not.toContain('UNSUBMITTED PROMPT');
+    expect(started).toMatch(/ARGS: Plan a task for Oxytocin; .* --settings \S+claude-planner-settings\.json\s*$/m);
+    for (const absent of ['--add-dir', '--permission-mode', '--model', 'UNSUBMITTED PROMPT'])
+      expect(started).not.toContain(absent);
     await expect.poll(() => oxyTest(win).activeTerminalId()).toBe(planner);
 
-    // Claude finishes the plan and waits in the hook: no question in the terminal, the plan appears in Task.
-    await typeInto(win, planner, 'exitplan # Search plan | - Add the field | - Test it');
-    await taskFrame(win);
-    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan awaiting approval', { timeout: 15_000 });
-    await expect(frame.getByTestId('task-plan-view').locator('h1')).toHaveText('Search plan');
-    await expect(frame.getByTestId('task-plan-view').locator('li')).toHaveCount(2);
-    await expect(frame.getByText('Claude is waiting for your decision.', { exact: false })).toBeVisible();
-    expect(await oxyTest(win).text(planner)).not.toContain('Would you like to proceed?');
-    await win.screenshot({ path: test.info().outputPath('task-plan-hook.png') });
+    // The task's files are in the project's .oxy/tasks folder, which Git ignores.
+    const folder = await taskFolder(repo);
+    const planFile = join(folder, 'plan.md');
+    expect(JSON.parse(await readFile(join(folder, 'raw.task.json'), 'utf8'))).toMatchObject({
+      description: 'Add a search field',
+    });
+    expect(await readFile(join(repo, '.oxy', 'tasks', 'skills', 'plan.md'), 'utf8')).toContain('## Format');
+    expect(started).toContain(planFile);
+    const status = execFileSync('git', ['--no-optional-locks', 'status', '--porcelain', '--untracked-files=all'], {
+      cwd: repo,
+      encoding: 'utf8',
+    });
+    expect(status).not.toContain('.oxy');
+    await expect(frame.getByTestId('task-plan-file')).toHaveText(planFile);
 
-    // Feedback is the hook's answer: Claude revises at once, nothing is typed into its terminal.
+    // The planner writes the plan file: Task shows it as steps, not as plain Markdown.
+    await writeFile(planFile, planDocument(['Add the field', 'Test it']));
+    await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan awaiting approval', { timeout: 15_000 });
+    const plan = frame.getByTestId('task-plan-view');
+    await expect(plan).toHaveAttribute('data-structured', 'true');
+    await expect(plan.locator('h1')).toHaveText('Search plan');
+    await expect(plan.getByTestId('task-step')).toHaveCount(2);
+    await expect(plan.getByTestId('task-step').first()).toContainText('Add the field');
+    await expect(plan.getByTestId('task-step').first().locator('.plan-files code')).toHaveText('test.txt');
+    await expect(plan.getByTestId('task-check')).toHaveCount(1);
+    await win.screenshot({ path: test.info().outputPath('task-plan.png') });
+
+    // Feedback is typed into the planner's session; the rewritten file is the next version.
     await frame.getByTestId('task-feedback').fill('Also handle an empty query.');
     await frame.getByTestId('task-revise').click();
-    await expect.poll(() => oxyTest(win).text(planner)).toMatch(/asks for changes[\s\S]*Also handle an empty query\./);
+    await expect
+      .poll(() => oxyTest(win).text(planner))
+      .toMatch(/PROMPT: The user reviewed your plan[\s\S]*Also handle an empty query\./);
     await expect(frame.getByTestId('task-plan-status')).toHaveText('The planner is revising the plan');
-    await typeInto(win, planner, 'exitplan # Search plan | - Add the field | - Handle an empty query | - Test it');
+    await writeFile(planFile, planDocument(['Add the field', 'Handle an empty query', 'Test it']));
     await taskFrame(win);
-    await expect(frame.getByTestId('task-plan-view').locator('li')).toHaveCount(3, { timeout: 15_000 });
+    await expect(plan.getByTestId('task-step')).toHaveCount(3, { timeout: 15_000 });
     await frame.getByTestId('task-versions').locator('summary').click();
     await expect(frame.getByTestId('task-versions').locator('li')).toHaveCount(2);
     await expect(frame.getByTestId('task-versions').locator('li').first()).toContainText('feedback sent');
     await expect(frame.getByTestId('task-versions').locator('blockquote')).toHaveText('Also handle an empty query.');
 
-    // Approval ends the planner's turn and starts a fresh Codex session with the brief.
+    // Approval starts a fresh Codex session that is pointed at the plan file and its skill.
     await frame.getByTestId('task-approve').click();
-    await expect.poll(() => oxyTest(win).text(planner)).toContain('The user approved this plan');
     const codex = await agentTerminal(win, 'codex');
     await expect.poll(() => oxyTest(win).text(codex)).toContain('PROMPT: Implement the user-approved plan in');
-    await expect.poll(() => oxyTest(win).text(codex)).toContain('brief.md');
+    expect(await oxyTest(win).text(codex)).toMatch(/plan\.md[\s\S]*implement\.md/);
     await expect.poll(() => oxyTest(win).activeTerminalId()).toBe(codex);
     await taskFrame(win);
     await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan approved');
     await expect(frame.getByTestId('task-delivery')).toHaveCount(0);
+    await expect(frame.getByTestId('task-progress')).toContainText('0 of 3 done');
+
+    // The implementer ticks a step in the plan file: Task shows the progress.
+    const approved = await readFile(planFile, 'utf8');
+    await writeFile(planFile, approved.replace('### [ ] 1.', '### [x] 1.'));
+    await expect(frame.getByTestId('task-progress')).toContainText('1 of 3 done', { timeout: 15_000 });
+    await expect(plan.getByTestId('task-step').first()).toHaveAttribute('data-done', 'true');
+    await expect(plan.getByTestId('task-step').nth(1)).toHaveAttribute('data-done', 'false');
 
     await frame.getByTestId('task-review').click();
     const reviewer = await agentTerminal(win, 'claude-code', 1);
     await expect.poll(() => oxyTest(win).text(reviewer)).toContain('PROMPT: Review the current changes');
     expect(await oxyTest(win).text(reviewer)).toMatch(/--settings \S+claude-reviewer-settings\.json\s*$/m);
     await taskFrame(win);
+
+    // Done: the plan and its progress stay in Task, nothing of the task stays in the project.
     await frame.getByTestId('task-done').click();
     await expect(frame.getByText('COMPLETED', { exact: true })).toBeVisible();
+    await expect(frame.getByTestId('task-progress')).toContainText('1 of 3 done');
+    await expect(frame.getByTestId('task-plan-file')).toHaveCount(0);
+    await expect.poll(() => exists(join(repo, '.oxy'))).toBe(false);
   } finally {
     await app.close();
   }
@@ -165,7 +223,7 @@ test('Task: a Claude planner waits for the decision in Task, feedback revises th
 
 test('Task types into chosen sessions once they are ready, follows the project when moved, and Changes reuses an idle agent', async () => {
   test.setTimeout(120_000);
-  const { app, win, root, claudeHome } = await setup('task-sessions');
+  const { app, win, root, repo } = await setup('task-sessions');
   try {
     await waitForTerminal(win);
     const projectId = await win.evaluate(
@@ -191,16 +249,9 @@ test('Task types into chosen sessions once they are ready, follows the project w
     await frame.getByTestId('task-implementer').selectOption('ai:codex');
     await frame.getByLabel('Implementer session').selectOption(implementer);
     await frame.getByTestId('task-start').click();
-    // A chosen idle session has the prompt typed; its native plan document is captured.
-    await expect.poll(() => oxyTest(win).text(planner)).toContain('Improve the search field');
-    const session = (await agents(win)).find((a) => a.terminalId === planner)!.sessionId;
-    await mkdir(join(claudeHome, 'plans'), { recursive: true });
-    await mkdir(join(claudeHome, 'projects', '-fixture'), { recursive: true });
-    await writeFile(join(claudeHome, 'plans', 'search-plan.md'), '# Search plan\nAdd a keyboard shortcut and test it.');
-    await writeFile(
-      join(claudeHome, 'projects', '-fixture', `${session}.jsonl`),
-      JSON.stringify({ slug: 'search-plan', message: { content: [{ type: 'text', text: 'PRIVATE CONVERSATION' }] } }),
-    );
+    // A chosen idle session has the prompt typed; its plan file is taken like any other planner's.
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan a task for Oxytocin');
+    await writeFile(join(await taskFolder(repo), 'plan.md'), planDocument(['Add a keyboard shortcut', 'Test it']));
     await taskFrame(win);
     await expect(frame.getByTestId('task-plan-view')).toContainText('Add a keyboard shortcut', { timeout: 15_000 });
     await frame.getByTestId('task-approve').click();
@@ -215,7 +266,6 @@ test('Task types into chosen sessions once they are ready, follows the project w
     await expect
       .poll(() => oxyTest(win).text(implementer), { timeout: 20_000 })
       .toContain('Implement the user-approved plan');
-    expect(await oxyTest(win).text(implementer)).not.toContain('PRIVATE CONVERSATION');
     await taskFrame(win);
     await expect(frame.getByTestId('task-delivery')).toHaveCount(0);
     await expect(frame.getByTestId('task-plan-status')).toHaveText('Plan approved');
@@ -294,7 +344,7 @@ test('Task points at a new session that does not start on its prompt, until Ente
     await frame.getByTestId('task-implementer').selectOption('ai:codex');
     await frame.getByTestId('task-start').click();
     const planner = await agentTerminal(win, 'claude-code');
-    await expect.poll(() => oxyTest(win).text(planner)).toContain('UNSUBMITTED PROMPT: Plan this task');
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('UNSUBMITTED PROMPT: Plan a task');
     const stalled = frame.getByTestId('task-stalled');
     // Reported once the session has had its time to start (Task waits 30 s).
     await expect(stalled).toContainText('The planner (Claude Code) has not started on its prompt', {
@@ -304,7 +354,7 @@ test('Task points at a new session that does not start on its prompt, until Ente
     await expect.poll(() => oxyTest(win).activeTerminalId()).toBe(planner);
     await win.getByTestId(`terminal-view-${planner}`).click();
     await run(win, '');
-    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan this task');
+    await expect.poll(() => oxyTest(win).text(planner)).toContain('PROMPT: Plan a task');
     await expect(stalled).toHaveCount(0);
   } finally {
     await app.close();
