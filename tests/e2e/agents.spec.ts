@@ -55,8 +55,8 @@ test('a fake Claude Code agent is detected and its registry states drive badge a
 });
 
 for (const variant of [
-  { name: 'its terminal title and bell', args: '' },
-  { name: 'OSC 7501', args: ' --status' },
+  { name: 'its terminal title and bell', args: '', source: 'title' },
+  { name: 'OSC 7501', args: ' --status', source: 'program-status' },
 ]) {
   test(`a Codex CLI agent's states follow ${variant.name}; a finished turn is idle, not waiting`, async () => {
     const { app, win } = await launchApp();
@@ -64,6 +64,17 @@ for (const variant of [
       const id = await waitForTerminal(win);
       const badge = win.getByTestId('terminal-kind-badge');
       const projectDot = win.getByTestId(`status-dot-${await activeProjectId(win)}`);
+      // The state as the tested source reports it. Output and bells give the same states sooner, and terminal titles
+      // reach the agent service at most every 250 ms: without this, the next command can come before the title.
+      const reported = async () => {
+        const agents = (await win.evaluate(() => window.oxy.invoke('agents:list'))) as {
+          terminalId: string;
+          state: string;
+          stateSource: string;
+        }[];
+        const agent = agents.find((a) => a.terminalId === id);
+        return agent ? `${agent.state} (${agent.stateSource})` : 'none';
+      };
       await run(win, `node "${fakeCodex}"${variant.args}`);
       await expect.poll(() => oxyTest(win).text(id)).toContain('fake-codex>');
       await expect(badge).toHaveText('AI AGENT', { timeout: 10_000 });
@@ -71,14 +82,17 @@ for (const variant of [
       await run(win, 'work');
       await expect(badge).toHaveAttribute('data-state', 'working', { timeout: 10_000 });
       await expect(projectDot).toHaveAttribute('data-state', 'agent-working');
+      await expect.poll(reported, { timeout: 10_000 }).toBe(`working (${variant.source})`);
 
       await run(win, 'ask');
       await expect(badge).toHaveText('WAITING', { timeout: 10_000 });
       await expect(projectDot).toHaveAttribute('data-state', 'attention');
+      await expect.poll(reported, { timeout: 10_000 }).toBe(`waiting (${variant.source})`);
 
       // The turn is complete (Codex rings the bell): idle, and it stays idle.
       await run(win, 'done');
       await expect(badge).toHaveAttribute('data-state', 'idle', { timeout: 10_000 });
+      await expect.poll(reported).toBe(`idle (${variant.source})`);
       await expect(projectDot).toHaveAttribute('data-state', 'idle');
       await win.waitForTimeout(1500);
       await expect(badge).toHaveAttribute('data-state', 'idle');
