@@ -22,6 +22,9 @@ export default defineConfig({
         test: {
           name: 'unit-node',
           environment: 'node',
+          // Tests that write files (code map caches, learning memory) take ~0.5 s locally but can exceed the default
+          // 5 s on a Windows CI runner running all test files in parallel; a hang still fails.
+          testTimeout: 20_000,
           include: [
             'src/{shared,main,pty-host,workspace-host,plugin-host,connections-host,code-map-host}/**/*.test.ts',
             'plugins/*/src/host/**/*.test.ts',

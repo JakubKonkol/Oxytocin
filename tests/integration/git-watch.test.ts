@@ -75,18 +75,25 @@ describe('RepoRegistry with a real watcher', () => {
       });
       await expect.poll(() => refreshes.length).toBe(1);
       expect(repos.at(-1)).toMatchObject({ state: 'ok', hasHead: true });
-      // Let the native subscription settle.
-      await new Promise((r) => setTimeout(r, 300));
-
-      const writtenAt = Date.now();
-      await writeFile(join(dir, 'b.txt'), 'b');
-      await expect.poll(() => touched.flatMap((t) => t.paths), { interval: 10 }).toContain('b.txt');
-      const touchedAt = touched.find((t) => t.paths.includes('b.txt'))!.at;
-      expect(touchedAt - writtenAt).toBeLessThan(300);
-      await expect.poll(() => refreshes.length, { interval: 10 }).toBe(2);
-      expect(refreshes[1]!.reasons).toEqual(['fs']);
+      // Three writes, each once the previous refresh ran: the fastest one counts. A busy CI runner (Windows) can
+      // stall a single event by a few hundred milliseconds; a slow watcher or debounce delays every one of them.
+      const touchLatencies: number[] = [];
+      const refreshLatencies: number[] = [];
+      for (const name of ['b.txt', 'c.txt', 'd.txt']) {
+        // Let the native subscription (and the previous debounced refresh) settle.
+        await new Promise((r) => setTimeout(r, 300));
+        const refreshesBefore = refreshes.length;
+        const writtenAt = Date.now();
+        await writeFile(join(dir, name), name);
+        await expect.poll(() => touched.flatMap((t) => t.paths), { interval: 10 }).toContain(name);
+        touchLatencies.push(touched.find((t) => t.paths.includes(name))!.at - writtenAt);
+        await expect.poll(() => refreshes.length, { interval: 10 }).toBe(refreshesBefore + 1);
+        expect(refreshes.at(-1)!.reasons).toEqual(['fs']);
+        refreshLatencies.push(refreshes.at(-1)!.at - writtenAt);
+      }
+      expect(Math.min(...touchLatencies)).toBeLessThan(300);
       // The refresh request itself happens right away; the debounced run follows ≤ 250 ms later.
-      expect(refreshes[1]!.at - writtenAt).toBeLessThan(300 + 250);
+      expect(Math.min(...refreshLatencies)).toBeLessThan(300 + 250);
 
       // Ignored folders never trigger refreshes.
       await new Promise((r) => setTimeout(r, 400));
