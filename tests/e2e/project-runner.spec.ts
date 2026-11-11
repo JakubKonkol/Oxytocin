@@ -618,9 +618,11 @@ test('Run is added to the right sidebar, keeps its menus on screen and moves bet
       async () => ((await window.oxy.invoke('projects:list')) as { id: string }[])[0]!.id,
     );
     const emptyProject = await mkdtemp(join(tmpdir(), 'oxy-e2e-empty-project-'));
-    const added = (await win.evaluate((path) => window.oxy.invoke('projects:add', { path }), emptyProject)) as {
-      id: string;
-    };
+    const added = (
+      (await win.evaluate((path) => window.oxy.invoke('projects:add', { path }), emptyProject)) as {
+        project: { id: string };
+      }
+    ).project;
     await win.evaluate((id) => window.oxy.invoke('projects:setActive', { id }), added.id);
     await expect(frame.getByTestId('runner')).toHaveAttribute('data-project', added.id);
     await expect(frame.getByTestId('runner-empty')).toBeVisible();

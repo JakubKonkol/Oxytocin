@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Frame, type Page, test } from '@playwright/test';
@@ -12,7 +12,8 @@ const fakeCodex = join(repoRoot, 'tests/fixtures/agents/node_modules/@openai/cod
 
 /** A project with a git repository and the fake Claude Code and Codex CLI as its AI agents. */
 async function setup(name: string, env: Record<string, string> = {}) {
-  const root = await mkdtemp(join(tmpdir(), `oxy-e2e-${name}-`));
+  // The long path: on Windows the temp folder can be an 8.3 short name (RUNNER~1), the app shows the long one.
+  const root = await realpath(await mkdtemp(join(tmpdir(), `oxy-e2e-${name}-`)));
   const repo = join(root, 'repo');
   const userData = join(root, 'data');
   const claudeHome = join(root, 'claude');
