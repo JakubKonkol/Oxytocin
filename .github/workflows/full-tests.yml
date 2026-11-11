@@ -51,9 +51,10 @@ jobs:
       - name: License check (MIT-compatible dependencies only, ADR-020)
         run: npm run licenses:check
       - run: npx vitest run --project unit-node --project unit-web
+      # Package mirrors are at times unreachable for a few minutes: apt-retry.sh tries again.
       - name: Shells for the shell integration tests (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get install -y -q zsh fish
+        run: bash .github/scripts/apt-retry.sh sh -c 'sudo apt-get update -q && sudo apt-get install -y -q zsh fish'
       - run: npx vitest run --project integration
       # Latency tests (git watcher) alone: under the parallel load of the other integration tests they measure the runner.
       - run: npx vitest run --project integration-latency
@@ -81,7 +82,7 @@ jobs:
       - run: npm ci
       - name: Install system dependencies for Electron (Linux)
         if: runner.os == 'Linux'
-        run: npx playwright install-deps chromium
+        run: bash .github/scripts/apt-retry.sh npx playwright install-deps chromium
       # The app's window keeps its size in E2E whatever the screen; a full-HD screen also keeps dialogs and toasts
       # where a developer's screen has them. Best effort: older images lack the cmdlet.
       - name: Screen resolution (Windows)

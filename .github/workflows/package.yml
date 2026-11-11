@@ -99,7 +99,7 @@ jobs:
           }
       - name: Install system dependencies for Electron (Linux)
         if: runner.os == 'Linux'
-        run: npx playwright install-deps chromium
+        run: bash .github/scripts/apt-retry.sh npx playwright install-deps chromium
       - name: Packaged smoke test (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a npx playwright test -c tests/smoke
