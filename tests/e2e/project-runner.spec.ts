@@ -613,6 +613,22 @@ test('Run is added to the right sidebar, keeps its menus on screen and moves bet
     await win.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
 
+    // Another project is opened: Run shows that project (here: nothing to run), never the previous one's apps.
+    const firstId = await win.evaluate(
+      async () => ((await window.oxy.invoke('projects:list')) as { id: string }[])[0]!.id,
+    );
+    const emptyProject = await mkdtemp(join(tmpdir(), 'oxy-e2e-empty-project-'));
+    const added = (await win.evaluate((path) => window.oxy.invoke('projects:add', { path }), emptyProject)) as {
+      id: string;
+    };
+    await win.evaluate((id) => window.oxy.invoke('projects:setActive', { id }), added.id);
+    await expect(frame.getByTestId('runner')).toHaveAttribute('data-project', added.id);
+    await expect(frame.getByTestId('runner-empty')).toBeVisible();
+    await expect(frame.getByTestId('runner-profile')).toHaveCount(0);
+    await win.evaluate((id) => window.oxy.invoke('projects:setActive', { id }), firstId);
+    await expect(frame.getByTestId('runner')).toHaveAttribute('data-project', firstId);
+    await expect(row()).toContainText('demo-web');
+
     // "Move to left sidebar".
     // ui-state.json is written with a short delay.
     await expect

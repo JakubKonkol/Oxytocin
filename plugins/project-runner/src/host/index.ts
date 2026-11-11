@@ -414,14 +414,38 @@ class RunnerService {
     };
   }
 
+  /** The latest state computation of each view; an older one must not be shown after it. */
+  private readonly turns = new WeakMap<PluginView, number>();
+
+  /**
+   * The state of the project a view shows now, or `null` when a newer computation for the view started meanwhile.
+   * Scanning a project can take seconds: without this, an update of the previous project that finished after the
+   * switch would put its profiles back into the view.
+   */
+  private async viewState(view: PluginView, onlyProject?: string): Promise<RunnerState | null> {
+    const project = await this.projectOf(view);
+    if (onlyProject !== undefined && project?.id !== onlyProject) return null;
+    const turn = (this.turns.get(view) ?? 0) + 1;
+    this.turns.set(view, turn);
+    const state = await this.state(project);
+    return this.turns.get(view) === turn ? state : null;
+  }
+
   /** Sends a view its current state (failures are logged: the view keeps its last state). */
   private async send(view: PluginView, onlyProject?: string): Promise<void> {
     try {
-      const project = await this.projectOf(view);
-      if (onlyProject !== undefined && project?.id !== onlyProject) return;
-      await view.postMessage(await this.state(project));
+      const state = await this.viewState(view, onlyProject);
+      if (state) await view.postMessage(state);
     } catch (e) {
       this.ctx.log.warn('Updating a Run view failed', e);
+    }
+  }
+
+  /** The state a view asked for: computed again when the project (or a run) changed while it was read. */
+  private async load(view: PluginView): Promise<RunnerState> {
+    for (;;) {
+      const state = await this.viewState(view);
+      if (state) return state;
     }
   }
 
@@ -444,7 +468,7 @@ class RunnerService {
     view.onDidDispose(() => this.views.delete(view));
     // Opened on screen: it asks the open questions of its project itself.
     if (view.visible) queueMicrotask(() => this.notifyPrompts());
-    view.onRequest('load', async () => this.state(await this.projectOf(view)));
+    view.onRequest('load', () => this.load(view));
     view.onRequest<{ profileId: string }, RunSnapshot>('start', ({ profileId }) =>
       this.withProject(view, async (p) => this.start(p, await this.profileOrThrow(p, profileId), 'user')),
     );

@@ -16,6 +16,9 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
+- **Project Runner:** the Run view no longer shows the apps and scripts of the previous project after you open
+  another one. An update of the previous project that finished late (a scan of a large folder) could overwrite the
+  new project's list until you left the project and came back.
 - **Tabs:** the active tab of a group with several tabs is underlined again (the marker was meant to be hidden only
   for a single tab spanning the header).
 - **Terminals:** restarting a terminal whose project folder was deleted keeps the old terminal and says why, instead
