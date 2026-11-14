@@ -33,6 +33,10 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
   maximized after it opens; both moved the extra height to the bottom section, and that distorted layout was saved,
   so Changes shrank back every day. The sections now keep their proportions when sections are added or closed and
   when the window changes size, in both sidebars.
+- **Diffs:** a closed diff no longer stays in memory. A Monaco bug kept every diff editor ever opened (both sides of
+  the file, its view and its tab) alive, about 200 KB per diff of a medium file, so reviewing many changes in a long
+  session made the window grow by tens of megabytes. Measured: 120 diffs opened and closed now leave the window's
+  memory where it was (before: +23 MB). This also covers the diffs of the review.
 
 ## [0.9.16] - 2026-11-11
 

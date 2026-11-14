@@ -44,6 +44,12 @@ export default function DiffEditorView({
   const modelsRef = useRef<{
     original: monaco.editor.ITextModel;
     modified: monaco.editor.ITextModel;
+    /**
+     * The diff's view model, created and disposed here: `setModel({ original, modified })` makes one that Monaco
+     * never disposes (it keeps a reference of its own), and with it the editor, both models and this component
+     * stayed in memory after every diff closed.
+     */
+    view: monaco.editor.IDiffEditorViewModel;
     path: string;
   } | null>(null);
   const savedVersion = useRef(0);
@@ -184,7 +190,12 @@ export default function DiffEditorView({
       observer.disconnect();
       disposables.forEach((d) => d.dispose());
       diffRegistry.delete(panelId);
+      // Monaco 0.57: the overview ruler's own autorun observes the layout, which observes the overview ruler, so
+      // dispose() never releases it, and through global emitters it kept the editor and its models alive. Turned
+      // off first, the ruler is disposed and the rest of the editor with it.
+      editor.updateOptions({ renderOverviewRuler: false });
       editor.dispose();
+      modelsRef.current?.view.dispose();
       modelsRef.current?.original.dispose();
       modelsRef.current?.modified.dispose();
       modelsRef.current = null;
@@ -214,8 +225,7 @@ export default function DiffEditorView({
       return;
     }
     const id = ++modelCounter;
-    const next = {
-      path: content.path,
+    const models = {
       original: monaco.editor.createModel(
         original,
         content.languageId,
@@ -227,6 +237,7 @@ export default function DiffEditorView({
         monaco.Uri.parse(`oxy-diff://modified/${id}/${content.path}`),
       ),
     };
+    const next = { path: content.path, ...models, view: editor.createViewModel(models) };
     savedVersion.current = next.modified.getAlternativeVersionId();
     next.modified.onDidChangeContent(() => {
       if (applying.current) return;
@@ -236,12 +247,13 @@ export default function DiffEditorView({
         callbacks.current.onDirtyChange?.(dirty);
       }
     });
-    editor.setModel(next);
+    editor.setModel(next.view);
     if (dirtyRef.current) {
       // The edits belonged to the replaced model.
       dirtyRef.current = false;
       callbacks.current.onDirtyChange?.(false);
     }
+    current?.view.dispose();
     current?.original.dispose();
     current?.modified.dispose();
     modelsRef.current = next;

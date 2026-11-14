@@ -43,6 +43,8 @@ const fake = vi.hoisted(() => {
     };
   };
   const models: ReturnType<typeof model>[] = [];
+  const viewModels: { disposed: boolean }[] = [];
+  const diffCalls: string[] = [];
   const editor = () => ({
     dispose() {},
     updateOptions() {},
@@ -60,11 +62,20 @@ const fake = vi.hoisted(() => {
       return created;
     },
     create: editor,
+    viewModels,
+    diffCalls,
     createDiffEditor: () => ({
       ...editor(),
+      updateOptions: (o: object) => diffCalls.push(`options ${JSON.stringify(o)}`),
+      dispose: () => diffCalls.push('dispose'),
       getOriginalEditor: editor,
       getModifiedEditor: editor,
       setModel() {},
+      createViewModel: (model: object) => {
+        const view = { model, disposed: false, dispose: () => void (view.disposed = true) };
+        viewModels.push(view);
+        return view;
+      },
       onDidUpdateDiff: disposable,
     }),
   };
@@ -105,6 +116,8 @@ const props = {
 
 beforeEach(() => {
   fake.models.length = 0;
+  fake.viewModels.length = 0;
+  fake.diffCalls.length = 0;
   invoke.mockReset().mockImplementation((channel) => {
     if (channel === 'files:read') return Promise.resolve(file);
     if (channel === 'git:getFileDiff') return Promise.resolve(diff);
@@ -252,5 +265,28 @@ describe('editor persistence', () => {
     expect(fake.models.at(-1)!.getValue()).toBe('second file');
     expect(unsavedRegistry.get('panel')!.name).toBe('b.ts');
     expect(unsavedRegistry.get('panel')!.isDirty()).toBe(false);
+  });
+
+  it('disposes every diff view model and releases the overview ruler before the diff editor is disposed', async () => {
+    const view = render(
+      <TooltipProvider>
+        <DiffPanelComponent {...props} />
+      </TooltipProvider>,
+    );
+    await waitFor(() => expect(fake.viewModels).toHaveLength(1));
+    invoke.mockResolvedValue({ ...diff, path: 'b.ts', modified: 'second file', mtimeMs: 10 });
+    view.rerender(
+      <TooltipProvider>
+        <DiffPanelComponent {...props} params={{ ...props.params, path: 'b.ts' }} />
+      </TooltipProvider>,
+    );
+    await waitFor(() => expect(fake.viewModels).toHaveLength(2));
+    // The previous file's view model goes with its models (Monaco never disposes one made by setModel itself).
+    expect(fake.viewModels.map((v) => v.disposed)).toEqual([true, false]);
+    view.unmount();
+    expect(fake.viewModels.map((v) => v.disposed)).toEqual([true, true]);
+    expect(fake.models.every((m) => m.isDisposed())).toBe(true);
+    // Monaco 0.57 keeps a diff editor with an overview ruler alive after dispose(): the ruler goes first.
+    expect(fake.diffCalls.slice(-2)).toEqual(['options {"renderOverviewRuler":false}', 'dispose']);
   });
 });
