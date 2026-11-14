@@ -1,5 +1,20 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { launchApp } from './helpers/launch';
+
+const USAGE = 'plugin:oxytocin.usage-monitor:usage.sidebar';
+
+/** The height of each left sidebar section (header and body). */
+const sectionHeights = (win: Page) =>
+  win
+    .getByTestId('sidebar')
+    .evaluate((sidebar) =>
+      Object.fromEntries(
+        [...sidebar.querySelectorAll('[data-testid^="section-header-"]')].map((h) => [
+          h.getAttribute('data-testid')!.replace('section-header-', ''),
+          Math.round(h.closest('.dv-view')!.getBoundingClientRect().height),
+        ]),
+      ),
+    );
 
 test('the main window opens with the Oxytocin title and the shell layout', async () => {
   const { app, win } = await launchApp();
@@ -17,9 +32,11 @@ test('the main window opens with the Oxytocin title and the shell layout', async
   }
 });
 
-test('sidebar width and collapsed sections persist across restarts', async () => {
+test('sidebar width, section heights and collapsed sections persist across restarts', async () => {
+  test.setTimeout(120_000);
   const first = await launchApp();
   const { userData } = first;
+  let heights: Record<string, number> | undefined;
   try {
     const win = first.win;
     const resizer = win.getByTestId('sidebar-resizer');
@@ -29,8 +46,16 @@ test('sidebar width and collapsed sections persist across restarts', async () =>
     await win.mouse.move(box.x + box.width / 2 + 80, box.y + 200, { steps: 5 });
     await win.mouse.up();
     await expect.poll(async () => (await win.getByTestId('sidebar').boundingBox())?.width).toBe(380);
-    await win.getByTestId('section-header-changes').getByRole('button', { name: 'CHANGES', exact: true }).click();
-    await expect(win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
+    // CHANGES made taller by dragging the sash above it (the Usage view of a plugin is added after the start).
+    await expect(win.getByTestId(`section-header-${USAGE}`)).toBeVisible();
+    const before = await sectionHeights(win);
+    const header = (await win.getByTestId('section-header-changes').boundingBox())!;
+    await win.mouse.move(header.x + 40, header.y);
+    await win.mouse.down();
+    await win.mouse.move(header.x + 40, header.y - 120, { steps: 8 });
+    await win.mouse.up();
+    await expect.poll(async () => (await sectionHeights(win))['changes']).toBeGreaterThan(before['changes']! + 100);
+    heights = await sectionHeights(win);
     // Closing the app writes what is still pending (ui-state.json is otherwise written with a short delay).
   } finally {
     await first.app.close();
@@ -39,10 +64,22 @@ test('sidebar width and collapsed sections persist across restarts', async () =>
   const second = await launchApp({ userData });
   try {
     await expect.poll(async () => (await second.win.getByTestId('sidebar').boundingBox())?.width).toBe(380);
-    await expect(second.win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
-    await expect(second.win.getByTestId('section-header-projects')).toHaveAttribute('data-expanded', 'true');
+    await expect(second.win.getByTestId(`section-header-${USAGE}`)).toBeVisible();
+    // Every section is back at the height it was given, also once the plugin's Usage view was added.
+    await expect.poll(() => sectionHeights(second.win)).toEqual(heights);
+    const win = second.win;
+    await win.getByTestId('section-header-changes').getByRole('button', { name: 'CHANGES', exact: true }).click();
+    await expect(win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
   } finally {
     await second.app.close();
+  }
+
+  const third = await launchApp({ userData });
+  try {
+    await expect(third.win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
+    await expect(third.win.getByTestId('section-header-projects')).toHaveAttribute('data-expanded', 'true');
+  } finally {
+    await third.app.close();
   }
 });
 

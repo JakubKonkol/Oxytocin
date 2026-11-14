@@ -13,6 +13,7 @@ import { cn } from '../lib/cn';
 import { SectionHeader } from '../ui/Section';
 import { Button } from '../ui/Button';
 import { onUiFlush, useUiStore } from '../stores/ui-store';
+import { PaneSizeKeeper } from '../features/layout/pane-sizes';
 import { shieldIframesWhileDragging } from '../features/layout/drag-shield';
 import { SidebarAddToolMenu } from '../features/tools/AddMenus';
 import {
@@ -46,10 +47,10 @@ function PaneHeader(props: IPaneviewPanelProps<ToolPaneParams>) {
   );
 }
 
-function readPaneviewState(api: PaneviewApi): PaneviewState {
+function readPaneviewState(api: PaneviewApi, sizes: Record<string, number>): PaneviewState {
   return {
     order: api.panels.map((p) => p.id),
-    sizes: Object.fromEntries(api.panels.filter((p) => p.api.isExpanded).map((p) => [p.id, Math.round(p.height)])),
+    sizes,
     collapsed: api.panels.filter((p) => !p.api.isExpanded).map((p) => p.id),
     hidden: [],
   };
@@ -138,6 +139,8 @@ export function SecondarySidebar() {
 
   const pendingLayout = useRef<() => void>(undefined);
   useEffect(() => onUiFlush(() => pendingLayout.current?.()), []);
+  const sizeKeeper = useRef<PaneSizeKeeper>(undefined);
+  useEffect(() => () => sizeKeeper.current?.dispose(), []);
 
   const onReady = (event: PaneviewReadyEvent) => {
     // Tabs dragged from a workspace (scratchpad, plugin panels) can be dropped between the sections.
@@ -146,10 +149,22 @@ export function SecondarySidebar() {
       if (draggedWorkspacePanel() || toolDraggedFrom('left', getPaneData()?.paneId)) e.accept();
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const keeper = new PaneSizeKeeper(
+      event.api,
+      containerRef.current!,
+      useUiStore.getState().state.secondaryPaneview.sizes,
+      () => schedule(),
+    );
+    sizeKeeper.current?.dispose();
+    sizeKeeper.current = keeper;
     const write = () => {
       timer = undefined;
       const ui = useUiStore.getState();
-      ui.setSecondaryPaneview(readPaneviewState(event.api));
+      // Only the tools still there keep a height (a tool closed here starts with its default height next time).
+      const sizes = keeper.sizes();
+      const open = new Set(ui.state.secondaryTools.map((t) => t.id));
+      for (const id of Object.keys(sizes)) if (!open.has(id)) delete sizes[id];
+      ui.setSecondaryPaneview(readPaneviewState(event.api, sizes));
       // Sections reordered by drag and drop: the tool list follows.
       const order = event.api.panels.map((p) => p.id);
       const tools = ui.state.secondaryTools;
@@ -158,10 +173,11 @@ export function SecondarySidebar() {
         if (next.length === tools.length) ui.setSecondaryTools(next);
       }
     };
-    event.api.onDidLayoutChange(() => {
+    const schedule = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(write, 200);
-    });
+    };
+    event.api.onDidLayoutChange(schedule);
     // Quitting right after a change keeps it.
     pendingLayout.current = () => {
       if (!timer) return;

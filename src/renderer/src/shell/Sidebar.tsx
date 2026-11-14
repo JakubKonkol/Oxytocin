@@ -33,6 +33,7 @@ import {
 } from '../features/tools/sidebar-sections';
 import { usePluginViewMeta } from '../features/plugins/view-meta-store';
 import { shieldIframesWhileDragging } from '../features/layout/drag-shield';
+import { PaneSizeKeeper } from '../features/layout/pane-sizes';
 import {
   applyPendingReveal,
   draggedWorkspacePanel,
@@ -134,21 +135,14 @@ const components = {
   files: () => <FilesSection />,
 };
 
-function readPaneviewState(api: PaneviewApi): PaneviewState {
+function readPaneviewState(api: PaneviewApi, sizes: Record<string, number>): PaneviewState {
   const panels = api.panels;
-  const previous = useUiStore.getState().state.paneview;
-  // Closed sections keep their size for when they come back.
-  const closedSizes = previous.hidden.flatMap((id) =>
-    previous.sizes[id] !== undefined ? [[id, previous.sizes[id]] as const] : [],
-  );
   return {
     order: panels.map((p) => p.id),
-    sizes: Object.fromEntries([
-      ...closedSizes,
-      ...panels.filter((p) => p.api.isExpanded).map((p) => [p.id, Math.round(p.height)] as const),
-    ]),
+    // The heights the user chose, also of closed sections (for when they come back) and of plugin views not loaded.
+    sizes,
     collapsed: panels.filter((p) => !p.api.isExpanded).map((p) => p.id),
-    hidden: previous.hidden,
+    hidden: useUiStore.getState().state.paneview.hidden,
   };
 }
 
@@ -273,6 +267,8 @@ export function Sidebar() {
   // Layout restored at start-up (later changes are written by the paneview itself).
   const [initialLayout] = useState(saved);
   const containerRef = useRef<HTMLDivElement>(null);
+  const sizeKeeper = useRef<PaneSizeKeeper>(undefined);
+  useEffect(() => () => sizeKeeper.current?.dispose(), []);
   usePluginPanes(api, initialLayout);
   useCoreSections(api);
   useEffect(() => {
@@ -316,14 +312,18 @@ export function Sidebar() {
     });
     setApi(event.api);
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const keeper = new PaneSizeKeeper(event.api, containerRef.current!, state.sizes, () => schedule());
+    sizeKeeper.current?.dispose();
+    sizeKeeper.current = keeper;
     const write = () => {
       timer = undefined;
-      setPaneview(readPaneviewState(event.api));
+      setPaneview(readPaneviewState(event.api, keeper.sizes()));
     };
-    event.api.onDidLayoutChange(() => {
+    const schedule = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(write, 200);
-    });
+    };
+    event.api.onDidLayoutChange(schedule);
     // Quitting right after a change keeps it.
     pendingLayout.current = () => {
       if (!timer) return;
