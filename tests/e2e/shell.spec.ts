@@ -66,7 +66,15 @@ test('sidebar width, section heights and collapsed sections persist across resta
     await expect.poll(async () => (await second.win.getByTestId('sidebar').boundingBox())?.width).toBe(380);
     await expect(second.win.getByTestId(`section-header-${USAGE}`)).toBeVisible();
     // Every section is back at the height it was given, also once the plugin's Usage view was added.
-    await expect.poll(() => sectionHeights(second.win)).toEqual(heights);
+    // (Within 2 px: the window's size may round differently on a high-DPI screen.)
+    await expect
+      .poll(async () => {
+        const now = await sectionHeights(second.win);
+        const ids = Object.keys(heights);
+        if (Object.keys(now).sort().join() !== ids.sort().join()) return Infinity;
+        return Math.max(...ids.map((id) => Math.abs(now[id]! - heights[id]!)));
+      })
+      .toBeLessThanOrEqual(2);
     const win = second.win;
     await win.getByTestId('section-header-changes').getByRole('button', { name: 'CHANGES', exact: true }).click();
     await expect(win.getByTestId('section-header-changes')).toHaveAttribute('data-expanded', 'false');
