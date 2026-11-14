@@ -11,7 +11,16 @@ import {
   validateAccountName,
   validateProfiles,
 } from '@shared/domain/ai-agents';
-import { agoText, menuEntries, profileSecretChanges, withHidden } from './ai-agents-model';
+import {
+  accountAgentsShown,
+  agoText,
+  canSignOut,
+  launchCommandAgents,
+  menuEntries,
+  profileSecretChanges,
+  removedAgents,
+  withHidden,
+} from './ai-agents-model';
 
 const state = (over: Partial<AiAgentsState> = {}): AiAgentsState => ({
   detectedAt: 1,
@@ -62,6 +71,7 @@ const state = (over: Partial<AiAgentsState> = {}): AiAgentsState => ({
     logins: { a1: [{ label: 'praca@firma.pl', method: 'oauth' }] },
     notes: {},
   },
+  removed: [],
   ...over,
 });
 
@@ -134,8 +144,10 @@ describe('AI agents model', () => {
     expect(accountSlug('Praca – Żółw!', [])).toBe('praca-zolw');
     expect(accountSlug('Work', ['work', 'WORK-2'])).toBe('work-3');
     expect(accountSlug('???', [])).toBe('account');
-    const existing = [{ agent: 'claude' as const, name: 'Work' }];
+    const existing = [{ id: 'a1', agent: 'claude' as const, name: 'Work' }];
     expect(validateAccountName(' work ', 'claude', existing)).toMatch(/already/);
+    // Renaming an account to its own name (in another case) is fine.
+    expect(validateAccountName('WORK', 'claude', existing, 'a1')).toBeUndefined();
     expect(validateAccountName('work', 'codex', existing)).toBeUndefined();
     expect(validateAccountName('  ', 'claude', existing)).toMatch(/name/);
     expect(validateAccountName('Main', 'claude', existing)).toMatch(/main account/);
@@ -164,5 +176,31 @@ describe('AI agents model', () => {
     expect(agoText(1000, 2000)).toBe('just now');
     expect(agoText(0, 5 * 60_000)).toBe('5 minutes ago');
     expect(agoText(0, 3 * 3600_000)).toBe('3 hours ago');
+  });
+
+  it('lists the accounts of agents in use, what can be signed out and which launch commands to show', () => {
+    expect(accountAgentsShown(state())).toEqual(['claude', 'codex', 'gemini']);
+    // Not installed (or removed from Oxytocin): only the agents with added accounts keep a card.
+    expect(accountAgentsShown(state({ agents: [] }))).toEqual(['claude', 'codex']);
+    expect(accountAgentsShown(state({ agents: [], accounts: [] }))).toEqual([]);
+    const [claude, codex] = state().agents;
+    expect(canSignOut(claude)).toBe(true);
+    expect(
+      canSignOut({
+        ...codex!,
+        accounts: [{ label: 'OPENAI_API_KEY', method: 'api-key', detail: 'From the environment' }],
+      }),
+    ).toBe(false);
+    expect(
+      canSignOut({ ...codex!, accounts: [{ label: 'API key', method: 'api-key', detail: 'Codex auth.json' }] }),
+    ).toBe(true);
+    expect(canSignOut(undefined)).toBe(false);
+    expect(removedAgents(state({ removed: ['gemini', 'unknown'] }))).toEqual([{ id: 'gemini', name: 'Gemini CLI' }]);
+    const ids = (all: boolean, commands: Record<string, string> = {}) =>
+      launchCommandAgents(state(), commands, all).map((a) => a.id);
+    expect(ids(false)).toEqual(['claude', 'codex', 'gemini']);
+    expect(ids(false, { aider: 'aider --x' })).toEqual(['claude', 'codex', 'gemini', 'aider']);
+    expect(ids(true)).toHaveLength(launchCommandAgents(null, {}, true).length);
+    expect(ids(true).slice(0, 3)).toEqual(['claude', 'codex', 'gemini']);
   });
 });

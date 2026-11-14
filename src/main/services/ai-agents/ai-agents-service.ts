@@ -33,7 +33,8 @@ import type { SecretStore } from '../secrets/secret-store';
 import { JsonFileStore } from '../storage/json-file-store';
 import { ACCOUNT_ADAPTERS, type AccountContext, envValue, pathFor } from './accounts/adapters';
 import { ensureAccount, type ProvisionFs, removeAccountFolder } from './accounts/provisioner';
-import { accountLogins, type AiDetectDeps, detectAiAgents } from './detect';
+import { signOutMainAccount } from './accounts/sign-out';
+import { accountLogins, type AiDetectDeps, detectAgentAccounts, detectAiAgents } from './detect';
 
 const AiAgentsFileSchema = z.object({
   version: z.literal(1),
@@ -44,6 +45,8 @@ const AiAgentsFileSchema = z.object({
   accounts: z.array(AgentAccountSchema).max(50).default([]),
   /** Who each added account is signed in with (detected from its folder). */
   logins: z.record(z.string(), z.array(AiAccountSchema).max(20)).default({}),
+  /** Agents removed from Oxytocin's lists (still detected, shown again once restored). */
+  removed: z.array(z.string().max(64)).max(100).default([]),
 });
 type AiAgentsFile = z.infer<typeof AiAgentsFileSchema>;
 
@@ -86,6 +89,7 @@ export class AiAgentsService implements Disposable {
         hidden: [],
         accounts: [],
         logins: {},
+        removed: [],
       }),
       debounceMs: 0,
       backup: true,
@@ -100,15 +104,17 @@ export class AiAgentsService implements Disposable {
   state(): AiAgentsState {
     const s = this.store.get();
     const secrets = this.deps.secrets.status(AI_PROFILE_SECRET_SCOPE);
+    const removed = new Set(s.removed);
     return {
       detectedAt: s.detectedAt,
-      agents: s.agents,
+      agents: s.agents.filter((a) => !removed.has(a.id)),
       profiles: s.profiles,
       hidden: s.hidden,
       keys: secrets.stored.filter((k) => k.endsWith('/apiKey')).map((k) => k.slice(0, -'/apiKey'.length)),
       encrypted: secrets.encrypted,
       accounts: s.accounts,
       accountsInfo: this.accountsInfo(s),
+      removed: s.removed,
     };
   }
 
@@ -219,11 +225,67 @@ export class AiAgentsService implements Disposable {
     return this.fire();
   }
 
-  /** Every account as plugins see it: the main account of each agent CLI, then the added ones. */
+  /** Renames an added account (only its name in Oxytocin: its folder stays). */
+  async renameAccount(id: string, name: string): Promise<AiAgentsState> {
+    const s = this.store.get();
+    const account = s.accounts.find((a) => a.id === id);
+    if (!account) throw new OxyError('NOT_FOUND', 'No such account.');
+    const problem = validateAccountName(name, account.agent, s.accounts, id);
+    if (problem) throw new OxyError('INVALID', problem);
+    this.store.update((x) => ({
+      ...x,
+      accounts: x.accounts.map((a) => (a.id === id ? { ...a, name: name.trim() } : a)),
+    }));
+    await this.store.flush();
+    return this.fire();
+  }
+
+  /**
+   * Signs the main account of Claude Code, Codex CLI or Gemini CLI out (its sign-in files only: the setup the added
+   * accounts share stays), then reads who the agent is signed in with again.
+   */
+  async signOutMain(agent: AiAccountAgent): Promise<AiAgentsState> {
+    const removed = await signOutMainAccount(agent, this.provisionDeps());
+    this.deps.logger.info(`Main ${agent} account signed out: ${removed.join(', ')}`);
+    const detected = this.store.get().agents.find((a) => a.id === agent);
+    if (detected) {
+      const accounts = await detectAgentAccounts(detected, this.deps.detectDeps());
+      this.store.update((x) => ({
+        ...x,
+        agents: x.agents.map((a) => (a.id === agent ? { ...a, accounts } : a)),
+      }));
+      await this.store.flush();
+    }
+    return this.fire();
+  }
+
+  /**
+   * Removes an agent from Oxytocin: it leaves the lists and the "+" menu (the CLI itself stays installed and its
+   * main account is not touched). Its added accounts are removed with their folders.
+   */
+  async removeAgent(id: string): Promise<AiAgentsState> {
+    if (!AI_AGENT_CATALOG.some((k) => k.id === id && k.category === 'agent'))
+      throw new OxyError('NOT_FOUND', 'No such agent.');
+    for (const account of this.store.get().accounts.filter((a) => a.agent === id)) await this.removeAccount(account.id);
+    this.store.update((x) => ({ ...x, removed: [...new Set([...x.removed, id])] }));
+    await this.store.flush();
+    this.deps.logger.info(`AI agent removed from the lists: ${id}`);
+    return this.fire();
+  }
+
+  /** Brings a removed agent back into the lists. */
+  async restoreAgent(id: string): Promise<AiAgentsState> {
+    this.store.update((x) => ({ ...x, removed: x.removed.filter((r) => r !== id) }));
+    await this.store.flush();
+    return this.fire();
+  }
+
+  /** Every account as plugins see it: the main account of each agent CLI (not removed), then the added ones. */
   accountInfos(): AgentAccountInfo[] {
     const ctx = this.context();
+    const removed = new Set(this.store.get().removed);
     return [
-      ...AI_ACCOUNT_AGENTS.map((agent) => ({
+      ...AI_ACCOUNT_AGENTS.filter((agent) => !removed.has(agent)).map((agent) => ({
         id: MAIN_ACCOUNT_ID,
         agent,
         name: MAIN_ACCOUNT_ID,

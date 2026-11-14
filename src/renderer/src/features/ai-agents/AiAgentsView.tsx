@@ -1,4 +1,17 @@
-import { Bot, Cpu, Loader2, Play, Plus, RefreshCw, RotateCcw, Save, Trash2 } from 'lucide-react';
+import {
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Cpu,
+  Loader2,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Trash2,
+  Undo2,
+} from 'lucide-react';
 import { DropdownMenu } from 'radix-ui';
 import { useEffect, useState } from 'react';
 import {
@@ -13,6 +26,7 @@ import {
   validateProfiles,
 } from '@shared/domain/ai-agents';
 import { cn } from '../../lib/cn';
+import { confirmDialog } from '../../stores/dialog-store';
 import { useSettingsStore } from '../../stores/settings-store';
 import { ipc } from '../../lib/ipc-client';
 import { Badge } from '../../ui/Badge';
@@ -22,7 +36,14 @@ import { newTerminal } from '../layout/layout-commands';
 import { getActiveWorkspace } from '../layout/workspace-registry';
 import { Check, Field, input, SecretInput, Section } from '../projects/settings/controls';
 import { AccountsSection } from './AccountsSection';
-import { agoText, profileDetail, profileSecretChanges, withHidden } from './ai-agents-model';
+import {
+  agoText,
+  launchCommandAgents,
+  profileDetail,
+  profileSecretChanges,
+  removedAgents,
+  withHidden,
+} from './ai-agents-model';
 import { useAiAgentsStore } from './ai-agents-store';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -33,11 +54,21 @@ type ProfilePatch = { [K in keyof AiProfile]?: AiProfile[K] | undefined };
 
 const METHOD_LABELS = { oauth: 'signed in', 'api-key': 'API key', local: 'local', other: '' } as const;
 
+/**
+ * The command each agent starts with (`codex --yolo`): rarely changed, so folded away under a summary of the ones
+ * customized. Installed agents first; the others on request.
+ */
 function LaunchCommands() {
   const saved = useSettingsStore((s) => s.settings?.['aiAgents.commands']);
+  const state = useAiAgentsStore((s) => s.state);
+  const [open, setOpen] = useState(false);
+  const [all, setAll] = useState(false);
   const [draft, setDraft] = useState<Record<string, string> | null>(null);
   const [saving, setSaving] = useState(false);
   const values = draft ?? saved ?? {};
+  const customized = launchCommandAgents(state, saved ?? {}, true).filter((a) => saved?.[a.id]?.trim());
+  const agents = launchCommandAgents(state, values, all);
+  const others = launchCommandAgents(state, values, true).length - agents.length;
   const save = async () => {
     setSaving(true);
     try {
@@ -54,30 +85,63 @@ function LaunchCommands() {
     <Section
       title="Launch commands"
       action={
-        <Button size="sm" disabled={!draft || saving} onClick={() => void save()} data-testid="ai-commands-save">
-          <Save size={12} /> Save commands
-        </Button>
+        open ? (
+          <Button size="sm" disabled={!draft || saving} onClick={() => void save()} data-testid="ai-commands-save">
+            <Save size={12} /> Save commands
+          </Button>
+        ) : undefined
       }
     >
-      <p className="text-small text-fg-muted">
-        Commands for new sessions, including added accounts and API profiles. Leave empty for the default. Existing
-        sessions keep running.
-      </p>
-      <div className="grid grid-cols-2 items-center gap-2">
-        {AI_AGENT_CATALOG.filter((a) => a.category === 'agent').map((a) => (
-          <Field key={a.id} label={a.name}>
-            <input
-              aria-label={`${a.name} launch command`}
-              data-testid={`ai-command-${a.id}`}
-              className={cn(input, 'font-mono')}
-              placeholder={a.command}
-              value={values[a.id] ?? ''}
-              maxLength={2000}
-              onChange={(e) => setDraft({ ...values, [a.id]: e.target.value })}
-            />
-          </Field>
-        ))}
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="ai-commands-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />} {open ? 'Hide' : 'Customize commands'}
+        </Button>
+        <span className="truncate text-small text-fg-muted" data-testid="ai-commands-summary">
+          {customized.length === 0
+            ? 'Every agent starts with its default command.'
+            : `Custom: ${customized.map((a) => `${a.name} (${saved?.[a.id]?.trim()})`).join(', ')}`}
+        </span>
       </div>
+      {open && (
+        <>
+          <p className="text-small text-fg-muted">
+            Commands for new sessions, including added accounts and API profiles. Leave empty for the default. Existing
+            sessions keep running.
+          </p>
+          <div className="grid grid-cols-2 items-center gap-2">
+            {agents.map((a) => (
+              <Field key={a.id} label={a.name}>
+                <input
+                  aria-label={`${a.name} launch command`}
+                  data-testid={`ai-command-${a.id}`}
+                  className={cn(input, 'font-mono')}
+                  placeholder={a.command}
+                  value={values[a.id] ?? ''}
+                  maxLength={2000}
+                  onChange={(e) => setDraft({ ...values, [a.id]: e.target.value })}
+                />
+              </Field>
+            ))}
+          </div>
+          {others > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="self-start"
+              data-testid="ai-commands-all"
+              onClick={() => setAll(true)}
+            >
+              <Plus size={12} /> Agents not installed ({others})
+            </Button>
+          )}
+        </>
+      )}
     </Section>
   );
 }
@@ -97,16 +161,37 @@ function AgentRow({
   agent,
   shown,
   onShow,
+  accounts,
 }: {
   agent: DetectedAiAgent;
   shown: boolean;
   onShow: (show: boolean) => void;
+  /** Folders of the agent's added accounts (removed with it). */
+  accounts: string[];
 }) {
+  const remove = async () => {
+    const ok = await confirmDialog({
+      title: `Remove ${agent.name} from Oxytocin?`,
+      description:
+        accounts.length > 0
+          ? `It leaves the agent lists and the + menu, and its ${accounts.length === 1 ? 'added account is' : `${accounts.length} added accounts are`} deleted with ${accounts.length === 1 ? 'its folder' : 'their folders'} (sign-in, sessions, history). The CLI stays installed and its main account is not touched. You can restore the agent later.`
+          : 'It leaves the agent lists and the + menu. The CLI stays installed and its main account is not touched. You can restore it later.',
+      ...(accounts.length > 0 ? { details: accounts } : {}),
+      confirmLabel: 'Remove',
+      destructive: accounts.length > 0,
+    });
+    if (!ok) return;
+    try {
+      await ipc.invoke('aiAgents:removeAgent', { id: agent.id });
+    } catch (e) {
+      notify('error', `Could not remove ${agent.name}`, { description: errorText(e) });
+    }
+  };
   return (
     <div
       data-testid="ai-agent-row"
       data-id={agent.id}
-      className="grid grid-cols-[minmax(160px,220px)_1fr_auto_auto] items-start gap-3 border-t border-line-subtle py-2 first:border-t-0"
+      className="grid grid-cols-[minmax(160px,220px)_1fr_auto_auto_auto] items-start gap-3 border-t border-line-subtle py-2 first:border-t-0"
     >
       <div className="flex min-w-0 flex-col">
         <span className="flex items-center gap-1.5 text-ui text-fg">
@@ -142,6 +227,15 @@ function AgentRow({
         onClick={() => start(aiAgentLaunchId(agent.id), agent.name)}
       >
         <Play size={12} /> Start
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        data-testid={`ai-agent-remove-${agent.id}`}
+        title="Remove from Oxytocin (the CLI stays installed)"
+        onClick={() => void remove()}
+      >
+        <Trash2 size={12} /> Remove
       </Button>
     </div>
   );
@@ -288,8 +382,10 @@ export function AiAgentsView() {
 
   const agents = state.agents.filter((a) => a.category === 'agent');
   const runtimes = state.agents.filter((a) => a.category === 'runtime');
+  const removed = removedAgents(state);
   const missing = AI_AGENT_CATALOG.filter(
-    (k) => k.category === 'agent' && !k.legacy && !agents.some((a) => a.id === k.id),
+    (k) =>
+      k.category === 'agent' && !k.legacy && !agents.some((a) => a.id === k.id) && !removed.some((r) => r.id === k.id),
   );
   const models = runtimes.flatMap((r) => r.models ?? []);
   const dirty =
@@ -365,15 +461,38 @@ export function AiAgentsView() {
               agent={a}
               shown={!state.hidden.includes(aiAgentLaunchId(a.id))}
               onShow={(show) => void save(withHidden(state.hidden, aiAgentLaunchId(a.id), show), false)}
+              accounts={state.accounts.filter((x) => x.agent === a.id).map((x) => x.home)}
             />
           ))}
         </div>
+        {removed.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-small text-fg-muted" data-testid="ai-agents-removed">
+            Removed from Oxytocin:
+            {removed.map((r) => (
+              <Button
+                key={r.id}
+                size="sm"
+                variant="ghost"
+                data-testid={`ai-agent-restore-${r.id}`}
+                title={`Bring ${r.name} back`}
+                onClick={() =>
+                  void ipc
+                    .invoke('aiAgents:restoreAgent', { id: r.id })
+                    .catch((e: unknown) =>
+                      notify('error', `Could not restore ${r.name}`, { description: errorText(e) }),
+                    )
+                }
+              >
+                <Undo2 size={12} /> {r.name}
+              </Button>
+            ))}
+          </div>
+        )}
         {missing.length > 0 && state.detectedAt !== null && (
           <p className="text-small text-fg-muted">Not found: {missing.map((m) => m.name).join(', ')}.</p>
         )}
       </Section>
 
-      <LaunchCommands />
       <AccountsSection state={state} start={start} saveHidden={(hidden) => void save(hidden, false)} />
 
       {runtimes.length > 0 && (
@@ -515,6 +634,8 @@ export function AiAgentsView() {
           })}
         </div>
       </Section>
+
+      <LaunchCommands />
     </div>
   );
 }

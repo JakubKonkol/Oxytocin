@@ -16,7 +16,9 @@ export interface ProvisionFs {
   symlink(target: string, path: string, type: 'dir' | 'file' | 'junction'): Promise<void>;
   readText(path: string): Promise<string | null>;
   writeText(path: string, text: string): Promise<void>;
-  /** Removes a link itself (never what it points to). */
+  /** Writes a file of the agent CLI atomically (a temporary file renamed over it): never left half-written. */
+  replaceText(path: string, text: string): Promise<void>;
+  /** Removes a file, or a link itself (never what it points to). */
   unlink(path: string): Promise<void>;
   /** Removes a folder and everything in it; links inside are removed, not followed. */
   removeTree(path: string): Promise<void>;

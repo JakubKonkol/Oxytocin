@@ -88,7 +88,14 @@ test('AI agents: detects installed agents with their accounts and starts them fr
     // Tokens are never read into Oxytocin's files.
     expect(await readFile(join(userData, 'ai-agents.json'), 'utf8')).not.toContain('never-shown');
 
-    // Launch commands are configured in the same AI Agents settings and used by the + menu.
+    // Launch commands are configured in the same AI Agents settings (folded away) and used by the + menu.
+    await expect(win.getByTestId('ai-commands-summary')).toContainText('default command');
+    await expect(win.getByTestId('ai-command-claude')).toHaveCount(0);
+    await win.getByTestId('ai-commands-toggle').click();
+    // Installed agents first; the others on request.
+    await expect(win.getByTestId('ai-command-aider')).toHaveCount(0);
+    await win.getByTestId('ai-commands-all').click();
+    await expect(win.getByTestId('ai-command-aider')).toBeVisible();
     await win.getByTestId('ai-command-claude').fill('claude --custom-test');
     await win.getByTestId('ai-commands-save').click();
     await expect
@@ -102,6 +109,7 @@ test('AI agents: detects installed agents with their accounts and starts them fr
           )['aiAgents.commands']?.['claude'],
       )
       .toBe('claude --custom-test');
+    await expect(win.getByTestId('ai-commands-summary')).toContainText('Claude Code (claude --custom-test)');
 
     // The "+" menu has an AI agents section: "Claude Code (naszekonto@mail.to)".
     let before = await oxyTest(win).terminalIds();
@@ -250,6 +258,31 @@ test('AI agents: adds a second Claude Code account that shares the main setup an
       .poll(() => newestTerminalText(win, before), { timeout: 20_000 })
       .toContain('FAKE-CLAUDE dir=[] key=[sk-from-the-environment]');
 
+    // An added account is renamed (its folder stays).
+    await openAiAgents(win);
+    await row.getByTestId('ai-account-rename').click();
+    const rename = win.getByTestId('confirm-dialog');
+    await rename.getByRole('textbox').fill('Firma');
+    await rename.getByRole('button', { name: 'Rename' }).click();
+    await expect(row).toContainText('Firma');
+
+    // The main account is signed out (only its sign-in goes) and hidden from the + menu: the added one stays.
+    const main = claude.getByTestId('ai-account-main');
+    await main.getByTestId('ai-account-main-signout-claude').click();
+    await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Sign out' }).click();
+    // The API key of this test's environment is what remains (it cannot be signed out).
+    await expect(main.getByTestId('ai-account-main-login')).not.toContainText('prywatne@mail.to');
+    await expect(main.getByTestId('ai-account-main-login')).toContainText('ANTHROPIC_API_KEY');
+    await expect(main.getByTestId('ai-account-main-signout-claude')).toHaveCount(0);
+    expect(JSON.parse(await readFile(join(home, '.claude.json'), 'utf8'))).not.toHaveProperty('oauthAccount');
+    expect(await readFile(join(home, '.claude', 'skills', 'review', 'SKILL.md'), 'utf8')).toBe('SHARED-SKILL\n');
+    await main.getByTestId('ai-account-main-menu-claude').click();
+    await expect(main.getByTestId('ai-account-main-menu-claude')).not.toBeChecked();
+    await win.getByTestId('group-add').first().click();
+    await expect(win.locator('[data-testid^="add-ai-ai:account:"]')).toContainText('Claude Code · Firma');
+    await expect(win.getByTestId('add-ai-ai:claude')).toHaveCount(0);
+    await win.keyboard.press('Escape');
+
     // Removing the account deletes its folder only.
     await openAiAgents(win);
     await row.getByTestId('ai-account-remove').click();
@@ -257,6 +290,18 @@ test('AI agents: adds a second Claude Code account that shares the main setup an
     await expect(claude.getByTestId('ai-account-row')).toHaveCount(0);
     await expect(stat(accountHome)).rejects.toThrow();
     expect(await readFile(join(home, '.claude', 'skills', 'review', 'SKILL.md'), 'utf8')).toBe('SHARED-SKILL\n');
+
+    // An agent no longer used is removed from Oxytocin (the CLI stays installed) and can be restored.
+    await win.getByTestId('ai-agent-remove-claude').click();
+    await win.getByTestId('confirm-dialog').getByRole('button', { name: 'Remove' }).click();
+    await expect(win.locator('[data-testid="ai-agent-row"][data-id="claude"]')).toHaveCount(0);
+    await expect(claude).toHaveCount(0);
+    await win.getByTestId('ai-detect').click();
+    await expect(win.getByTestId('ai-detected-at')).toContainText('just now');
+    await expect(win.locator('[data-testid="ai-agent-row"][data-id="claude"]')).toHaveCount(0);
+    await win.getByTestId('ai-agent-restore-claude').click();
+    await expect(win.locator('[data-testid="ai-agent-row"][data-id="claude"]')).toBeVisible();
+    await expect(claude.getByTestId('ai-account-main')).toBeVisible();
   } finally {
     await app.close();
   }

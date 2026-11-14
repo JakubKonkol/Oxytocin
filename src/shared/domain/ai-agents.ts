@@ -293,6 +293,8 @@ export const AiAgentsStateSchema = z.object({
   /** Added accounts of Claude Code, Codex CLI and Gemini CLI. */
   accounts: z.array(AgentAccountSchema).max(50).default([]),
   accountsInfo: AgentAccountsInfoSchema.default({ mainHomes: {}, overridden: [], logins: {}, notes: {} }),
+  /** Agents removed from Oxytocin (installed, but left out of the lists and the "+" menu until restored). */
+  removed: z.array(z.string().max(64)).max(100).default([]),
 });
 export type AiAgentsState = z.infer<typeof AiAgentsStateSchema>;
 
@@ -423,17 +425,18 @@ export function accountSlug(name: string, taken: readonly string[]): string {
   return slug;
 }
 
-/** Problems that block adding an account with this name. */
+/** Problems that block adding (or renaming to) an account with this name; `self` is the account renamed. */
 export function validateAccountName(
   name: string,
   agent: AiAccountAgent,
-  existing: readonly Pick<AgentAccount, 'agent' | 'name'>[],
+  existing: readonly Pick<AgentAccount, 'agent' | 'name' | 'id'>[],
+  self?: string,
 ): string | undefined {
   const trimmed = name.trim();
   if (!trimmed) return 'Give the account a name.';
   if (trimmed.length > 100) return 'The name is too long.';
   if (/^main$/i.test(trimmed)) return '"Main" is the name of the main account.';
-  if (existing.some((a) => a.agent === agent && a.name.trim().toLowerCase() === trimmed.toLowerCase()))
+  if (existing.some((a) => a.id !== self && a.agent === agent && a.name.trim().toLowerCase() === trimmed.toLowerCase()))
     return `There is already an account named "${trimmed}".`;
   return undefined;
 }

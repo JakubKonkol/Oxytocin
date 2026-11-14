@@ -1,9 +1,13 @@
 import {
+  AI_ACCOUNT_AGENTS,
+  AI_AGENT_CATALOG,
+  type AiAccountAgent,
   accountLabel,
   type AgentAccount,
   type AiAgentsState,
   type AiProfile,
   agentName,
+  type DetectedAiAgent,
   presetOf,
 } from '@shared/domain/ai-agents';
 import type { SecretChange } from '@shared/domain/project-resources';
@@ -67,4 +71,43 @@ export function agoText(at: number | null, now = Date.now()): string {
   if (h < 36) return `${h} hour${h === 1 ? '' : 's'} ago`;
   const d = Math.round(h / 24);
   return `${d} day${d === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * The agents whose accounts Settings lists: the ones installed (not removed from Oxytocin) and any with added
+ * accounts. An agent that is not used has no card to look past.
+ */
+export function accountAgentsShown(state: AiAgentsState): AiAccountAgent[] {
+  return AI_ACCOUNT_AGENTS.filter(
+    (agent) => state.agents.some((a) => a.id === agent) || state.accounts.some((a) => a.agent === agent),
+  );
+}
+
+/** Whether the main account's sign-in lives in the agent's own files (and can be signed out from Oxytocin). */
+export function canSignOut(agent: DetectedAiAgent | undefined): boolean {
+  return !!agent?.accounts.some(
+    (a) => a.method === 'oauth' || (a.method === 'api-key' && a.detail === 'Codex auth.json'),
+  );
+}
+
+/** Agents removed from Oxytocin that can be brought back, by name. */
+export function removedAgents(state: AiAgentsState): { id: string; name: string }[] {
+  return state.removed.flatMap((id) => {
+    const kind = AI_AGENT_CATALOG.find((k) => k.id === id);
+    return kind ? [{ id, name: kind.name }] : [];
+  });
+}
+
+/**
+ * The agents of the launch commands list: the installed ones and those with a command of their own first; the
+ * others only when asked for.
+ */
+export function launchCommandAgents(
+  state: AiAgentsState | null,
+  commands: Readonly<Record<string, string>>,
+  all: boolean,
+): { id: string; name: string; command: string }[] {
+  const kinds = AI_AGENT_CATALOG.filter((a) => a.category === 'agent');
+  const relevant = (id: string) => !!commands[id]?.trim() || !!state?.agents.some((a) => a.id === id);
+  return [...kinds.filter((k) => relevant(k.id)), ...(all ? kinds.filter((k) => !relevant(k.id)) : [])];
 }

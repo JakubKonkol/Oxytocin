@@ -244,4 +244,65 @@ describe('AiAgentsService', () => {
     expect(service.launchProfile(launchId)).toBeUndefined();
     await expect(service.removeAccount(work.id)).rejects.toThrow(/No such account/);
   });
+
+  it('renames accounts, signs the main account out and removes an agent with its accounts', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'oxy-ai-flex-'));
+    const home = join(dir, 'home');
+    const jwt = (claims: object) => `x.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.y`;
+    await mkdir(join(home, '.codex'), { recursive: true });
+    await writeFile(join(home, '.codex', 'config.toml'), 'model = "x"');
+    await writeFile(
+      join(home, '.codex', 'auth.json'),
+      JSON.stringify({ tokens: { id_token: jwt({ email: 'old@firma.pl' }) } }),
+    );
+    const secrets = new SecretStore(join(dir, 'secrets.json'), safe, logger);
+    await secrets.load();
+    const deps = (): AiDetectDeps => ({
+      ...detectDeps(),
+      platform: process.platform,
+      home,
+      which: (name) => Promise.resolve(name === 'codex' || name === 'gemini' ? `/usr/bin/${name}` : null),
+      readText: (p) => readFile(p, 'utf8').catch(() => null),
+    });
+    const service = new AiAgentsService({
+      file: join(dir, 'ai-agents.json'),
+      secrets,
+      detectDeps: deps,
+      logger,
+      accounts: { root: join(home, '.oxytocin', 'accounts'), fs: nodeProvisionFs },
+    });
+    await service.load();
+    let state = await service.detect();
+    expect(state.agents.find((a) => a.id === 'codex')?.accounts).toEqual([{ label: 'old@firma.pl', method: 'oauth' }]);
+
+    // An added account renamed: its folder stays.
+    state = await service.addAccount({ agent: 'codex', name: 'codex 2', mode: 'shared' });
+    const added = state.accounts[0]!;
+    state = await service.renameAccount(added.id, 'Work');
+    expect(state.accounts[0]).toMatchObject({ name: 'Work', home: added.home });
+    await expect(service.renameAccount(added.id, 'main')).rejects.toThrow(/main account/);
+
+    // The main account signed out: only auth.json goes; the shared config stays for the added account.
+    state = await service.signOutMain('codex');
+    expect(state.agents.find((a) => a.id === 'codex')?.accounts).toEqual([]);
+    await expect(lstat(join(home, '.codex', 'auth.json'))).rejects.toThrow();
+    expect(await readFile(join(home, '.codex', 'config.toml'), 'utf8')).toBe('model = "x"');
+    expect(await readFile(join(added.home, 'config.toml'), 'utf8')).toBe('model = "x"');
+    await expect(service.signOutMain('codex')).rejects.toThrow(/No sign-in/);
+
+    // Gemini CLI removed from the lists (installed, not used), then restored; Codex CLI removed with its account.
+    state = await service.removeAgent('gemini');
+    expect(state.agents.map((a) => a.id)).toEqual(['codex']);
+    expect(state.removed).toEqual(['gemini']);
+    expect(service.accountInfos().map((a) => a.agent)).toEqual(['claude', 'codex', 'codex']);
+    state = await service.restoreAgent('gemini');
+    expect(state.agents.map((a) => a.id)).toEqual(['codex', 'gemini']);
+    state = await service.removeAgent('codex');
+    expect(state.accounts).toEqual([]);
+    await expect(lstat(added.home)).rejects.toThrow();
+    // A detection again does not bring a removed agent back.
+    state = await service.detect();
+    expect(state.agents.map((a) => a.id)).toEqual(['gemini']);
+    await expect(service.removeAgent('nope')).rejects.toThrow(/No such agent/);
+  });
 });

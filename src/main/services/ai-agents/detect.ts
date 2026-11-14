@@ -271,6 +271,13 @@ async function gooseAccounts(deps: AiDetectDeps): Promise<AiAccount[]> {
 
 const AIDER_KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'OPENROUTER_API_KEY', 'DEEPSEEK_API_KEY'];
 
+/** The accounts a detected agent is signed in with, read again (e.g. after its main account was signed out). */
+export function detectAgentAccounts(agent: DetectedAiAgent, deps: AiDetectDeps): Promise<AiAccount[]> {
+  const kind = AI_AGENT_CATALOG.find((k) => k.id === agent.id);
+  if (!kind || kind.category !== 'agent' || kind.id === 'gh-copilot') return Promise.resolve(agent.accounts);
+  return accountsOf(kind, deps, agent.path ?? '').catch(() => agent.accounts);
+}
+
 async function accountsOf(kind: AiAgentKind, deps: AiDetectDeps, path: string): Promise<AiAccount[]> {
   switch (kind.id) {
     case 'claude':

@@ -5,6 +5,27 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ## [Unreleased]
 
+### Added
+
+- **AI Agents → Accounts:** every account can go. The main account (the CLI's own folder) can be **signed out**:
+  Oxytocin removes only its sign-in, as the CLI's logout does (Claude Code: `.credentials.json`, the signed-in
+  account in `.claude.json` and the macOS Keychain entry; Codex CLI: `auth.json`; Gemini CLI: its Google sign-in).
+  Settings, instructions, skills, sessions and history stay, so added accounts that share them keep working. So when
+  you move from account X to an added account Y, sign X out and hide the main account from the + menu. The main
+  account row has its own *In + menu*, *Start* and *Sign out*, and shows the plan.
+- **AI Agents:** added accounts can be **renamed** (the name in Settings and the + menu; the folder stays).
+- **AI Agents:** an agent you no longer use can be **removed** from Oxytocin: it leaves the agent list, the accounts
+  and the + menu (its added accounts are deleted with their folders) and stays out after the next detection. The CLI
+  stays installed and its main account is not touched; *Removed from Oxytocin* brings it back.
+
+### Changed
+
+- **AI Agents:** the Accounts section shows only the agents you have (installed, or with added accounts), not an
+  empty card for every agent that supports accounts.
+- **AI Agents:** *Launch commands* moved to the bottom and is folded away under a summary of the commands you
+  customized. Opened, it lists the installed agents (and any with a command of their own); the others are one click
+  away.
+
 ### Fixed
 
 - **Sidebars:** the heights you give the sections (Projects, Changes, Usage, Actions…) by dragging the line between

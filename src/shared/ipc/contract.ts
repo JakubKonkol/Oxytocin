@@ -410,6 +410,16 @@ export const invokeContract = {
   },
   /** Removes an added account and deletes its folder (sign-in, sessions, history). */
   'aiAgents:removeAccount': { req: z.object({ id: z.string().max(100) }), res: AiAgentsStateSchema },
+  /** Renames an added account (its folder stays). */
+  'aiAgents:renameAccount': {
+    req: z.object({ id: z.string().max(100), name: z.string().max(100) }),
+    res: AiAgentsStateSchema,
+  },
+  /** Signs the main account of an agent CLI out (only its sign-in: the shared setup, sessions and history stay). */
+  'aiAgents:signOutMain': { req: z.object({ agent: z.enum(AI_ACCOUNT_AGENTS) }), res: AiAgentsStateSchema },
+  /** Removes an agent from the lists and the "+" menu (with its added accounts); the CLI stays installed. */
+  'aiAgents:removeAgent': { req: z.object({ id: z.string().max(64) }), res: AiAgentsStateSchema },
+  'aiAgents:restoreAgent': { req: z.object({ id: z.string().max(64) }), res: AiAgentsStateSchema },
   /** Reads again who the added accounts are signed in with. */
   'aiAgents:refreshAccounts': { req: z.null().optional(), res: AiAgentsStateSchema },
   /** Which secrets of a project are set (`<resourceId>/<key>`), and whether they are encrypted. */

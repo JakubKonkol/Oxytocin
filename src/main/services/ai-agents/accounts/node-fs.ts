@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { lstat, mkdir, readFile, readlink, rm, symlink, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, readlink, realpath, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import type { EntryKind, ProvisionFs } from './provisioner';
 
 /** The provisioning's file system on this computer. */
@@ -35,6 +35,18 @@ export const nodeProvisionFs: ProvisionFs = {
   },
   async writeText(path, text) {
     await writeFile(path, text, { encoding: 'utf8', mode: 0o600 });
+  },
+  async replaceText(path, text) {
+    // A dotfile linked from elsewhere stays a link: its target is replaced.
+    const target = await realpath(path).catch(() => path);
+    const temporary = `${target}.oxytocin-${process.pid}.tmp`;
+    try {
+      await writeFile(temporary, text, { encoding: 'utf8', mode: 0o600 });
+      await rename(temporary, target);
+    } catch (e) {
+      await rm(temporary, { force: true }).catch(() => undefined);
+      throw e;
+    }
   },
   async unlink(path) {
     await unlink(path);

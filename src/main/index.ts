@@ -1364,6 +1364,22 @@ function bootstrap(): void {
         await aiAgentsReady;
         return aiAgents.removeAccount(id);
       },
+      'aiAgents:renameAccount': async ({ id, name }) => {
+        await aiAgentsReady;
+        return aiAgents.renameAccount(id, name);
+      },
+      'aiAgents:signOutMain': async ({ agent }) => {
+        await Promise.all([aiAgentsReady, shellEnvReady]);
+        return aiAgents.signOutMain(agent);
+      },
+      'aiAgents:removeAgent': async ({ id }) => {
+        await aiAgentsReady;
+        return aiAgents.removeAgent(id);
+      },
+      'aiAgents:restoreAgent': async ({ id }) => {
+        await aiAgentsReady;
+        return aiAgents.restoreAgent(id);
+      },
       'aiAgents:refreshAccounts': async () => {
         await aiAgentsReady;
         return aiAgents.refreshAccounts();

@@ -1,7 +1,6 @@
-import { AlertTriangle, Copy, Play, Plus, Trash2, UserRound } from 'lucide-react';
+import { AlertTriangle, Copy, LogOut, Pencil, Play, Plus, Trash2, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import {
-  AI_ACCOUNT_AGENTS,
   AI_ACCOUNT_HOME_VARIABLES,
   accountAlias,
   accountLabel,
@@ -11,17 +10,18 @@ import {
   type AiAgentsState,
   agentName,
   aiAccountLaunchId,
+  aiAgentLaunchId,
   validateAccountName,
 } from '@shared/domain/ai-agents';
 import { cn } from '../../lib/cn';
 import { ipc } from '../../lib/ipc-client';
 import { currentPlatform } from '../../lib/platform';
-import { confirmDialog } from '../../stores/dialog-store';
+import { confirmDialog, confirmDialogEx } from '../../stores/dialog-store';
 import { Badge } from '../../ui/Badge';
 import { Button } from '../../ui/Button';
 import { notify } from '../../ui/Toast';
 import { Check, Field, input, Section, Segmented } from '../projects/settings/controls';
-import { accountTitle, withHidden } from './ai-agents-model';
+import { accountAgentsShown, accountTitle, canSignOut, withHidden } from './ai-agents-model';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -135,6 +135,20 @@ function AccountRow({
       notify('error', 'Could not copy', { description: errorText(e) });
     }
   };
+  const rename = async () => {
+    const result = await confirmDialogEx({
+      title: `Rename ${accountTitle(account)}`,
+      description: 'The name shown in Settings and the + menu. The account’s folder stays as it is.',
+      input: { kind: 'text', value: account.name, singleLine: true, placeholder: 'Name' },
+      confirmLabel: 'Rename',
+    });
+    if (!result.confirmed || !result.value || result.value.trim() === account.name) return;
+    try {
+      await ipc.invoke('aiAgents:renameAccount', { id: account.id, name: result.value });
+    } catch (e) {
+      notify('error', 'Could not rename the account', { description: errorText(e) });
+    }
+  };
   const remove = async () => {
     const ok = await confirmDialog({
       title: `Remove ${accountTitle(account)}?`,
@@ -201,6 +215,15 @@ function AccountRow({
           >
             <Copy size={12} /> Alias
           </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="ai-account-rename"
+            title="Rename the account"
+            onClick={() => void rename()}
+          >
+            <Pencil size={12} /> Rename
+          </Button>
           <Button size="sm" variant="ghost" data-testid="ai-account-remove" onClick={() => void remove()}>
             <Trash2 size={12} /> Remove
           </Button>
@@ -212,6 +235,91 @@ function AccountRow({
             <li key={n}>{n}</li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/** The main account of an agent CLI (its default folder): shown in the + menu or not, started, signed out. */
+function MainAccountRow({
+  agent,
+  state,
+  onStart,
+  onHidden,
+}: {
+  agent: AiAccountAgent;
+  state: AiAgentsState;
+  onStart: () => void;
+  onHidden: (hidden: string[]) => void;
+}) {
+  const detected = state.agents.find((a) => a.id === agent);
+  const main = detected ? accountLabel(detected) : undefined;
+  const plan = detected?.accounts[0]?.plan;
+  const home = state.accountsInfo.mainHomes[agent] ?? '';
+  const launchId = aiAgentLaunchId(agent);
+  const signOut = async () => {
+    const others = state.accounts.filter((a) => a.agent === agent).length;
+    const ok = await confirmDialog({
+      title: `Sign ${main ?? 'the main account'} out of ${agentName(agent)}?`,
+      description: `Only the sign-in is removed from the main folder, as the CLI's own logout does. Its settings, instructions, skills, sessions and history stay${others ? ', and the added accounts that share them keep working' : ''}. Close its running sessions first. To use another account here, start it and sign in again.`,
+      details: [home],
+      confirmLabel: 'Sign out',
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await ipc.invoke('aiAgents:signOutMain', { agent });
+      notify('success', `Signed out of ${agentName(agent)}`, {
+        description: 'Hide the main account from the + menu if you no longer use it.',
+      });
+    } catch (e) {
+      notify('error', 'Could not sign out', { description: errorText(e) });
+    }
+  };
+  return (
+    <div
+      className="grid grid-cols-[minmax(160px,220px)_1fr_auto] items-start gap-3 py-1"
+      data-testid="ai-account-main"
+      data-agent={agent}
+    >
+      <span className="flex items-center gap-1.5 text-ui text-fg">
+        <UserRound size={14} className="flex-none text-fg-muted" /> Main account
+      </span>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex min-w-0 items-center gap-1.5 text-ui" data-testid="ai-account-main-login">
+          <span className={cn('truncate', main ? 'text-fg' : 'text-fg-muted')}>
+            {main ?? (detected ? 'Not signed in' : 'Not found on PATH')}
+          </span>
+          {plan && <Badge variant="active">{plan}</Badge>}
+        </span>
+        <span className="truncate font-mono text-small text-fg-muted" title={home}>
+          {home}
+        </span>
+      </div>
+      {detected && (
+        <div className="flex items-center gap-2">
+          <Check
+            checked={!state.hidden.includes(launchId)}
+            onChange={(show) => onHidden(withHidden(state.hidden, launchId, show))}
+            testId={`ai-account-main-menu-${agent}`}
+          >
+            In + menu
+          </Check>
+          <Button size="sm" data-testid={`ai-account-main-start-${agent}`} onClick={onStart}>
+            <Play size={12} /> {main ? 'Start' : 'Sign in'}
+          </Button>
+          {canSignOut(detected) && (
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid={`ai-account-main-signout-${agent}`}
+              title="Remove the main account's sign-in"
+              onClick={() => void signOut()}
+            >
+              <LogOut size={12} /> Sign out
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -231,6 +339,7 @@ export function AccountsSection({
   saveHidden: (hidden: string[]) => void;
 }) {
   const [adding, setAdding] = useState<AiAccountAgent | null>(null);
+  const shown = accountAgentsShown(state);
 
   const create = async (agent: AiAccountAgent, name: string, mode: AgentAccountMode) => {
     try {
@@ -250,15 +359,22 @@ export function AccountsSection({
     <Section title="Accounts">
       <p className="max-w-[760px] text-small text-fg-muted">
         Add another account of Claude Code, Codex CLI or Gemini CLI — e.g. a work subscription next to your own. Each
-        added account has a folder of its own, signs in separately and runs at the same time as the others; the main
-        account stays exactly as it is. Use accounts you are entitled to, under each provider’s terms.
+        added account has a folder of its own, signs in separately and runs at the same time as the others. Any account
+        can go: remove an added one, or sign the main one out and hide it from the + menu. Use accounts you are entitled
+        to, under each provider’s terms.
       </p>
       <div className="flex flex-col gap-3" data-testid="ai-accounts">
-        {AI_ACCOUNT_AGENTS.map((agent) => {
+        {shown.length === 0 && (
+          <p className="text-small text-fg-muted" data-testid="ai-accounts-none">
+            {state.detectedAt === null
+              ? 'Press Detect AI agents to find Claude Code, Codex CLI and Gemini CLI.'
+              : 'Claude Code, Codex CLI and Gemini CLI were not found on this computer.'}
+          </p>
+        )}
+        {shown.map((agent) => {
           const detected = state.agents.find((a) => a.id === agent);
           const accounts = state.accounts.filter((a) => a.agent === agent);
           const variable = AI_ACCOUNT_HOME_VARIABLES[agent];
-          const main = detected ? accountLabel(detected) : undefined;
           return (
             <div
               key={agent}
@@ -282,20 +398,12 @@ export function AccountsSection({
                   <Plus size={12} /> Add account
                 </Button>
               </div>
-              <div
-                className="grid grid-cols-[minmax(160px,220px)_1fr] items-start gap-3 py-1"
-                data-testid="ai-account-main"
-              >
-                <span className="flex items-center gap-1.5 text-ui text-fg">
-                  <UserRound size={14} className="flex-none text-fg-muted" /> Main account
-                </span>
-                <div className="flex min-w-0 flex-col gap-0.5">
-                  <span className="truncate text-ui text-fg">{main ?? 'Not signed in'}</span>
-                  <span className="truncate font-mono text-small text-fg-muted">
-                    {state.accountsInfo.mainHomes[agent] ?? ''}
-                  </span>
-                </div>
-              </div>
+              <MainAccountRow
+                agent={agent}
+                state={state}
+                onStart={() => start(aiAgentLaunchId(agent), agentName(agent))}
+                onHidden={saveHidden}
+              />
               {accounts.map((a) => (
                 <AccountRow
                   key={a.id}

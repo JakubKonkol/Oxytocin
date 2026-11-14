@@ -52,6 +52,11 @@ function fakeWindowsFs(fileLinks: 'fail' | 'ok' = 'fail') {
       nodes.set(key(follow(p)), { kind: 'file', text });
       return Promise.resolve();
     },
+    replaceText: (p, text) => {
+      calls.push(`replaceText:${p}`);
+      nodes.set(key(follow(p)), { kind: 'file', text });
+      return Promise.resolve();
+    },
     unlink: (p) => {
       calls.push(`unlink:${p}`);
       nodes.delete(key(p));
