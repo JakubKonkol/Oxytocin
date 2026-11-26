@@ -17,9 +17,23 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 - **AI Agents:** an agent you no longer use can be **removed** from Oxytocin: it leaves the agent list, the accounts
   and the + menu (its added accounts are deleted with their folders) and stays out after the next detection. The CLI
   stays installed and its main account is not touched; *Removed from Oxytocin* brings it back.
+- **Agent bridge (databases and APIs): large results are saved to a file** instead of being cut. When an API body or
+  a query result does not fit in the agent's reply, Oxytocin downloads it in full and saves it to `.oxy/results` in
+  the agent's project (the folder ignores itself in git; files go after a day, at most 50 are kept). The reply starts
+  with the file's path and size, then the status and headers, the shape of the JSON (keys, types, array lengths, so
+  the agent can write a `jq` filter) and a preview. Secrets are scrubbed and masked columns stay `***` in the file
+  too. Agents can ask for a file up front with `saveToFile: true` on `oxy_api_request`, `oxy_db_query`, `oxy_mongo`
+  and `oxy_redis` (also for binary API bodies such as PDFs), and the project brief in AGENTS.md/CLAUDE.md tells them
+  so.
+- **Project settings → APIs:** *Saved to a file up to (MB)* (default 100 MB, up to 1 GB) limits how much of a large
+  body is downloaded. **→ Databases:** *Rows saved to a file* (default 100,000) limits how many rows a saved result
+  holds; with `saveToFile` an agent can get more rows than *Rows per result* allows in a reply.
 
 ### Changed
 
+- **Project settings → APIs / Databases:** *Response size* and *Result size* are now *Reply size* and go up to 240 KB,
+  the most an MCP reply can carry (larger values were cut at 256 KB anyway); larger results go to a file.
+- **Agent bridge:** a JSON body that is too large pretty-printed but fits as sent is shown as sent instead of cut.
 - **AI Agents:** the Accounts section shows only the agents you have (installed, or with added accounts), not an
   empty card for every agent that supports accounts.
 - **AI Agents:** *Launch commands* moved to the bottom and is folded away under a summary of the commands you
@@ -28,6 +42,10 @@ and the project uses [Semantic Versioning](https://semver.org/) (0.x until the p
 
 ### Fixed
 
+- **Agent bridge:** very large API responses and query results no longer reach the agent cut off. Before, a body
+  was downloaded only up to the response size (256 KB by default) and cut there, long values (JSON columns, long
+  texts, large Redis strings) were cut at 2,000 characters, and every tool reply was cut again at 256 KB, so for some
+  endpoints the agent had to call the API another way. Now the whole result is saved to a file the agent reads.
 - **Sidebars:** the heights you give the sections (Projects, Changes, Usage, Actions…) by dragging the line between
   them stay after Oxytocin restarts. The plugin views are added a moment after the start and the window is often
   maximized after it opens; both moved the extra height to the bottom section, and that distorted layout was saved,

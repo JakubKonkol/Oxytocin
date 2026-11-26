@@ -15,6 +15,8 @@ import {
   isSqlEngine,
   type ProjectResources,
   RESOURCE_ENVIRONMENTS,
+  RESOURCE_INLINE_MAX_BYTES,
+  RESULT_FILES_DIR,
   secretStatusKey,
   type TlsMode,
 } from '@shared/domain/project-resources';
@@ -735,7 +737,7 @@ function DatabaseForm({
           </p>
         )}
         {production && <p className="text-small text-fg-muted">Production databases cannot be read-write.</p>}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <Field label="Rows per result">
             <input
               data-testid="db-max-rows"
@@ -761,19 +763,52 @@ function DatabaseForm({
               className={input}
             />
           </Field>
-          <Field label="Result size (KB)">
+          <Field label="Reply size (KB)">
             <input
+              data-testid="db-max-result-kb"
               type="number"
               min={4}
-              max={4096}
-              value={Math.round(db.access.maxResultBytes / 1024)}
+              max={RESOURCE_INLINE_MAX_BYTES / 1024}
+              value={Math.round(Math.min(db.access.maxResultBytes, RESOURCE_INLINE_MAX_BYTES) / 1024)}
               onChange={(e) =>
-                setAccess({ maxResultBytes: num(e.target.value, db.access.maxResultBytes / 1024, 4, 4096) * 1024 })
+                setAccess({
+                  maxResultBytes:
+                    num(
+                      e.target.value,
+                      db.access.maxResultBytes / 1024,
+                      DB_LIMITS.maxResultBytes.min / 1024,
+                      RESOURCE_INLINE_MAX_BYTES / 1024,
+                    ) * 1024,
+                })
+              }
+              className={input}
+            />
+          </Field>
+          <Field label="Rows saved to a file">
+            <input
+              data-testid="db-max-file-rows"
+              type="number"
+              min={DB_LIMITS.maxFileRows.min}
+              max={DB_LIMITS.maxFileRows.max}
+              value={db.access.maxFileRows}
+              onChange={(e) =>
+                setAccess({
+                  maxFileRows: num(
+                    e.target.value,
+                    db.access.maxFileRows,
+                    DB_LIMITS.maxFileRows.min,
+                    DB_LIMITS.maxFileRows.max,
+                  ),
+                })
               }
               className={input}
             />
           </Field>
         </div>
+        <p className="text-small text-fg-muted" data-testid="db-result-files-note">
+          A result larger than the reply is saved in full to {RESULT_FILES_DIR} in the agent&apos;s project (removed
+          after a day), and agents can ask for a file of up to the rows above.
+        </p>
         {sql && db.engine !== 'clickhouse' && (
           <Check
             testId="db-user-functions"

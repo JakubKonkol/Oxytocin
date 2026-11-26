@@ -217,7 +217,17 @@ export const DB_LIMITS = {
   maxRows: { min: 1, max: 10_000, default: 200 },
   timeoutMs: { min: 1000, max: 300_000, default: 10_000 },
   maxResultBytes: { min: 4 * 1024, max: 4 * 1024 * 1024, default: 256 * 1024 },
+  /** Rows a result saved to a file may hold (`saveToFile`, or a result too large to show). */
+  maxFileRows: { min: 1, max: 1_000_000, default: 100_000 },
 } as const;
+
+/**
+ * The most a resource tool returns in its reply: the MCP hub cuts text above 256 KB, so a larger result goes to a
+ * file (`.oxy/results`) instead and the reply carries its path, an outline and a preview.
+ */
+export const RESOURCE_INLINE_MAX_BYTES = 240 * 1024;
+/** The folder (in the caller's project) where results too large for a reply are saved. */
+export const RESULT_FILES_DIR = '.oxy/results';
 
 export const DatabaseAccessSchema = z.looseObject({
   mode: AccessModeSchema.default('read-only'),
@@ -236,6 +246,12 @@ export const DatabaseAccessSchema = z.looseObject({
     .min(DB_LIMITS.maxResultBytes.min)
     .max(DB_LIMITS.maxResultBytes.max)
     .default(DB_LIMITS.maxResultBytes.default),
+  maxFileRows: z
+    .number()
+    .int()
+    .min(DB_LIMITS.maxFileRows.min)
+    .max(DB_LIMITS.maxFileRows.max)
+    .default(DB_LIMITS.maxFileRows.default),
 });
 export type DatabaseAccess = z.infer<typeof DatabaseAccessSchema>;
 
@@ -258,6 +274,7 @@ export const DatabaseResourceSchema = z.looseObject({
     maxRows: DB_LIMITS.maxRows.default,
     timeoutMs: DB_LIMITS.timeoutMs.default,
     maxResultBytes: DB_LIMITS.maxResultBytes.default,
+    maxFileRows: DB_LIMITS.maxFileRows.default,
   }),
   /** Column/field name globs whose values agents never see (`***`), case-insensitive. */
   masking: z.array(z.string().min(1).max(200)).max(100).default(DEFAULT_MASKING),
@@ -286,6 +303,8 @@ export type ApiAuth = z.infer<typeof ApiAuthSchema>;
 export const API_LIMITS = {
   timeoutMs: { min: 1000, max: 300_000, default: 30_000 },
   maxResponseBytes: { min: 4 * 1024, max: 4 * 1024 * 1024, default: 256 * 1024 },
+  /** How much of a response is downloaded and saved to a file when it is too large to show. */
+  maxFileBytes: { min: 1024 * 1024, max: 1024 * 1024 * 1024, default: 100 * 1024 * 1024 },
 } as const;
 
 export const ApiAccessSchema = z.looseObject({
@@ -307,6 +326,12 @@ export const ApiAccessSchema = z.looseObject({
     .min(API_LIMITS.maxResponseBytes.min)
     .max(API_LIMITS.maxResponseBytes.max)
     .default(API_LIMITS.maxResponseBytes.default),
+  maxFileBytes: z
+    .number()
+    .int()
+    .min(API_LIMITS.maxFileBytes.min)
+    .max(API_LIMITS.maxFileBytes.max)
+    .default(API_LIMITS.maxFileBytes.default),
   /** Ignore certificate errors for localhost / 127.0.0.1 / ::1 only (dev certificates). */
   allowSelfSignedOnLoopback: z.boolean().default(false),
 });
@@ -338,6 +363,7 @@ export const ApiResourceSchema = z.looseObject({
     denyPaths: [],
     timeoutMs: API_LIMITS.timeoutMs.default,
     maxResponseBytes: API_LIMITS.maxResponseBytes.default,
+    maxFileBytes: API_LIMITS.maxFileBytes.default,
     allowSelfSignedOnLoopback: false,
   }),
   openapi: OpenApiSourceSchema.default({ source: 'auto' }),
@@ -627,6 +653,7 @@ export function buildAgentBrief(projectName: string, resources: BriefResource[])
     ...own.map(briefLine),
     ...serverLines,
     'Use these tools instead of looking for credentials or connecting yourself: Oxytocin adds the credentials and enforces what the user allowed (read-only, asking before writes). Call oxy_project_resources for details and oxy_db_schema before writing queries.',
+    `A result too large for a reply is saved in full to ${RESULT_FILES_DIR} in this project and the reply starts with its path: read that file (jq, your file tools) instead of asking again. Pass saveToFile: true when you expect a large payload.`,
   ].join('\n');
 }
 

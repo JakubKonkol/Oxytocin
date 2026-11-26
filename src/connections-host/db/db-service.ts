@@ -1,5 +1,11 @@
 import { type DiscoveryResult, isSystemDatabase } from '@shared/domain/database-servers';
-import { type DatabaseEngine, ENGINE_INFO, type ResourceTestResult } from '@shared/domain/project-resources';
+import {
+  type DatabaseEngine,
+  type DatabaseResource,
+  ENGINE_INFO,
+  RESOURCE_INLINE_MAX_BYTES,
+  type ResourceTestResult,
+} from '@shared/domain/project-resources';
 import type {
   Classification,
   DbQueryRequest,
@@ -11,7 +17,17 @@ import type {
 import { OxyError } from '@shared/errors';
 import { matchesAny } from '@shared/utils/glob';
 import { scalarText } from '@shared/utils/text';
-import { formatCell, formatResult, MASK, maskRows, maskValue, safeJson } from '../format';
+import {
+  formatCell,
+  formatResultInfo,
+  MASK,
+  MAX_CELL_CHARS,
+  maskRows,
+  maskValue,
+  rowsAsJson,
+  safeJson,
+} from '../format';
+import { previewOf, RESULT_PREVIEW_BYTES, saveResultFile, savedNote, unsavedNote } from '../result-file';
 import { classifyMongo, classifyRedis, decideNoSql } from '../guard/nosql-guard';
 import { loadSqlParsers } from '../guard/parsers';
 import { classifySql, decide } from '../guard/sql-guard';
@@ -62,6 +78,17 @@ const LIST_DATABASES: Partial<Record<DatabaseEngine, string>> = {
   clickhouse: 'SELECT name FROM system.databases ORDER BY name',
   oracle: "SELECT name FROM v$pdbs WHERE open_mode LIKE 'READ%' ORDER BY name",
 };
+
+/** Rows to fetch: the request's, capped by the database's reply limit (or its file limit when saving to a file). */
+function rowLimit(req: { maxRows?: number }, resource: DatabaseResource, toFile: boolean): number {
+  const cap = toFile ? resource.access.maxFileRows : resource.access.maxRows;
+  return Math.max(1, Math.min(req.maxRows ?? cap, cap));
+}
+
+/** What a reply may hold for this database. */
+const inlineBytes = (resource: DatabaseResource) => Math.min(resource.access.maxResultBytes, RESOURCE_INLINE_MAX_BYTES);
+
+const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word}${n === 1 ? '' : 's'}`;
 
 const summary = (c: Classification) => `${c.statement}${c.tables.length ? ` on ${c.tables.join(', ')}` : ''}`;
 
@@ -224,7 +251,8 @@ export class DbService {
     if (d.action === 'ask' && !req.approved)
       return { status: 'needs-approval', message: d.message, classification: c, preview: req.query };
     const params = bindable(req.params);
-    const maxRows = Math.max(1, Math.min(req.maxRows ?? resource.access.maxRows, resource.access.maxRows));
+    const toFile = !!(req.saveToFile && req.resultsRoot);
+    const maxRows = rowLimit(req, resource, toFile);
     const timeoutMs = resource.access.timeoutMs;
     const write = d.action !== 'run-read';
     try {
@@ -235,11 +263,34 @@ export class DbService {
         'the query',
       );
       if (write) this.invalidateSchema(req);
-      const text = formatResult(maskRows(result, resource.masking), {
-        format: req.format === 'json' ? 'json' : 'markdown',
-        maxRows,
-        maxBytes: resource.access.maxResultBytes,
-      });
+      const masked = maskRows(result, resource.masking);
+      const format = req.format === 'json' ? ('json' as const) : ('markdown' as const);
+      const shown = formatResultInfo(masked, { format, maxRows, maxBytes: inlineBytes(resource) });
+      let text = shown.text;
+      const more = masked.rows.length > maxRows;
+      let tried = false;
+      if (req.resultsRoot && masked.columns.length > 0 && (toFile || !shown.complete)) {
+        // Too large for the reply (or asked for): every fetched row, with full values, goes to a file.
+        const rows = Math.min(masked.rows.length, maxRows);
+        tried = true;
+        try {
+          const saved = await saveResultFile({
+            root: req.resultsRoot,
+            label: `${resource.name} query`,
+            extension: 'json',
+            data: rowsAsJson(masked, maxRows),
+          });
+          const preview = formatResultInfo(masked, { format, maxRows, maxBytes: RESULT_PREVIEW_BYTES * 2 }).text;
+          const rest = more
+            ? ` The query has more rows than the ${plural(maxRows, 'row')} saved${toFile ? '' : `; pass saveToFile: true to save up to ${plural(resource.access.maxFileRows, 'row')}`} — or add a WHERE or LIMIT.`
+            : '';
+          text = `${savedNote(saved, `The ${plural(rows, 'row')} (a JSON array, one row per line)`)}${rest}\n\nPreview:\n${preview}`;
+        } catch (e) {
+          text += `\n${unsavedNote(e)}`;
+        }
+      }
+      if (!tried && more && req.resultsRoot)
+        text += `\n(Pass saveToFile: true to save up to ${plural(resource.access.maxFileRows, 'row')} to a file.)`;
       return { status: 'done', text: write ? `${summary(c)} — committed.\n${text}` : text, classification: c };
     } catch (e) {
       this.fail(req, e);
@@ -262,7 +313,8 @@ export class DbService {
         classification: c,
         preview: safeJson({ collection: req.collection, operation: req.operation, ...args }, 2),
       };
-    const maxRows = Math.max(1, Math.min(req.maxRows ?? resource.access.maxRows, resource.access.maxRows));
+    const toFile = !!(req.saveToFile && req.resultsRoot);
+    const maxRows = rowLimit(req, resource, toFile);
     const timeoutMs = resource.access.timeoutMs;
     try {
       const driver = await this.driver<MongoDriver>(req, 'mongodb');
@@ -272,32 +324,71 @@ export class DbService {
         'the operation',
       );
       const { toExtendedJson } = await import('./mongo');
+      const label = `${resource.name} ${req.collection} ${req.operation}`;
       if (r.documents) {
-        const docs = r.documents.map((doc) => maskValue(doc, resource.masking));
-        const budget = resource.access.maxResultBytes - 512;
-        const lines: string[] = [];
-        let bytes = 0;
-        for (const doc of docs) {
-          const line = await toExtendedJson(doc);
-          if (bytes + line.length > budget) break;
-          bytes += line.length + 1;
-          lines.push(line);
-        }
+        const docs = await Promise.all(r.documents.map((doc) => toExtendedJson(maskValue(doc, resource.masking))));
+        const limit = inlineBytes(resource);
+        const fit = (budget: number) => {
+          const lines: string[] = [];
+          let bytes = 0;
+          for (const line of docs) {
+            if (bytes + Buffer.byteLength(line) > budget) break;
+            bytes += Buffer.byteLength(line) + 1;
+            lines.push(line);
+          }
+          return lines;
+        };
+        const lines = fit(limit - 512);
         const total = r.total ?? null;
         const shown = lines.length;
+        const counted = (n: number) =>
+          `${n} of ${total !== null ? total.toLocaleString('en-US') : `more than ${n}`} documents`;
+        let unsaved = '';
+        if (req.resultsRoot && (toFile || shown < docs.length)) {
+          try {
+            const saved = await saveResultFile({
+              root: req.resultsRoot,
+              label,
+              extension: 'json',
+              data: docs.length ? `[\n${docs.join(',\n')}\n]\n` : '[]\n',
+            });
+            const preview = fit(RESULT_PREVIEW_BYTES);
+            const rest = r.more
+              ? ` The collection has more matching documents than the ${plural(docs.length, 'document')} saved${toFile ? '' : `; pass saveToFile: true to save up to ${plural(resource.access.maxFileRows, 'document')}`} — or add a filter.`
+              : '';
+            return {
+              status: 'done',
+              text: `${savedNote(saved, `The ${plural(docs.length, 'document')} (a JSON array of Extended JSON, one per line)`)}${rest}\n\nPreview (${plural(preview.length, 'document')}):\n${preview.join('\n')}`,
+              classification: c,
+            };
+          } catch (e) {
+            unsaved = `\n${unsavedNote(e)}`;
+          }
+        }
         const header =
           shown < docs.length
-            ? `${shown} of ${total ?? `more than ${docs.length}`} documents shown (the ${Math.round(resource.access.maxResultBytes / 1024)} KB result limit) — add a projection or a filter.`
+            ? `${counted(shown)} shown (the ${Math.round(limit / 1024)} KB result limit) — add a projection or a filter.`
             : r.more
-              ? `${shown} of ${total !== null ? total.toLocaleString('en-US') : `more than ${shown}`} documents shown — add a filter or a limit.`
+              ? `${counted(shown)} shown — add a filter or a limit${req.resultsRoot ? `, or pass saveToFile: true to save up to ${plural(resource.access.maxFileRows, 'document')} to a file` : ''}.`
               : `${shown} document${shown === 1 ? '' : 's'}.`;
-        return { status: 'done', text: `${header}\n${lines.join('\n')}`, classification: c };
+        return { status: 'done', text: `${header}\n${lines.join('\n')}${unsaved}`, classification: c };
       }
-      return {
-        status: 'done',
-        text: `${c.kind === 'write' ? `${req.operation} on ${req.collection}: ` : ''}${await toExtendedJson(maskValue(r.value ?? null, resource.masking))}`,
-        classification: c,
-      };
+      const value = await toExtendedJson(maskValue(r.value ?? null, resource.masking));
+      const prefix = c.kind === 'write' ? `${req.operation} on ${req.collection}: ` : '';
+      let unsaved = '';
+      if (req.resultsRoot && (toFile || Buffer.byteLength(value) > inlineBytes(resource))) {
+        try {
+          const saved = await saveResultFile({ root: req.resultsRoot, label, extension: 'json', data: value });
+          return {
+            status: 'done',
+            text: `${prefix}${savedNote(saved, 'The result (Extended JSON)')}\n\nPreview:\n${previewOf(value)}`,
+            classification: c,
+          };
+        } catch (e) {
+          unsaved = `\n${unsavedNote(e)}`;
+        }
+      }
+      return { status: 'done', text: `${prefix}${value}${unsaved}`, classification: c };
     } catch (e) {
       this.fail(req, e);
     }
@@ -321,11 +412,28 @@ export class DbService {
       const driver = await this.driver<RedisDriver>(req, 'redis');
       const timeoutMs = resource.access.timeoutMs;
       const value = await withDeadline(driver.call(c.statement, args, timeoutMs), timeoutMs + 5000, 'the command');
-      return {
-        status: 'done',
-        text: formatRedis(c.statement, args, value, resource.masking, resource.access.maxResultBytes),
-        classification: c,
-      };
+      const limit = inlineBytes(resource);
+      const shown = renderRedis(c.statement, args, value, resource.masking, limit);
+      let unsaved = '';
+      if (req.resultsRoot && (req.saveToFile || !shown.complete)) {
+        try {
+          const full = redisFileContent(maskRedis(c.statement, args, value, resource.masking));
+          const saved = await saveResultFile({
+            root: req.resultsRoot,
+            label: `${resource.name} ${c.statement} ${args[0] ?? ''}`,
+            extension: full.extension,
+            data: full.text,
+          });
+          return {
+            status: 'done',
+            text: `${savedNote(saved, 'The reply')}\n\nPreview:\n${renderRedis(c.statement, args, value, resource.masking, RESULT_PREVIEW_BYTES).text}`,
+            classification: c,
+          };
+        } catch (e) {
+          unsaved = `\n${unsavedNote(e)}`;
+        }
+      }
+      return { status: 'done', text: `${shown.text}${unsaved}`, classification: c };
     } catch (e) {
       this.fail(req, e);
     }
@@ -357,10 +465,30 @@ export function formatRedis(
   masking: readonly string[],
   maxBytes: number,
 ): string {
-  const keyMasked = args[0] !== undefined && matchesAny(args[0], masking);
+  return renderRedis(command, args, value, masking, maxBytes).text;
+}
+
+/** Whether the key's value itself is masked (not for commands that only describe the key). */
+const keyMasked = (command: string, args: string[], masking: readonly string[]) =>
+  args[0] !== undefined &&
+  matchesAny(args[0], masking) &&
+  command !== 'TTL' &&
+  command !== 'PTTL' &&
+  command !== 'TYPE' &&
+  command !== 'EXISTS';
+
+/** `formatRedis` and whether it shows the whole reply (nothing cut for the size limit or the cell length). */
+export function renderRedis(
+  command: string,
+  args: string[],
+  value: unknown,
+  masking: readonly string[],
+  maxBytes: number,
+): { text: string; complete: boolean } {
   const lines: string[] = [];
   let bytes = 0;
   let cut = false;
+  let cellCut = false;
   const push = (line: string) => {
     if (bytes + line.length > maxBytes - 256) {
       cut = true;
@@ -383,12 +511,45 @@ export function formatRedis(
       });
     } else push(`${indent}${maskedValue && v !== null ? MASK : formatValue(v)}`);
   };
-  const formatValue = (v: unknown) =>
-    v === null ? '(nil)' : typeof v === 'number' ? `(integer) ${v}` : JSON.stringify(formatCell(v));
-  render(value, '', keyMasked && command !== 'TTL' && command !== 'PTTL' && command !== 'TYPE' && command !== 'EXISTS');
+  const formatValue = (v: unknown) => {
+    if (v === null) return '(nil)';
+    if (typeof v === 'number') return `(integer) ${v}`;
+    const text = formatCell(v);
+    if (text.length > MAX_CELL_CHARS) cellCut = true;
+    return JSON.stringify(text);
+  };
+  render(value, '', keyMasked(command, args, masking));
   if (cut)
     lines.push(
       `… (cut at the ${Math.round(maxBytes / 1024)} KB result limit; use SCAN/HSCAN with COUNT or a narrower range)`,
     );
-  return lines.join('\n');
+  return { text: lines.join('\n'), complete: !cut && !cellCut };
+}
+
+/** A Redis reply with the values of masked keys and hash fields replaced, for a saved file. */
+export function maskRedis(command: string, args: string[], value: unknown, masking: readonly string[]): unknown {
+  if (keyMasked(command, args, masking)) return value === null ? null : MASK;
+  const walk = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map((item, i) =>
+          HASH_PAIRS.has(command) && i % 2 === 1 && item !== null && matchesAny(String(v[i - 1] as string), masking)
+            ? MASK
+            : walk(item),
+        )
+      : v;
+  return walk(value);
+}
+
+/** A saved Redis reply: a string value as itself (pretty JSON when it is JSON), anything else as JSON. */
+function redisFileContent(value: unknown): { text: string; extension: string } {
+  const text =
+    typeof value === 'string' ? value : value instanceof Uint8Array ? Buffer.from(value).toString('utf8') : undefined;
+  if (text !== undefined) {
+    try {
+      return { text: `${JSON.stringify(JSON.parse(text), null, 2)}\n`, extension: 'json' };
+    } catch {
+      return { text, extension: 'txt' };
+    }
+  }
+  return { text: `${safeJson(value, 2)}\n`, extension: 'json' };
 }

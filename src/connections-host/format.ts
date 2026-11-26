@@ -117,8 +117,47 @@ export interface FormatOptions {
 
 const n = (x: number) => x.toLocaleString('en-US');
 
+/** A value longer than a cell shows (formatCell / jsonCell cut it). */
+function cellCut(value: unknown): boolean {
+  if (typeof value === 'string') return value.length > MAX_CELL_CHARS;
+  if (value === null || typeof value !== 'object' || value instanceof Date || isBinary(value)) return false;
+  return safeJson(value).length > MAX_CELL_CHARS;
+}
+
 /** The agent's view of a result: header with the row counts, then a Markdown table or JSON. */
 export function formatResult(result: ResultSet, o: FormatOptions): string {
+  return formatResultInfo(result, o).text;
+}
+
+/**
+ * `formatResult` and whether it shows everything the driver returned: `complete` is false when rows were left out
+ * for the byte limit or a long value was cut (more rows than `maxRows` in the database do not count).
+ */
+export function formatResultInfo(result: ResultSet, o: FormatOptions): { text: string; complete: boolean } {
+  const fetched = result.rows.slice(0, o.maxRows);
+  const kept = { rows: 0 };
+  const text = formatRows(result, o, kept);
+  const complete = kept.rows >= fetched.length && !fetched.some((row) => row.some((v) => cellCut(v)));
+  return { text, complete };
+}
+
+/**
+ * The rows the driver returned (at most `maxRows`), masked as given, as a JSON array with one row object per line
+ * and full values: what a saved result file holds.
+ */
+export function rowsAsJson(result: ResultSet, maxRows: number): string {
+  const lines = result.rows.slice(0, maxRows).map((row) => {
+    const obj: Record<string, unknown> = {};
+    result.columns.forEach((c, i) => {
+      const v = row[i];
+      obj[c.name] = v instanceof Date ? v.toISOString() : v;
+    });
+    return safeJson(obj);
+  });
+  return lines.length ? `[\n${lines.join(',\n')}\n]\n` : '[]\n';
+}
+
+function formatRows(result: ResultSet, o: FormatOptions, out: { rows: number }): string {
   const shownRows = result.rows.slice(0, o.maxRows);
   const more = result.rows.length > o.maxRows || (result.total !== null && result.total > shownRows.length);
   const header: string[] = [];
@@ -155,6 +194,7 @@ export function formatResult(result: ResultSet, o: FormatOptions): string {
       kept++;
     }
   }
+  out.rows = kept;
   const total =
     result.total !== null ? n(result.total) : more ? `more than ${n(shownRows.length)}` : n(shownRows.length);
   let summary: string;

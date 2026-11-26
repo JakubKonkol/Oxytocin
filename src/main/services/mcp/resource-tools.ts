@@ -52,6 +52,14 @@ const DATABASE_ARG = {
   },
 };
 
+const SAVE_TO_FILE_ARG = {
+  saveToFile: {
+    type: 'boolean',
+    description:
+      'Save the whole result to a file in the project (.oxy/results) and reply with its path, size and a preview. Results too large for a reply are saved anyway; use this when you expect a large payload or want to process it with jq or a script.',
+  },
+};
+
 const APPROVAL_WAIT_MS = 5 * 60_000;
 const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const cut = (s: string, n = 500) => (s.length > n ? `${s.slice(0, n)}…` : s);
@@ -62,6 +70,12 @@ function projectOf(deps: ResourceToolsDeps, caller: ResolvedCaller): ResourcePro
   if (!project) throw new Error(caller.projectError ?? NO_PROJECT_MESSAGE);
   return project;
 }
+
+/** Where large results go (the caller's project, so the agent can read them) and whether it asked for a file. */
+const fileOptions = (deps: ResourceToolsDeps, caller: ResolvedCaller, args: Record<string, unknown>) => ({
+  resultsRoot: projectOf(deps, caller).rootPath,
+  ...(args['saveToFile'] === true ? { saveToFile: true } : {}),
+});
 
 const who = (caller: ResolvedCaller) => (caller.label ? `An agent in ${caller.label}` : 'An agent');
 
@@ -254,7 +268,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
         name: 'oxy_db_query',
         title: 'Query a database',
         description:
-          'Runs one SQL statement on a project database (PostgreSQL, CockroachDB, SQL Server, MySQL, MariaDB, SQLite, ClickHouse, Oracle) through Oxytocin, which adds the credentials and enforces the user\'s rules. Read-only databases accept only plain reads: SELECT, WITH … SELECT, SHOW, DESCRIBE, EXPLAIN without ANALYZE — one statement, built-in functions, no SELECT INTO or FOR UPDATE. Databases that ask before writes show the user every other statement for approval; read-write databases still ask before DROP, TRUNCATE and UPDATE/DELETE without WHERE. Pass values in `params` (bound, never interpolated) with the engine\'s placeholders: $1 (PostgreSQL), ? (MySQL, MariaDB, SQLite), @p1 (SQL Server), :1 (Oracle), {p1:String} (ClickHouse). Results are capped (a Markdown table, or JSON with format "json"), say how many rows exist and mask secret columns (***). A refusal explains why; rewrite the query instead of retrying it.',
+          "Runs one SQL statement on a project database (PostgreSQL, CockroachDB, SQL Server, MySQL, MariaDB, SQLite, ClickHouse, Oracle) through Oxytocin, which adds the credentials and enforces the user's rules. Read-only databases accept only plain reads: SELECT, WITH … SELECT, SHOW, DESCRIBE, EXPLAIN without ANALYZE — one statement, built-in functions, no SELECT INTO or FOR UPDATE. Databases that ask before writes show the user every other statement for approval; read-write databases still ask before DROP, TRUNCATE and UPDATE/DELETE without WHERE. Pass values in `params` (bound, never interpolated) with the engine's placeholders: $1 (PostgreSQL), ? (MySQL, MariaDB, SQLite), @p1 (SQL Server), :1 (Oracle), {p1:String} (ClickHouse). Results (a Markdown table, or JSON with format \"json\") say how many rows exist and mask secret columns (***); a result too large for the reply is saved in full to a file (.oxy/results) whose path the reply starts with, and `saveToFile` saves up to the database's file limit of rows. A refusal explains why; rewrite the query instead of retrying it.",
         inputSchema: {
           type: 'object',
           properties: {
@@ -263,6 +277,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
             params: { type: 'array', description: 'Values for the placeholders, in order.', items: {} },
             maxRows: { type: 'number', description: 'Rows to return (capped by the database setting, default 200).' },
             format: { type: 'string', enum: ['markdown', 'json'], description: 'Default: markdown.' },
+            ...SAVE_TO_FILE_ARG,
             ...PROJECT_ARGS,
           },
           required: ['query'],
@@ -292,6 +307,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
               ...(params ? { params } : {}),
               ...(maxRows ? { maxRows } : {}),
               format,
+              ...fileOptions(deps, caller, args),
               approved,
             },
             { timeoutMs: hostTimeout(a.resource.access.timeoutMs) },
@@ -305,7 +321,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
         name: 'oxy_mongo',
         title: 'MongoDB operation',
         description:
-          'Runs one operation on a collection of a project MongoDB database through Oxytocin (no free-form commands). Reads: find {filter, projection, sort, limit, skip}, findOne {filter, projection}, aggregate {pipeline}, countDocuments {filter}, estimatedDocumentCount, distinct {field, filter}, listIndexes, collStats. Writes follow the database\'s access mode (refused when read-only, the user approves them when it asks first): insertOne {document}, insertMany {documents}, updateOne/updateMany {filter, update, upsert}, replaceOne {filter, replacement}, deleteOne/deleteMany {filter}; deleteMany/updateMany with an empty filter always ask. Pipelines with $out, $merge, $function, $accumulator or $where are refused in read-only mode. Use Extended JSON for special values ({"$oid": "…"}, {"$date": "…"}). Results are capped and secret fields are masked.',
+          'Runs one operation on a collection of a project MongoDB database through Oxytocin (no free-form commands). Reads: find {filter, projection, sort, limit, skip}, findOne {filter, projection}, aggregate {pipeline}, countDocuments {filter}, estimatedDocumentCount, distinct {field, filter}, listIndexes, collStats. Writes follow the database\'s access mode (refused when read-only, the user approves them when it asks first): insertOne {document}, insertMany {documents}, updateOne/updateMany {filter, update, upsert}, replaceOne {filter, replacement}, deleteOne/deleteMany {filter}; deleteMany/updateMany with an empty filter always ask. Pipelines with $out, $merge, $function, $accumulator or $where are refused in read-only mode. Use Extended JSON for special values ({"$oid": "…"}, {"$date": "…"}). Secret fields are masked; results too large for the reply are saved in full to a file (.oxy/results) whose path the reply starts with (`saveToFile` asks for that up front).',
         inputSchema: {
           type: 'object',
           properties: {
@@ -320,6 +336,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
               type: 'object',
               description: 'The operation\'s arguments, e.g. {"filter": {"status": "open"}, "limit": 20}.',
             },
+            ...SAVE_TO_FILE_ARG,
             ...PROJECT_ARGS,
           },
           required: ['collection', 'operation'],
@@ -342,7 +359,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
         return guarded(deps, { name: a.resource.name, caller, signal, action: `run ${operation} on` }, (approved) =>
           deps.host(
             'db:mongo',
-            { ...resolvedDb(a), collection, operation, args: opArgs, approved },
+            { ...resolvedDb(a), collection, operation, args: opArgs, ...fileOptions(deps, caller, args), approved },
             { timeoutMs: hostTimeout(a.resource.access.timeoutMs) },
           ),
         );
@@ -354,13 +371,14 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
         name: 'oxy_redis',
         title: 'Redis command',
         description:
-          'Runs one Redis command on a project Redis/Valkey database through Oxytocin. Read commands are allowed (GET, MGET, HGETALL, HGET, LRANGE, SMEMBERS, ZRANGE, SCAN/HSCAN/SSCAN/ZSCAN, XRANGE, TTL, TYPE, EXISTS, INFO, DBSIZE, …); use SCAN with MATCH and COUNT instead of KEYS. Other commands follow the access mode; EVAL, FUNCTION, CONFIG, FLUSH*, SHUTDOWN, DEBUG, MODULE and SCRIPT are never offered. Values of secret keys and hash fields are masked.',
+          'Runs one Redis command on a project Redis/Valkey database through Oxytocin. Read commands are allowed (GET, MGET, HGETALL, HGET, LRANGE, SMEMBERS, ZRANGE, SCAN/HSCAN/SSCAN/ZSCAN, XRANGE, TTL, TYPE, EXISTS, INFO, DBSIZE, …); use SCAN with MATCH and COUNT instead of KEYS. Other commands follow the access mode; EVAL, FUNCTION, CONFIG, FLUSH*, SHUTDOWN, DEBUG, MODULE and SCRIPT are never offered. Values of secret keys and hash fields are masked; a reply too large to show is saved in full to a file (.oxy/results).',
         inputSchema: {
           type: 'object',
           properties: {
             ...DATABASE_ARG,
             command: { type: 'string', description: 'e.g. HGETALL' },
             args: { type: 'array', items: { type: 'string' }, description: 'The arguments, e.g. ["session:42"].' },
+            ...SAVE_TO_FILE_ARG,
             ...PROJECT_ARGS,
           },
           required: ['command'],
@@ -382,7 +400,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
           (approved) =>
             deps.host(
               'db:redis',
-              { ...resolvedDb(a), command, args: list, approved },
+              { ...resolvedDb(a), command, args: list, ...fileOptions(deps, caller, args), approved },
               { timeoutMs: hostTimeout(a.resource.access.timeoutMs) },
             ),
         );
@@ -433,7 +451,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
         name: 'oxy_api_request',
         title: 'Call an API',
         description:
-          "Calls a project HTTP API through Oxytocin, which adds the authentication (never visible to you) and enforces the user's rules: allowed methods and paths, some methods asking the user first. `path` is a path on the API (e.g. /users/42?expand=orders), never a full URL: requests only go to the API's base URL, redirects only within it. Do not send Authorization or Cookie headers. The response shows the status, useful headers and the body (JSON pretty-printed, capped).",
+          "Calls a project HTTP API through Oxytocin, which adds the authentication (never visible to you) and enforces the user's rules: allowed methods and paths, some methods asking the user first. `path` is a path on the API (e.g. /users/42?expand=orders), never a full URL: requests only go to the API's base URL, redirects only within it. Do not send Authorization or Cookie headers. The response shows the status, useful headers and the body (JSON pretty-printed). A body too large for the reply is downloaded in full and saved to a file (.oxy/results): the reply then starts with its path, the JSON's shape and a preview, so read the file (jq, your file tools) instead of calling again; `saveToFile` asks for that up front (also for binary bodies).",
         inputSchema: {
           type: 'object',
           properties: {
@@ -446,6 +464,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
             query: { type: 'object', additionalProperties: { type: 'string' }, description: 'Query parameters.' },
             headers: { type: 'object', additionalProperties: { type: 'string' } },
             body: { description: 'JSON body (an object or array), or a string sent as is.' },
+            ...SAVE_TO_FILE_ARG,
             ...PROJECT_ARGS,
           },
           required: ['method', 'path'],
@@ -479,6 +498,7 @@ export function buildResourceTools(deps: ResourceToolsDeps): ResourceTool[] {
                 ...(query ? { query } : {}),
                 ...(headers ? { headers } : {}),
                 ...(args['body'] !== undefined ? { body: args['body'] } : {}),
+                ...fileOptions(deps, caller, args),
                 approved,
               },
               { timeoutMs: hostTimeout(a.resource.access.timeoutMs) },

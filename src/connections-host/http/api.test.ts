@@ -1,4 +1,7 @@
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ApiResourceSchema } from '@shared/domain/project-resources';
 import type { ResolvedApi } from '@shared/rpc/contracts/connections-host';
@@ -131,6 +134,22 @@ describe('ApiService against a local server', () => {
         res.writeHead(302, { Location: 'http://example.invalid/steal' });
         return res.end();
       }
+      if (req.url?.startsWith('/export')) {
+        // ~400 KB of JSON (4 MB with ?n=30000) that names the token: larger than any reply.
+        const n = Number(new URL(req.url, 'http://x').searchParams.get('n') ?? 3000);
+        const items = Array.from({ length: n }, (_, i) => ({ id: i, name: `user ${i}`, note: 'n'.repeat(60) }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ items, meta: { total: n, echoed: 'Bearer SECRET-TOKEN' } }));
+      }
+      if (req.url === '/compact') {
+        // Pretty-printed it is larger than 4 KB, as sent it fits.
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify(Array.from({ length: 300 }, (_, i) => ({ i }))));
+      }
+      if (req.url === '/report.pdf') {
+        res.writeHead(200, { 'Content-Type': 'application/pdf' });
+        return res.end(Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]));
+      }
       if (req.url === '/big') {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         return res.end('x'.repeat(10_000));
@@ -209,5 +228,78 @@ describe('ApiService against a local server', () => {
     expect(t.details?.join()).toContain('OpenAPI: 1 paths (/openapi.json)');
     const down = await svc.test({ ...resolved(), baseUrl: 'http://127.0.0.1:1' });
     expect(down).toMatchObject({ ok: false, error: { kind: 'unreachable' } });
+  });
+
+  it('saves a body too large for the reply in full to the project and replies with its path, shape and preview', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oxy-api-'));
+    const r = await new ApiService().request({ ...resolved(), method: 'GET', path: '/export', resultsRoot: root });
+    const text = r.status === 'done' ? r.text : '';
+    expect(text).toMatch(/^The body saved in full \(\d+ KB\) to \.oxy\/results\/[^\s]+\.json\n/);
+    expect(text).toContain('HTTP 200');
+    expect(text).toContain('"items": array[3,000] of {');
+    expect(text).toContain('Preview (the first');
+    expect(Buffer.byteLength(text)).toBeLessThan(16 * 1024);
+    expect(text).not.toContain('SECRET-TOKEN');
+    const relative = /to (\.oxy\/results\/\S+\.json)/.exec(text)![1]!;
+    const saved = JSON.parse(await readFile(join(root, relative), 'utf8')) as {
+      items: unknown[];
+      meta: { echoed: string };
+    };
+    expect(saved.items).toHaveLength(3000);
+    expect(saved.meta.echoed).toBe('Bearer ***');
+  });
+
+  it('shows compact JSON when only that fits, and saves small or binary bodies when asked', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oxy-api-'));
+    const svc = new ApiService();
+    const compact = await svc.request({ ...resolved(), method: 'GET', path: '/compact', resultsRoot: root });
+    expect(compact.status === 'done' && compact.text).toContain('[{"i":0},{"i":1}');
+    expect(compact.status === 'done' && compact.text).not.toContain('saved in full');
+
+    const asked = await svc.request({
+      ...resolved(),
+      method: 'GET',
+      path: '/users',
+      resultsRoot: root,
+      saveToFile: true,
+    });
+    expect(asked.status === 'done' && asked.text).toMatch(/^The body saved in full/);
+
+    const pdf = await svc.request({ ...resolved(), method: 'GET', path: '/report.pdf', resultsRoot: root });
+    expect(pdf.status === 'done' && pdf.text).toContain('Pass saveToFile: true');
+    const savedPdf = await svc.request({
+      ...resolved(),
+      method: 'GET',
+      path: '/report.pdf',
+      resultsRoot: root,
+      saveToFile: true,
+    });
+    const relative = /to (\.oxy\/results\/\S+\.pdf)/.exec(savedPdf.status === 'done' ? savedPdf.text : '')![1]!;
+    expect([...(await readFile(join(root, relative)))]).toEqual([0x25, 0x50, 0x44, 0x46, 0x00, 0xff]);
+  });
+
+  it('says when even the file limit was reached', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'oxy-api-'));
+    const r = await new ApiService().request({
+      ...resolved({ maxFileBytes: 1024 * 1024 }),
+      method: 'GET',
+      path: '/export?n=30000',
+      resultsRoot: root,
+    });
+    const text = r.status === 'done' ? r.text : '';
+    expect(text).toContain('Only the first 1.0 MB were downloaded');
+    expect(text).not.toContain('Shape of the JSON');
+  });
+
+  it('shows what fits, as before, when the file cannot be saved', async () => {
+    const r = await new ApiService().request({
+      ...resolved(),
+      method: 'GET',
+      path: '/export',
+      resultsRoot: join(tmpdir(), 'oxy-missing-project', 'nowhere'),
+    });
+    const text = r.status === 'done' ? r.text : '';
+    expect(text).toContain('[Body cut at 4 KB');
+    expect(text).toContain('The full result could not be saved to .oxy/results');
   });
 });

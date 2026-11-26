@@ -2,6 +2,8 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   API_LIMITS,
+  RESOURCE_INLINE_MAX_BYTES,
+  RESULT_FILES_DIR,
   type ApiAuth,
   type ApiResource,
   HTTP_METHODS,
@@ -395,7 +397,7 @@ function ApiForm({ api, props, profiles }: { api: ApiResource; props: ResourceTa
             />
           </Field>
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <Field label="Time limit (s)">
             <input
               type="number"
@@ -408,12 +410,13 @@ function ApiForm({ api, props, profiles }: { api: ApiResource; props: ResourceTa
               className={input}
             />
           </Field>
-          <Field label="Response size (KB)">
+          <Field label="Reply size (KB)">
             <input
+              data-testid="api-max-response-kb"
               type="number"
               min={4}
-              max={4096}
-              value={Math.round(api.access.maxResponseBytes / 1024)}
+              max={RESOURCE_INLINE_MAX_BYTES / 1024}
+              value={Math.round(Math.min(api.access.maxResponseBytes, RESOURCE_INLINE_MAX_BYTES) / 1024)}
               onChange={(e) =>
                 setAccess({
                   maxResponseBytes:
@@ -421,14 +424,41 @@ function ApiForm({ api, props, profiles }: { api: ApiResource; props: ResourceTa
                       e.target.value,
                       api.access.maxResponseBytes / 1024,
                       API_LIMITS.maxResponseBytes.min / 1024,
-                      API_LIMITS.maxResponseBytes.max / 1024,
+                      RESOURCE_INLINE_MAX_BYTES / 1024,
                     ) * 1024,
                 })
               }
               className={input}
             />
           </Field>
+          <Field label="Saved to a file up to (MB)">
+            <input
+              data-testid="api-max-file-mb"
+              type="number"
+              min={API_LIMITS.maxFileBytes.min / 1024 / 1024}
+              max={API_LIMITS.maxFileBytes.max / 1024 / 1024}
+              value={Math.round(api.access.maxFileBytes / 1024 / 1024)}
+              onChange={(e) =>
+                setAccess({
+                  maxFileBytes:
+                    num(
+                      e.target.value,
+                      api.access.maxFileBytes / 1024 / 1024,
+                      API_LIMITS.maxFileBytes.min / 1024 / 1024,
+                      API_LIMITS.maxFileBytes.max / 1024 / 1024,
+                    ) *
+                    1024 *
+                    1024,
+                })
+              }
+              className={input}
+            />
+          </Field>
         </div>
+        <p className="text-small text-fg-muted" data-testid="api-result-files-note">
+          A body larger than the reply is downloaded up to the file limit and saved to {RESULT_FILES_DIR} in the
+          agent&apos;s project (removed after a day); the agent gets its path, its shape and a preview.
+        </p>
       </Section>
 
       <Section title="Agents">

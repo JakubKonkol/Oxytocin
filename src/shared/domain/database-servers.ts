@@ -163,6 +163,7 @@ export function linkedDatabase(
       maxRows: DB_LIMITS.maxRows.default,
       timeoutMs: DB_LIMITS.timeoutMs.default,
       maxResultBytes: DB_LIMITS.maxResultBytes.default,
+      maxFileRows: DB_LIMITS.maxFileRows.default,
     },
     masking: DEFAULT_MASKING,
     agents: {
@@ -221,6 +222,7 @@ export function serverAsResource(server: DatabaseServer): DatabaseResource {
       maxRows: DB_LIMITS.maxRows.max,
       timeoutMs: 20_000,
       maxResultBytes: DB_LIMITS.maxResultBytes.default,
+      maxFileRows: DB_LIMITS.maxFileRows.default,
     },
   });
 }

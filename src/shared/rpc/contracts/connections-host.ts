@@ -48,7 +48,16 @@ export type GuardOutcome =
   /** The call needs the user's approval; main asks and calls again with `approved: true`. */
   | { status: 'needs-approval'; message: string; classification: Classification; preview: string };
 
-export interface DbQueryRequest extends ResolvedDatabase {
+/**
+ * Where a result too large for the reply may be saved: the root of the calling agent's project (the file goes to
+ * its `.oxy/results`). Without it, large results are cut as before. `saveToFile` saves the result even when small.
+ */
+export interface ResultFileOptions {
+  resultsRoot?: string;
+  saveToFile?: boolean;
+}
+
+export interface DbQueryRequest extends ResolvedDatabase, ResultFileOptions {
   query: string;
   params?: unknown[];
   maxRows?: number;
@@ -56,7 +65,7 @@ export interface DbQueryRequest extends ResolvedDatabase {
   approved?: boolean;
 }
 
-export interface MongoRequest extends ResolvedDatabase {
+export interface MongoRequest extends ResolvedDatabase, ResultFileOptions {
   collection: string;
   operation: string;
   args: Record<string, unknown>;
@@ -64,13 +73,13 @@ export interface MongoRequest extends ResolvedDatabase {
   approved?: boolean;
 }
 
-export interface RedisRequest extends ResolvedDatabase {
+export interface RedisRequest extends ResolvedDatabase, ResultFileOptions {
   command: string;
   args: string[];
   approved?: boolean;
 }
 
-export interface ApiRequest extends ResolvedApi {
+export interface ApiRequest extends ResolvedApi, ResultFileOptions {
   method: string;
   path: string;
   query?: Record<string, string>;

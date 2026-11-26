@@ -1,9 +1,10 @@
 import { readFile } from 'node:fs/promises';
-import { apiSecretKeys, type ResourceTestResult } from '@shared/domain/project-resources';
+import { apiSecretKeys, RESOURCE_INLINE_MAX_BYTES, type ResourceTestResult } from '@shared/domain/project-resources';
 import type { ApiRequest, Classification, GuardOutcome, ResolvedApi } from '@shared/rpc/contracts/connections-host';
 import { OxyError } from '@shared/errors';
 import { scrub } from '../format';
 import { projectPath } from '../db/target';
+import { formatSize, jsonOutline, previewOf, saveResultFile, savedNote, unsavedNote } from '../result-file';
 import { agentHeaders, ApiRuleError, checkAccess, joinUrl, normalizeApiPath } from './api-rules';
 import { httpCall, type HttpResult } from './http-client';
 import { OPENAPI_CANDIDATES, parseSpec, summarizeSpec } from './openapi';
@@ -65,8 +66,45 @@ const isText = (type: string) =>
     type,
   ) || type === '';
 
-/** The response as the agent sees it: status, selected headers, body (JSON pretty-printed), secrets removed. */
-export function formatResponse(r: HttpResult, secrets: readonly string[], maxBytes: number): string {
+/** A file extension for a saved body of this content type. */
+function extensionFor(type: string, json: boolean): string {
+  if (json || /json/i.test(type)) return 'json';
+  const t = type.toLowerCase();
+  if (/xml/.test(t)) return 'xml';
+  if (/yaml/.test(t)) return 'yaml';
+  if (/csv/.test(t)) return 'csv';
+  if (/html/.test(t)) return 'html';
+  if (/^text\//.test(t) || t === '') return 'txt';
+  if (/pdf/.test(t)) return 'pdf';
+  if (/zip/.test(t)) return 'zip';
+  if (/gzip/.test(t)) return 'gz';
+  const image = /^image\/(png|jpeg|gif|webp|svg)/.exec(t);
+  if (image) return image[1] === 'jpeg' ? 'jpg' : image[1]!;
+  return 'bin';
+}
+
+export interface ResponseFileOptions {
+  /** The caller's project root: a body too large for the reply is saved in its `.oxy/results`. */
+  root?: string;
+  /** Save the body to a file even when it would fit. */
+  always?: boolean;
+  /** Names the file, e.g. "bank-api GET /users". */
+  label: string;
+  /** The download limit the body was read with (to tell the agent when even the file is incomplete). */
+  downloadLimit: number;
+}
+
+/**
+ * The response as the agent sees it: status, selected headers, body (JSON pretty-printed), secrets removed. A body
+ * larger than `maxBytes` (or than what an MCP reply can carry) is saved to a file when `file.root` is set: the
+ * reply then starts with the file's path, the JSON outline and a preview.
+ */
+export async function formatResponse(
+  r: HttpResult,
+  secrets: readonly string[],
+  maxBytes: number,
+  file?: ResponseFileOptions,
+): Promise<string> {
   const lines = [`HTTP ${r.status} ${r.statusText}`.trim()];
   if (r.redirects)
     lines.push(`(followed ${r.redirects} redirect${r.redirects === 1 ? '' : 's'} to ${r.url.pathname}${r.url.search})`);
@@ -77,25 +115,74 @@ export function formatResponse(r: HttpResult, secrets: readonly string[], maxByt
       lines.push(`${name}: ${cookies.map((c) => c.replace(/=([^;]*)/, '=***')).join(', ')}`);
     } else lines.push(`${name}: ${Array.isArray(value) ? value.join(', ') : value}`);
   }
+  const head = lines.join('\n');
+  const inline = Math.min(maxBytes, RESOURCE_INLINE_MAX_BYTES);
   const type = String(r.headers['content-type'] ?? '');
-  let body: string;
-  if (r.body.length === 0) body = '(empty body)';
-  else if (!isText(type))
-    body = `<${type || 'binary'} body, ${r.body.length.toLocaleString('en-US')} bytes${r.truncated ? ' (cut)' : ''}>`;
-  else {
-    body = r.body.toString('utf8');
-    if (/json/i.test(type) && !r.truncated) {
-      try {
-        body = JSON.stringify(JSON.parse(body), null, 2);
-      } catch {
-        // Not valid JSON after all: shown as text.
-      }
+  const incomplete = r.truncated
+    ? ` Only the first ${formatSize(r.body.length)} were downloaded (the API's file limit, ${formatSize(file?.downloadLimit ?? r.body.length)}); ask for less (filters, paging) for the rest.`
+    : '';
+
+  if (r.body.length === 0) return scrub(`${head}\n\n(empty body)`, secrets);
+
+  if (!isText(type)) {
+    const described = `<${type || 'binary'} body, ${r.body.length.toLocaleString('en-US')} bytes${r.truncated ? ' (cut)' : ''}>`;
+    if (!file?.root || !file.always)
+      return scrub(
+        `${head}\n\n${described}${file?.root ? '\n(Pass saveToFile: true to save the body to a file.)' : ''}`,
+        secrets,
+      );
+    try {
+      const saved = await saveResultFile({
+        root: file.root,
+        label: file.label,
+        extension: extensionFor(type, false),
+        data: r.body,
+      });
+      return scrub(`${savedNote(saved, 'The body')}${incomplete}\n\n${head}\n\n${described}`, secrets);
+    } catch (e) {
+      return scrub(`${head}\n\n${described}\n${unsavedNote(e)}`, secrets);
     }
-    if (body.length > maxBytes) body = `${body.slice(0, maxBytes)}…`;
-    if (r.truncated || body.endsWith('…'))
-      body += `\n[Body cut at ${Math.round(maxBytes / 1024)} KB; ask for less (filters, paging, a smaller page size).]`;
   }
-  return scrub(`${lines.join('\n')}\n\n${body}`, secrets);
+
+  const raw = r.body.toString('utf8');
+  let parsed: { value: unknown } | undefined;
+  if (/json/i.test(type) && !r.truncated) {
+    try {
+      parsed = { value: JSON.parse(raw) as unknown };
+    } catch {
+      // Not valid JSON after all: shown as text.
+    }
+  }
+  const pretty = parsed ? JSON.stringify(parsed.value, null, 2) : raw;
+  if (!file?.always) {
+    // Pretty-printed when it fits, else as sent (compact JSON is often a third of the size).
+    for (const candidate of parsed ? [pretty, raw] : [raw])
+      if (!r.truncated && Buffer.byteLength(candidate) <= inline) return scrub(`${head}\n\n${candidate}`, secrets);
+  }
+  const cutBody = (note: string) => {
+    let body = pretty;
+    if (Buffer.byteLength(body) > inline) body = `${previewOf(body, inline).replace(/\n…$/, '')}…`;
+    body += `\n[Body cut at ${Math.round(inline / 1024)} KB; ask for less (filters, paging, a smaller page size).]${note}`;
+    return scrub(`${head}\n\n${body}`, secrets);
+  };
+  if (!file?.root) return cutBody('');
+  const content = scrub(pretty, secrets);
+  let saved;
+  try {
+    saved = await saveResultFile({
+      root: file.root,
+      label: file.label,
+      extension: extensionFor(type, !!parsed),
+      data: content,
+    });
+  } catch (e) {
+    return cutBody(`\n${unsavedNote(e)}`);
+  }
+  const preview = previewOf(content);
+  const parts = [`${savedNote(saved, 'The body')}${incomplete}`, '', head];
+  if (parsed) parts.push('', 'Shape of the JSON:', jsonOutline(parsed.value));
+  parts.push('', `Preview (the first ${formatSize(Buffer.byteLength(preview))}):`, preview);
+  return scrub(parts.join('\n'), secrets);
 }
 
 /** The API side of the bridge: requests with the user's rules and auth added, OpenAPI summaries, tests. */
@@ -181,7 +268,10 @@ export class ApiService {
         headers: { Accept: 'application/json, */*;q=0.8', 'User-Agent': 'Oxytocin', ...headers, ...auth.headers },
         ...(body ? { body } : {}),
         timeoutMs: api.access.timeoutMs,
-        maxBytes: api.access.maxResponseBytes,
+        // With somewhere to save it, a large body is downloaded up to the file limit instead of the reply limit.
+        maxBytes: req.resultsRoot
+          ? Math.max(api.access.maxResponseBytes, api.access.maxFileBytes)
+          : api.access.maxResponseBytes,
         insecureLoopback: this.insecure(req),
       });
       const note = dropped.length
@@ -189,7 +279,14 @@ export class ApiService {
         : '';
       return {
         status: 'done',
-        text: `${formatResponse(r, secretsOf(req), api.access.maxResponseBytes)}${note}`,
+        text: `${await formatResponse(r, secretsOf(req), api.access.maxResponseBytes, {
+          ...(req.resultsRoot ? { root: req.resultsRoot } : {}),
+          ...(req.saveToFile ? { always: true } : {}),
+          label: `${api.name} ${method} ${path}`,
+          downloadLimit: req.resultsRoot
+            ? Math.max(api.access.maxResponseBytes, api.access.maxFileBytes)
+            : api.access.maxResponseBytes,
+        })}${note}`,
         classification,
       };
     } catch (e) {

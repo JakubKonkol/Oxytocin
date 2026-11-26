@@ -51,6 +51,13 @@ test('project resources: a SQLite database and an API reach agents through the b
       );
       return;
     }
+    if (req.url === '/export') {
+      // An endpoint with a very large payload (~600 KB): more than an MCP reply carries.
+      const items = Array.from({ length: 5000 }, (_, i) => ({ id: i, email: `u${i}@x.com`, note: 'n'.repeat(80) }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ items, auth: req.headers.authorization ?? null }));
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ path: req.url, method: req.method, echoedAuth: req.headers.authorization ?? null }));
   });
@@ -94,6 +101,8 @@ test('project resources: a SQLite database and an API reach agents through the b
     await dialog.getByTestId('api-base-url').fill(`http://127.0.0.1:${apiPort}`);
     await dialog.getByTestId('api-auth').selectOption('bearer');
     await dialog.getByTestId('api-token').fill('tok-SECRET-123');
+    await expect(dialog.getByTestId('api-max-file-mb')).toHaveValue('100');
+    await expect(dialog.getByTestId('api-result-files-note')).toContainText('.oxy/results');
     await dialog.getByTestId('api-test').click();
     await expect(dialog.getByTestId('api-test-result')).toContainText('HTTP 200');
     await expect(dialog.getByTestId('api-test-result')).toContainText('OpenAPI: 2 paths');
@@ -152,6 +161,31 @@ test('project resources: a SQLite database and an API reach agents through the b
     expect(
       text(await client.call('oxy_api_request', { project: 'bank', method: 'GET', path: 'http://evil.example/x' })),
     ).toMatch(/not a full URL/);
+
+    // Large payloads are not cut: the whole body goes to a file in the project, the reply says where.
+    const exported = text(await client.call('oxy_api_request', { project: 'bank', method: 'GET', path: '/export' }));
+    expect(exported).toMatch(/^The body saved in full \(\d+ KB\) to \.oxy\/results\/\S+\.json/);
+    expect(exported).toContain('"items": array[5,000] of {');
+    expect(exported).not.toContain('tok-SECRET-123');
+    const exportFile = /to (\.oxy\/results\/\S+\.json)/.exec(exported)![1]!;
+    const body = JSON.parse(await readFile(join(root, exportFile), 'utf8')) as { items: unknown[]; auth: string };
+    expect(body.items).toHaveLength(5000);
+    expect(body.auth).toBe('Bearer ***');
+    expect(await readFile(join(root, '.oxy', 'results', '.gitignore'), 'utf8')).toMatch(/^\*$/m);
+    const rowsSaved = text(
+      await client.call('oxy_db_query', {
+        project: 'bank',
+        database: 'bank-db',
+        query: 'SELECT * FROM users ORDER BY id',
+        saveToFile: true,
+      }),
+    );
+    expect(rowsSaved).toMatch(/^The 25 rows \(a JSON array, one row per line\) saved in full/);
+    const rows = JSON.parse(
+      await readFile(join(root, /to (\.oxy\/results\/\S+\.json)/.exec(rowsSaved)![1]!), 'utf8'),
+    ) as { email: string; password_hash: string }[];
+    expect(rows).toHaveLength(25);
+    expect(rows[24]).toMatchObject({ email: 'u25@x.com', password_hash: '***' });
 
     // Ask before writes: the user approves one write and denies the next.
     dialog = await openSettings(win, 'bank', 'databases');

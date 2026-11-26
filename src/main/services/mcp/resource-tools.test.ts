@@ -92,4 +92,18 @@ describe('resource tools', () => {
     expect(listed).toContain('"name": "bank-db"');
     expect(listed).toContain('reads; writes ask the user');
   });
+
+  it("saves large results in the caller's project and passes saveToFile on", async () => {
+    const done = { status: 'done' as const, text: 'ok', classification };
+    const { tools, host } = setup([done, done], true);
+    await call(tools, 'oxy_db_query', { query: 'SELECT 1' });
+    await call(tools, 'oxy_db_query', { query: 'SELECT 1', saveToFile: true });
+    const params = host.mock.calls.map((c) => (c as unknown[])[1] as { resultsRoot?: string; saveToFile?: boolean });
+    expect(params.map((p) => [p.resultsRoot, p.saveToFile])).toEqual([
+      ['/p/bank', undefined],
+      ['/p/bank', true],
+    ]);
+    for (const name of ['oxy_db_query', 'oxy_mongo', 'oxy_redis', 'oxy_api_request'])
+      expect(tools.get(name)!.definition.inputSchema['properties']).toHaveProperty('saveToFile');
+  });
 });
